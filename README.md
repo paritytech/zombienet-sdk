@@ -1,5 +1,4 @@
-# zombienet-sdk
-[WIP] ZombieNet SDK
+# [WIP] ZombieNet SDK
 
 # The Vision
 
@@ -17,29 +16,29 @@ We plan to divide the work phases to. ensure we cover all the requirement and in
 ## Prototype building blocks
 
 Prototype each building block with a clear interface and how to interact with it
-- [ ] #2
-- [ ] #3
-- [ ] #4
-- [ ] #5
-- [ ] #6
-- [ ] #7
-- [ ] #8
+- [Building block Network #2](https://github.com/paritytech/zombienet-sdk/issues/2)
+- [Building block Node #3](https://github.com/paritytech/zombienet-sdk/issues/3)
+- [Building block NodeGroup #4](https://github.com/paritytech/zombienet-sdk/issues/4)
+- [Building block Parachain #5](https://github.com/paritytech/zombienet-sdk/issues/5)
+- [Building block Collator #6](https://github.com/paritytech/zombienet-sdk/issues/6)
+- [Building block CollatorGroup #7](https://github.com/paritytech/zombienet-sdk/issues/7)
+- [Building block Assertion #8](https://github.com/paritytech/zombienet-sdk/issues/8)
 
 ## Integrate, test interactions and document
 
 We want to integrate the interactions for all building blocks and document the way that they work together.
 
-- [ ] #9
-- [ ] #10
-- [ ] #11
+- [Spawning Integration #9](https://github.com/paritytech/zombienet-sdk/issues/9)
+- [Assertion Integration #10](https://github.com/paritytech/zombienet-sdk/issues/10)
+- [Documentation #11](https://github.com/paritytech/zombienet-sdk/issues/11)
 
 ## Refactor `CLI` and ensure backwards compatibility
 
 Refactor the `CLI` module to use the new `SDK` under the hood.
 
-- [ ] #12
-- [ ] #13
-- [ ] #14
+- [Refactor CLI #12](https://github.com/paritytech/zombienet-sdk/issues/12)
+- [Ensure that spawning from toml works #13](https://github.com/paritytech/zombienet-sdk/issues/13)
+- [Ensure that test-runner from DSL works #14](https://github.com/paritytech/zombienet-sdk/issues/14)
 
 ## ROADMAP
 

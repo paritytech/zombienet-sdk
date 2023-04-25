@@ -1,4 +1,4 @@
-# [🚧⚠️ WIP ⚠️🚧] ZombieNet SDK
+# 🚧⚠️ [WIP] ZombieNet SDK  ⚠️🚧
 
 # The Vision
 

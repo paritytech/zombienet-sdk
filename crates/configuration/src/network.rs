@@ -1,12 +1,10 @@
 use crate::{
-    parachain::ParachainConfig,
-    relaychain::RelaychainConfig,
     shared::types::{IpAddress, MultiAddress, Timeout},
+    HrmpChannelConfig, ParachainConfig, RelaychainConfig,
 };
 
 /// Global settings applied to an entire network.
-#[derive(Debug, Clone)]
-struct GlobalSettings {
+pub struct GlobalSettings {
     /// Whether we should spawn a dedicated bootnode for each chain.
     spawn_bootnode: bool,
 
@@ -26,14 +24,12 @@ struct GlobalSettings {
 
 impl Default for GlobalSettings {
     fn default() -> Self {
-        Self {
-            ..Default::default()
-        }
+        // [TODO]: define the default value for global settings
+        todo!()
     }
 }
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
-#[derive(Debug, Clone)]
 pub struct NetworkConfig {
     /// The global settings applied to the network.
     global_settings: GlobalSettings,
@@ -45,7 +41,7 @@ pub struct NetworkConfig {
     parachains: Vec<ParachainConfig>,
 
     /// HRMP channels configurations.
-    hrmp_channels: Vec<()>,
+    hrmp_channels: Vec<HrmpChannelConfig>,
 
     // [TODO]: what does it represents ?
     config_base_path: String,
@@ -58,5 +54,39 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         // [TODO]: define the default value for a network
         todo!()
+    }
+}
+
+impl NetworkConfig {
+    pub fn new() -> NetworkConfig {
+        Self::default()
+    }
+
+    pub fn with_global_settings(self, f: fn(GlobalSettings) -> GlobalSettings) -> Self {
+        Self {
+            global_settings: f(self.global_settings),
+            ..self
+        }
+    }
+
+    pub fn with_relaychain(self, f: fn(RelaychainConfig) -> RelaychainConfig) -> Self {
+        Self {
+            relaychain: f(self.relaychain),
+            ..self
+        }
+    }
+
+    pub fn with_parachain(self, f: fn(ParachainConfig) -> ParachainConfig) -> Self {
+        Self {
+            parachains: vec![self.parachains, vec![f(ParachainConfig::default())]].concat(),
+            ..self
+        }
+    }
+
+    pub fn with_hrmp_channel(self, f: fn(HrmpChannelConfig) -> HrmpChannelConfig) -> Self {
+        Self {
+            hrmp_channels: vec![self.hrmp_channels, vec![f(HrmpChannelConfig::default())]].concat(),
+            ..self
+        }
     }
 }

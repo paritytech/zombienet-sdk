@@ -1,6 +1,6 @@
 use crate::{
-    relaychain::RelaychainConfig,
     parachain::ParachainConfig,
+    relaychain::RelaychainConfig,
     shared::types::{IpAddress, MultiAddress, Timeout},
 };
 

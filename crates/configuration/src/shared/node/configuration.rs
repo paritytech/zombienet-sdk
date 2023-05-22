@@ -4,7 +4,7 @@ use crate::shared::types::{
 
 #[derive(Debug, Clone)]
 struct EnvVar {
-    name: String,
+    name:  String,
     value: String,
 }
 

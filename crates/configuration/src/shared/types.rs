@@ -19,9 +19,9 @@ pub enum ResourceQuantity {
 #[derive(Debug, Clone)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
-    request_cpu: Option<ResourceQuantity>,
-    limit_memory: Option<ResourceQuantity>,
-    limit_cpu: Option<ResourceQuantity>,
+    request_cpu:    Option<ResourceQuantity>,
+    limit_memory:   Option<ResourceQuantity>,
+    limit_cpu:      Option<ResourceQuantity>,
 }
 
 #[derive(Debug, Clone)]

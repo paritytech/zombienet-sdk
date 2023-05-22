@@ -1,14 +1,23 @@
-pub type MultiAddress = String;
+#[derive(Debug, Clone)]
+pub struct MultiAddress(String);
 
-pub type IpAddress = String;
+#[derive(Debug, Clone)]
+pub struct IpAddress(String);
 
-pub type Timeout = u16;
+#[derive(Debug, Clone)]
+pub struct Timeout(String);
 
-pub type Command = String;
+#[derive(Debug, Clone)]
+pub struct Command(String);
 
-pub type ContainerImage = String;
+#[derive(Debug, Clone)]
+pub struct ContainerImage(String);
 
-pub type Port = u16;
+#[derive(Debug, Clone)]
+pub struct Port(u16);
+
+#[derive(Debug, Clone)]
+pub struct ParaId(u32);
 
 #[derive(Debug, Clone)]
 pub enum ResourceQuantity {
@@ -16,12 +25,42 @@ pub enum ResourceQuantity {
     Cpu(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
-    request_cpu:    Option<ResourceQuantity>,
-    limit_memory:   Option<ResourceQuantity>,
-    limit_cpu:      Option<ResourceQuantity>,
+    request_cpu: Option<ResourceQuantity>,
+    limit_memory: Option<ResourceQuantity>,
+    limit_cpu: Option<ResourceQuantity>,
+}
+
+impl Resources {
+    fn with_request_memory(self, quantity: ResourceQuantity) -> Self {
+        Self {
+            request_memory: Some(quantity),
+            ..self
+        }
+    }
+
+    fn with_request_cpu(self, quantity: ResourceQuantity) -> Self {
+        Self {
+            request_cpu: Some(quantity),
+            ..self
+        }
+    }
+
+    fn with_limit_memory(self, quantity: ResourceQuantity) -> Self {
+        Self {
+            limit_memory: Some(quantity),
+            ..self
+        }
+    }
+
+    fn with_limit_cpu(self, quantity: ResourceQuantity) -> Self {
+        Self {
+            limit_cpu: Some(quantity),
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,3 +88,6 @@ impl From<(String, String)> for Arg {
         Self::Option(option, value)
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Path(String);

@@ -1,8 +1,10 @@
-pub mod network;
-pub mod parachain;
-pub mod relaychain;
-pub mod shared;
+mod hrmp_channel;
+mod network;
+mod parachain;
+mod relaychain;
+mod shared;
 
 pub use network::NetworkConfig;
 pub use parachain::ParachainConfig;
 pub use relaychain::RelaychainConfig;
+pub use hrmp_channel::HrmpChannelConfig;

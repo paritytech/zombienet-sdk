@@ -4,7 +4,6 @@ use crate::shared::{
 };
 
 /// A relaychain configuration, composed of nodes and fine-grained configuration options.
-#[derive(Debug, Clone)]
 pub struct RelaychainConfig {
     /// Default command to run the node. Can be overriden on each node.
     default_command: Option<Command>,
@@ -46,5 +45,74 @@ impl Default for RelaychainConfig {
     fn default() -> Self {
         // [TODO]: define the default value for a relaychain
         todo!()
+    }
+}
+
+impl RelaychainConfig {
+    pub fn with_default_command(self, command: Command) -> Self {
+        Self {
+            default_command: Some(command),
+            ..self
+        }
+    }
+
+    pub fn with_default_image(self, image: ContainerImage) -> Self {
+        Self {
+            default_image: Some(image),
+            ..self
+        }
+    }
+
+    pub fn with_default_resources(self, f: fn(Resources) -> Resources) -> Self {
+        Self {
+            default_resources: Some(f(Resources::default())),
+            ..self
+        }
+    }
+
+    pub fn with_default_db_snapshot(self, db_snapshot: DbSnapshot) -> Self {
+        Self {
+            default_db_snapshot: Some(db_snapshot),
+            ..self
+        }
+    }
+
+    pub fn with_chain(self, chain: String) -> Self {
+        Self { chain, ..self }
+    }
+
+    pub fn with_chain_spec_path(self, chain_spec_path: String) -> Self {
+        Self {
+            chain_spec_path: Some(chain_spec_path),
+            ..self
+        }
+    }
+
+    pub fn with_default_args(self, args: Vec<Arg>) -> Self {
+        Self {
+            default_args: args,
+            ..self
+        }
+    }
+
+    pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
+        Self {
+            random_nominators_count: Some(random_nominators_count),
+            ..self
+        }
+    }
+
+    pub fn with_max_nominations(self, max_nominations: u16) -> Self {
+        Self {
+            max_nominations: Some(max_nominations),
+            ..self
+        }
+    }
+
+    pub fn with_node(self, f: fn(NodeConfig) -> NodeConfig) -> Self {
+        Self {
+            nodes: vec![self.nodes, vec![f(NodeConfig::default())]].concat(),
+            ..self
+        }
     }
 }

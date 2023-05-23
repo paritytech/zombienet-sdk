@@ -5,7 +5,7 @@ pub struct MultiAddress(String);
 pub struct IpAddress(String);
 
 #[derive(Debug, Clone)]
-pub struct Timeout(String);
+pub struct Duration(String);
 
 #[derive(Debug, Clone)]
 pub struct Command(String);
@@ -34,28 +34,28 @@ pub struct Resources {
 }
 
 impl Resources {
-    fn with_request_memory(self, quantity: ResourceQuantity) -> Self {
+    pub fn with_request_memory(self, quantity: ResourceQuantity) -> Self {
         Self {
             request_memory: Some(quantity),
             ..self
         }
     }
 
-    fn with_request_cpu(self, quantity: ResourceQuantity) -> Self {
+    pub fn with_request_cpu(self, quantity: ResourceQuantity) -> Self {
         Self {
             request_cpu: Some(quantity),
             ..self
         }
     }
 
-    fn with_limit_memory(self, quantity: ResourceQuantity) -> Self {
+    pub fn with_limit_memory(self, quantity: ResourceQuantity) -> Self {
         Self {
             limit_memory: Some(quantity),
             ..self
         }
     }
 
-    fn with_limit_cpu(self, quantity: ResourceQuantity) -> Self {
+    pub fn with_limit_cpu(self, quantity: ResourceQuantity) -> Self {
         Self {
             limit_cpu: Some(quantity),
             ..self
@@ -64,7 +64,7 @@ impl Resources {
 }
 
 #[derive(Debug, Clone)]
-pub enum DbSnapshot {
+pub enum AssetLocation {
     URL(String),
     FilePath(String),
 }
@@ -88,6 +88,3 @@ impl From<(String, String)> for Arg {
         Self::Option(option, value)
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct Path(String);

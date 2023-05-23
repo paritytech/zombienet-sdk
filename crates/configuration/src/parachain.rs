@@ -1,10 +1,16 @@
 use crate::shared::{
     node::NodeConfig,
-    types::{Command, MultiAddress, Path},
+    types::{AssetLocation, Command, MultiAddress},
 };
 
+#[derive(Debug, Clone)]
+pub enum RegistrationStrategy {
+    InGenesis,
+    UsingExtrinsic,
+}
+
 /// A parachain configuration, composed of collators and fine-grained configuration options.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ParachainConfig {
     // Parachain ID to use.
     id: u16,
@@ -12,31 +18,27 @@ pub struct ParachainConfig {
     /// Chain to use (use None if you are running adder-collator or undying-collator).
     chain: Option<String>,
 
-    /// Wether to add the parachain to the genesis (chain specification) file.
-    has_to_be_added_to_genesis: bool,
-
-    /// Wether to register this parachain (via genesis or extrinsic).
-    /// [TODO]: is the "via genesis" part of the comment needed given the above option add to genesis ?
-    has_to_be_registered: bool,
+    /// Registration strategy for the parachain.
+    registration_strategy: Option<RegistrationStrategy>,
 
     /// Parachain balance.
     /// [TODO]: rename to initial_balance ? shouldnt be u128 ?
-    balance: u64,
+    initial_balance: u128,
 
     /// Path to WASM runtime.
-    genesis_wasm_path: Option<Path>,
+    genesis_wasm_path: Option<AssetLocation>,
 
     /// Command to generate the WASM runtime.
     genesis_wasm_generator: Option<Command>,
 
     /// Path to the gensis `state` file.
-    genesis_state_path: Option<Path>,
+    genesis_state_path: Option<AssetLocation>,
 
     /// Command to generate the genesis `state`.
     genesis_state_generator: Option<Command>,
 
     /// Use a pre-generated chain specification.
-    chain_spec_path: Option<Path>,
+    chain_spec_path: Option<AssetLocation>,
 
     /// Wether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
     is_cumulus_based: bool,
@@ -71,27 +73,23 @@ impl ParachainConfig {
         }
     }
 
-    pub fn with_genesis_addition(self) -> Self {
+    pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         Self {
-            has_to_be_added_to_genesis: true,
+            registration_strategy: Some(strategy),
             ..self
         }
     }
 
-    pub fn with_registration(self) -> Self {
+    pub fn with_initial_balance(self, initial_balance: u128) -> Self {
         Self {
-            has_to_be_registered: true,
+            initial_balance,
             ..self
         }
     }
 
-    pub fn with_balance(self, balance: u64) -> Self {
-        Self { balance, ..self }
-    }
-
-    pub fn with_genesis_wasm_path(self, path: Path) -> Self {
+    pub fn with_genesis_wasm_path(self, location: AssetLocation) -> Self {
         Self {
-            genesis_wasm_path: Some(path),
+            genesis_wasm_path: Some(location),
             ..self
         }
     }
@@ -103,9 +101,9 @@ impl ParachainConfig {
         }
     }
 
-    pub fn with_genesis_state_path(self, path: Path) -> Self {
+    pub fn with_genesis_state_path(self, location: AssetLocation) -> Self {
         Self {
-            genesis_state_path: Some(path),
+            genesis_state_path: Some(location),
             ..self
         }
     }
@@ -117,9 +115,9 @@ impl ParachainConfig {
         }
     }
 
-    pub fn with_chain_spec_path(self, path: Path) -> Self {
+    pub fn with_chain_spec_path(self, location: AssetLocation) -> Self {
         Self {
-            chain_spec_path: Some(path),
+            chain_spec_path: Some(location),
             ..self
         }
     }

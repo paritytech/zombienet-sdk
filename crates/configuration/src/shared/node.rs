@@ -1,6 +1,6 @@
-use crate::shared::types::{
-    Arg, Command, ContainerImage, DbSnapshot, MultiAddress, Port, Resources,
-};
+use crate::shared::types::{Arg, Command, ContainerImage, MultiAddress, Port, Resources};
+
+use super::types::AssetLocation;
 
 #[derive(Debug, Clone)]
 pub struct EnvVar {
@@ -67,7 +67,7 @@ pub struct NodeConfig {
     p2p_cert_hash: Option<String>,
 
     /// Database snapshot. Override the default.
-    db_snapshot: Option<DbSnapshot>,
+    db_snapshot: Option<AssetLocation>,
 }
 
 impl Default for NodeConfig {
@@ -181,9 +181,9 @@ impl NodeConfig {
         }
     }
 
-    pub fn with_db_snapshot(self, db_snapshot: DbSnapshot) -> Self {
+    pub fn with_db_snapshot(self, location: AssetLocation) -> Self {
         Self {
-            db_snapshot: Some(db_snapshot),
+            db_snapshot: Some(location),
             ..self
         }
     }

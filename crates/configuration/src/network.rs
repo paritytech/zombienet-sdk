@@ -1,5 +1,5 @@
 use crate::{
-    shared::types::{IpAddress, MultiAddress, Timeout},
+    shared::types::{Duration, IpAddress, MultiAddress},
     HrmpChannelConfig, ParachainConfig, RelaychainConfig,
 };
 
@@ -13,10 +13,10 @@ pub struct GlobalSettings {
     bootnode_address: MultiAddress,
 
     /// Global spawn timeout in seconds.
-    spawn_timeout: Timeout,
+    network_spawn_timeout: Duration,
 
     /// Individual node spawn timeout.
-    node_spawn_timeout: Timeout,
+    node_spawn_timeout: Duration,
 
     /// Local IP used to expose local services (including RPC, metrics and monitoring).
     local_ip: Option<IpAddress>,
@@ -42,9 +42,6 @@ pub struct NetworkConfig {
 
     /// HRMP channels configurations.
     hrmp_channels: Vec<HrmpChannelConfig>,
-
-    // [TODO]: what does it represents ?
-    config_base_path: String,
 
     // [TODO]: what does it represents ?
     seed: String,

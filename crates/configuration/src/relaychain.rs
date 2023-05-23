@@ -1,6 +1,6 @@
 use crate::shared::{
     node::NodeConfig,
-    types::{Arg, Command, ContainerImage, DbSnapshot, Resources},
+    types::{Arg, Command, ContainerImage, AssetLocation, Resources},
 };
 
 /// A relaychain configuration, composed of nodes and fine-grained configuration options.
@@ -15,7 +15,7 @@ pub struct RelaychainConfig {
     default_resources: Option<Resources>,
 
     /// Default database snapshot. Can be overriden on each node.
-    default_db_snapshot: Option<DbSnapshot>,
+    default_db_snapshot: Option<AssetLocation>,
 
     /// Chain to use (e.g. rococo-local).
     chain: String,
@@ -70,9 +70,9 @@ impl RelaychainConfig {
         }
     }
 
-    pub fn with_default_db_snapshot(self, db_snapshot: DbSnapshot) -> Self {
+    pub fn with_default_db_snapshot(self, location: AssetLocation) -> Self {
         Self {
-            default_db_snapshot: Some(db_snapshot),
+            default_db_snapshot: Some(location),
             ..self
         }
     }

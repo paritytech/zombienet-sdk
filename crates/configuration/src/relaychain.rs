@@ -114,15 +114,11 @@ impl RelaychainConfig {
     }
 
     pub fn default_command(&self) -> Option<&str> {
-        self.default_command
-            .as_ref()
-            .map(|default_command| default_command.as_str())
+        self.default_command.as_deref()
     }
 
     pub fn default_image(&self) -> Option<&str> {
-        self.default_image
-            .as_ref()
-            .map(|default_image| default_image.as_str())
+        self.default_image.as_deref()
     }
 
     pub fn default_resources(&self) -> Option<&Resources> {
@@ -225,7 +221,7 @@ mod tests {
 
     #[test]
     fn with_default_db_snapshot_should_update_the_default_db_snapshot_on_the_relaychain_config() {
-        let location = AssetLocation::URL("https://www.mybackupwebsite.com/backup.tgz".into());
+        let location = AssetLocation::Url("https://www.mybackupwebsite.com/backup.tgz".into());
         let relaychain_config =
             RelaychainConfig::default().with_default_db_snapshot(location.clone());
 
@@ -278,14 +274,14 @@ mod tests {
         let relaychain_config = RelaychainConfig::default()
             .with_node(|node1| {
                 node1
-                    .as_bootnode()
-                    .as_validator()
+                    .being_bootnode()
+                    .being_validator()
                     .with_name("mynode1")
                     .with_command("my command")
             })
             .with_node(|node2| {
                 node2
-                    .as_validator()
+                    .being_validator()
                     .with_name("mynode2")
                     .with_image("myrepo:mysuperimage")
             });
@@ -296,15 +292,15 @@ mod tests {
         assert_eq!(
             *nodes.get(0).unwrap(),
             &NodeConfig::default()
-                .as_bootnode()
-                .as_validator()
+                .being_bootnode()
+                .being_validator()
                 .with_name("mynode1")
                 .with_command("my command")
         );
         assert_eq!(
             *nodes.get(1).unwrap(),
             &NodeConfig::default()
-                .as_validator()
+                .being_validator()
                 .with_name("mynode2")
                 .with_image("myrepo:mysuperimage")
         );

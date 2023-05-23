@@ -94,7 +94,7 @@ impl Resources {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssetLocation {
-    URL(String),
+    Url(String),
     FilePath(String),
 }
 

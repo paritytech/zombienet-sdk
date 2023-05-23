@@ -1,6 +1,6 @@
 use crate::shared::{
     node::NodeConfig,
-    types::{AssetLocation, Command, MultiAddress},
+    types::{AssetLocation, MultiAddress},
 };
 
 #[derive(Debug, Clone)]
@@ -29,13 +29,13 @@ pub struct ParachainConfig {
     genesis_wasm_path: Option<AssetLocation>,
 
     /// Command to generate the WASM runtime.
-    genesis_wasm_generator: Option<Command>,
+    genesis_wasm_generator: Option<String>,
 
     /// Path to the gensis `state` file.
     genesis_state_path: Option<AssetLocation>,
 
     /// Command to generate the genesis `state`.
-    genesis_state_generator: Option<Command>,
+    genesis_state_generator: Option<String>,
 
     /// Use a pre-generated chain specification.
     chain_spec_path: Option<AssetLocation>,
@@ -94,9 +94,9 @@ impl ParachainConfig {
         }
     }
 
-    pub fn with_genesis_wasm_generator(self, command: Command) -> Self {
+    pub fn with_genesis_wasm_generator(self, command: &str) -> Self {
         Self {
-            genesis_wasm_generator: Some(command),
+            genesis_wasm_generator: Some(command.to_owned()),
             ..self
         }
     }
@@ -108,9 +108,9 @@ impl ParachainConfig {
         }
     }
 
-    pub fn with_genesis_state_generator(self, command: Command) -> Self {
+    pub fn with_genesis_state_generator(self, command: &str) -> Self {
         Self {
-            genesis_state_generator: Some(command),
+            genesis_state_generator: Some(command.to_owned()),
             ..self
         }
     }

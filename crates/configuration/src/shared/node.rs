@@ -99,21 +99,21 @@ impl NodeConfig {
         Self { args, ..self }
     }
 
-    pub fn as_validator(self) -> Self {
+    pub fn being_validator(self) -> Self {
         Self {
             is_validator: true,
             ..self
         }
     }
 
-    pub fn as_invulnerable(self) -> Self {
+    pub fn being_invulnerable(self) -> Self {
         Self {
             is_invulnerable: true,
             ..self
         }
     }
 
-    pub fn as_bootnode(self) -> Self {
+    pub fn being_bootnode(self) -> Self {
         Self {
             is_bootnode: true,
             ..self
@@ -192,11 +192,11 @@ impl NodeConfig {
     }
 
     pub fn image(&self) -> Option<&str> {
-        self.image.as_ref().map(|image| image.as_str())
+        self.image.as_deref()
     }
 
     pub fn command(&self) -> Option<&str> {
-        self.command.as_ref().map(|command| command.as_str())
+        self.command.as_deref()
     }
 
     pub fn args(&self) -> Vec<&Arg> {
@@ -250,9 +250,7 @@ impl NodeConfig {
     }
 
     pub fn p2p_cert_hash(&self) -> Option<&str> {
-        self.p2p_cert_hash
-            .as_ref()
-            .map(|p2p_cert_hash| p2p_cert_hash.as_str())
+        self.p2p_cert_hash.as_deref()
     }
 
     pub fn db_snapshot(&self) -> Option<&AssetLocation> {
@@ -295,21 +293,21 @@ mod tests {
 
     #[test]
     fn as_validator_should_update_the_is_validator_property_on_the_node_config() {
-        let node_config = NodeConfig::default().as_validator();
+        let node_config = NodeConfig::default().being_validator();
 
         assert!(node_config.is_validator());
     }
 
     #[test]
     fn as_invulnerable_should_update_the_is_invulnerable_property_on_the_node_config() {
-        let node_config = NodeConfig::default().as_invulnerable();
+        let node_config = NodeConfig::default().being_invulnerable();
 
         assert!(node_config.is_invulnerable());
     }
 
     #[test]
     fn as_bootnode_should_update_the_is_bootnode_property_on_the_node_config() {
-        let node_config = NodeConfig::default().as_bootnode();
+        let node_config = NodeConfig::default().being_bootnode();
 
         assert!(node_config.is_bootnode());
     }

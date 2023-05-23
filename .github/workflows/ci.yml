@@ -2,9 +2,9 @@ name: Cargo Build & Test
 
 on:
   push:
-    branches: [ $default-branch ]
+    branches: [ 'nik-add-basic-ci' ]
   pull_request:
-    branches: [ $default-branch ]
+    branches: [ 'nik-add-basic-ci' ]
 
 env: 
   CARGO_TERM_COLOR: always

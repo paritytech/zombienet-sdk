@@ -1,5 +1,8 @@
 [workspace]
 members = [
   "crates/support",
-  "crates/configuration"
+  "crates/configuration",
+  "crates/orchestrator",
+  "crates/provider",
+  "crates/test-runner"
 ]

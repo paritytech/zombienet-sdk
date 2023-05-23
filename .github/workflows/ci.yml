@@ -1,0 +1,35 @@
+name: Cargo Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env: 
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build:
+    name: Zombienet SDK - latest
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - nightly
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Init install
+        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
+      
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features
+
+      - name: Build
+        run: cargo build
+
+      - name: Tests
+        run: cargo test

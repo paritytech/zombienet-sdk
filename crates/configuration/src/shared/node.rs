@@ -18,7 +18,7 @@ impl From<(&str, &str)> for EnvVar {
 }
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct NodeConfig {
     /// Node name (should be unique or an index will be appended).
     name: String,
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn with_args_should_update_the_args_on_the_node_config() {
-        let args: Vec<Arg> = vec![("arg1", "value1").into(), "option2".into()];
+        let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         let node_config = NodeConfig::default().with_args(args.clone());
 
         assert_eq!(node_config.args(), args.iter().collect::<Vec<&Arg>>());

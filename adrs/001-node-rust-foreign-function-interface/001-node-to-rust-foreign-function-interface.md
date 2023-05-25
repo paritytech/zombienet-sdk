@@ -1,10 +1,10 @@
 # Mechanism to call Rust code from Javascript/Typescript
 
-### Status: **proposed** | rejected | accepted | deprecated
+### Status: proposed | rejected | **accepted** | deprecated
 
 ### Deciders: [@pepoviola](https://github.com/pepoviola) [@wirednkod](https://github.com/wirednkod) [@l0r1s](https://github.com/l0r1s)
 
-### Creation date: 13/05/2023
+### Creation date: 18/05/2023
 
 ### Update date: -
 
@@ -107,4 +107,6 @@ The prototype assume versions of `rustc` and `cargo` to be `1.69.0`, use of `sta
 
 ## Decision outcome
 
-TBD
+- ### **Napi-rs** for crates dependant on async, filesystem or networking: *support*, *orchestrator*, *test-runner*, *providers* from [schema](https://github.com/paritytech/zombienet-sdk/issues/22)
+
+- ### **Wasm-pack** for the rest of the crates: *configuration* from [schema](https://github.com/paritytech/zombienet-sdk/issues/22)

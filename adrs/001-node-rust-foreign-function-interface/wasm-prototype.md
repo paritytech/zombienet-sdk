@@ -12,14 +12,14 @@ curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 2. Create a new wasm-pack project
 
 ```bash
-wasm-pack new wasm-prototype
+[ffi-prototype]$ wasm-pack new wasm-prototype
 ```
 
 3. Install cargo dependencies
 ```bash
-cargo add tokio --features full
-cargo add reqwest --features blocking
-cargo add wasm-bindgen-futures
+[ffi-prototype/wasm-prototype]$ cargo add tokio --features full
+[ffi-prototype/wasm-prototype]$ cargo add reqwest --features blocking
+[ffi-prototype/wasm-prototype]$ cargo add wasm-bindgen-futures
 cargo add js-sys
 ```
 
@@ -77,7 +77,7 @@ pub fn fetch_callback(callback: &js_sys::Function) -> Result<JsValue, JsValue> {
 
 5. Build the project :
 ```bash
-wasm-pack build -t nodejs
+[ffi-prototype/wasm-prototype]$ wasm-pack build -t nodejs
 ```
 
 Error are shown, this is expected because WASM doesn't support networking primitives, 

@@ -5,13 +5,13 @@
 1. Create the new node app :
 
 ```bash
-mkdir -p ffi-prototype/app && cd ffi-prototype/app && npm init -y
+$ mkdir -p ffi-prototype/app && cd ffi-prototype/app && npm init -y
 ```
 
 2. Install required packages :
 
 ```bash
-npm i -D @tsconfig/recommended ts-node typescript
+[ffi-prototype/app]$ npm i -D @tsconfig/recommended ts-node typescript
 ```
 
 3. Add a new script :

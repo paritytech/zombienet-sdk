@@ -6,21 +6,21 @@ ___
 1. Install the napi CLI
 
 ```bash
-npm install -g @napi-rs/cli
+[ffi-prototype]$ npm install -g @napi-rs/cli
 ```
 
 2. Create a new napi project
 
 ```bash
-napi new napi-prototype
+[ffi-prototype]$ napi new napi-prototype
 ```
 
 3. Install cargo dependencies
 
 ```bash
-cargo add tokio --features full
-cargo add reqwest --features blocking
-cargo add napi --no-default-features --features napi4,async
+[ffi-prototype/napi-prototype]$ cargo add tokio --features full
+[ffi-prototype/napi-prototype]$ cargo add reqwest --features blocking
+[ffi-prototype/napi-prototype]$ cargo add napi --no-default-features --features napi4,async
 ```
 
 4. Copy the following code to `napi-prototype/src/lib.rs`
@@ -95,17 +95,17 @@ pub fn fetch_callback(callback: JsFunction) -> Result<()> {
 
 5. Build the project :
 ```bash
-npm run build
+[ffi-prototype/napi-prototype]$ npm run build
 ```
 
 6. Copy artifacts :
-```
-mv napi-prototype.linux-x64-gnu.node index.d.ts index.js npm/linux-x64-gnu
+```bash
+[ffi-prorotype/napi-prototype]$ mv napi-prototype.linux-x64-gnu.node index.d.ts index.js npm/linux-x64-gnu
 ```
 
 7. Install package in ```ffi-prototype/app``` :
 ```bash
-npm i ../napi-prototype/npm/linux-x64-gnu/
+[ffi-prototype/app]$ npm i ../napi-prototype/npm/linux-x64-gnu/
 ```
 
 8. Copy the following code to the ```ffi-prototype/app/index.ts``` file :
@@ -127,7 +127,7 @@ import { fetchCallback, fetchPromise } from "napi-prototype-linux-x64-gnu";
 9. Build and execute the app :
 
 ```bash
-npm run build+exec
+[ffi-prototype/app]$ npm run build+exec
 ```
 
 Expected output:

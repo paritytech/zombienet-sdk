@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 #[derive(Debug, Clone, PartialEq)]
 enum ZombieRole {
     Temp,
@@ -102,7 +104,7 @@ pub struct PodDef {
 //   [key: String]: String;
 // }
 #[derive(Debug, Clone, PartialEq)]
-struct ProcessEnvironment {}
+struct ProcessEnvironment(BTreeMap<String, String>);
 
 #[derive(Debug, Clone, PartialEq)]
 struct Port {

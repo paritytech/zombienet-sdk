@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, PartialEq)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MultiAddress(String);
 
 impl MultiAddress {
@@ -13,17 +15,16 @@ impl From<&str> for MultiAddress {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct IpAddress(String);
 
-#[derive(Debug, Clone)]
-pub struct Duration(String);
+pub type TimeoutInSecs = u16;
 
 pub type Port = u16;
 
 pub type ParaId = u32;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ResourceQuantity(String);
 
 impl ResourceQuantity {
@@ -38,12 +39,12 @@ impl From<&str> for ResourceQuantity {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
-    request_cpu: Option<ResourceQuantity>,
-    limit_memory: Option<ResourceQuantity>,
-    limit_cpu: Option<ResourceQuantity>,
+    request_cpu:    Option<ResourceQuantity>,
+    limit_memory:   Option<ResourceQuantity>,
+    limit_cpu:      Option<ResourceQuantity>,
 }
 
 impl Resources {
@@ -92,7 +93,7 @@ impl Resources {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum AssetLocation {
     Url(String),
     FilePath(String),
@@ -100,7 +101,7 @@ pub enum AssetLocation {
 
 /// A CLI argument, can be an option with an assigned value or a simple
 /// flag to enable/disable a feature.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Arg {
     Flag(String),
     Option(String, String),

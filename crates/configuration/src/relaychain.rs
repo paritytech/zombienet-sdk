@@ -1,16 +1,18 @@
+use serde::Serialize;
+
 use crate::shared::{
     node::NodeConfig,
     types::{Arg, AssetLocation, Resources},
 };
 
 /// A relaychain configuration, composed of nodes and fine-grained configuration options.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RelaychainConfig {
     /// Default command to run the node. Can be overriden on each node.
-    default_command: Option<String>,
+    default_command: String,
 
     /// Default image to use (only podman/k8s). Can be overriden on each node.
-    default_image: Option<String>,
+    default_image: String,
 
     /// Default resources. Can be overriden on each node.
     default_resources: Option<Resources>,
@@ -42,17 +44,34 @@ pub struct RelaychainConfig {
     // genesis?: JSON | ObjectJSON;
 }
 
-impl RelaychainConfig {
-    pub fn with_default_command(self, command: &str) -> Self {
+impl Default for RelaychainConfig {
+    fn default() -> Self {
         Self {
-            default_command: Some(command.to_owned()),
+            default_command:         "polkadot".into(),
+            default_image:           "parity/polkadot:latest".into(),
+            default_resources:       None,
+            default_db_snapshot:     None,
+            chain:                   "rococo-local".into(),
+            chain_spec_path:         None,
+            default_args:            vec![],
+            random_nominators_count: None,
+            max_nominations:         None,
+            nodes:                   vec![],
+        }
+    }
+}
+
+impl RelaychainConfig {
+    pub fn with_default_command(self, command: impl Into<String>) -> Self {
+        Self {
+            default_command: command.into(),
             ..self
         }
     }
 
-    pub fn with_default_image(self, image: &str) -> Self {
+    pub fn with_default_image(self, image: impl Into<String>) -> Self {
         Self {
-            default_image: Some(image.to_owned()),
+            default_image: image.into(),
             ..self
         }
     }
@@ -71,9 +90,9 @@ impl RelaychainConfig {
         }
     }
 
-    pub fn with_chain(self, chain: &str) -> Self {
+    pub fn with_chain(self, chain: impl Into<String>) -> Self {
         Self {
-            chain: chain.to_owned(),
+            chain: chain.into(),
             ..self
         }
     }
@@ -107,18 +126,24 @@ impl RelaychainConfig {
     }
 
     pub fn with_node(self, f: fn(NodeConfig) -> NodeConfig) -> Self {
+        let node = NodeConfig::default()
+            .with_command(self.default_command())
+            .with_image(self.default_image())
+            .being_validator(true)
+            .being_invulnerable(true);
+
         Self {
-            nodes: vec![self.nodes, vec![f(NodeConfig::default())]].concat(),
+            nodes: vec![self.nodes, vec![f(node)]].concat(),
             ..self
         }
     }
 
-    pub fn default_command(&self) -> Option<&str> {
-        self.default_command.as_deref()
+    pub fn default_command(&self) -> &str {
+        self.default_command.as_ref()
     }
 
-    pub fn default_image(&self) -> Option<&str> {
-        self.default_image.as_deref()
+    pub fn default_image(&self) -> &str {
+        self.default_image.as_ref()
     }
 
     pub fn default_resources(&self) -> Option<&Resources> {
@@ -160,13 +185,9 @@ mod tests {
 
     #[test]
     fn with_default_command_should_update_the_default_command_on_the_relaychain_config() {
-        let relaychain_config =
-            RelaychainConfig::default().with_default_command("my default command to run");
+        let relaychain_config = RelaychainConfig::default().with_default_command("substrate");
 
-        assert_eq!(
-            relaychain_config.default_command().unwrap(),
-            "my default command to run"
-        );
+        assert_eq!(relaychain_config.default_command(), "substrate");
     }
 
     #[test]
@@ -174,10 +195,7 @@ mod tests {
         let relaychain_config =
             RelaychainConfig::default().with_default_image("myrepo:mydefaultimage");
 
-        assert_eq!(
-            relaychain_config.default_image().unwrap(),
-            "myrepo:mydefaultimage"
-        );
+        assert_eq!(relaychain_config.default_image(), "myrepo:mydefaultimage");
     }
 
     #[test]
@@ -274,14 +292,14 @@ mod tests {
         let relaychain_config = RelaychainConfig::default()
             .with_node(|node1| {
                 node1
-                    .being_bootnode()
-                    .being_validator()
+                    .being_bootnode(true)
+                    .being_validator(true)
                     .with_name("mynode1")
                     .with_command("my command")
             })
             .with_node(|node2| {
                 node2
-                    .being_validator()
+                    .being_validator(true)
                     .with_name("mynode2")
                     .with_image("myrepo:mysuperimage")
             });
@@ -292,15 +310,15 @@ mod tests {
         assert_eq!(
             *nodes.get(0).unwrap(),
             &NodeConfig::default()
-                .being_bootnode()
-                .being_validator()
+                .being_bootnode(true)
+                .being_validator(true)
                 .with_name("mynode1")
                 .with_command("my command")
         );
         assert_eq!(
             *nodes.get(1).unwrap(),
             &NodeConfig::default()
-                .being_validator()
+                .being_validator(true)
                 .with_name("mynode2")
                 .with_image("myrepo:mysuperimage")
         );

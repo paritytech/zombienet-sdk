@@ -1,10 +1,12 @@
+use serde::Serialize;
+
 use crate::shared::types::ParaId;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct HrmpChannelConfig {
-    sender: ParaId,
-    recipient: ParaId,
-    max_capacity: u32,
+    sender:           ParaId,
+    recipient:        ParaId,
+    max_capacity:     u32,
     max_message_size: u32,
 }
 

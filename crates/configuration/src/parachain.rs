@@ -1,19 +1,21 @@
+use serde::Serialize;
+
 use crate::shared::{
     node::NodeConfig,
-    types::{AssetLocation, MultiAddress},
+    types::{AssetLocation, MultiAddress, ParaId},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
 }
 
 /// A parachain configuration, composed of collators and fine-grained configuration options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ParachainConfig {
     // Parachain ID to use.
-    id: u16,
+    id: ParaId,
 
     /// Chain to use (use None if you are running adder-collator or undying-collator).
     chain: Option<String>,
@@ -56,13 +58,25 @@ pub struct ParachainConfig {
 
 impl Default for ParachainConfig {
     fn default() -> Self {
-        // [TODO]: define the default value for a parachain
-        todo!()
+        Self {
+            id:                      100,
+            is_cumulus_based:        true,
+            chain:                   None,
+            registration_strategy:   None,
+            initial_balance:         1000000000,
+            genesis_wasm_path:       None,
+            genesis_wasm_generator:  None,
+            genesis_state_path:      None,
+            genesis_state_generator: None,
+            chain_spec_path:         None,
+            bootnodes_addresses:     vec![],
+            collators:               vec![],
+        }
     }
 }
 
 impl ParachainConfig {
-    pub fn with_id(self, id: u16) -> Self {
+    pub fn with_id(self, id: ParaId) -> Self {
         Self { id, ..self }
     }
 
@@ -122,9 +136,9 @@ impl ParachainConfig {
         }
     }
 
-    pub fn with_cumulus(self) -> Self {
+    pub fn is_cumulus_based(self, choice: bool) -> Self {
         Self {
-            is_cumulus_based: true,
+            is_cumulus_based: choice,
             ..self
         }
     }

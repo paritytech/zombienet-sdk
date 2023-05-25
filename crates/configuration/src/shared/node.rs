@@ -1,24 +1,25 @@
-use crate::shared::types::{Arg, MultiAddress, Port, Resources};
+use serde::Serialize;
 
 use super::types::AssetLocation;
+use crate::shared::types::{Arg, MultiAddress, Port, Resources};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EnvVar {
-    name: String,
+    name:  String,
     value: String,
 }
 
 impl From<(&str, &str)> for EnvVar {
     fn from((name, value): (&str, &str)) -> Self {
         Self {
-            name: name.to_owned(),
+            name:  name.to_owned(),
             value: value.to_owned(),
         }
     }
 }
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct NodeConfig {
     /// Node name (should be unique or an index will be appended).
     name: String,
@@ -27,7 +28,7 @@ pub struct NodeConfig {
     image: Option<String>,
 
     /// Command to run the node. Override the default.
-    command: Option<String>,
+    command: String,
 
     /// Arguments to use for node. Appended to default.
     args: Vec<Arg>,
@@ -74,9 +75,9 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
-    pub fn with_name(self, name: &str) -> Self {
+    pub fn with_name(self, name: impl Into<String>) -> Self {
         Self {
-            name: name.to_owned(),
+            name: name.into(),
             ..self
         }
     }
@@ -88,9 +89,9 @@ impl NodeConfig {
         }
     }
 
-    pub fn with_command(self, command: &str) -> Self {
+    pub fn with_command(self, command: impl Into<String>) -> Self {
         Self {
-            command: Some(command.to_owned()),
+            command: command.into(),
             ..self
         }
     }
@@ -99,23 +100,23 @@ impl NodeConfig {
         Self { args, ..self }
     }
 
-    pub fn being_validator(self) -> Self {
+    pub fn being_validator(self, choice: bool) -> Self {
         Self {
-            is_validator: true,
+            is_validator: choice,
             ..self
         }
     }
 
-    pub fn being_invulnerable(self) -> Self {
+    pub fn being_invulnerable(self, choice: bool) -> Self {
         Self {
-            is_invulnerable: true,
+            is_invulnerable: choice,
             ..self
         }
     }
 
-    pub fn being_bootnode(self) -> Self {
+    pub fn being_bootnode(self, choice: bool) -> Self {
         Self {
-            is_bootnode: true,
+            is_bootnode: choice,
             ..self
         }
     }
@@ -195,8 +196,8 @@ impl NodeConfig {
         self.image.as_deref()
     }
 
-    pub fn command(&self) -> Option<&str> {
-        self.command.as_deref()
+    pub fn command(&self) -> &str {
+        self.command.as_ref()
     }
 
     pub fn args(&self) -> Vec<&Arg> {
@@ -278,9 +279,9 @@ mod tests {
 
     #[test]
     fn with_command_should_update_the_command_on_the_node_config() {
-        let node_config = NodeConfig::default().with_command("my command to run");
+        let node_config = NodeConfig::default().with_command("substrate");
 
-        assert_eq!(node_config.command().unwrap(), "my command to run");
+        assert_eq!(node_config.command(), "substrate");
     }
 
     #[test]
@@ -293,21 +294,21 @@ mod tests {
 
     #[test]
     fn as_validator_should_update_the_is_validator_property_on_the_node_config() {
-        let node_config = NodeConfig::default().being_validator();
+        let node_config = NodeConfig::default().being_validator(true);
 
         assert!(node_config.is_validator());
     }
 
     #[test]
     fn as_invulnerable_should_update_the_is_invulnerable_property_on_the_node_config() {
-        let node_config = NodeConfig::default().being_invulnerable();
+        let node_config = NodeConfig::default().being_invulnerable(true);
 
         assert!(node_config.is_invulnerable());
     }
 
     #[test]
     fn as_bootnode_should_update_the_is_bootnode_property_on_the_node_config() {
-        let node_config = NodeConfig::default().being_bootnode();
+        let node_config = NodeConfig::default().being_bootnode(true);
 
         assert!(node_config.is_bootnode());
     }

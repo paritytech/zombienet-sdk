@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
 enum ZombieRole {
@@ -28,8 +28,8 @@ enum ImagePullPolicy {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileMap {
-    local_file_path:  String,
-    remote_file_path: String,
+    local_file_path:  PathBuf,
+    remote_file_path: PathBuf,
     unique:           bool,
 }
 
@@ -50,22 +50,22 @@ pub struct RunCommandOptions {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct NsLabels {
+struct NamespaceLabels {
     job_id:       String,
     project_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct NsMetadata {
+struct NamespaceMetadata {
     name:   String,
-    labels: NsLabels,
+    labels: NamespaceLabels,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct NameSpaceDef {
+pub struct NamespaceDef {
     api_version: String,
     kind:        String,
-    metadata:    NsMetadata,
+    metadata:    NamespaceMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,12 +99,7 @@ pub struct PodDef {
     spec:     PodSpec,
 }
 
-// TODO: Fix the ProcessEnvironment nased on the TS below
-// interface ProcessEnvironment {
-//   [key: String]: String;
-// }
-#[derive(Debug, Clone, PartialEq)]
-struct ProcessEnvironment(BTreeMap<String, String>);
+type ProcessEnvironment = BTreeMap<String, String>;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Port {
@@ -115,7 +110,7 @@ struct Port {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct GlobalVolume {
+struct Volume {
     name:       String,
     fs_type:    String,
     mount_path: String,
@@ -123,7 +118,7 @@ struct GlobalVolume {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
-    global_volumes:                     Option<Vec<GlobalVolume>>,
+    volumes:                            Option<Vec<Volume>>,
     bootnode:                           Option<bool>,
     bootnode_domain:                    Option<String>,
     timeout:                            u16,
@@ -131,15 +126,22 @@ pub struct Settings {
     grafana:                            Option<bool>,
     telemetry:                          Option<bool>,
     prometheus:                         Option<bool>,
-    jaeger_agent:                       Option<String>, // agent or collator
-    tracing_collator_url:               Option<String>, // collator query url
-    tracing_collator_service_name:      Option<String>, /* only used by k8s provider and if not set the `url` */
-    tracing_collator_service_namespace: Option<String>, /* only used by k8s provider and if not set the `url` */
-    tracing_collator_service_port:      Option<u16>, /* only used by k8s provider and if not set the `url` */
+    /// agent or collator
+    jaeger_agent:                       Option<String>,
+    /// collator query url
+    tracing_collator_url:               Option<String>,
+    /// only used by k8s provider and if not set the `url`
+    tracing_collator_service_name:      Option<String>,
+    /// only used by k8s provider and if not set the `url`
+    tracing_collator_service_namespace: Option<String>,
+    /// only used by k8s provider and if not set the `url`
+    tracing_collator_service_port:      Option<u16>,
     enable_tracing:                     Option<bool>,
     provider:                           String,
     polkadot_introspector:              Option<bool>,
-    backchannel:                        Option<bool>, /* only used in k8s at the moment, spawn a backchannel instance */
+    /// only used in k8s at the moment, spawn a backchannel instance
+    backchannel:                        Option<bool>,
     image_pull_policy:                  ImagePullPolicy,
-    local_ip:                           Option<String>, /* ip used for expose local services (rpc/metrics/monitors) */
+    /// ip used for expose local services (rpc/metrics/monitors)
+    local_ip:                           Option<String>,
 }

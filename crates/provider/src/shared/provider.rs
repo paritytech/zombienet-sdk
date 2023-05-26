@@ -2,12 +2,12 @@ use std::error::Error;
 
 use async_trait::async_trait;
 
-use super::types::{FileMap, NameSpaceDef, PodDef, Settings};
+use super::types::{FileMap, NamespaceDef, PodDef, Settings};
 use crate::shared::types::{RunCommandOptions, RunCommandResponse};
 
 #[async_trait]
 #[allow(non_upper_case_globals)]
-pub trait Client {
+pub trait Provider {
     async fn create_namespace() -> Result<(), Box<dyn Error>>;
     async fn static_setup(settings: Settings) -> Result<(), Box<dyn Error>>;
     async fn destroy_namespace() -> Result<(), Box<dyn Error>>;
@@ -50,7 +50,7 @@ pub trait Client {
         container: Option<String>,
     ) -> Result<(), Box<dyn Error>>;
     async fn create_resource(
-        resourse_def: NameSpaceDef,
+        resourse_def: NamespaceDef,
         scoped: bool,
         wait_ready: bool,
     ) -> Result<(), Box<dyn Error>>;

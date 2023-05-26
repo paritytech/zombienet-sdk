@@ -37,15 +37,16 @@ impl Native {
         config_path: impl Into<String>,
         tmp_dir: impl Into<String>,
     ) -> Native {
+        let tmp_dir = tmp_dir.into();
         Native {
-            namespace:             namespace.into(),
-            config_path:           config_path.into(),
-            debug:                 true,
-            timeout:               60, // seconds
-            tmp_dir:               tmp_dir.into(),
-            command:               "bash".into(),
+            namespace: namespace.into(),
+            config_path: config_path.into(),
+            debug: true,
+            timeout: 60, // seconds
+            local_magic_file_path: format!("{}/finished.txt", &tmp_dir),
+            command: "bash".into(),
+            tmp_dir,
             pod_monitor_available: false,
-            local_magic_file_path: format!("{}/finished.txt", tmp_dir.into()),
         }
     }
 }
@@ -185,6 +186,6 @@ impl Provider for Native {
     }
 }
 
-fn main() {
-    let mut some: Native = Native::new("namespace", "config_path", "tmp_dir");
-}
+// fn main() {
+//     let mut some: Native = Native::new("namespace", "config_path", "tmp_dir");
+// }

@@ -20,7 +20,7 @@ pub struct GlobalSettings {
     /// Whether we should spawn a dedicated bootnode for each chain.
     // spawn_bootnode: bool,
 
-    /// External bootnode address.
+    /// External bootnodes addresses.
     /// [TODO]: is it a default overriden by node config, maybe an option ?
     bootnodes_addresses: Vec<MultiAddress>,
 

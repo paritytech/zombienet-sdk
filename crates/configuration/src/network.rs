@@ -22,7 +22,7 @@ pub struct GlobalSettings {
 
     /// External bootnode address.
     /// [TODO]: is it a default overriden by node config, maybe an option ?
-    bootnode_address: Vec<MultiAddress>,
+    bootnodes_addresses: Vec<MultiAddress>,
 
     /// Global spawn timeout in seconds.
     network_spawn_timeout: TimeoutInSecs,

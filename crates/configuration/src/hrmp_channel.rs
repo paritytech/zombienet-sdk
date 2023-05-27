@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::shared::{types::ParaId, macros::states};
+use crate::shared::{macros::states, types::ParaId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HrmpChannelConfig {
     sender: ParaId,
     recipient: ParaId,
@@ -41,19 +41,6 @@ pub struct HrmpChannelConfigBuilder<State> {
 }
 
 impl<A> HrmpChannelConfigBuilder<A> {
-    fn new() -> Self {
-        HrmpChannelConfigBuilder {
-            config: HrmpChannelConfig {
-                sender: 0,
-                recipient: 0,
-                // TODO: add default for following fields
-                max_capacity: 0,
-                max_message_size: 0,
-            },
-            _state: PhantomData,
-        }
-    }
-
     fn transition<B>(&self, config: HrmpChannelConfig) -> HrmpChannelConfigBuilder<B> {
         HrmpChannelConfigBuilder {
             config,
@@ -63,6 +50,18 @@ impl<A> HrmpChannelConfigBuilder<A> {
 }
 
 impl HrmpChannelConfigBuilder<Initial> {
+    pub fn new() -> HrmpChannelConfigBuilder<Initial> {
+        HrmpChannelConfigBuilder {
+            config: HrmpChannelConfig {
+                sender: 0,
+                recipient: 0,
+                max_capacity: 8,
+                max_message_size: 512,
+            },
+            _state: PhantomData,
+        }
+    }
+
     pub fn with_sender(self, sender: ParaId) -> HrmpChannelConfigBuilder<WithSender> {
         self.transition(HrmpChannelConfig {
             sender,

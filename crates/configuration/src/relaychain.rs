@@ -95,18 +95,9 @@ pub struct RelaychainConfigBuilder<State> {
     _state: PhantomData<State>,
 }
 
-impl<A> RelaychainConfigBuilder<A> {
-    fn transition<B>(config: RelaychainConfig) -> RelaychainConfigBuilder<B> {
-        RelaychainConfigBuilder {
-            config,
-            _state: PhantomData,
-        }
-    }
-}
-
-impl RelaychainConfigBuilder<Initial> {
-    pub fn new() -> RelaychainConfigBuilder<Initial> {
-        RelaychainConfigBuilder {
+impl Default for RelaychainConfigBuilder<Initial> {
+    fn default() -> Self {
+        Self {
             config: RelaychainConfig {
                 chain: "".into(),
                 default_command: None,
@@ -121,6 +112,21 @@ impl RelaychainConfigBuilder<Initial> {
             },
             _state: PhantomData,
         }
+    }
+}
+
+impl<A> RelaychainConfigBuilder<A> {
+    fn transition<B>(config: RelaychainConfig) -> RelaychainConfigBuilder<B> {
+        RelaychainConfigBuilder {
+            config,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl RelaychainConfigBuilder<Initial> {
+    pub fn new() -> RelaychainConfigBuilder<Initial> {
+        Self::default()
     }
 
     pub fn with_chain(self, chain: &str) -> RelaychainConfigBuilder<WithChain> {

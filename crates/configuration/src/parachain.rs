@@ -114,9 +114,9 @@ pub struct ParachainConfigBuilder<State> {
     _state: PhantomData<State>,
 }
 
-impl ParachainConfigBuilder<Initial> {
-    pub fn new() -> ParachainConfigBuilder<Initial> {
-        ParachainConfigBuilder {
+impl Default for ParachainConfigBuilder<Initial> {
+    fn default() -> Self {
+        Self {
             config: ParachainConfig {
                 id: 0,
                 chain: None,
@@ -146,6 +146,10 @@ impl<A> ParachainConfigBuilder<A> {
 }
 
 impl ParachainConfigBuilder<Initial> {
+    pub fn new() -> ParachainConfigBuilder<Initial> {
+        Self::default()
+    }
+
     pub fn with_id(self, id: u16) -> ParachainConfigBuilder<WithId> {
         Self::transition(ParachainConfig { id, ..self.config })
     }
@@ -333,6 +337,9 @@ mod tests {
             "/ip4/10.41.122.55/tcp/45421".into(),
             "/ip4/51.144.222.10/tcp/2333".into(),
         ];
-        assert_eq!(parachain_config.bootnodes_addresses(), bootnodes_addresses.iter().collect::<Vec<_>>());
+        assert_eq!(
+            parachain_config.bootnodes_addresses(),
+            bootnodes_addresses.iter().collect::<Vec<_>>()
+        );
     }
 }

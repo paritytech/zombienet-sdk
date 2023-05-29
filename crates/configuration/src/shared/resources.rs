@@ -44,8 +44,8 @@ pub struct ResourcesBuilder {
     config: Resources,
 }
 
-impl ResourcesBuilder {
-    pub fn new() -> ResourcesBuilder {
+impl Default for ResourcesBuilder {
+    fn default() -> Self {
         Self {
             config: Resources {
                 request_memory: None,
@@ -54,6 +54,12 @@ impl ResourcesBuilder {
                 limit_cpu: None,
             },
         }
+    }
+}
+
+impl ResourcesBuilder {
+    pub fn new() -> ResourcesBuilder {
+        Self::default()
     }
 
     fn transition(config: Resources) -> Self {

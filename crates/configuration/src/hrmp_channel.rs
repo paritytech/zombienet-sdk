@@ -40,6 +40,20 @@ pub struct HrmpChannelConfigBuilder<State> {
     _state: PhantomData<State>,
 }
 
+impl Default for HrmpChannelConfigBuilder<Initial> {
+    fn default() -> Self {
+        Self {
+            config: HrmpChannelConfig {
+                sender: 0,
+                recipient: 0,
+                max_capacity: 8,
+                max_message_size: 512,
+            },
+            _state: PhantomData,
+        }
+    }
+}
+
 impl<A> HrmpChannelConfigBuilder<A> {
     fn transition<B>(&self, config: HrmpChannelConfig) -> HrmpChannelConfigBuilder<B> {
         HrmpChannelConfigBuilder {
@@ -50,16 +64,8 @@ impl<A> HrmpChannelConfigBuilder<A> {
 }
 
 impl HrmpChannelConfigBuilder<Initial> {
-    pub fn new() -> HrmpChannelConfigBuilder<Initial> {
-        HrmpChannelConfigBuilder {
-            config: HrmpChannelConfig {
-                sender: 0,
-                recipient: 0,
-                max_capacity: 8,
-                max_message_size: 512,
-            },
-            _state: PhantomData,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn with_sender(self, sender: ParaId) -> HrmpChannelConfigBuilder<WithSender> {

@@ -160,18 +160,9 @@ pub struct NodeConfigBuilder<State> {
     _state: PhantomData<State>,
 }
 
-impl<A> NodeConfigBuilder<A> {
-    fn transition<B>(config: NodeConfig) -> NodeConfigBuilder<B> {
-        NodeConfigBuilder {
-            config,
-            _state: PhantomData,
-        }
-    }
-}
-
-impl NodeConfigBuilder<Initial> {
-    pub fn new() -> NodeConfigBuilder<Initial> {
-        NodeConfigBuilder {
+impl Default for NodeConfigBuilder<Initial> {
+    fn default() -> Self {
+        Self {
             config: NodeConfig {
                 name: "".into(),
                 image: None,
@@ -193,6 +184,21 @@ impl NodeConfigBuilder<Initial> {
             },
             _state: PhantomData,
         }
+    }
+}
+
+impl<A> NodeConfigBuilder<A> {
+    fn transition<B>(config: NodeConfig) -> NodeConfigBuilder<B> {
+        NodeConfigBuilder {
+            config,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl NodeConfigBuilder<Initial> {
+    pub fn new() -> NodeConfigBuilder<Initial> {
+        Self::default()
     }
 
     pub fn with_name(self, name: &str) -> NodeConfigBuilder<WithName> {

@@ -92,3 +92,23 @@ impl ResourcesBuilder {
         self.config
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resources_config_builder_should_build_a_new_resources_config_correctly() {
+        let resources = ResourcesBuilder::new()
+            .with_request_memory("200M")
+            .with_request_cpu("1G")
+            .with_limit_cpu("500M")
+            .with_limit_memory("2G")
+            .build();
+
+        assert_eq!(resources.request_memory().unwrap().value(), "200M");
+        assert_eq!(resources.request_cpu().unwrap().value(), "1G");
+        assert_eq!(resources.limit_cpu().unwrap().value(), "500M");
+        assert_eq!(resources.limit_memory().unwrap().value(), "2G");
+    }
+}

@@ -16,8 +16,7 @@ impl From<&str> for MultiAddress {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IpAddress(String);
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Duration(String);
+pub type Duration = u32;
 
 pub type Port = u16;
 
@@ -32,8 +31,8 @@ pub enum AssetLocation {
 impl AssetLocation {
     pub fn value(&self) -> &str {
         match self {
-            AssetLocation::Url(value) => &value,
-            AssetLocation::FilePath(value) => &value,
+            AssetLocation::Url(value) => value,
+            AssetLocation::FilePath(value) => value,
         }
     }
 }

@@ -25,12 +25,12 @@ impl GlobalSettings {
         self.bootnodes_addresses.iter().collect()
     }
 
-    pub fn network_spawn_timeout(&self) -> &Duration {
-        &self.network_spawn_timeout
+    pub fn network_spawn_timeout(&self) -> Duration {
+        self.network_spawn_timeout
     }
 
-    pub fn node_spawn_timeout(&self) -> &Duration {
-        &self.node_spawn_timeout
+    pub fn node_spawn_timeout(&self) -> Duration {
+        self.node_spawn_timeout
     }
 
     pub fn local_ip(&self) -> Option<&IpAddress> {
@@ -79,7 +79,7 @@ impl GlobalSettingsBuilder {
         })
     }
 
-    pub fn with_spawn_timeout(self, timeout: Duration) -> Self {
+    pub fn with_node_spawn_timeout(self, timeout: Duration) -> Self {
         Self::transition(GlobalSettings {
             node_spawn_timeout: timeout,
             ..self.config
@@ -95,5 +95,35 @@ impl GlobalSettingsBuilder {
 
     pub fn build(self) -> GlobalSettings {
         self.config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_settings_config_builder_should_build_a_new_global_settings_config_correctly() {
+        let global_settings_config = GlobalSettingsBuilder::new()
+            .with_bootnodes_addresses(vec![
+                "/ip4/10.41.122.55/tcp/45421".into(),
+                "/ip4/51.144.222.10/tcp/2333".into(),
+            ])
+            .with_network_spawn_timeout(600)
+            .with_node_spawn_timeout(120)
+            .with_local_ip("10.0.0.1".into())
+            .build();
+
+        let bootnodes_addresses: Vec<MultiAddress> = vec![
+            "/ip4/10.41.122.55/tcp/45421".into(),
+            "/ip4/51.144.222.10/tcp/2333".into(),
+        ];
+        assert_eq!(
+            global_settings_config.bootnodes_addresses(),
+            bootnodes_addresses.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(global_settings_config.network_spawn_timeout(), 600);
+        assert_eq!(global_settings_config.node_spawn_timeout(), 120);
+        assert_eq!(global_settings_config.local_ip().unwrap().value(), "10.0.0.1");
     }
 }

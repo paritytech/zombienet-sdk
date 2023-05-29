@@ -277,14 +277,14 @@ mod tests {
         assert_eq!(default_resources.limit_cpu().unwrap().value(), "500M");
         assert_eq!(default_resources.limit_memory().unwrap().value(), "1G");
         assert_eq!(default_resources.request_cpu().unwrap().value(), "250M");
-        assert_eq!(
-            relaychain_config.default_db_snapshot().unwrap().value(),
-            "https://www.urltomysnapshot.com/file.tgz"
-        );
-        assert_eq!(
-            relaychain_config.chain_spec_path().unwrap().value(),
-            "./path/to/chain/spec.json"
-        );
+        assert!(matches!(
+            relaychain_config.default_db_snapshot().unwrap(),
+            AssetLocation::Url(value) if value == "https://www.urltomysnapshot.com/file.tgz",
+        ));
+        assert!(matches!(
+            relaychain_config.chain_spec_path().unwrap(),
+            AssetLocation::FilePath(value) if value == "./path/to/chain/spec.json"
+        ));
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()].into();
         assert_eq!(
             relaychain_config.default_args(),

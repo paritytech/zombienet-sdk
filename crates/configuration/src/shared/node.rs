@@ -220,13 +220,6 @@ impl NodeConfigBuilder<WithCommand> {
         })
     }
 
-    pub fn with_command(self, command: &str) -> Self {
-        Self::transition(NodeConfig {
-            command: Some(command.to_owned()),
-            ..self.config
-        })
-    }
-
     pub fn with_args(self, args: Vec<Arg>) -> Self {
         Self::transition(NodeConfig {
             args,
@@ -329,180 +322,76 @@ impl NodeConfigBuilder<WithCommand> {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn with_name_should_update_the_name_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_name("a_node_name");
+    #[test]
+    fn node_config_builder_should_build_a_new_node_config_correctly() {
+        let node_config = NodeConfigBuilder::new()
+            .with_name("node")
+            .with_command("mycommand")
+            .with_image("myrepo:myimage")
+            .with_args(vec![("--arg1", "value1").into(), "--option2".into()])
+            .validator(true)
+            .invulnerable(true)
+            .bootnode(true)
+            .with_initial_balance(100_000_042)
+            .with_env(vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()])
+            .with_bootnodes_addresses(vec![
+                "/ip4/10.41.122.55/tcp/45421".into(),
+                "/ip4/51.144.222.10/tcp/2333".into(),
+            ])
+            .with_resources(|resources| {
+                resources
+                    .with_request_cpu("200M")
+                    .with_request_memory("500M")
+                    .with_limit_cpu("1G")
+                    .with_limit_memory("2G")
+            })
+            .with_ws_port(5000)
+            .with_rpc_port(6000)
+            .with_prometheus_port(7000)
+            .with_p2p_port(8000)
+            .with_p2p_cert_hash("ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f")
+            .with_db_snapshot(AssetLocation::FilePath("/tmp/mysnapshot".into()))
+            .build();
 
-//         assert_eq!(node_config.name(), "a_node_name");
-//     }
-
-//     #[test]
-//     fn with_image_should_update_the_image_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_image("myrepo:myimage");
-
-//         assert_eq!(node_config.image().unwrap(), "myrepo:myimage");
-//     }
-
-//     #[test]
-//     fn with_command_should_update_the_command_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_command("my command to run");
-
-//         assert_eq!(node_config.command().unwrap(), "my command to run");
-//     }
-
-//     #[test]
-//     fn with_args_should_update_the_args_on_the_node_config() {
-//         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
-//         let node_config = NodeConfig::default().with_args(args.clone());
-
-//         assert_eq!(node_config.args(), args.iter().collect::<Vec<&Arg>>());
-//     }
-
-//     #[test]
-//     fn as_validator_should_update_the_is_validator_property_on_the_node_config() {
-//         let node_config = NodeConfig::default().being_validator();
-
-//         assert!(node_config.is_validator());
-//     }
-
-//     #[test]
-//     fn as_invulnerable_should_update_the_is_invulnerable_property_on_the_node_config() {
-//         let node_config = NodeConfig::default().being_invulnerable();
-
-//         assert!(node_config.is_invulnerable());
-//     }
-
-//     #[test]
-//     fn as_bootnode_should_update_the_is_bootnode_property_on_the_node_config() {
-//         let node_config = NodeConfig::default().being_bootnode();
-
-//         assert!(node_config.is_bootnode());
-//     }
-
-//     #[test]
-//     fn with_initial_balance_should_update_the_initial_balance_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_initial_balance(424242424242);
-
-//         assert_eq!(node_config.initial_balance(), 424242424242);
-//     }
-
-//     #[test]
-
-//     fn with_env_should_update_the_env_on_the_node_config() {
-//         let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
-//         let node_config = NodeConfig::default().with_env(env.clone());
-
-//         assert_eq!(node_config.env(), env.iter().collect::<Vec<&EnvVar>>());
-//     }
-
-//     #[test]
-//     fn with_bootnodes_addresses_should_update_the_bootnodes_addresses_on_the_node_config() {
-//         let bootnodes_addresses = vec![
-//             "/ip4/10.41.122.55/tcp/45421".into(),
-//             "/ip4/51.144.222.10/tcp/2333".into(),
-//         ];
-//         let node_config =
-//             NodeConfig::default().with_bootnodes_addresses(bootnodes_addresses.clone());
-
-//         assert_eq!(
-//             node_config.bootnodes_addresses(),
-//             bootnodes_addresses.iter().collect::<Vec<&MultiAddress>>()
-//         );
-//     }
-
-//     #[test]
-//     fn with_resources_should_update_the_resources_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_resources(|resources| {
-//             resources
-//                 .with_request_cpu("200M")
-//                 .with_request_memory("500M")
-//                 .with_limit_cpu("1G")
-//                 .with_limit_memory("2G")
-//         });
-
-//         assert_eq!(
-//             node_config
-//                 .resources()
-//                 .unwrap()
-//                 .request_cpu()
-//                 .unwrap()
-//                 .value(),
-//             "200M"
-//         );
-//         assert_eq!(
-//             node_config
-//                 .resources()
-//                 .unwrap()
-//                 .request_memory()
-//                 .unwrap()
-//                 .value(),
-//             "500M"
-//         );
-//         assert_eq!(
-//             node_config
-//                 .resources()
-//                 .unwrap()
-//                 .limit_cpu()
-//                 .unwrap()
-//                 .value(),
-//             "1G"
-//         );
-//         assert_eq!(
-//             node_config
-//                 .resources()
-//                 .unwrap()
-//                 .limit_memory()
-//                 .unwrap()
-//                 .value(),
-//             "2G"
-//         );
-//     }
-
-//     #[test]
-//     fn with_ws_port_should_update_the_ws_port_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_ws_port(4444);
-
-//         assert_eq!(node_config.ws_port().unwrap(), 4444);
-//     }
-
-//     #[test]
-//     fn with_rpc_port_should_update_the_rpc_port_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_rpc_port(5555);
-
-//         assert_eq!(node_config.rpc_port().unwrap(), 5555);
-//     }
-
-//     #[test]
-//     fn with_prometheus_port_should_update_the_prometheus_port_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_prometheus_port(6666);
-
-//         assert_eq!(node_config.prometheus_port().unwrap(), 6666);
-//     }
-
-//     #[test]
-//     fn with_p2p_port_should_update_the_p2p_port_on_the_node_config() {
-//         let node_config = NodeConfig::default().with_p2p_port(7777);
-
-//         assert_eq!(node_config.p2p_port().unwrap(), 7777);
-//     }
-
-//     #[test]
-//     fn with_p2p_cert_hash_should_update_the_p2p_cert_hash_on_the_node_config() {
-//         let hash = "ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f"; // sha256("myhash")
-//         let node_config = NodeConfig::default().with_p2p_cert_hash(hash);
-
-//         assert_eq!(node_config.p2p_cert_hash().unwrap(), hash);
-//     }
-
-//     #[test]
-//     fn with_db_snapshot_should_update_the_db_snapshot_on_the_node_config() {
-//         let location = AssetLocation::FilePath("/tmp/mysnapshot".into());
-//         let node_config = NodeConfig::default().with_db_snapshot(location.clone());
-
-//         assert_eq!(node_config.db_snapshot().unwrap(), &location);
-//     }
-// }
+        assert_eq!(node_config.name(), "node");
+        assert_eq!(node_config.command().unwrap(), "mycommand");
+        assert_eq!(node_config.image().unwrap(), "myrepo:myimage");
+        let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
+        assert_eq!(node_config.args(), args.iter().collect::<Vec<_>>());
+        assert_eq!(node_config.is_validator(), true);
+        assert_eq!(node_config.is_invulnerable(), true);
+        assert_eq!(node_config.is_bootnode(), true);
+        assert_eq!(node_config.initial_balance(), 100_000_042);
+        let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
+        assert_eq!(node_config.env(), env.iter().collect::<Vec<_>>());
+        let bootnodes_addresses: Vec<MultiAddress> = vec![
+            "/ip4/10.41.122.55/tcp/45421".into(),
+            "/ip4/51.144.222.10/tcp/2333".into(),
+        ];
+        assert_eq!(
+            node_config.bootnodes_addresses(),
+            bootnodes_addresses.iter().collect::<Vec<_>>()
+        );
+        let resources = node_config.resources().unwrap();
+        assert_eq!(resources.request_cpu().unwrap().value(), "200M");
+        assert_eq!(resources.request_memory().unwrap().value(), "500M");
+        assert_eq!(resources.limit_cpu().unwrap().value(), "1G");
+        assert_eq!(resources.limit_memory().unwrap().value(), "2G");
+        assert_eq!(node_config.ws_port().unwrap(), 5000);
+        assert_eq!(node_config.rpc_port().unwrap(), 6000);
+        assert_eq!(node_config.prometheus_port().unwrap(), 7000);
+        assert_eq!(node_config.p2p_port().unwrap(), 8000);
+        assert_eq!(
+            node_config.p2p_cert_hash().unwrap(),
+            "ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f"
+        );
+        assert_eq!(
+            node_config.db_snapshot().unwrap().value(),
+            "/tmp/mysnapshot"
+        );
+    }
+}

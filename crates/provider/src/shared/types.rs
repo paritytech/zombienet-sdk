@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, PartialEq)]
 enum ZombieRole {
     Temp,
@@ -49,23 +51,23 @@ pub struct RunCommandOptions {
     main_cmd:     String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct NamespaceLabels {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NamespaceLabels {
     job_id:       String,
     project_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct NamespaceMetadata {
-    name:   String,
-    labels: NamespaceLabels,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NamespaceMetadata {
+    pub name:   String,
+    pub labels: Option<NamespaceLabels>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NamespaceDef {
-    api_version: String,
-    kind:        String,
-    metadata:    NamespaceMetadata,
+    pub api_version: String,
+    pub kind:        String,
+    pub metadata:    NamespaceMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq)]

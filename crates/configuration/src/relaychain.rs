@@ -229,10 +229,17 @@ mod tests {
     fn relaychain_config_builder_should_build_a_new_relaychain_config_correctly() {
         let relaychain_config = RelaychainConfigBuilder::new()
             .with_chain("polkadot")
-            .with_node(|node| {
-                node.with_name("node1")
-                    .with_command("substrate")
+            .with_node(|node1| {
+                node1
+                    .with_name("node1")
+                    .with_command("command1")
                     .bootnode(true)
+            })
+            .with_node(|node2| {
+                node2
+                    .with_name("node2")
+                    .with_command("command2")
+                    .validator(true)
             })
             .with_default_command("default_command")
             .with_default_image("myrepo:myimage")
@@ -252,11 +259,15 @@ mod tests {
             .build();
 
         assert_eq!(relaychain_config.chain(), "polkadot");
-        assert_eq!(relaychain_config.nodes().len(), 1);
-        let &node = relaychain_config.nodes().first().unwrap();
-        assert_eq!(node.name(), "node1");
-        assert_eq!(node.command().unwrap(), "substrate");
-        assert!(node.is_bootnode(), "node1");
+        assert_eq!(relaychain_config.nodes().len(), 2);
+        let &node1 = relaychain_config.nodes().first().unwrap();
+        assert_eq!(node1.name(), "node1");
+        assert_eq!(node1.command().unwrap(), "command1");
+        assert!(node1.is_bootnode());
+        let &node2 = relaychain_config.nodes().last().unwrap();
+        assert_eq!(node2.name(), "node2");
+        assert_eq!(node2.command().unwrap(), "command2");
+        assert!(node2.is_validator(), "node2");
         assert_eq!(
             relaychain_config.default_command().unwrap(),
             "default_command"

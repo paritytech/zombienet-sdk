@@ -291,7 +291,7 @@ mod tests {
             relaychain_config.chain_spec_path().unwrap(),
             AssetLocation::FilePath(value) if value == "./path/to/chain/spec.json"
         ));
-        let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()].into();
+        let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(
             relaychain_config.default_args(),
             args.iter().collect::<Vec<_>>()

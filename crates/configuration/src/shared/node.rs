@@ -368,9 +368,9 @@ mod tests {
         assert_eq!(node_config.image().unwrap(), "myrepo:myimage");
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(node_config.args(), args.iter().collect::<Vec<_>>());
-        assert_eq!(node_config.is_validator(), true);
-        assert_eq!(node_config.is_invulnerable(), true);
-        assert_eq!(node_config.is_bootnode(), true);
+        assert!(node_config.is_validator());
+        assert!(node_config.is_invulnerable());
+        assert!(node_config.is_bootnode());
         assert_eq!(node_config.initial_balance(), 100_000_042);
         let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
         assert_eq!(node_config.env(), env.iter().collect::<Vec<_>>());

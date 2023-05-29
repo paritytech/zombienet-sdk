@@ -11,20 +11,20 @@ pub struct HrmpChannelConfig {
 }
 
 impl HrmpChannelConfig {
-    pub fn sender(&self) -> &ParaId {
-        &self.sender
+    pub fn sender(&self) -> ParaId {
+        self.sender
     }
 
-    pub fn recipient(&self) -> &ParaId {
-        &self.recipient
+    pub fn recipient(&self) -> ParaId {
+        self.recipient
     }
 
-    pub fn max_capacity(&self) -> &u32 {
-        &self.max_capacity
+    pub fn max_capacity(&self) -> u32 {
+        self.max_capacity
     }
 
-    pub fn max_message_size(&self) -> &u32 {
-        &self.max_message_size
+    pub fn max_message_size(&self) -> u32 {
+        self.max_message_size
     }
 }
 
@@ -110,7 +110,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hrmp_config_builder_should_build_a_new_hrmp_config_correctly() {
+    fn hrmp_channel_config_builder_should_build_a_new_hrmp_channel_config_correctly() {
         let hrmp_channel_config = HrmpChannelConfigBuilder::new()
             .with_sender(1000)
             .with_recipient(2000)
@@ -118,9 +118,9 @@ mod tests {
             .with_max_message_size(100)
             .build();
 
-        assert_eq!(hrmp_channel_config.sender(), &1000);
-        assert_eq!(hrmp_channel_config.recipient(), &2000);
-        assert_eq!(hrmp_channel_config.max_capacity(), &50);
-        assert_eq!(hrmp_channel_config.max_message_size(), &100);
+        assert_eq!(hrmp_channel_config.sender(), 1000);
+        assert_eq!(hrmp_channel_config.recipient(), 2000);
+        assert_eq!(hrmp_channel_config.max_capacity(), 50);
+        assert_eq!(hrmp_channel_config.max_message_size(), 100);
     }
 }

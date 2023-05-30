@@ -1,14 +1,12 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+mod global_settings;
+mod hrmp_channel;
+mod network;
+mod parachain;
+mod relaychain;
+mod shared;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
+pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
+pub use network::{NetworkConfig, NetworkConfigBuilder};
+pub use parachain::{ParachainConfig, ParachainConfigBuilder};
+pub use relaychain::{RelaychainConfig, RelaychainConfigBuilder};

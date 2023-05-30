@@ -35,7 +35,7 @@ pub struct RelaychainConfig {
     random_nominators_count: Option<u32>,
 
     /// Set the max nominators value (used with PoS networks).
-    max_nominations: Option<u16>,
+    max_nominations: Option<u8>,
 
     /// Nodes to run.
     nodes: Vec<NodeConfig>,
@@ -74,7 +74,7 @@ impl RelaychainConfig {
         self.random_nominators_count
     }
 
-    pub fn max_nominations(&self) -> Option<u16> {
+    pub fn max_nominations(&self) -> Option<u8> {
         self.max_nominations
     }
 
@@ -203,7 +203,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         })
     }
 
-    pub fn with_max_nominations(self, max_nominations: u16) -> Self {
+    pub fn with_max_nominations(self, max_nominations: u8) -> Self {
         Self::transition(RelaychainConfig {
             max_nominations: Some(max_nominations),
             ..self.config

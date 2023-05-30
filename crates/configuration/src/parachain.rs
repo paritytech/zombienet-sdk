@@ -16,7 +16,7 @@ pub enum RegistrationStrategy {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParachainConfig {
     // Parachain ID to use.
-    id: u16,
+    id: u32,
 
     /// Chain to use (use None if you are running adder-collator or undying-collator).
     chain: Option<String>,
@@ -53,7 +53,7 @@ pub struct ParachainConfig {
 }
 
 impl ParachainConfig {
-    pub fn id(&self) -> u16 {
+    pub fn id(&self) -> u32 {
         self.id
     }
 
@@ -118,7 +118,7 @@ impl Default for ParachainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: ParachainConfig {
-                id: 0,
+                id: 100,
                 chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
                 initial_balance: 2_000_000_000_000,
@@ -150,7 +150,7 @@ impl ParachainConfigBuilder<Initial> {
         Self::default()
     }
 
-    pub fn with_id(self, id: u16) -> ParachainConfigBuilder<WithId> {
+    pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId> {
         Self::transition(ParachainConfig { id, ..self.config })
     }
 }

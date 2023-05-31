@@ -1,17 +1,44 @@
-use std::{self, error::Error, fs};
+use std::{self, error::Error, fmt::Debug, fs};
 
 use async_trait::async_trait;
+use serde::Serialize;
 
 use crate::shared::{
     constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST},
     provider::Provider,
-    types::{
-        FileMap, NamespaceDef, NamespaceMetadata, PodDef, RunCommandOptions, RunCommandResponse,
-        Settings,
-    },
+    types::{NamespaceDef, NamespaceMetadata},
 };
 
-struct NativeProvider {
+trait FileSystem {
+    fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>>;
+    fn write(
+        &mut self,
+        path: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Result<(), Box<dyn Error>>;
+}
+
+#[derive(Debug, Serialize)]
+struct FilesystemInMemory {}
+
+impl FileSystem for FilesystemInMemory {
+    fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>> {
+        fs::create_dir(path.into())?;
+        Ok(())
+    }
+
+    fn write(
+        &mut self,
+        path: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        fs::write(path.into(), content.into()).expect("Error writing file");
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+struct NativeProvider<T: FileSystem + Debug> {
     /// Namespace of the client
     namespace:             String,
     /// path where configuration relies
@@ -28,24 +55,19 @@ struct NativeProvider {
     local_magic_file_path: String,
     remote_dir:            String,
     data_dir:              String,
+    filesystem:            T,
 }
 
-impl Default for NativeProvider {
-    fn default() -> Self {
-        // [TODO]: define the default value for Native
-        todo!()
-    }
-}
-
-impl NativeProvider {
+impl<T: FileSystem + Debug> NativeProvider<T> {
     pub fn new(
         namespace: impl Into<String>,
         config_path: impl Into<String>,
         tmp_dir: impl Into<String>,
-    ) -> NativeProvider {
+        filesystem: T,
+    ) -> Self {
         let tmp_dir = tmp_dir.into();
 
-        NativeProvider {
+        Self {
             namespace: namespace.into(),
             config_path: config_path.into(),
             debug: true,
@@ -56,12 +78,14 @@ impl NativeProvider {
             command: "bash".into(),
             tmp_dir,
             pod_monitor_available: false,
+            filesystem,
         }
     }
 }
 
-impl Provider for NativeProvider {
-    fn create_namespace(&self) -> Result<(), Box<dyn Error>> {
+#[async_trait]
+impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
+    fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
         let name_space_def = NamespaceDef {
             api_version: "v1".into(),
             kind:        "Namespace".into(),
@@ -72,10 +96,9 @@ impl Provider for NativeProvider {
         };
 
         let file_path = format!("{}/{}", &self.tmp_dir, "namespace");
-        fs::write(file_path, serde_json::to_string(&name_space_def)?)
-            .expect_err("Error during write of file (create_namespace).");
+        let content = serde_json::to_string(&name_space_def)?;
 
-        fs::create_dir(&self.remote_dir)?;
+        self.filesystem.write(file_path, content)?;
         Ok(())
     }
 
@@ -86,134 +109,6 @@ impl Provider for NativeProvider {
     fn get_node_ip(&self) -> Result<String, Box<dyn Error>> {
         Ok(LOCALHOST.to_owned())
     }
-
-    // async fn static_setup(settings: Settings) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn destroy_namespace() -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn get_node_logs(
-    //     pod_name: String,
-    //     since: Option<u32>,
-    //     with_timestamp: Option<bool>,
-    // ) -> Result<String, Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn dump_logs(path: String, pod_name: String) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn upsert_cron_job(minutes: u32) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn start_port_forwarding(
-    //     port: u16,
-    //     identifier: String,
-    //     namespace: Option<String>,
-    // ) -> Result<u16, Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn run_command(
-    //     args: Vec<String>,
-    //     opts: RunCommandOptions,
-    // ) -> Result<RunCommandResponse, Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn run_script(
-    //     identifier: String,
-    //     script_path: String,
-    //     args: Vec<String>,
-    // ) -> Result<RunCommandResponse, Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn spawn_from_def(
-    //     pod_def: PodDef,
-    //     files_to_copy: Option<Vec<FileMap>>,
-    //     keystore: Option<String>,
-    //     chain_spec_id: Option<String>,
-    //     db_snapshot: Option<String>,
-    // ) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn copy_file_from_pod(
-    //     identifier: String,
-    //     pod_file_path: String,
-    //     local_file_path: String,
-    //     container: Option<String>,
-    // ) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn put_local_magic_file(
-    //     name: String,
-    //     container: Option<String>,
-    // ) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn create_resource(
-    //     resourse_def: NamespaceDef,
-    //     scoped: bool,
-    //     wait_ready: bool,
-    // ) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn create_pod_monitor(file_name: String, chain: String) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn setup_cleaner() -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn is_pod_monitor_available() -> Result<(), bool> {
-    //     todo!()
-    // }
-
-    // fn get_pause_args(name: String) -> Vec<String> {
-    //     todo!()
-    // }
-
-    // fn get_resume_args(name: String) -> Vec<String> {
-    //     todo!()
-    // }
-
-    // async fn restart_node(name: String, timeout: u32) -> Result<(), bool> {
-    //     todo!()
-    // }
-
-    // async fn get_node_info(
-    //     identifier: String,
-    //     port: Option<u16>,
-    // ) -> Result<Vec<(String, u32)>, Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn get_node_ip(identifier: String) -> Result<String, Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn spawn_intro_spector(ws_uri: String) -> Result<(), Box<dyn Error>> {
-    //     todo!()
-    // }
-
-    // async fn validate_access() -> Result<(), bool> {
-    //     todo!()
-    // }
-
-    // fn get_logs_command(name: String) -> String {
-    //     todo!()
-    // }
 }
 
 #[cfg(test)]
@@ -222,9 +117,8 @@ mod tests {
 
     #[test]
     fn new_native_provider() {
-        let native_provider = NativeProvider::new("something", "./", "./tmp");
-
-        // NativeProvider<T>::new("something", "./", "./tmp", Box::new(LocalFilesystem::new()));
+        let native_provider =
+            NativeProvider::new("something", "./", "./tmp", FilesystemInMemory {});
 
         assert_eq!(native_provider.namespace, "something");
         assert_eq!(native_provider.config_path, "./");

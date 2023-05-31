@@ -3,7 +3,7 @@ use std::{self, error::Error, fs};
 use async_trait::async_trait;
 
 use crate::shared::{
-    constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR},
+    constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST},
     provider::Provider,
     types::{
         FileMap, NamespaceDef, NamespaceMetadata, PodDef, RunCommandOptions, RunCommandResponse,
@@ -72,11 +72,19 @@ impl Provider for NativeProvider {
         };
 
         let file_path = format!("{}/{}", &self.tmp_dir, "namespace");
-        std::fs::write(file_path, serde_json::to_string(&name_space_def)?)
-            .expect_err("Error during write");
+        fs::write(file_path, serde_json::to_string(&name_space_def)?)
+            .expect_err("Error during write of file (create_namespace).");
 
         fs::create_dir(&self.remote_dir)?;
         Ok(())
+    }
+
+    fn setup_cleaner(&self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    fn get_node_ip(&self) -> Result<String, Box<dyn Error>> {
+        Ok(LOCALHOST.to_owned())
     }
 
     // async fn static_setup(settings: Settings) -> Result<(), Box<dyn Error>> {
@@ -208,13 +216,25 @@ impl Provider for NativeProvider {
     // }
 }
 
-#[test]
-fn initialize_provider() {
-    // namespace: impl Into<String>,
-    // config_path: impl Into<String>,
-    // tmp_dir: impl Into<String>,
-    let mut native_provider = NativeProvider::new("namespace", "./", "./tmp");
-    let provider: Box<&mut dyn Provider> = Box::new(&mut native_provider);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // let future = task::spawn(provider.create_namespace());
+    #[test]
+    fn new_native_provider() {
+        let native_provider = NativeProvider::new("something", "./", "./tmp");
+
+        // NativeProvider<T>::new("something", "./", "./tmp", Box::new(LocalFilesystem::new()));
+
+        assert_eq!(native_provider.namespace, "something");
+        assert_eq!(native_provider.config_path, "./");
+        assert!(native_provider.debug);
+        assert_eq!(native_provider.timeout, 60);
+        assert_eq!(native_provider.tmp_dir, "./tmp");
+        assert_eq!(native_provider.command, "bash");
+        assert!(!native_provider.pod_monitor_available);
+        assert_eq!(native_provider.local_magic_file_path, "./tmp/finished.txt");
+        assert_eq!(native_provider.remote_dir, "./tmp/cfg");
+        assert_eq!(native_provider.data_dir, "./tmp/data");
+    }
 }

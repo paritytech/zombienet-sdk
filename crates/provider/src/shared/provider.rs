@@ -10,6 +10,12 @@ use crate::shared::types::{RunCommandOptions, RunCommandResponse};
 #[allow(non_upper_case_globals)]
 pub trait Provider {
     fn create_namespace(&self) -> Result<(), Box<dyn Error>>;
+    fn setup_cleaner(&self) -> Result<(), Box<dyn Error>>;
+    fn get_node_ip(&self) -> Result<String, Box<dyn Error>>;
+    // async fn run_command(
+    //     args: Vec<String>,
+    //     opts: RunCommandOptions,
+    // ) -> Result<RunCommandResponse, Box<dyn Error>>;
     // async fn static_setup(settings: Settings) -> Result<(), Box<dyn Error>>;
     // async fn destroy_namespace() -> Result<(), Box<dyn Error>>;
     // async fn get_node_logs(
@@ -24,10 +30,6 @@ pub trait Provider {
     //     identifier: String,
     //     namespace: Option<String>,
     // ) -> Result<u16, Box<dyn Error>>;
-    // async fn run_command(
-    //     args: Vec<String>,
-    //     opts: RunCommandOptions,
-    // ) -> Result<RunCommandResponse, Box<dyn Error>>;
     // async fn run_script(
     //     identifier: String,
     //     script_path: String,
@@ -56,7 +58,6 @@ pub trait Provider {
     //     wait_ready: bool,
     // ) -> Result<(), Box<dyn Error>>;
     // async fn create_pod_monitor(file_name: String, chain: String) -> Result<(), Box<dyn Error>>;
-    // async fn setup_cleaner() -> Result<(), Box<dyn Error>>;
     // async fn is_pod_monitor_available() -> Result<(), bool>;
     // fn get_pause_args(name: String) -> Vec<String>;
     // fn get_resume_args(name: String) -> Vec<String>;
@@ -65,7 +66,6 @@ pub trait Provider {
     //     identifier: String,
     //     port: Option<u16>,
     // ) -> Result<Vec<(String, u32)>, Box<dyn Error>>;
-    // async fn get_node_ip(identifier: String) -> Result<String, Box<dyn Error>>;
     // async fn spawn_intro_spector(ws_uri: String) -> Result<(), Box<dyn Error>>;
     // async fn validate_access() -> Result<(), bool>;
     // fn get_logs_command(name: String) -> String;

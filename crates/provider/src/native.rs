@@ -21,22 +21,6 @@ trait FileSystem {
 #[derive(Debug, Serialize)]
 struct FilesystemInMemory {}
 
-impl FileSystem for FilesystemInMemory {
-    fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>> {
-        fs::create_dir(path.into())?;
-        Ok(())
-    }
-
-    fn write(
-        &mut self,
-        path: impl Into<String>,
-        content: impl Into<String>,
-    ) -> Result<(), Box<dyn Error>> {
-        fs::write(path.into(), content.into()).expect("Error writing file");
-        Ok(())
-    }
-}
-
 #[derive(Debug, Serialize, Clone, PartialEq)]
 struct NativeProvider<T: FileSystem + Debug> {
     /// Namespace of the client
@@ -99,6 +83,7 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
         let content = serde_json::to_string(&name_space_def)?;
 
         self.filesystem.write(file_path, content)?;
+        self.filesystem.create_dir(&self.remote_dir)?;
         Ok(())
     }
 
@@ -115,10 +100,81 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
 mod tests {
     use super::*;
 
+    #[derive(Debug, PartialEq)]
+    enum Operation {
+        // ReadFile,
+        // DeleteFile { path: String },
+        // DeleteDir,
+        // LinkFile,
+        CreateFile { path: String, content: String },
+        CreateDir { path: String },
+    }
+
+    #[derive(Debug)]
+    struct FakeFilesystem {
+        create_dir_error: Option<Box<dyn Error>>,
+        write_error:      Option<Box<dyn Error>>,
+        pub operations:   Vec<Operation>,
+    }
+
+    impl FakeFilesystem {
+        fn new() -> Self {
+            Self {
+                create_dir_error: None,
+                write_error:      None,
+                operations:       vec![],
+            }
+        }
+
+        fn with_create_dir_error(error: impl Error + 'static) -> Self {
+            Self {
+                create_dir_error: Some(Box::new(error)),
+                write_error:      None,
+                operations:       vec![],
+            }
+        }
+
+        fn with_write_error(error: impl Error + 'static) -> Self {
+            Self {
+                create_dir_error: None,
+                write_error:      Some(Box::new(error)),
+                operations:       vec![],
+            }
+        }
+    }
+
+    impl FileSystem for FakeFilesystem {
+        fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>> {
+            if let Some(err) = self.create_dir_error.take() {
+                return Err(err);
+            }
+
+            self.operations
+                .push(Operation::CreateDir { path: path.into() });
+            Ok(())
+        }
+
+        fn write(
+            &mut self,
+            path: impl Into<String>,
+            content: impl Into<String>,
+        ) -> Result<(), Box<dyn Error>> {
+            if let Some(err) = self.write_error.take() {
+                return Err(err);
+            }
+
+            self.operations.push(Operation::CreateFile {
+                path:    path.into(),
+                content: content.into(),
+            });
+            Ok(())
+        }
+    }
+
     #[test]
     fn new_native_provider() {
         let native_provider =
-            NativeProvider::new("something", "./", "./tmp", FilesystemInMemory {});
+            NativeProvider::new("something", "./", "./tmp", FakeFilesystem::new());
 
         assert_eq!(native_provider.namespace, "something");
         assert_eq!(native_provider.config_path, "./");
@@ -130,5 +186,30 @@ mod tests {
         assert_eq!(native_provider.local_magic_file_path, "./tmp/finished.txt");
         assert_eq!(native_provider.remote_dir, "./tmp/cfg");
         assert_eq!(native_provider.data_dir, "./tmp/data");
+    }
+
+    #[test]
+    fn test_fielsystem_usage() {
+        let mut native_provider =
+            NativeProvider::new("something", "./", "./tmp", FakeFilesystem::new());
+
+        native_provider.create_namespace().unwrap();
+
+        assert!(native_provider.filesystem.operations.len() == 2);
+
+        assert_eq!(
+          native_provider.filesystem.operations[0],
+          Operation::CreateFile {
+            path: "./tmp/namespace".into(),
+            content: "{\"api_version\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"name\":\"something\",\"labels\":null}}".into()
+          }
+        );
+
+        assert_eq!(
+            native_provider.filesystem.operations[1],
+            Operation::CreateDir {
+                path: "./tmp/cfg".into(),
+            }
+        );
     }
 }

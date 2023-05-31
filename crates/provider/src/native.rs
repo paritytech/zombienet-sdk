@@ -1,4 +1,9 @@
-use std::{self, error::Error, fmt::Debug, fs};
+use std::{
+    self,
+    error::Error,
+    fmt::Debug,
+    process::{Command, Output},
+};
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -6,7 +11,7 @@ use serde::Serialize;
 use crate::shared::{
     constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST},
     provider::Provider,
-    types::{NamespaceDef, NamespaceMetadata},
+    types::{NamespaceDef, NamespaceMetadata, RunCommandOptions, RunCommandResponse},
 };
 
 pub trait FileSystem {
@@ -94,10 +99,63 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
     fn get_node_ip(&self) -> Result<String, Box<dyn Error>> {
         Ok(LOCALHOST.to_owned())
     }
+
+    fn run_command(
+        &self,
+        mut args: Vec<String>,
+        opts: RunCommandOptions,
+    ) -> Result<RunCommandResponse, Box<dyn Error>> {
+        if let Some(pos) = args.iter().position(|x| *x == "bash") {
+            args.remove(pos);
+        }
+
+        let output: Output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(args)
+                .output()
+                .expect("failed to execute process")
+        } else {
+            if let Some(pos) = args.iter().position(|x: &String| *x == "-c") {
+                args.remove(pos);
+            }
+
+            Command::new("sh")
+                .arg("-c")
+                .arg(args.join(" "))
+                .output()
+                .expect("failed to execute process")
+        };
+
+        if opts.allow_fail.is_some() && opts.allow_fail.unwrap() {
+            panic!("{}", String::from_utf8(output.stderr).unwrap());
+        }
+
+        if !output.stdout.is_empty() {
+            return Ok(RunCommandResponse {
+                exit_code: output.status,
+                std_out:   output.stdout,
+                std_err:   None,
+            });
+        } else if !output.stderr.is_empty() {
+            return Ok(RunCommandResponse {
+                exit_code: output.status,
+                std_out:   output.stdout,
+                std_err:   Some(output.stderr),
+            });
+        }
+
+        Ok(RunCommandResponse {
+            exit_code: output.status,
+            std_out:   output.stdout,
+            std_err:   Some(output.stderr),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
+
     use super::*;
     use crate::helpers::{MockFilesystem, Operation};
 
@@ -149,5 +207,65 @@ mod tests {
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.get_node_ip().unwrap(), LOCALHOST);
+    }
+
+    #[test]
+    fn test_run_command_when_bash_is_removed() {
+        let native_provider =
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+
+        let result = native_provider
+            .run_command(
+                vec!["bash".into(), "ls".into()],
+                RunCommandOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            RunCommandResponse {
+                exit_code: ExitStatus::from_raw(0),
+                std_out:   "Cargo.toml\nsrc\n".into(),
+                std_err:   None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_run_command_when_dash_c_is_provided() {
+        let native_provider =
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+
+        let result = native_provider
+            .run_command(vec!["-c".into(), "ls".into()], RunCommandOptions::default())
+            .unwrap();
+
+        assert_eq!(
+            result,
+            RunCommandResponse {
+                exit_code: ExitStatus::from_raw(0),
+                std_out:   "Cargo.toml\nsrc\n".into(),
+                std_err:   None,
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_run_command_when_error_panic() {
+        let native_provider =
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+
+        native_provider
+            .run_command(
+                vec!["echo".into(), "ls".into()],
+                RunCommandOptions {
+                    resource_def: None,
+                    scoped:       None,
+                    allow_fail:   Some(true),
+                    main_cmd:     String::new(),
+                },
+            )
+            .unwrap();
     }
 }

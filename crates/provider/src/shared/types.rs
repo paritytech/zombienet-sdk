@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus,
+    vec,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -37,18 +40,38 @@ pub struct FileMap {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunCommandResponse {
-    exit_code: u8,
-    std_out:   String,
-    std_err:   Option<String>,
-    error_msg: Option<String>,
+    pub exit_code: ExitStatus,
+    pub std_out:   Vec<u8>,
+    pub std_err:   Option<Vec<u8>>,
+}
+
+impl RunCommandResponse {
+    pub fn default() -> Self {
+        Self {
+            exit_code: ExitStatus::from_raw(0),
+            std_out:   vec![],
+            std_err:   None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunCommandOptions {
-    resource_def: Option<String>,
-    scoped:       Option<bool>,
-    allow_fail:   Option<bool>,
-    main_cmd:     String,
+    pub resource_def: Option<String>,
+    pub scoped:       Option<bool>,
+    pub allow_fail:   Option<bool>,
+    pub main_cmd:     String,
+}
+
+impl RunCommandOptions {
+    pub fn default() -> Self {
+        Self {
+            resource_def: None,
+            scoped:       None,
+            allow_fail:   None,
+            main_cmd:     String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

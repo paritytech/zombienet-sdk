@@ -186,11 +186,11 @@ mod tests {
         assert!(native_provider.filesystem.operations.len() == 2);
 
         assert_eq!(
-          native_provider.filesystem.operations[0],
-          Operation::CreateFile {
-            path: "./tmp/namespace".into(),
-            content: "{\"api_version\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"name\":\"something\",\"labels\":null}}".into()
-          }
+            native_provider.filesystem.operations[0],
+            Operation::CreateFile {
+                path:    "./tmp/namespace".into(),
+                content: r#"{"api_version":"v1","kind":"Namespace","metadata":{"name":"something","labels":null}}"#.into(),
+            }
         );
 
         assert_eq!(

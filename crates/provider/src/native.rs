@@ -142,4 +142,12 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_get_node_ip() {
+        let native_provider =
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+
+        assert_eq!(native_provider.get_node_ip().unwrap(), LOCALHOST);
+    }
 }

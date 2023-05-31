@@ -9,7 +9,7 @@ use crate::shared::{
     types::{NamespaceDef, NamespaceMetadata},
 };
 
-trait FileSystem {
+pub trait FileSystem {
     fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>>;
     fn write(
         &mut self,
@@ -99,82 +99,12 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[derive(Debug, PartialEq)]
-    enum Operation {
-        // ReadFile,
-        // DeleteFile { path: String },
-        // DeleteDir,
-        // LinkFile,
-        CreateFile { path: String, content: String },
-        CreateDir { path: String },
-    }
-
-    #[derive(Debug)]
-    struct FakeFilesystem {
-        create_dir_error: Option<Box<dyn Error>>,
-        write_error:      Option<Box<dyn Error>>,
-        pub operations:   Vec<Operation>,
-    }
-
-    impl FakeFilesystem {
-        fn new() -> Self {
-            Self {
-                create_dir_error: None,
-                write_error:      None,
-                operations:       vec![],
-            }
-        }
-
-        fn with_create_dir_error(error: impl Error + 'static) -> Self {
-            Self {
-                create_dir_error: Some(Box::new(error)),
-                write_error:      None,
-                operations:       vec![],
-            }
-        }
-
-        fn with_write_error(error: impl Error + 'static) -> Self {
-            Self {
-                create_dir_error: None,
-                write_error:      Some(Box::new(error)),
-                operations:       vec![],
-            }
-        }
-    }
-
-    impl FileSystem for FakeFilesystem {
-        fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>> {
-            if let Some(err) = self.create_dir_error.take() {
-                return Err(err);
-            }
-
-            self.operations
-                .push(Operation::CreateDir { path: path.into() });
-            Ok(())
-        }
-
-        fn write(
-            &mut self,
-            path: impl Into<String>,
-            content: impl Into<String>,
-        ) -> Result<(), Box<dyn Error>> {
-            if let Some(err) = self.write_error.take() {
-                return Err(err);
-            }
-
-            self.operations.push(Operation::CreateFile {
-                path:    path.into(),
-                content: content.into(),
-            });
-            Ok(())
-        }
-    }
+    use crate::helpers::{MockFilesystem, Operation};
 
     #[test]
     fn new_native_provider() {
         let native_provider =
-            NativeProvider::new("something", "./", "./tmp", FakeFilesystem::new());
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.namespace, "something");
         assert_eq!(native_provider.config_path, "./");
@@ -191,7 +121,7 @@ mod tests {
     #[test]
     fn test_fielsystem_usage() {
         let mut native_provider =
-            NativeProvider::new("something", "./", "./tmp", FakeFilesystem::new());
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         native_provider.create_namespace().unwrap();
 

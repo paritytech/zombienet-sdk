@@ -4,8 +4,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
-enum ZombieRole {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ZombieRole {
     Temp,
     Node,
     BootNode,
@@ -15,8 +15,8 @@ enum ZombieRole {
     FullNode,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum PortName {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PortName {
     Prometheus,
     Rpc,
     RpcWs,
@@ -55,11 +55,8 @@ impl RunCommandResponse {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct RunCommandOptions {
-    pub resource_def: Option<String>,
-    pub scoped:       Option<bool>,
-    pub allow_fail:   Option<bool>,
-    pub main_cmd:     String,
+pub struct NativeRunCommandOptions {
+    pub allow_fail: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,45 +78,45 @@ pub struct NamespaceDef {
     pub metadata:    NamespaceMetadata,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct PodLabels {
-    zombie_role: ZombieRole,
-    app:         String,
-    zombie_ns:   String,
-    name:        String,
-    instance:    String,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PodLabels {
+    pub zombie_role: ZombieRole,
+    pub app:         String,
+    pub zombie_ns:   String,
+    pub name:        String,
+    pub instance:    String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct PodMetadata {
-    name:      String,
-    namespace: String,
-    labels:    PodLabels,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PodMetadata {
+    pub name:      String,
+    pub namespace: String,
+    pub labels:    PodLabels,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct PodSpec {
-    cfg_path:  String,
-    data_path: String,
-    ports:     Vec<Port>,
-    command:   String,
-    env:       ProcessEnvironment,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PodSpec {
+    pub cfg_path:  String,
+    pub data_path: String,
+    pub ports:     Vec<Port>,
+    pub command:   String,
+    pub env:       ProcessEnvironment,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PodDef {
-    metadata: PodMetadata,
-    spec:     PodSpec,
+    pub metadata: PodMetadata,
+    pub spec:     PodSpec,
 }
 
 type ProcessEnvironment = HashMap<String, String>;
 
-#[derive(Debug, Clone, PartialEq)]
-struct Port {
-    container_port: u16,
-    name:           PortName,
-    flag:           String,
-    host_port:      u16,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Port {
+    pub container_port: u16,
+    pub name:           PortName,
+    pub flag:           String,
+    pub host_port:      u16,
 }
 
 #[derive(Debug, Clone, PartialEq)]

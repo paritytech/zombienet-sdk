@@ -2,7 +2,7 @@ use std::error::Error;
 
 use async_trait::async_trait;
 
-use super::types::{RunCommandOptions, RunCommandResponse};
+use super::types::{NativeRunCommandOptions, PodDef, RunCommandResponse};
 
 #[async_trait]
 #[allow(non_upper_case_globals)]
@@ -13,6 +13,12 @@ pub trait Provider {
     fn run_command(
         &self,
         args: Vec<String>,
-        opts: RunCommandOptions,
+        opts: NativeRunCommandOptions,
     ) -> Result<RunCommandResponse, Box<dyn Error>>;
+    fn create_resource(
+        &mut self,
+        resourse_def: PodDef,
+        scoped: bool,
+        wait_ready: bool,
+    ) -> Result<(), Box<dyn Error>>;
 }

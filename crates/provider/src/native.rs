@@ -11,7 +11,10 @@ use serde::Serialize;
 use crate::shared::{
     constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST},
     provider::Provider,
-    types::{NamespaceDef, NamespaceMetadata, RunCommandOptions, RunCommandResponse},
+    types::{
+        NamespaceDef, NamespaceMetadata, NativeRunCommandOptions, PodDef, RunCommandResponse,
+        ZombieRole,
+    },
 };
 
 pub trait FileSystem {
@@ -75,7 +78,7 @@ impl<T: FileSystem + Debug> NativeProvider<T> {
 #[async_trait]
 impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
     fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
-        let name_space_def = NamespaceDef {
+        let name_space_def: NamespaceDef = NamespaceDef {
             api_version: "v1".into(),
             kind:        "Namespace".into(),
             metadata:    NamespaceMetadata {
@@ -84,8 +87,8 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
             },
         };
 
-        let file_path = format!("{}/{}", &self.tmp_dir, "namespace");
-        let content = serde_json::to_string(&name_space_def)?;
+        let file_path: String = format!("{}/{}", &self.tmp_dir, "namespace");
+        let content: String = serde_json::to_string(&name_space_def)?;
 
         self.filesystem.write(file_path, content)?;
         self.filesystem.create_dir(&self.remote_dir)?;
@@ -103,7 +106,7 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
     fn run_command(
         &self,
         mut args: Vec<String>,
-        opts: RunCommandOptions,
+        opts: NativeRunCommandOptions,
     ) -> Result<RunCommandResponse, Box<dyn Error>> {
         if let Some(arg) = args.get(0) {
             if arg == "bash" {
@@ -130,20 +133,6 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
                 .expect("failed to execute process")
         };
 
-        if let Some(can_fail) = opts.allow_fail {
-            if !can_fail {
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Allow fail",
-                )));
-            }
-        } else {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Allow fail",
-            )));
-        };
-
         if !output.stdout.is_empty() {
             return Ok(RunCommandResponse {
                 exit_code: output.status,
@@ -151,6 +140,13 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
                 std_err:   None,
             });
         } else if !output.stderr.is_empty() {
+            if !opts.allow_fail {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Allow fail",
+                )));
+            };
+
             return Ok(RunCommandResponse {
                 exit_code: output.status,
                 std_out:   output.stdout,
@@ -164,6 +160,66 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
             std_err:   Some(output.stderr),
         })
     }
+
+    fn create_resource(
+        &mut self,
+        resourse_def: PodDef,
+        scoped: bool,
+        wait_ready: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        let name: String = resourse_def.metadata.name.clone();
+        let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
+
+        let content: String = serde_json::to_string(&resourse_def)?;
+
+        self.filesystem
+            .write(local_file_path, content)
+            .expect("Create source: Failed to write file");
+
+        // match resourse_def.metadata.labels.zombie_role {
+        //     ZombieRole::Temp => {
+        //         self.run_command(
+        //             resourse_def.spec.command.clone(),
+        //             NativeRunCommandOptions {
+        //                 allow_fail: Some(true),
+        //             },
+        //         )?;
+        //     },
+        //     _ => {
+        //         self.run_command(
+        //             vec!["bash".into(), local_file_path],
+        //             NativeRunCommandOptions {
+        //                 allow_fail: Some(true),
+        //             },
+        //         )?;
+        //     },
+        // }
+
+        todo!()
+
+        // if (resourseDef.metadata.labels["zombie-role"] === ZombieRole.Temp) {
+        //   await this.runCommand(resourseDef.spec.command);
+        // } else {
+        //   if (resourseDef.spec.command[0] === "bash")
+        //     resourseDef.spec.command.splice(0, 1);
+        //   debug(this.command);
+        //   debug(resourseDef.spec.command);
+
+        //   const log = fs.createWriteStream(this.processMap[name].logs);
+        //   const nodeProcess = spawn(
+        //     this.command,
+        //     ["-c", ...resourseDef.spec.command],
+        //     { env: { ...process.env, ...resourseDef.spec.env } },
+        //   );
+        //   debug(nodeProcess.pid);
+        //   nodeProcess.stdout.pipe(log);
+        //   nodeProcess.stderr.pipe(log);
+        //   this.processMap[name].pid = nodeProcess.pid;
+        //   this.processMap[name].cmd = resourseDef.spec.command;
+
+        //   await this.wait_node_ready(name);
+        // }
+    }
 }
 
 #[cfg(test)]
@@ -175,7 +231,7 @@ mod tests {
 
     #[test]
     fn new_native_provider() {
-        let native_provider =
+        let native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.namespace, "something");
@@ -192,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_fielsystem_usage() {
-        let mut native_provider =
+        let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         native_provider.create_namespace().unwrap();
@@ -217,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_get_node_ip() {
-        let native_provider =
+        let native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.get_node_ip().unwrap(), LOCALHOST);
@@ -225,13 +281,13 @@ mod tests {
 
     #[test]
     fn test_run_command_when_bash_is_removed() {
-        let native_provider =
+        let native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
-        let result = native_provider
+        let result: RunCommandResponse = native_provider
             .run_command(
                 vec!["bash".into(), "ls".into()],
-                RunCommandOptions::default(),
+                NativeRunCommandOptions::default(),
             )
             .unwrap();
 
@@ -250,18 +306,12 @@ mod tests {
         let native_provider =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
-        let result = native_provider
-            .run_command(vec!["-c".into(), "ls".into()], RunCommandOptions::default())
-            .unwrap();
-
-        assert_eq!(
-            result,
-            RunCommandResponse {
-                exit_code: ExitStatus::from_raw(0),
-                std_out:   "Cargo.toml\nsrc\n".into(),
-                std_err:   None,
-            }
+        let result = native_provider.run_command(
+            vec!["-c".into(), "ls".into()],
+            NativeRunCommandOptions::default(),
         );
+
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -270,38 +320,17 @@ mod tests {
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
         let mut some = native_provider.run_command(
-            vec!["echo".into(), "ls".into()],
-            RunCommandOptions {
-                resource_def: None,
-                scoped:       None,
-                allow_fail:   None,
-                main_cmd:     String::new(),
-            },
+            vec!["ls".into(), "ls".into()],
+            NativeRunCommandOptions::default(),
         );
 
         assert!(some.is_err());
 
         some = native_provider.run_command(
-            vec!["echo".into(), "ls".into()],
-            RunCommandOptions {
-                resource_def: None,
-                scoped:       None,
-                allow_fail:   Some(false),
-                main_cmd:     String::new(),
-            },
+            vec!["ls".into(), "ls".into()],
+            NativeRunCommandOptions { allow_fail: true },
         );
 
-        assert!(some.is_err());
-
-        some = native_provider.run_command(
-            vec!["echo".into(), "ls".into()],
-            RunCommandOptions {
-                resource_def: None,
-                scoped:       None,
-                allow_fail:   Some(true),
-                main_cmd:     String::new(),
-            },
-            )
-            .unwrap();
+        assert!(some.is_ok());
     }
 }

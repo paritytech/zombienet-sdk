@@ -1,6 +1,5 @@
 use std::{
-    collections::BTreeMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus,
-    vec,
+    collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus, vec,
 };
 
 use serde::{Deserialize, Serialize};
@@ -55,23 +54,12 @@ impl RunCommandResponse {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct RunCommandOptions {
     pub resource_def: Option<String>,
     pub scoped:       Option<bool>,
     pub allow_fail:   Option<bool>,
     pub main_cmd:     String,
-}
-
-impl RunCommandOptions {
-    pub fn default() -> Self {
-        Self {
-            resource_def: None,
-            scoped:       None,
-            allow_fail:   None,
-            main_cmd:     String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -124,7 +112,7 @@ pub struct PodDef {
     spec:     PodSpec,
 }
 
-type ProcessEnvironment = BTreeMap<String, String>;
+type ProcessEnvironment = HashMap<String, String>;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Port {

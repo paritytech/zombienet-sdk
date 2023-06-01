@@ -105,8 +105,10 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
         mut args: Vec<String>,
         opts: RunCommandOptions,
     ) -> Result<RunCommandResponse, Box<dyn Error>> {
-        if let Some(pos) = args.iter().position(|x| *x == "bash") {
-            args.remove(pos);
+        if let Some(arg) = args.get(0) {
+            if arg == "bash" {
+                args.remove(0);
+            }
         }
 
         let output: Output = if cfg!(target_os = "windows") {
@@ -115,8 +117,10 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
                 .output()
                 .expect("failed to execute process")
         } else {
-            if let Some(pos) = args.iter().position(|x: &String| *x == "-c") {
-                args.remove(pos);
+            if let Some(arg) = args.get(0) {
+                if arg == "-c" {
+                    args.remove(0);
+                }
             }
 
             Command::new("sh")

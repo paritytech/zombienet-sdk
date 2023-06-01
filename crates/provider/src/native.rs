@@ -130,9 +130,19 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
                 .expect("failed to execute process")
         };
 
-        if opts.allow_fail.is_some() && opts.allow_fail.unwrap() {
-            panic!("{}", String::from_utf8(output.stderr).unwrap());
-        }
+        if let Some(can_fail) = opts.allow_fail {
+            if !can_fail {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Allow fail",
+                )));
+            }
+        } else {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Allow fail",
+            )));
+        };
 
         if !output.stdout.is_empty() {
             return Ok(RunCommandResponse {
@@ -255,20 +265,42 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn test_run_command_when_error_panic() {
+    fn test_run_command_when_error_return_error() {
         let native_provider =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
-        native_provider
-            .run_command(
-                vec!["echo".into(), "ls".into()],
-                RunCommandOptions {
-                    resource_def: None,
-                    scoped:       None,
-                    allow_fail:   Some(true),
-                    main_cmd:     String::new(),
-                },
+        let mut some = native_provider.run_command(
+            vec!["echo".into(), "ls".into()],
+            RunCommandOptions {
+                resource_def: None,
+                scoped:       None,
+                allow_fail:   None,
+                main_cmd:     String::new(),
+            },
+        );
+
+        assert!(some.is_err());
+
+        some = native_provider.run_command(
+            vec!["echo".into(), "ls".into()],
+            RunCommandOptions {
+                resource_def: None,
+                scoped:       None,
+                allow_fail:   Some(false),
+                main_cmd:     String::new(),
+            },
+        );
+
+        assert!(some.is_err());
+
+        some = native_provider.run_command(
+            vec!["echo".into(), "ls".into()],
+            RunCommandOptions {
+                resource_def: None,
+                scoped:       None,
+                allow_fail:   Some(true),
+                main_cmd:     String::new(),
+            },
             )
             .unwrap();
     }

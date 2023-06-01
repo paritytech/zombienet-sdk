@@ -47,10 +47,10 @@ impl Default for GlobalSettingsBuilder {
     fn default() -> Self {
         Self {
             config: GlobalSettings {
-                bootnodes_addresses: vec![],
+                bootnodes_addresses:   vec![],
                 network_spawn_timeout: 1000,
-                node_spawn_timeout: 300,
-                local_ip: None,
+                node_spawn_timeout:    300,
+                local_ip:              None,
             },
         }
     }
@@ -124,6 +124,9 @@ mod tests {
         );
         assert_eq!(global_settings_config.network_spawn_timeout(), 600);
         assert_eq!(global_settings_config.node_spawn_timeout(), 120);
-        assert_eq!(global_settings_config.local_ip().unwrap().value(), "10.0.0.1");
+        assert_eq!(
+            global_settings_config.local_ip().unwrap().value(),
+            "10.0.0.1"
+        );
     }
 }

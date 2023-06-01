@@ -1,22 +1,21 @@
 use std::marker::PhantomData;
 
+use super::{macros::states, resources::ResourcesBuilder, types::AssetLocation};
 use crate::shared::{
     resources::Resources,
     types::{Arg, MultiAddress, Port},
 };
 
-use super::{macros::states, resources::ResourcesBuilder, types::AssetLocation};
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnvVar {
-    name: String,
+    name:  String,
     value: String,
 }
 
 impl From<(&str, &str)> for EnvVar {
     fn from((name, value): (&str, &str)) -> Self {
         Self {
-            name: name.to_owned(),
+            name:  name.to_owned(),
             value: value.to_owned(),
         }
     }
@@ -151,7 +150,9 @@ impl NodeConfig {
 states! {
     Initial,
     WithName,
-    WithCommand
+    WithCommand,
+    WithDefaultCommand,
+    Buildable
 }
 
 #[derive(Debug)]
@@ -164,23 +165,23 @@ impl Default for NodeConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: NodeConfig {
-                name: "".into(),
-                image: None,
-                command: None,
-                args: vec![],
-                is_validator: false,
-                is_invulnerable: false,
-                is_bootnode: false,
-                initial_balance: 2_000_000_000_000,
-                env: vec![],
+                name:                "".into(),
+                image:               None,
+                command:             None,
+                args:                vec![],
+                is_validator:        false,
+                is_invulnerable:     false,
+                is_bootnode:         false,
+                initial_balance:     2_000_000_000_000,
+                env:                 vec![],
                 bootnodes_addresses: vec![],
-                resources: None,
-                ws_port: None,
-                rpc_port: None,
-                prometheus_port: None,
-                p2p_port: None,
-                p2p_cert_hash: None,
-                db_snapshot: None,
+                resources:           None,
+                ws_port:             None,
+                rpc_port:            None,
+                prometheus_port:     None,
+                p2p_port:            None,
+                p2p_cert_hash:       None,
+                db_snapshot:         None,
             },
             _state: PhantomData,
         }
@@ -198,30 +199,73 @@ impl<A> NodeConfigBuilder<A> {
 
 impl NodeConfigBuilder<Initial> {
     pub fn new() -> NodeConfigBuilder<Initial> {
-        Self::default()
+        Self::transition(Self::default().config)
     }
 
-    pub fn with_name(self, name: &str) -> NodeConfigBuilder<WithName> {
+    pub fn new_with_default_command() -> NodeConfigBuilder<WithDefaultCommand> {
+        Self::transition(Self::default().config)
+    }
+
+    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<WithName> {
         Self::transition(NodeConfig {
-            name: name.to_owned(),
+            name: name.into(),
+            ..self.config
+        })
+    }
+
+    pub fn with_command(self, command: impl Into<String>) -> NodeConfigBuilder<WithCommand> {
+        Self::transition(NodeConfig {
+            command: Some(command.into()),
             ..self.config
         })
     }
 }
 
 impl NodeConfigBuilder<WithName> {
-    pub fn with_command(self, command: &str) -> NodeConfigBuilder<WithCommand> {
+    pub fn with_command(self, command: impl Into<String>) -> NodeConfigBuilder<Buildable> {
         Self::transition(NodeConfig {
-            command: Some(command.to_owned()),
+            command: Some(command.into()),
             ..self.config
         })
     }
 }
 
 impl NodeConfigBuilder<WithCommand> {
-    pub fn with_image(self, image: &str) -> Self {
+    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
         Self::transition(NodeConfig {
-            image: Some(image.to_owned()),
+            name: name.into(),
+            ..self.config
+        })
+    }
+}
+
+impl NodeConfigBuilder<WithDefaultCommand> {
+    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
+        Self::transition(NodeConfig {
+            name: name.into(),
+            ..self.config
+        })
+    }
+
+    pub fn with_command(self, command: impl Into<String>) -> NodeConfigBuilder<WithCommand> {
+        Self::transition(NodeConfig {
+            command: Some(command.into()),
+            ..self.config
+        })
+    }
+}
+
+impl NodeConfigBuilder<Buildable> {
+    pub fn with_command(self, command: impl Into<String>) -> Self {
+        Self::transition(NodeConfig {
+            command: Some(command.into()),
+            ..self.config
+        })
+    }
+
+    pub fn with_image(self, image: impl Into<String>) -> Self {
+        Self::transition(NodeConfig {
+            image: Some(image.into()),
             ..self.config
         })
     }
@@ -309,9 +353,9 @@ impl NodeConfigBuilder<WithCommand> {
         })
     }
 
-    pub fn with_p2p_cert_hash(self, p2p_cert_hash: &str) -> Self {
+    pub fn with_p2p_cert_hash(self, p2p_cert_hash: impl Into<String>) -> Self {
         Self::transition(NodeConfig {
-            p2p_cert_hash: Some(p2p_cert_hash.to_owned()),
+            p2p_cert_hash: Some(p2p_cert_hash.into()),
             ..self.config
         })
     }

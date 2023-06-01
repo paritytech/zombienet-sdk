@@ -118,18 +118,18 @@ impl Default for ParachainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: ParachainConfig {
-                id: 100,
-                chain: None,
-                registration_strategy: Some(RegistrationStrategy::InGenesis),
-                initial_balance: 2_000_000_000_000,
-                genesis_wasm_path: None,
-                genesis_wasm_generator: None,
-                genesis_state_path: None,
+                id:                      100,
+                chain:                   None,
+                registration_strategy:   Some(RegistrationStrategy::InGenesis),
+                initial_balance:         2_000_000_000_000,
+                genesis_wasm_path:       None,
+                genesis_wasm_generator:  None,
+                genesis_state_path:      None,
                 genesis_state_generator: None,
-                chain_spec_path: None,
-                is_cumulus_based: true,
-                bootnodes_addresses: vec![],
-                collators: vec![],
+                chain_spec_path:         None,
+                is_cumulus_based:        true,
+                bootnodes_addresses:     vec![],
+                collators:               vec![],
             },
             _state: PhantomData,
         }
@@ -158,7 +158,7 @@ impl ParachainConfigBuilder<Initial> {
 impl ParachainConfigBuilder<WithId> {
     pub fn with_collator(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::WithCommand>,
+        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
         let new_collator = f(NodeConfigBuilder::new()).build();
 
@@ -170,7 +170,7 @@ impl ParachainConfigBuilder<WithId> {
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
-    pub fn with_chain(self, chain: &str) -> Self {
+    pub fn with_chain(self, chain: impl Into<String>) -> Self {
         Self::transition(ParachainConfig {
             chain: Some(chain.into()),
             ..self.config
@@ -198,9 +198,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         })
     }
 
-    pub fn with_genesis_wasm_generator(self, command: &str) -> Self {
+    pub fn with_genesis_wasm_generator(self, command: impl Into<String>) -> Self {
         Self::transition(ParachainConfig {
-            genesis_wasm_generator: Some(command.to_owned()),
+            genesis_wasm_generator: Some(command.into()),
             ..self.config
         })
     }
@@ -212,9 +212,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         })
     }
 
-    pub fn with_genesis_state_generator(self, command: &str) -> Self {
+    pub fn with_genesis_state_generator(self, command: impl Into<String>) -> Self {
         Self::transition(ParachainConfig {
-            genesis_state_generator: Some(command.to_owned()),
+            genesis_state_generator: Some(command.into()),
             ..self.config
         })
     }
@@ -242,7 +242,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
     pub fn with_collator(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::WithCommand>,
+        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
         let new_collator = f(NodeConfigBuilder::new()).build();
 
@@ -259,9 +259,8 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
 #[cfg(test)]
 mod tests {
-    use crate::shared::types::{AssetLocation, MultiAddress};
-
     use super::{ParachainConfigBuilder, RegistrationStrategy};
+    use crate::shared::types::{AssetLocation, MultiAddress};
 
     #[test]
     fn parachain_config_builder_should_build_a_new_parachain_config_correctly() {

@@ -175,7 +175,7 @@ impl RelaychainConfigBuilder<WithDefaultCommand> {
     }
 }
 
-macro_rules! non_changin_state_methods {
+macro_rules! non_changing_state_methods {
     () => {
         pub fn with_default_image(self, image: impl Into<String>) -> Self {
             Self::transition(RelaychainConfig {
@@ -231,11 +231,11 @@ macro_rules! non_changin_state_methods {
 }
 
 impl RelaychainConfigBuilder<WithChain> {
-    non_changin_state_methods!();
+    non_changing_state_methods!();
 }
 
 impl RelaychainConfigBuilder<WithDefaultCommand> {
-    non_changin_state_methods!();
+    non_changing_state_methods!();
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {

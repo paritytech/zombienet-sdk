@@ -60,9 +60,9 @@ impl Default for NetworkConfigBuilder<Initial> {
         Self {
             config: NetworkConfig {
                 global_settings: GlobalSettingsBuilder::new().build(),
-                relaychain: None,
-                parachains: vec![],
-                hrmp_channels: vec![],
+                relaychain:      None,
+                parachains:      vec![],
+                hrmp_channels:   vec![],
             },
             _state: PhantomData,
         }
@@ -150,12 +150,12 @@ mod tests {
             .with_relaychain(|relaychain| {
                 relaychain
                     .with_chain("polkadot")
+                    .with_random_nominators_count(10)
                     .with_node(|node| {
                         node.with_name("node")
                             .with_command("node command")
                             .validator(true)
                     })
-                    .with_random_nominators_count(10)
             })
             .with_parachain(|parachain1| {
                 parachain1

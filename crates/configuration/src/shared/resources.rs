@@ -16,9 +16,9 @@ impl From<&str> for ResourceQuantity {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
-    request_cpu: Option<ResourceQuantity>,
-    limit_memory: Option<ResourceQuantity>,
-    limit_cpu: Option<ResourceQuantity>,
+    request_cpu:    Option<ResourceQuantity>,
+    limit_memory:   Option<ResourceQuantity>,
+    limit_cpu:      Option<ResourceQuantity>,
 }
 
 impl Resources {
@@ -49,9 +49,9 @@ impl Default for ResourcesBuilder {
         Self {
             config: Resources {
                 request_memory: None,
-                request_cpu: None,
-                limit_memory: None,
-                limit_cpu: None,
+                request_cpu:    None,
+                limit_memory:   None,
+                limit_cpu:      None,
             },
         }
     }
@@ -66,30 +66,30 @@ impl ResourcesBuilder {
         Self { config }
     }
 
-    pub fn with_request_memory(self, quantity: &str) -> Self {
+    pub fn with_request_memory(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            request_memory: Some(ResourceQuantity(quantity.to_owned())),
+            request_memory: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }
 
-    pub fn with_request_cpu(self, quantity: &str) -> Self {
+    pub fn with_request_cpu(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            request_cpu: Some(ResourceQuantity(quantity.to_owned())),
+            request_cpu: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }
 
-    pub fn with_limit_memory(self, quantity: &str) -> Self {
+    pub fn with_limit_memory(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            limit_memory: Some(ResourceQuantity(quantity.to_owned())),
+            limit_memory: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }
 
-    pub fn with_limit_cpu(self, quantity: &str) -> Self {
+    pub fn with_limit_cpu(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            limit_cpu: Some(ResourceQuantity(quantity.to_owned())),
+            limit_cpu: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }

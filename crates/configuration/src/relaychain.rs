@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 use crate::shared::{
     macros::states,
@@ -86,7 +86,64 @@ impl RelaychainConfig {
 states! {
     Initial,
     WithChain,
-    WithAtLeastOneNode
+    WithAtLeastOneNode,
+    WithDefaultCommand,
+    WithDefaultCommandAndAtLeastOneNode
+}
+
+macro_rules! common_builder_methods {
+    () => {
+        pub fn with_default_image(self, image: impl Into<String>) -> Self {
+            Self::transition(RelaychainConfig {
+                default_image: Some(image.into()),
+                ..self.config
+            })
+        }
+
+        pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
+            let default_resources = Some(f(ResourcesBuilder::new()).build());
+
+            Self::transition(RelaychainConfig {
+                default_resources,
+                ..self.config
+            })
+        }
+
+        pub fn with_default_db_snapshot(self, location: AssetLocation) -> Self {
+            Self::transition(RelaychainConfig {
+                default_db_snapshot: Some(location),
+                ..self.config
+            })
+        }
+
+        pub fn with_chain_spec_path(self, chain_spec_path: AssetLocation) -> Self {
+            Self::transition(RelaychainConfig {
+                chain_spec_path: Some(chain_spec_path),
+                ..self.config
+            })
+        }
+
+        pub fn with_default_args(self, args: Vec<Arg>) -> Self {
+            Self::transition(RelaychainConfig {
+                default_args: args,
+                ..self.config
+            })
+        }
+
+        pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
+            Self::transition(RelaychainConfig {
+                random_nominators_count: Some(random_nominators_count),
+                ..self.config
+            })
+        }
+
+        pub fn with_max_nominations(self, max_nominations: u8) -> Self {
+            Self::transition(RelaychainConfig {
+                max_nominations: Some(max_nominations),
+                ..self.config
+            })
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -99,16 +156,16 @@ impl Default for RelaychainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: RelaychainConfig {
-                chain: "".into(),
-                default_command: None,
-                default_image: None,
-                default_resources: None,
-                default_db_snapshot: None,
-                chain_spec_path: None,
-                default_args: vec![],
+                chain:                   "".into(),
+                default_command:         None,
+                default_image:           None,
+                default_resources:       None,
+                default_db_snapshot:     None,
+                chain_spec_path:         None,
+                default_args:            vec![],
                 random_nominators_count: None,
-                max_nominations: None,
-                nodes: vec![],
+                max_nominations:         None,
+                nodes:                   vec![],
             },
             _state: PhantomData,
         }
@@ -138,11 +195,41 @@ impl RelaychainConfigBuilder<Initial> {
 }
 
 impl RelaychainConfigBuilder<WithChain> {
+    common_builder_methods!();
+
+    pub fn with_default_command(
+        self,
+        command: &str,
+    ) -> RelaychainConfigBuilder<WithDefaultCommand> {
+        Self::transition(RelaychainConfig {
+            default_command: Some(command.to_owned()),
+            ..self.config
+        })
+    }
+
     pub fn with_node(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::WithCommand>,
+        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
         let new_node = f(NodeConfigBuilder::new()).build();
+        Self::transition(RelaychainConfig {
+            nodes: vec![new_node],
+            ..self.config
+        })
+    }
+}
+
+impl RelaychainConfigBuilder<WithDefaultCommand> {
+    common_builder_methods!();
+
+    pub fn with_node(
+        self,
+        f: fn(NodeConfigBuilder<node::WithDefaultCommand>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> RelaychainConfigBuilder<WithDefaultCommandAndAtLeastOneNode> {
+        let default_command = self.config.default_command
+        .clone()
+            .expect("typestate should ensure the default_command isn't None at this point, this is a bug please report it");
+        let new_node = f(NodeConfigBuilder::new_with_default_command(default_command)).build();
 
         Self::transition(RelaychainConfig {
             nodes: vec![new_node],
@@ -152,69 +239,31 @@ impl RelaychainConfigBuilder<WithChain> {
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
-    pub fn with_default_command(self, command: &str) -> Self {
-        Self::transition(RelaychainConfig {
-            default_command: Some(command.to_owned()),
-            ..self.config
-        })
-    }
-
-    pub fn with_default_image(self, image: &str) -> Self {
-        Self::transition(RelaychainConfig {
-            default_image: Some(image.to_owned()),
-            ..self.config
-        })
-    }
-
-    pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
-        let default_resources = Some(f(ResourcesBuilder::new()).build());
-
-        Self::transition(RelaychainConfig {
-            default_resources,
-            ..self.config
-        })
-    }
-
-    pub fn with_default_db_snapshot(self, location: AssetLocation) -> Self {
-        Self::transition(RelaychainConfig {
-            default_db_snapshot: Some(location),
-            ..self.config
-        })
-    }
-
-    pub fn with_chain_spec_path(self, chain_spec_path: AssetLocation) -> Self {
-        Self::transition(RelaychainConfig {
-            chain_spec_path: Some(chain_spec_path),
-            ..self.config
-        })
-    }
-
-    pub fn with_default_args(self, args: Vec<Arg>) -> Self {
-        Self::transition(RelaychainConfig {
-            default_args: args,
-            ..self.config
-        })
-    }
-
-    pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
-        Self::transition(RelaychainConfig {
-            random_nominators_count: Some(random_nominators_count),
-            ..self.config
-        })
-    }
-
-    pub fn with_max_nominations(self, max_nominations: u8) -> Self {
-        Self::transition(RelaychainConfig {
-            max_nominations: Some(max_nominations),
-            ..self.config
-        })
-    }
-
     pub fn with_node(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::WithCommand>,
+        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
         let new_node = f(NodeConfigBuilder::new()).build();
+
+        Self::transition(RelaychainConfig {
+            nodes: vec![self.config.nodes, vec![new_node]].concat(),
+            ..self.config
+        })
+    }
+
+    pub fn build(self) -> RelaychainConfig {
+        self.config
+    }
+}
+
+impl RelaychainConfigBuilder<WithDefaultCommandAndAtLeastOneNode> {
+    pub fn with_node(
+        self,
+        f: fn(NodeConfigBuilder<node::WithDefaultCommand>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        let default_command = self.config.default_command.clone()
+            .expect("typestate should ensure the default_command isn't None at this point, this is a bug please report it");
+        let new_node = f(NodeConfigBuilder::new_with_default_command(default_command)).build();
 
         Self::transition(RelaychainConfig {
             nodes: vec![self.config.nodes, vec![new_node]].concat(),
@@ -235,18 +284,6 @@ mod tests {
     fn relaychain_config_builder_should_build_a_new_relaychain_config_correctly() {
         let relaychain_config = RelaychainConfigBuilder::new()
             .with_chain("polkadot")
-            .with_node(|node1| {
-                node1
-                    .with_name("node1")
-                    .with_command("command1")
-                    .bootnode(true)
-            })
-            .with_node(|node2| {
-                node2
-                    .with_name("node2")
-                    .with_command("command2")
-                    .validator(true)
-            })
             .with_default_command("default_command")
             .with_default_image("myrepo:myimage")
             .with_default_resources(|resources| {
@@ -262,13 +299,20 @@ mod tests {
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
+            .with_node(|node1| node1.with_name("node1").bootnode(true))
+            .with_node(|node2| {
+                node2
+                    .with_name("node2")
+                    .with_command("command2")
+                    .validator(true)
+            })
             .build();
 
         assert_eq!(relaychain_config.chain(), "polkadot");
         assert_eq!(relaychain_config.nodes().len(), 2);
         let &node1 = relaychain_config.nodes().first().unwrap();
         assert_eq!(node1.name(), "node1");
-        assert_eq!(node1.command().unwrap(), "command1");
+        assert_eq!(node1.command().unwrap(), "default_command");
         assert!(node1.is_bootnode());
         let &node2 = relaychain_config.nodes().last().unwrap();
         assert_eq!(node2.name(), "node2");

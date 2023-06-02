@@ -199,11 +199,16 @@ impl<A> NodeConfigBuilder<A> {
 
 impl NodeConfigBuilder<Initial> {
     pub fn new() -> NodeConfigBuilder<Initial> {
-        Self::transition(Self::default().config)
+        Self::default()
     }
 
-    pub fn new_with_default_command() -> NodeConfigBuilder<WithDefaultCommand> {
-        Self::transition(Self::default().config)
+    pub fn new_with_default_command(
+        default_command: String,
+    ) -> NodeConfigBuilder<WithDefaultCommand> {
+        Self::transition(NodeConfig {
+            command: Some(default_command),
+            ..Self::default().config
+        })
     }
 
     pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<WithName> {

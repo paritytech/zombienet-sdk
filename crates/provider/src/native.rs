@@ -78,24 +78,9 @@ impl<T: FileSystem + Debug> NativeProvider<T> {
 #[async_trait]
 impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
     fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
-        let namespace_def: NamespaceDef = NamespaceDef {
-            api_version: "v1".into(),
-            kind:        "Namespace".into(),
-            metadata:    NamespaceMetadata {
-                name:   format!("{}", &self.namespace),
-                labels: None,
-            },
-        };
-
-        let file_path: String = format!("{}/namespace", &self.tmp_dir);
-        let content: String = serde_json::to_string(&namespace_def)?;
-
-        self.filesystem.write(file_path, content)?;
+        // Native provider don't have the `namespace` isolation.
+        // but we create the `remoteDir` to place files
         self.filesystem.create_dir(&self.remote_dir)?;
-        Ok(())
-    }
-
-    fn setup_cleaner(&self) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
 
@@ -114,24 +99,11 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
             }
         }
 
-        let output: Output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(args)
-                .output()
-                .expect("failed to execute process")
-        } else {
-            if let Some(arg) = args.get(0) {
-                if arg == "-c" {
-                    args.remove(0);
-                }
-            }
-
-            Command::new("sh")
-                .arg("-c")
-                .arg(args.join(" "))
-                .output()
-                .expect("failed to execute process")
-        };
+        let output: Output = Command::new("sh")
+            .arg("-c")
+            .arg(args.join(" "))
+            .output()
+            .expect("failed to execute process");
 
         if !output.stdout.is_empty() {
             return Ok(RunCommandResponse {

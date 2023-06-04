@@ -87,7 +87,7 @@ impl NetworkConfigBuilder<Initial> {
         self,
         f: fn(
             RelaychainConfigBuilder<relaychain::Initial>,
-        ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
+        ) -> RelaychainConfigBuilder<relaychain::Buildable>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
         Self::transition(NetworkConfig {
             relaychain: Some(f(RelaychainConfigBuilder::new()).build()),
@@ -156,6 +156,7 @@ mod tests {
                             .with_command("node command")
                             .validator(true)
                     })
+                    .seal()
             })
             .with_parachain(|parachain1| {
                 parachain1

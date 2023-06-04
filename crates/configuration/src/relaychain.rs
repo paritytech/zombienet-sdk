@@ -88,7 +88,8 @@ states! {
     WithChain,
     WithAtLeastOneNode,
     WithDefaultCommand,
-    WithDefaultCommandAndAtLeastOneNode
+    WithDefaultCommandAndAtLeastOneNode,
+    Buildable
 }
 
 macro_rules! common_builder_methods {
@@ -251,8 +252,8 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         })
     }
 
-    pub fn build(self) -> RelaychainConfig {
-        self.config
+    pub fn seal(self) -> RelaychainConfigBuilder<Buildable> {
+        Self::transition(RelaychainConfig { ..self.config })
     }
 }
 
@@ -271,7 +272,13 @@ impl RelaychainConfigBuilder<WithDefaultCommandAndAtLeastOneNode> {
         })
     }
 
-    pub fn build(self) -> RelaychainConfig {
+    pub fn seal(self) -> RelaychainConfigBuilder<Buildable> {
+        Self::transition(RelaychainConfig { ..self.config })
+    }
+}
+
+impl RelaychainConfigBuilder<Buildable> {
+    pub(crate) fn build(self) -> RelaychainConfig {
         self.config
     }
 }
@@ -306,6 +313,7 @@ mod tests {
                     .with_command("command2")
                     .validator(true)
             })
+            .seal()
             .build();
 
         assert_eq!(relaychain_config.chain(), "polkadot");

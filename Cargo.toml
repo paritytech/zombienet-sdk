@@ -4,5 +4,6 @@ members = [
   "crates/configuration",
   "crates/orchestrator",
   "crates/provider",
-  "crates/test-runner"
+  "crates/test-runner",
+  "crates/examples"
 ]

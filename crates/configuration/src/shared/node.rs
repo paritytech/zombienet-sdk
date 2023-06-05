@@ -149,9 +149,6 @@ impl NodeConfig {
 
 states! {
     Initial,
-    WithName,
-    WithCommand,
-    WithDefaultCommand,
     Buildable
 }
 
@@ -198,63 +195,16 @@ impl<A> NodeConfigBuilder<A> {
 }
 
 impl NodeConfigBuilder<Initial> {
-    pub fn new() -> NodeConfigBuilder<Initial> {
-        Self::default()
-    }
-
-    pub fn new_with_default_command(
-        default_command: String,
-    ) -> NodeConfigBuilder<WithDefaultCommand> {
+    pub fn new(default_command: Option<String>) -> Self {
         Self::transition(NodeConfig {
-            command: Some(default_command),
+            command: default_command,
             ..Self::default().config
         })
     }
 
-    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<WithName> {
-        Self::transition(NodeConfig {
-            name: name.into(),
-            ..self.config
-        })
-    }
-
-    pub fn with_command(self, command: impl Into<String>) -> NodeConfigBuilder<WithCommand> {
-        Self::transition(NodeConfig {
-            command: Some(command.into()),
-            ..self.config
-        })
-    }
-}
-
-impl NodeConfigBuilder<WithName> {
-    pub fn with_command(self, command: impl Into<String>) -> NodeConfigBuilder<Buildable> {
-        Self::transition(NodeConfig {
-            command: Some(command.into()),
-            ..self.config
-        })
-    }
-}
-
-impl NodeConfigBuilder<WithCommand> {
     pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
         Self::transition(NodeConfig {
             name: name.into(),
-            ..self.config
-        })
-    }
-}
-
-impl NodeConfigBuilder<WithDefaultCommand> {
-    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
-        Self::transition(NodeConfig {
-            name: name.into(),
-            ..self.config
-        })
-    }
-
-    pub fn with_command(self, command: impl Into<String>) -> NodeConfigBuilder<WithCommand> {
-        Self::transition(NodeConfig {
-            command: Some(command.into()),
             ..self.config
         })
     }
@@ -383,7 +333,7 @@ mod tests {
 
     #[test]
     fn node_config_builder_should_build_a_new_node_config_correctly() {
-        let node_config = NodeConfigBuilder::new()
+        let node_config = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_command("mycommand")
             .with_image("myrepo:myimage")

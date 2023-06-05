@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v3
       
       - name: Init nigthly install for fmt
-        run: rustup update nightly
+        run: rustup update nightly && rustup default nightly && rustup component add rustfmt
 
       - name: Check format
         run: cargo +nightly fmt --check --all

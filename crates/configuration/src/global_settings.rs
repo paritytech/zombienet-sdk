@@ -1,6 +1,8 @@
-use std::net::IpAddr;
+use std::{net::IpAddr, str::FromStr};
 
-use crate::shared::types::{Duration, MultiAddress};
+use multiaddr::Multiaddr;
+
+use crate::shared::types::Duration;
 
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq)]
@@ -10,7 +12,7 @@ pub struct GlobalSettings {
     // spawn_bootnode: bool,
 
     /// External bootnode address.
-    bootnodes_addresses: Vec<MultiAddress>,
+    bootnodes_addresses: Vec<Multiaddr>,
 
     /// Global spawn timeout in seconds.
     network_spawn_timeout: Duration,
@@ -20,10 +22,11 @@ pub struct GlobalSettings {
 
     /// Local IP used to expose local services (including RPC, metrics and monitoring).
     local_ip: Option<IpAddr>,
+    local_ip: Option<IpAddr>,
 }
 
 impl GlobalSettings {
-    pub fn bootnodes_addresses(&self) -> Vec<&MultiAddress> {
+    pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect()
     }
 
@@ -36,6 +39,7 @@ impl GlobalSettings {
     }
 
     pub fn local_ip(&self) -> Option<&IpAddr> {
+    pub fn local_ip(&self) -> Option<&IpAddr> {
         self.local_ip.as_ref()
     }
 }
@@ -43,6 +47,7 @@ impl GlobalSettings {
 #[derive(Debug)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
+    errors: Vec<String>,
 }
 
 impl Default for GlobalSettingsBuilder {
@@ -54,6 +59,7 @@ impl Default for GlobalSettingsBuilder {
                 node_spawn_timeout: 300,
                 local_ip: None,
             },
+            errors: vec![],
         }
     }
 }
@@ -63,36 +69,74 @@ impl GlobalSettingsBuilder {
         Self::default()
     }
 
-    fn transition(config: GlobalSettings) -> Self {
-        Self { config }
+    fn transition(config: GlobalSettings, errors: Vec<String>) -> Self {
+        Self { config, errors }
     }
 
-    pub fn with_bootnodes_addresses(self, addresses: Vec<MultiAddress>) -> Self {
-        Self::transition(GlobalSettings {
-            bootnodes_addresses: addresses,
-            ..self.config
-        })
+    pub fn with_bootnodes_addresses(
+        self,
+        bootnode_addresses: Vec<impl TryInto<Multiaddr>>,
+    ) -> Self {
+        let mut addrs = vec![];
+        let mut errors = vec![];
+
+        for addr in bootnode_addresses {
+            match addr.try_into() {
+                Ok(addr) => addrs.push(addr),
+                Err(_) => errors.push("error multiaddr".to_string()),
+            }
+        }
+
+        Self::transition(
+            GlobalSettings {
+                bootnodes_addresses: addrs,
+                ..self.config
+            },
+            vec![self.errors, errors].concat(),
+        )
     }
 
     pub fn with_network_spawn_timeout(self, timeout: Duration) -> Self {
-        Self::transition(GlobalSettings {
-            network_spawn_timeout: timeout,
-            ..self.config
-        })
+        Self::transition(
+            GlobalSettings {
+                network_spawn_timeout: timeout,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_node_spawn_timeout(self, timeout: Duration) -> Self {
-        Self::transition(GlobalSettings {
-            node_spawn_timeout: timeout,
-            ..self.config
-        })
+        Self::transition(
+            GlobalSettings {
+                node_spawn_timeout: timeout,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_local_ip(self, local_ip: IpAddr) -> Self {
-        Self::transition(GlobalSettings {
-            local_ip: Some(local_ip),
-            ..self.config
-        })
+    pub fn with_local_ip(self, local_ip: &str) -> Self {
+        match IpAddr::from_str(local_ip) {
+            Ok(local_ip) => Self::transition(
+                GlobalSettings {
+                    local_ip: Some(local_ip),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_) => Self::transition(
+                GlobalSettings {
+                    local_ip: None,
+                    ..self.config
+                },
+                vec![
+                    self.errors,
+                    vec![format!("local_ip: unable to convert into IpAddr")],
+                ]
+                .concat(),
+            ),
+        }
     }
 
     pub fn build(self) -> GlobalSettings {
@@ -108,17 +152,17 @@ mod tests {
     fn global_settings_config_builder_should_build_a_new_global_settings_config_correctly() {
         let global_settings_config = GlobalSettingsBuilder::new()
             .with_bootnodes_addresses(vec![
-                "/ip4/10.41.122.55/tcp/45421".into(),
-                "/ip4/51.144.222.10/tcp/2333".into(),
+                "/ip4/10.41.122.55/tcp/45421",
+                "/ip4/51.144.222.10/tcp/2333",
             ])
             .with_network_spawn_timeout(600)
             .with_node_spawn_timeout(120)
-            .with_local_ip("10.0.0.1".parse().unwrap())
+            .with_local_ip("10.0.0.1")
             .build();
 
-        let bootnodes_addresses: Vec<MultiAddress> = vec![
-            "/ip4/10.41.122.55/tcp/45421".into(),
-            "/ip4/51.144.222.10/tcp/2333".into(),
+        let bootnodes_addresses: Vec<Multiaddr> = vec![
+            "/ip4/10.41.122.55/tcp/45421".try_into().unwrap(),
+            "/ip4/51.144.222.10/tcp/2333".try_into().unwrap(),
         ];
         assert_eq!(
             global_settings_config.bootnodes_addresses(),
@@ -127,7 +171,11 @@ mod tests {
         assert_eq!(global_settings_config.network_spawn_timeout(), 600);
         assert_eq!(global_settings_config.node_spawn_timeout(), 120);
         assert_eq!(
-            global_settings_config.local_ip().unwrap().to_string(),
+            global_settings_config
+                .local_ip()
+                .unwrap()
+                .to_string()
+                .as_str(),
             "10.0.0.1"
         );
     }

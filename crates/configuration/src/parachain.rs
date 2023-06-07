@@ -1,9 +1,11 @@
 use std::marker::PhantomData;
 
+use multiaddr::Multiaddr;
+
 use crate::shared::{
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
-    types::{AssetLocation, MultiAddress},
+    types::AssetLocation,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,7 +48,7 @@ pub struct ParachainConfig {
     is_cumulus_based: bool,
 
     /// List of parachain's bootnodes addresses to use.
-    bootnodes_addresses: Vec<MultiAddress>,
+    bootnodes_addresses: Vec<Multiaddr>,
 
     /// List of parachain's collators to use.
     collators: Vec<NodeConfig>,
@@ -93,7 +95,7 @@ impl ParachainConfig {
         self.is_cumulus_based
     }
 
-    pub fn bootnodes_addresses(&self) -> Vec<&MultiAddress> {
+    pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect::<Vec<_>>()
     }
 
@@ -111,6 +113,7 @@ states! {
 #[derive(Debug)]
 pub struct ParachainConfigBuilder<State> {
     config: ParachainConfig,
+    errors: Vec<String>,
     _state: PhantomData<State>,
 }
 
@@ -131,15 +134,17 @@ impl Default for ParachainConfigBuilder<Initial> {
                 bootnodes_addresses: vec![],
                 collators: vec![],
             },
+            errors: vec![],
             _state: PhantomData,
         }
     }
 }
 
 impl<A> ParachainConfigBuilder<A> {
-    fn transition<B>(config: ParachainConfig) -> ParachainConfigBuilder<B> {
+    fn transition<B>(config: ParachainConfig, errors: Vec<String>) -> ParachainConfigBuilder<B> {
         ParachainConfigBuilder {
             config,
+            errors,
             _state: PhantomData,
         }
     }
@@ -151,7 +156,7 @@ impl ParachainConfigBuilder<Initial> {
     }
 
     pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId> {
-        Self::transition(ParachainConfig { id, ..self.config })
+        Self::transition(ParachainConfig { id, ..self.config }, self.errors)
     }
 }
 
@@ -162,82 +167,173 @@ impl ParachainConfigBuilder<WithId> {
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
         let new_collator = f(NodeConfigBuilder::new(None)).build();
 
-        Self::transition(ParachainConfig {
-            collators: vec![new_collator],
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                collators: vec![new_collator],
+                ..self.config
+            },
+            self.errors,
+        )
     }
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
     pub fn with_chain(self, chain: impl Into<String>) -> Self {
-        Self::transition(ParachainConfig {
-            chain: Some(chain.into()),
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                chain: Some(chain.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
-        Self::transition(ParachainConfig {
-            registration_strategy: Some(strategy),
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                registration_strategy: Some(strategy),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
-        Self::transition(ParachainConfig {
-            initial_balance,
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                initial_balance,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_genesis_wasm_path(self, location: AssetLocation) -> Self {
-        Self::transition(ParachainConfig {
-            genesis_wasm_path: Some(location),
-            ..self.config
-        })
+    pub fn with_genesis_wasm_path(self, location: impl TryInto<AssetLocation>) -> Self {
+        match location.try_into() {
+            Ok(location) => Self::transition(
+                ParachainConfig {
+                    genesis_wasm_path: Some(location),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_) => Self::transition(
+                ParachainConfig {
+                    genesis_wasm_path: None,
+                    ..self.config
+                },
+                vec![
+                    self.errors,
+                    vec![format!(
+                        "genesis_wasm_path: unable to convert into AssetLocation"
+                    )],
+                ]
+                .concat(),
+            ),
+        }
     }
 
     pub fn with_genesis_wasm_generator(self, command: impl Into<String>) -> Self {
-        Self::transition(ParachainConfig {
-            genesis_wasm_generator: Some(command.into()),
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                genesis_wasm_generator: Some(command.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_genesis_state_path(self, location: AssetLocation) -> Self {
-        Self::transition(ParachainConfig {
-            genesis_state_path: Some(location),
-            ..self.config
-        })
+    pub fn with_genesis_state_path(self, location: impl TryInto<AssetLocation>) -> Self {
+        match location.try_into() {
+            Ok(location) => Self::transition(
+                ParachainConfig {
+                    genesis_state_path: Some(location),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_) => Self::transition(
+                ParachainConfig {
+                    genesis_state_path: None,
+                    ..self.config
+                },
+                vec![
+                    self.errors,
+                    vec![format!(
+                        "genesis_state_path: unable to convert into AssetLocation"
+                    )],
+                ]
+                .concat(),
+            ),
+        }
     }
 
     pub fn with_genesis_state_generator(self, command: impl Into<String>) -> Self {
-        Self::transition(ParachainConfig {
-            genesis_state_generator: Some(command.into()),
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                genesis_state_generator: Some(command.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_chain_spec_path(self, location: AssetLocation) -> Self {
-        Self::transition(ParachainConfig {
-            chain_spec_path: Some(location),
-            ..self.config
-        })
+    pub fn with_chain_spec_path(self, location: impl TryInto<AssetLocation>) -> Self {
+        match location.try_into() {
+            Ok(location) => Self::transition(
+                ParachainConfig {
+                    chain_spec_path: Some(location),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_) => Self::transition(
+                ParachainConfig {
+                    chain_spec_path: None,
+                    ..self.config
+                },
+                vec![
+                    self.errors,
+                    vec![format!(
+                        "chain_spec_path: unable to convert into AssetLocation"
+                    )],
+                ]
+                .concat(),
+            ),
+        }
     }
 
     pub fn cumulus_based(self, choice: bool) -> Self {
-        Self::transition(ParachainConfig {
-            is_cumulus_based: choice,
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                is_cumulus_based: choice,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_bootnodes_addresses(self, bootnodes_addresses: Vec<MultiAddress>) -> Self {
-        Self::transition(ParachainConfig {
-            bootnodes_addresses,
-            ..self.config
-        })
+    pub fn with_bootnodes_addresses(
+        self,
+        bootnodes_addresses: Vec<impl TryInto<Multiaddr>>,
+    ) -> Self {
+        let mut addrs = vec![];
+        let mut errors = vec![];
+
+        for addr in bootnodes_addresses {
+            match addr.try_into() {
+                Ok(addr) => addrs.push(addr),
+                Err(_) => errors.push("error multiaddr".to_string()),
+            }
+        }
+
+        Self::transition(
+            ParachainConfig {
+                bootnodes_addresses: addrs,
+                ..self.config
+            },
+            vec![self.errors, errors].concat(),
+        )
     }
 
     pub fn with_collator(
@@ -246,10 +342,13 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
     ) -> Self {
         let new_collator = f(NodeConfigBuilder::new(None)).build();
 
-        Self::transition(ParachainConfig {
-            collators: vec![self.config.collators, vec![new_collator]].concat(),
-            ..self.config
-        })
+        Self::transition(
+            ParachainConfig {
+                collators: vec![self.config.collators, vec![new_collator]].concat(),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn build(self) -> ParachainConfig {
@@ -259,8 +358,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParachainConfigBuilder, RegistrationStrategy};
-    use crate::shared::types::{AssetLocation, MultiAddress};
+    use super::*;
 
     #[test]
     fn parachain_config_builder_should_build_a_new_parachain_config_correctly() {
@@ -281,17 +379,15 @@ mod tests {
             .with_chain("mychainname")
             .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
             .with_initial_balance(100_000_042)
-            .with_genesis_wasm_path(AssetLocation::Url(
-                "https://www.backupsite.com/my/wasm/file.tgz".into(),
-            ))
+            .with_genesis_wasm_path("https://www.backupsite.com/my/wasm/file.tgz")
             .with_genesis_wasm_generator("my wasm generator command")
-            .with_genesis_state_path(AssetLocation::FilePath("./path/to/genesis/state".into()))
+            .with_genesis_state_path("./path/to/genesis/state")
             .with_genesis_state_generator("my state generator command")
-            .with_chain_spec_path(AssetLocation::FilePath("./path/to/chain/spec.json".into()))
+            .with_chain_spec_path("./path/to/chain/spec.json")
             .cumulus_based(false)
             .with_bootnodes_addresses(vec![
-                "/ip4/10.41.122.55/tcp/45421".into(),
-                "/ip4/51.144.222.10/tcp/2333".into(),
+                "/ip4/10.41.122.55/tcp/45421",
+                "/ip4/51.144.222.10/tcp/2333",
             ])
             .build();
 
@@ -313,7 +409,7 @@ mod tests {
         assert_eq!(parachain_config.initial_balance(), 100_000_042);
         assert!(matches!(
             parachain_config.genesis_wasm_path().unwrap(),
-            AssetLocation::Url(value) if value == "https://www.backupsite.com/my/wasm/file.tgz"
+            AssetLocation::Url(value) if value.as_str() == "https://www.backupsite.com/my/wasm/file.tgz"
         ));
         assert_eq!(
             parachain_config.genesis_wasm_generator().unwrap(),
@@ -321,7 +417,7 @@ mod tests {
         );
         assert!(matches!(
             parachain_config.genesis_state_path().unwrap(),
-            AssetLocation::FilePath(value) if value == "./path/to/genesis/state"
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/genesis/state"
         ));
         assert_eq!(
             parachain_config.genesis_state_generator().unwrap(),
@@ -329,12 +425,12 @@ mod tests {
         );
         assert!(matches!(
             parachain_config.chain_spec_path().unwrap(),
-            AssetLocation::FilePath(value) if value == "./path/to/chain/spec.json"
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"
         ));
         assert!(!parachain_config.is_cumulus_based());
-        let bootnodes_addresses: Vec<MultiAddress> = vec![
-            "/ip4/10.41.122.55/tcp/45421".into(),
-            "/ip4/51.144.222.10/tcp/2333".into(),
+        let bootnodes_addresses: Vec<Multiaddr> = vec![
+            "/ip4/10.41.122.55/tcp/45421".try_into().unwrap(),
+            "/ip4/51.144.222.10/tcp/2333".try_into().unwrap(),
         ];
         assert_eq!(
             parachain_config.bootnodes_addresses(),

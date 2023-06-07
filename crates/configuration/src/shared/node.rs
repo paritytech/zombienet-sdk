@@ -1,9 +1,11 @@
 use std::marker::PhantomData;
 
+use multiaddr::Multiaddr;
+
 use super::{macros::states, resources::ResourcesBuilder, types::AssetLocation};
 use crate::shared::{
     resources::Resources,
-    types::{Arg, MultiAddress, Port},
+    types::{Arg, Port},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,7 +54,7 @@ pub struct NodeConfig {
     env: Vec<EnvVar>,
 
     /// List of node's bootnodes addresses to use. Appended to default.
-    bootnodes_addresses: Vec<MultiAddress>,
+    bootnodes_addresses: Vec<Multiaddr>,
 
     /// Default resources. Override the default.
     resources: Option<Resources>,
@@ -114,7 +116,7 @@ impl NodeConfig {
         self.env.iter().collect()
     }
 
-    pub fn bootnodes_addresses(&self) -> Vec<&MultiAddress> {
+    pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect()
     }
 
@@ -155,6 +157,7 @@ states! {
 #[derive(Debug)]
 pub struct NodeConfigBuilder<State> {
     config: NodeConfig,
+    errors: Vec<String>,
     _state: PhantomData<State>,
 }
 
@@ -180,15 +183,17 @@ impl Default for NodeConfigBuilder<Initial> {
                 p2p_cert_hash: None,
                 db_snapshot: None,
             },
+            errors: vec![],
             _state: PhantomData,
         }
     }
 }
 
 impl<A> NodeConfigBuilder<A> {
-    fn transition<B>(config: NodeConfig) -> NodeConfigBuilder<B> {
+    fn transition<B>(config: NodeConfig, errors: Vec<String>) -> NodeConfigBuilder<B> {
         NodeConfigBuilder {
             config,
+            errors,
             _state: PhantomData,
         }
     }
@@ -196,130 +201,209 @@ impl<A> NodeConfigBuilder<A> {
 
 impl NodeConfigBuilder<Initial> {
     pub fn new(default_command: Option<String>) -> Self {
-        Self::transition(NodeConfig {
-            command: default_command,
-            ..Self::default().config
-        })
+        Self::transition(
+            NodeConfig {
+                command: default_command,
+                ..Self::default().config
+            },
+            vec![],
+        )
     }
 
     pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
-        Self::transition(NodeConfig {
-            name: name.into(),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                name: name.into(),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 }
 
 impl NodeConfigBuilder<Buildable> {
     pub fn with_command(self, command: impl Into<String>) -> Self {
-        Self::transition(NodeConfig {
-            command: Some(command.into()),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                command: Some(command.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_image(self, image: impl Into<String>) -> Self {
-        Self::transition(NodeConfig {
-            image: Some(image.into()),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                image: Some(image.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_args(self, args: Vec<Arg>) -> Self {
-        Self::transition(NodeConfig {
-            args,
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                args,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn validator(self, choice: bool) -> Self {
-        Self::transition(NodeConfig {
-            is_validator: choice,
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                is_validator: choice,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn invulnerable(self, choice: bool) -> Self {
-        Self::transition(NodeConfig {
-            is_invulnerable: choice,
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                is_invulnerable: choice,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn bootnode(self, choice: bool) -> Self {
-        Self::transition(NodeConfig {
-            is_bootnode: choice,
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                is_bootnode: choice,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
-        Self::transition(NodeConfig {
-            initial_balance,
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                initial_balance,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_env(self, env: Vec<EnvVar>) -> Self {
-        Self::transition(NodeConfig { env, ..self.config })
+    pub fn with_env(self, env: Vec<impl Into<EnvVar>>) -> Self {
+        let env = env.into_iter().map(|var| var.into()).collect::<Vec<_>>();
+
+        Self::transition(NodeConfig { env, ..self.config }, self.errors)
     }
 
-    pub fn with_bootnodes_addresses(self, bootnodes_addresses: Vec<MultiAddress>) -> Self {
-        Self::transition(NodeConfig {
-            bootnodes_addresses,
-            ..self.config
-        })
+    pub fn with_bootnodes_addresses(
+        self,
+        bootnodes_addresses: Vec<impl TryInto<Multiaddr>>,
+    ) -> Self {
+        let mut addrs = vec![];
+        let mut errors = vec![];
+
+        for addr in bootnodes_addresses {
+            match addr.try_into() {
+                Ok(addr) => addrs.push(addr),
+                Err(_) => errors.push("error multiaddr".to_string()),
+            }
+        }
+
+        Self::transition(
+            NodeConfig {
+                bootnodes_addresses: addrs,
+                ..self.config
+            },
+            vec![self.errors, errors].concat(),
+        )
     }
 
     pub fn with_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         let resources = Some(f(ResourcesBuilder::new()).build());
 
-        Self::transition(NodeConfig {
-            resources,
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                resources,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_ws_port(self, ws_port: Port) -> Self {
-        Self::transition(NodeConfig {
-            ws_port: Some(ws_port),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                ws_port: Some(ws_port),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_rpc_port(self, rpc_port: Port) -> Self {
-        Self::transition(NodeConfig {
-            rpc_port: Some(rpc_port),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                rpc_port: Some(rpc_port),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_prometheus_port(self, prometheus_port: Port) -> Self {
-        Self::transition(NodeConfig {
-            prometheus_port: Some(prometheus_port),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                prometheus_port: Some(prometheus_port),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_p2p_port(self, p2p_port: Port) -> Self {
-        Self::transition(NodeConfig {
-            p2p_port: Some(p2p_port),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                p2p_port: Some(p2p_port),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_p2p_cert_hash(self, p2p_cert_hash: impl Into<String>) -> Self {
-        Self::transition(NodeConfig {
-            p2p_cert_hash: Some(p2p_cert_hash.into()),
-            ..self.config
-        })
+        Self::transition(
+            NodeConfig {
+                p2p_cert_hash: Some(p2p_cert_hash.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn with_db_snapshot(self, location: AssetLocation) -> Self {
-        Self::transition(NodeConfig {
-            db_snapshot: Some(location),
-            ..self.config
-        })
+    pub fn with_db_snapshot(self, location: impl TryInto<AssetLocation>) -> Self {
+        match location.try_into() {
+            Ok(location) => Self::transition(
+                NodeConfig {
+                    db_snapshot: Some(location),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_) => Self::transition(
+                NodeConfig {
+                    db_snapshot: None,
+                    ..self.config
+                },
+                vec![
+                    self.errors,
+                    vec![format!("db_snapshot: error asset location",)],
+                ]
+                .concat(),
+            ),
+        }
     }
 
     pub fn build(self) -> NodeConfig {
@@ -342,10 +426,10 @@ mod tests {
             .invulnerable(true)
             .bootnode(true)
             .with_initial_balance(100_000_042)
-            .with_env(vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()])
+            .with_env(vec![("VAR1", "VALUE1"), ("VAR2", "VALUE2")])
             .with_bootnodes_addresses(vec![
-                "/ip4/10.41.122.55/tcp/45421".into(),
-                "/ip4/51.144.222.10/tcp/2333".into(),
+                "/ip4/10.41.122.55/tcp/45421",
+                "/ip4/51.144.222.10/tcp/2333",
             ])
             .with_resources(|resources| {
                 resources
@@ -359,7 +443,7 @@ mod tests {
             .with_prometheus_port(7000)
             .with_p2p_port(8000)
             .with_p2p_cert_hash("ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f")
-            .with_db_snapshot(AssetLocation::FilePath("/tmp/mysnapshot".into()))
+            .with_db_snapshot("/tmp/mysnapshot")
             .build();
 
         assert_eq!(node_config.name(), "node");
@@ -373,9 +457,9 @@ mod tests {
         assert_eq!(node_config.initial_balance(), 100_000_042);
         let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
         assert_eq!(node_config.env(), env.iter().collect::<Vec<_>>());
-        let bootnodes_addresses: Vec<MultiAddress> = vec![
-            "/ip4/10.41.122.55/tcp/45421".into(),
-            "/ip4/51.144.222.10/tcp/2333".into(),
+        let bootnodes_addresses: Vec<Multiaddr> = vec![
+            "/ip4/10.41.122.55/tcp/45421".try_into().unwrap(),
+            "/ip4/51.144.222.10/tcp/2333".try_into().unwrap(),
         ];
         assert_eq!(
             node_config.bootnodes_addresses(),
@@ -395,7 +479,13 @@ mod tests {
             "ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f"
         );
         assert_eq!(
-            node_config.db_snapshot().unwrap().value(),
+            node_config
+                .db_snapshot()
+                .unwrap()
+                .as_path_buf()
+                .unwrap()
+                .to_str()
+                .unwrap(),
             "/tmp/mysnapshot"
         );
     }

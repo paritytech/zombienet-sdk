@@ -12,3 +12,4 @@ napi = { version="2.12.7", features=["async"]}
 napi-derive = "2.12.5"
 serde = {verson="1.0.163", features = ["derive"]}
 serde_json = "1.0.96"
+tokio = { version = "1.28.2", features = ["process", "macros"] }

@@ -12,15 +12,10 @@ pub trait Provider {
         Ok(())
     }
     fn get_node_ip(&self) -> Result<String, Box<dyn Error>>;
-    fn run_command(
+    async fn run_command(
         &self,
         args: Vec<String>,
         opts: NativeRunCommandOptions,
     ) -> Result<RunCommandResponse, Box<dyn Error>>;
-    fn create_resource(
-        &mut self,
-        resourse_def: PodDef,
-        scoped: bool,
-        wait_ready: bool,
-    ) -> Result<(), Box<dyn Error>>;
+    async fn create_resource(&mut self, resourse_def: PodDef) -> Result<(), Box<dyn Error>>;
 }

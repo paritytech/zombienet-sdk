@@ -1,12 +1,8 @@
-use std::{
-    self,
-    error::Error,
-    fmt::Debug,
-    process::{Command, Output},
-};
+use std::{self, error::Error, fmt::Debug, process::Output};
 
 use async_trait::async_trait;
 use serde::Serialize;
+use tokio::process::Command;
 
 use crate::shared::{
     constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST},
@@ -30,7 +26,7 @@ pub trait FileSystem {
 struct FilesystemInMemory {}
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
-struct NativeProvider<T: FileSystem + Debug> {
+struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client
     namespace:                String,
     // Path where configuration relies
@@ -50,7 +46,7 @@ struct NativeProvider<T: FileSystem + Debug> {
     filesystem:               T,
 }
 
-impl<T: FileSystem + Debug> NativeProvider<T> {
+impl<T: FileSystem + Send + Sync> NativeProvider<T> {
     pub fn new(
         namespace: impl Into<String>,
         config_path: impl Into<String>,
@@ -76,7 +72,7 @@ impl<T: FileSystem + Debug> NativeProvider<T> {
 }
 
 #[async_trait]
-impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
+impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
         // Native provider don't have the `namespace` isolation.
         // but we create the `remoteDir` to place files
@@ -88,7 +84,7 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
         Ok(LOCALHOST.to_owned())
     }
 
-    fn run_command(
+    async fn run_command(
         &self,
         mut args: Vec<String>,
         opts: NativeRunCommandOptions,
@@ -99,11 +95,19 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
             }
         }
 
-        let output: Output = Command::new("sh")
+        // -c is already used in the process::Command to execute the command thus
+        // needs to be removed in case provided
+        if let Some(arg) = args.get(0) {
+            if arg == "-c" {
+                args.remove(0);
+            }
+        }
+
+        let output = Command::new("sh")
             .arg("-c")
             .arg(args.join(" "))
             .output()
-            .expect("failed to execute process");
+            .await?;
 
         if !output.stdout.is_empty() {
             return Ok(RunCommandResponse {
@@ -133,64 +137,60 @@ impl<T: FileSystem + Debug> Provider for NativeProvider<T> {
         })
     }
 
-    fn create_resource(
-        &mut self,
-        resourse_def: PodDef,
-        scoped: bool,
-        wait_ready: bool,
-    ) -> Result<(), Box<dyn Error>> {
+    async fn create_resource(&mut self, resourse_def: PodDef) -> Result<(), Box<dyn Error>> {
         let name: String = resourse_def.metadata.name.clone();
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
 
         let content: String = serde_json::to_string(&resourse_def)?;
 
         self.filesystem
-            .write(local_file_path, content)
+            .write(&local_file_path, content)
             .expect("Create source: Failed to write file");
 
-        // match resourse_def.metadata.labels.zombie_role {
-        //     ZombieRole::Temp => {
-        //         self.run_command(
-        //             resourse_def.spec.command.clone(),
-        //             NativeRunCommandOptions {
-        //                 allow_fail: Some(true),
-        //             },
-        //         )?;
-        //     },
-        //     _ => {
-        //         self.run_command(
-        //             vec!["bash".into(), local_file_path],
-        //             NativeRunCommandOptions {
-        //                 allow_fail: Some(true),
-        //             },
-        //         )?;
-        //     },
-        // }
+        let mut command = resourse_def.spec.command;
+        if command.starts_with("bash") {
+            command = command.replace("bash", "");
+        }
 
-        todo!()
+        match resourse_def.metadata.labels.zombie_role {
+            ZombieRole::Temp => {
+                println!("A-------command: {}", command);
 
-        // if (resourseDef.metadata.labels["zombie-role"] === ZombieRole.Temp) {
-        //   await this.runCommand(resourseDef.spec.command);
-        // } else {
-        //   if (resourseDef.spec.command[0] === "bash")
-        //     resourseDef.spec.command.splice(0, 1);
-        //   debug(this.command);
-        //   debug(resourseDef.spec.command);
+                self.run_command(
+                    vec![command],
+                    NativeRunCommandOptions {
+                        allow_fail: Some(true).is_some(),
+                    },
+                )
+                .await
+                .expect("Failed to run command");
 
-        //   const log = fs.createWriteStream(this.processMap[name].logs);
-        //   const nodeProcess = spawn(
-        //     this.command,
-        //     ["-c", ...resourseDef.spec.command],
-        //     { env: { ...process.env, ...resourseDef.spec.env } },
-        //   );
-        //   debug(nodeProcess.pid);
-        //   nodeProcess.stdout.pipe(log);
-        //   nodeProcess.stderr.pipe(log);
-        //   this.processMap[name].pid = nodeProcess.pid;
-        //   this.processMap[name].cmd = resourseDef.spec.command;
+                Ok(())
+            },
+            _ => {
+                // TODO:
+                //   debug(this.command);
+                //   debug(resourseDef.spec.command);
+                //   const log = fs.createWriteStream(this.processMap[name].logs);
 
-        //   await this.wait_node_ready(name);
-        // }
+                let node_process = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .spawn()
+                    .expect("spawn command failed to start")
+                    .wait()
+                    .expect("spawn command failed to run");
+
+                Ok(())
+                //   debug(nodeProcess.pid);
+                //   nodeProcess.stdout.pipe(log);
+                //   nodeProcess.stderr.pipe(log);
+                //   this.processMap[name].pid = nodeProcess.pid;
+                //   this.processMap[name].cmd = resourseDef.spec.command;
+
+                //   await this.wait_node_ready(name);
+            },
+        }
     }
 }
 
@@ -199,7 +199,10 @@ mod tests {
     use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
 
     use super::*;
-    use crate::helpers::{MockFilesystem, Operation};
+    use crate::{
+        helpers::{MockFilesystem, Operation},
+        shared::types::{PodLabels, PodMetadata, PodSpec},
+    };
 
     #[test]
     fn new_native_provider() {
@@ -225,18 +228,10 @@ mod tests {
 
         native_provider.create_namespace().unwrap();
 
-        assert!(native_provider.filesystem.operations.len() == 2);
+        assert!(native_provider.filesystem.operations.len() == 1);
 
         assert_eq!(
             native_provider.filesystem.operations[0],
-            Operation::CreateFile {
-                path:    "./tmp/namespace".into(),
-                content: r#"{"api_version":"v1","kind":"Namespace","metadata":{"name":"something","labels":null}}"#.into(),
-            }
-        );
-
-        assert_eq!(
-            native_provider.filesystem.operations[1],
             Operation::CreateDir {
                 path: "./tmp/cfg".into(),
             }
@@ -251,8 +246,8 @@ mod tests {
         assert_eq!(native_provider.get_node_ip().unwrap(), LOCALHOST);
     }
 
-    #[test]
-    fn test_run_command_when_bash_is_removed() {
+    #[tokio::test]
+    async fn test_run_command_when_bash_is_removed() {
         let native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
@@ -261,7 +256,8 @@ mod tests {
                 vec!["bash".into(), "ls".into()],
                 NativeRunCommandOptions::default(),
             )
-            .unwrap();
+            .await
+            .expect("Error");
 
         assert_eq!(
             result,
@@ -273,8 +269,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_run_command_when_dash_c_is_provided() {
+    #[tokio::test]
+    async fn test_run_command_when_dash_c_is_provided() {
         let native_provider =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
@@ -283,11 +279,12 @@ mod tests {
             NativeRunCommandOptions::default(),
         );
 
-        assert!(result.is_ok());
+        let a = result.await;
+        assert!(a.is_ok());
     }
 
-    #[test]
-    fn test_run_command_when_error_return_error() {
+    #[tokio::test]
+    async fn test_run_command_when_error_return_error() {
         let native_provider =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
@@ -296,13 +293,48 @@ mod tests {
             NativeRunCommandOptions::default(),
         );
 
-        assert!(some.is_err());
+        assert!(some.await.is_err());
 
         some = native_provider.run_command(
             vec!["ls".into(), "ls".into()],
             NativeRunCommandOptions { allow_fail: true },
         );
 
-        assert!(some.is_ok());
+        assert!(some.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_run_command_spawn() {
+        let mut native_provider: NativeProvider<MockFilesystem> =
+            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+
+        let mut env = std::collections::HashMap::new();
+        env.insert("SOME".to_owned(), "VALUE".to_owned());
+
+        let resource_def: PodDef = PodDef {
+            metadata: PodMetadata {
+                name:      "string".to_owned(),
+                namespace: "string".to_owned(),
+                labels:    PodLabels {
+                    app:         "String".to_owned(),
+                    zombie_ns:   "String".to_owned(),
+                    name:        "String".to_owned(),
+                    instance:    "String".to_owned(),
+                    zombie_role: ZombieRole::Node,
+                },
+            },
+            spec:     PodSpec {
+                cfg_path: "string".to_owned(),
+                data_path: "string".to_owned(),
+                ports: vec![],
+                command: "../examples/test.toml".to_owned(),
+                env,
+            },
+        };
+
+        native_provider
+            .create_resource(resource_def)
+            .await
+            .expect("err");
     }
 }

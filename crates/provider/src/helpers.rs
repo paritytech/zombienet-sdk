@@ -14,8 +14,8 @@ pub enum Operation {
 
 #[derive(Debug)]
 pub struct MockFilesystem {
-    create_dir_error: Option<Box<dyn Error>>,
-    write_error:      Option<Box<dyn Error>>,
+    create_dir_error: Option<Box<dyn Error + Send + Sync>>,
+    write_error:      Option<Box<dyn Error + Send + Sync>>,
     pub operations:   Vec<Operation>,
 }
 
@@ -28,7 +28,7 @@ impl MockFilesystem {
         }
     }
 
-    fn with_create_dir_error(error: impl Error + 'static) -> Self {
+    fn with_create_dir_error(error: impl Error + Send + Sync + 'static) -> Self {
         Self {
             create_dir_error: Some(Box::new(error)),
             write_error:      None,
@@ -36,7 +36,8 @@ impl MockFilesystem {
         }
     }
 
-    fn with_write_error(error: impl Error + 'static) -> Self {
+    /// check crate: thisError for easier implementation of errors!
+    fn with_write_error(error: impl Error + Send + Sync + 'static) -> Self {
         Self {
             create_dir_error: None,
             write_error:      Some(Box::new(error)),

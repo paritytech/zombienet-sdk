@@ -173,13 +173,14 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 //   debug(resourseDef.spec.command);
                 //   const log = fs.createWriteStream(this.processMap[name].logs);
 
-                let node_process = std::process::Command::new("sh")
+                println!("B-------command: {}", command);
+                let mut node_process = tokio::process::Command::new("sh")
                     .arg("-c")
                     .arg(command)
                     .spawn()
-                    .expect("spawn command failed to start")
-                    .wait()
-                    .expect("spawn command failed to run");
+                    .expect("spawn command failed to start");
+
+                println!("-------- {:?}", node_process.wait().await?);
 
                 Ok(())
                 //   debug(nodeProcess.pid);
@@ -327,7 +328,7 @@ mod tests {
                 cfg_path: "string".to_owned(),
                 data_path: "string".to_owned(),
                 ports: vec![],
-                command: "../examples/test.toml".to_owned(),
+                command: "ls".to_owned(),
                 env,
             },
         };

@@ -93,54 +93,105 @@ states! {
 macro_rules! common_builder_methods {
     () => {
         pub fn with_default_image(self, image: impl Into<String>) -> Self {
-            Self::transition(RelaychainConfig {
-                default_image: Some(image.into()),
-                ..self.config
-            })
+            Self::transition(
+                RelaychainConfig {
+                    default_image: Some(image.into()),
+                    ..self.config
+                },
+                self.errors,
+            )
         }
 
         pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
             let default_resources = Some(f(ResourcesBuilder::new()).build());
 
-            Self::transition(RelaychainConfig {
-                default_resources,
-                ..self.config
-            })
+            Self::transition(
+                RelaychainConfig {
+                    default_resources,
+                    ..self.config
+                },
+                self.errors,
+            )
         }
 
-        pub fn with_default_db_snapshot(self, location: AssetLocation) -> Self {
-            Self::transition(RelaychainConfig {
-                default_db_snapshot: Some(location),
-                ..self.config
-            })
+        pub fn with_default_db_snapshot(self, location: impl TryInto<AssetLocation>) -> Self {
+            match location.try_into() {
+                Ok(location) => Self::transition(
+                    RelaychainConfig {
+                        default_db_snapshot: Some(location),
+                        ..self.config
+                    },
+                    self.errors,
+                ),
+                Err(_) => Self::transition(
+                    RelaychainConfig {
+                        default_db_snapshot: None,
+                        ..self.config
+                    },
+                    vec![
+                        self.errors,
+                        vec![format!(
+                            "default_db_snapshot: unable to convert into AssetLocation"
+                        )],
+                    ]
+                    .concat(),
+                ),
+            }
         }
 
-        pub fn with_chain_spec_path(self, chain_spec_path: AssetLocation) -> Self {
-            Self::transition(RelaychainConfig {
-                chain_spec_path: Some(chain_spec_path),
-                ..self.config
-            })
+        pub fn with_chain_spec_path(self, location: impl TryInto<AssetLocation>) -> Self {
+            match location.try_into() {
+                Ok(location) => Self::transition(
+                    RelaychainConfig {
+                        chain_spec_path: Some(location),
+                        ..self.config
+                    },
+                    self.errors,
+                ),
+                Err(_) => Self::transition(
+                    RelaychainConfig {
+                        chain_spec_path: None,
+                        ..self.config
+                    },
+                    vec![
+                        self.errors,
+                        vec![format!(
+                            "chain_spec_path: unable to convert into AssetLocation"
+                        )],
+                    ]
+                    .concat(),
+                ),
+            }
         }
 
         pub fn with_default_args(self, args: Vec<Arg>) -> Self {
-            Self::transition(RelaychainConfig {
-                default_args: args,
-                ..self.config
-            })
+            Self::transition(
+                RelaychainConfig {
+                    default_args: args,
+                    ..self.config
+                },
+                self.errors,
+            )
         }
 
         pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
-            Self::transition(RelaychainConfig {
-                random_nominators_count: Some(random_nominators_count),
-                ..self.config
-            })
+            Self::transition(
+                RelaychainConfig {
+                    random_nominators_count: Some(random_nominators_count),
+                    ..self.config
+                },
+                self.errors,
+            )
         }
 
         pub fn with_max_nominations(self, max_nominations: u8) -> Self {
-            Self::transition(RelaychainConfig {
-                max_nominations: Some(max_nominations),
-                ..self.config
-            })
+            Self::transition(
+                RelaychainConfig {
+                    max_nominations: Some(max_nominations),
+                    ..self.config
+                },
+                self.errors,
+            )
         }
     };
 }
@@ -148,6 +199,7 @@ macro_rules! common_builder_methods {
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
+    errors: Vec<String>,
     _state: PhantomData<State>,
 }
 
@@ -166,15 +218,17 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 max_nominations: None,
                 nodes: vec![],
             },
+            errors: vec![],
             _state: PhantomData,
         }
     }
 }
 
 impl<A> RelaychainConfigBuilder<A> {
-    fn transition<B>(config: RelaychainConfig) -> RelaychainConfigBuilder<B> {
+    fn transition<B>(config: RelaychainConfig, errors: Vec<String>) -> RelaychainConfigBuilder<B> {
         RelaychainConfigBuilder {
             config,
+            errors,
             _state: PhantomData,
         }
     }
@@ -186,10 +240,13 @@ impl RelaychainConfigBuilder<Initial> {
     }
 
     pub fn with_chain(self, chain: &str) -> RelaychainConfigBuilder<WithChain> {
-        Self::transition(RelaychainConfig {
-            chain: chain.to_owned(),
-            ..self.config
-        })
+        Self::transition(
+            RelaychainConfig {
+                chain: chain.to_owned(),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 }
 
@@ -200,10 +257,13 @@ impl RelaychainConfigBuilder<WithChain> {
         self,
         command: &str,
     ) -> RelaychainConfigBuilder<WithDefaultCommand> {
-        Self::transition(RelaychainConfig {
-            default_command: Some(command.to_owned()),
-            ..self.config
-        })
+        Self::transition(
+            RelaychainConfig {
+                default_command: Some(command.to_owned()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_node(
@@ -212,10 +272,13 @@ impl RelaychainConfigBuilder<WithChain> {
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
         let new_node = f(NodeConfigBuilder::new(None)).build();
 
-        Self::transition(RelaychainConfig {
-            nodes: vec![new_node],
-            ..self.config
-        })
+        Self::transition(
+            RelaychainConfig {
+                nodes: vec![new_node],
+                ..self.config
+            },
+            self.errors,
+        )
     }
 }
 
@@ -231,10 +294,13 @@ impl RelaychainConfigBuilder<WithDefaultCommand> {
             .expect("typestate should ensure the default_command isn't None at this point, this is a bug please report it");
         let new_node = f(NodeConfigBuilder::new(Some(default_command))).build();
 
-        Self::transition(RelaychainConfig {
-            nodes: vec![new_node],
-            ..self.config
-        })
+        Self::transition(
+            RelaychainConfig {
+                nodes: vec![new_node],
+                ..self.config
+            },
+            self.errors,
+        )
     }
 }
 
@@ -249,10 +315,13 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
             f(NodeConfigBuilder::new(None)).build()
         };
 
-        Self::transition(RelaychainConfig {
-            nodes: vec![self.config.nodes, vec![new_node]].concat(),
-            ..self.config
-        })
+        Self::transition(
+            RelaychainConfig {
+                nodes: vec![self.config.nodes, vec![new_node]].concat(),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn build(self) -> RelaychainConfig {
@@ -276,10 +345,8 @@ mod tests {
                     .with_limit_memory("1G")
                     .with_request_cpu("250M")
             })
-            .with_default_db_snapshot(AssetLocation::Url(
-                "https://www.urltomysnapshot.com/file.tgz".into(),
-            ))
-            .with_chain_spec_path(AssetLocation::FilePath("./path/to/chain/spec.json".into()))
+            .with_default_db_snapshot("https://www.urltomysnapshot.com/file.tgz")
+            .with_chain_spec_path("./path/to/chain/spec.json")
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
@@ -313,11 +380,11 @@ mod tests {
         assert_eq!(default_resources.request_cpu().unwrap().value(), "250M");
         assert!(matches!(
             relaychain_config.default_db_snapshot().unwrap(),
-            AssetLocation::Url(value) if value == "https://www.urltomysnapshot.com/file.tgz",
+            AssetLocation::Url(value) if value.as_str() == "https://www.urltomysnapshot.com/file.tgz",
         ));
         assert!(matches!(
             relaychain_config.chain_spec_path().unwrap(),
-            AssetLocation::FilePath(value) if value == "./path/to/chain/spec.json"
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"
         ));
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(

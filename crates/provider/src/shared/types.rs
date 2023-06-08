@@ -161,7 +161,7 @@ pub struct Settings {
 pub struct Process {
     pub pid:          u32,
     pub log_dir:      String,
-    pub port_mapping: HashMap<u16, u16>,
+    pub port_mapping: HashMap<u32, u32>,
     pub command:      String,
 }
 

@@ -1,22 +1,21 @@
 use std::marker::PhantomData;
 
+use super::{macros::states, resources::ResourcesBuilder, types::AssetLocation};
 use crate::shared::{
     resources::Resources,
     types::{Arg, MultiAddress, Port},
 };
 
-use super::{macros::states, resources::ResourcesBuilder, types::AssetLocation};
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnvVar {
-    name: String,
+    name:  String,
     value: String,
 }
 
 impl From<(&str, &str)> for EnvVar {
     fn from((name, value): (&str, &str)) -> Self {
         Self {
-            name: name.to_owned(),
+            name:  name.to_owned(),
             value: value.to_owned(),
         }
     }
@@ -164,23 +163,23 @@ impl Default for NodeConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: NodeConfig {
-                name: "".into(),
-                image: None,
-                command: None,
-                args: vec![],
-                is_validator: false,
-                is_invulnerable: false,
-                is_bootnode: false,
-                initial_balance: 2_000_000_000_000,
-                env: vec![],
+                name:                "".into(),
+                image:               None,
+                command:             None,
+                args:                vec![],
+                is_validator:        false,
+                is_invulnerable:     false,
+                is_bootnode:         false,
+                initial_balance:     2_000_000_000_000,
+                env:                 vec![],
                 bootnodes_addresses: vec![],
-                resources: None,
-                ws_port: None,
-                rpc_port: None,
-                prometheus_port: None,
-                p2p_port: None,
-                p2p_cert_hash: None,
-                db_snapshot: None,
+                resources:           None,
+                ws_port:             None,
+                rpc_port:            None,
+                prometheus_port:     None,
+                p2p_port:            None,
+                p2p_cert_hash:       None,
+                db_snapshot:         None,
             },
             _state: PhantomData,
         }

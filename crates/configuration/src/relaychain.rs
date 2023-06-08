@@ -99,16 +99,16 @@ impl Default for RelaychainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: RelaychainConfig {
-                chain: "".into(),
-                default_command: None,
-                default_image: None,
-                default_resources: None,
-                default_db_snapshot: None,
-                chain_spec_path: None,
-                default_args: vec![],
+                chain:                   "".into(),
+                default_command:         None,
+                default_image:           None,
+                default_resources:       None,
+                default_db_snapshot:     None,
+                chain_spec_path:         None,
+                default_args:            vec![],
                 random_nominators_count: None,
-                max_nominations: None,
-                nodes: vec![],
+                max_nominations:         None,
+                nodes:                   vec![],
             },
             _state: PhantomData,
         }

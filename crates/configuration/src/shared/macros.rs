@@ -8,4 +8,4 @@ macro_rules! states {
     };
 }
 
-pub (crate) use states;
+pub(crate) use states;

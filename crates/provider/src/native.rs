@@ -308,11 +308,6 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    // async dumpLogs(path: string, podName: string): Promise<void> {
-    //   const dstFileName = `${path}/logs/${podName}.log`;
-    //   await fs.promises.copyFile(`${this.tmpDir}/${podName}.log`, dstFileName);
-    // }
-
     async fn wait_node_ready(&mut self, node_name: String) -> Result<(), Box<dyn Error>> {
         // check if the process is alive after 1 seconds
         sleep(Duration::from_millis(1000)).await;

@@ -10,7 +10,7 @@ pub trait Provider {
     fn create_namespace(&mut self) -> Result<(), Box<dyn Error>>;
     fn get_node_ip(&self) -> Result<String, Box<dyn Error>>;
     fn get_port_mapping(&mut self, port: u32, pod_name: String) -> u32;
-    async fn get_node_info(&mut self, podName: String) -> Result<(String, u32), Box<dyn Error>>;
+    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u32), Box<dyn Error>>;
     async fn run_command(
         &self,
         args: Vec<String>,

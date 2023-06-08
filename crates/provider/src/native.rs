@@ -1,20 +1,20 @@
-use std::{self, error::Error, fmt::Debug, process::Output};
+use std::{self, collections::HashMap, error::Error, fmt::Debug, fs::File, process::Stdio};
 
 use async_trait::async_trait;
 use serde::Serialize;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 use crate::shared::{
     constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST},
     provider::Provider,
-    types::{
-        NamespaceDef, NamespaceMetadata, NativeRunCommandOptions, PodDef, RunCommandResponse,
-        ZombieRole,
-    },
+    types::{LocalFile, NativeRunCommandOptions, PodDef, Process, RunCommandResponse, ZombieRole},
 };
 
+#[async_trait]
 pub trait FileSystem {
+    fn create(&mut self, path: impl Into<String>) -> Result<LocalFile, Box<dyn Error>>;
     fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>>;
+    fn open_file(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>>;
     fn write(
         &mut self,
         path: impl Into<String>,
@@ -43,6 +43,7 @@ struct NativeProvider<T: FileSystem + Send + Sync> {
     local_magic_file_path:    String,
     remote_dir:               String,
     data_dir:                 String,
+    process_map:              HashMap<String, Process>,
     filesystem:               T,
 }
 
@@ -55,6 +56,8 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
     ) -> Self {
         let tmp_dir: String = tmp_dir.into();
 
+        let mut process_map: HashMap<String, Process> = HashMap::new();
+
         Self {
             namespace: namespace.into(),
             config_path: config_path.into(),
@@ -66,6 +69,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
             command: "bash".into(),
             tmp_dir,
             is_pod_monitor_available: false,
+            process_map,
             filesystem,
         }
     }
@@ -139,23 +143,33 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     async fn create_resource(&mut self, resourse_def: PodDef) -> Result<(), Box<dyn Error>> {
         let name: String = resourse_def.metadata.name.clone();
-        let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
 
+        // This is temporary solution for filling up the process map. To be deleted:
+        self.process_map.insert(
+            name.clone(),
+            Process {
+                pid:          1,
+                log_dir:      format!("{}/{}", self.tmp_dir, name.clone()),
+                port_mapping: HashMap::new(),
+                command:      String::new(),
+            },
+        );
+        // Delete the code above once spawnFromDef is implemented
+
+        let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
         let content: String = serde_json::to_string(&resourse_def)?;
 
         self.filesystem
             .write(&local_file_path, content)
             .expect("Create source: Failed to write file");
 
-        let mut command = resourse_def.spec.command;
+        let mut command: String = resourse_def.spec.command.clone();
         if command.starts_with("bash") {
             command = command.replace("bash", "");
         }
 
         match resourse_def.metadata.labels.zombie_role {
             ZombieRole::Temp => {
-                println!("A-------command: {}", command);
-
                 self.run_command(
                     vec![command],
                     NativeRunCommandOptions {
@@ -167,29 +181,41 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
                 Ok(())
             },
-            _ => {
-                // TODO:
-                //   debug(this.command);
-                //   debug(resourseDef.spec.command);
-                //   const log = fs.createWriteStream(this.processMap[name].logs);
+            ZombieRole::Node
+            | ZombieRole::BootNode
+            | ZombieRole::Collator
+            | ZombieRole::CumulusCollator
+            | ZombieRole::Authority
+            | ZombieRole::FullNode => {
+                // TODO: log::debug!(command);
+                // TODO: log::debug!(resourse_def.spec.command);
+                // TODO: create a file and pass it for STDOUT and STDIN
+                // let file: LocalFile = self
+                //     .filesystem
+                //     .create(&format!("{}/{}", self.tmp_dir, name))
+                //     .expect("Create source: Failed to create file");
 
-                println!("B-------command: {}", command);
-                let mut node_process = tokio::process::Command::new("sh")
+                let child_process: Child = match Command::new("sh")
                     .arg("-c")
                     .arg(command)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
                     .spawn()
-                    .expect("spawn command failed to start");
+                {
+                    Err(why) => panic!("Couldn't spawn process: {}", why),
+                    Ok(node_process) => node_process,
+                };
 
-                println!("-------- {:?}", node_process.wait().await?);
-
-                Ok(())
-                //   debug(nodeProcess.pid);
+                // TODO: log::debug!(node_process.id());
                 //   nodeProcess.stdout.pipe(log);
                 //   nodeProcess.stderr.pipe(log);
-                //   this.processMap[name].pid = nodeProcess.pid;
-                //   this.processMap[name].cmd = resourseDef.spec.command;
 
-                //   await this.wait_node_ready(name);
+                self.process_map.get_mut(&name).unwrap().pid = child_process.id().unwrap();
+                self.process_map.get_mut(&name).unwrap().command =
+                    format!("{}", resourse_def.spec.command);
+
+                // TODO:  await this.wait_node_ready(name);
+                Ok(())
             },
         }
     }
@@ -305,7 +331,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_command_spawn() {
+    async fn test_create_resource() {
         let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
@@ -337,5 +363,7 @@ mod tests {
             .create_resource(resource_def)
             .await
             .expect("err");
+
+        assert_eq!(native_provider.process_map.len(), 1);
     }
 }

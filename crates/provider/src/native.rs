@@ -168,19 +168,6 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>> {
         let name: String = resource_def.metadata.name.clone();
-
-        // This is temporary solution for filling up the process map. To be deleted:
-        // self.process_map.insert(
-        //     name.clone(),
-        //     Process {
-        //         pid:          1,
-        //         log_dir:      format!("{}/{}", self.tmp_dir, name.clone()),
-        //         port_mapping: HashMap::new(),
-        //         command:      String::new(),
-        //     },
-        // );
-        // Delete the code above once spawnFromDef is implemented
-
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
         let content: String = serde_json::to_string(&resource_def)?;
 
@@ -229,11 +216,11 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             //   nodeProcess.stdout.pipe(log);
             //   nodeProcess.stderr.pipe(log);
 
-            self.process_map.get_mut(&name).unwrap().pid = child_process.id().unwrap();
-            self.process_map.get_mut(&name).unwrap().command =
-                format!("{}", resource_def.spec.command);
+            self.process_map.entry(name.clone()).and_modify(|f| {
+                f.pid = child_process.id().unwrap();
+                f.command = format!("{}", resource_def.spec.command);
+            });
 
-            // TODO:  await this.wait_node_ready(name);
             let _ = self.wait_node_ready(name).await;
             Ok(())
         }

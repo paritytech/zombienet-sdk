@@ -1,4 +1,6 @@
-use std::{self, collections::HashMap, error::Error, fmt::Debug, io::ErrorKind, process::Stdio};
+use std::{
+    self, collections::HashMap, error::Error, fmt::Debug, io::ErrorKind, path::Path, process::Stdio,
+};
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -93,6 +95,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
+    // TODO: Add test
     fn get_port_mapping(&mut self, port: u16, pod_name: String) -> Result<u16, Box<dyn Error>> {
         let result = self
             .process_map
@@ -103,6 +106,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(result.unwrap().to_owned())
     }
 
+    // TODO: Add test
     fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), Box<dyn Error>> {
         let host_port = self.get_port_mapping(P2P_PORT, pod_name);
         // const hostPort = await this.getPortMapping(P2P_PORT, podName);
@@ -166,6 +170,55 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         })
     }
 
+    // TODO: Add test
+    async fn run_script(
+        &mut self,
+        identifier: String,
+        script_path: String,
+        args: Vec<String>,
+    ) -> Result<RunCommandResponse, Box<dyn Error>> {
+        let script_filename: &str = Path::new(&script_path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let script_path_in_pod: String =
+            format!("{}/{}/{}", self.tmp_dir, identifier, script_filename);
+
+        // upload the script
+        self.filesystem
+            .copy(&script_path, &script_path_in_pod)
+            .expect("Failed to copy file");
+
+        // set as executable
+        self.run_command(
+            vec![
+                "chmod".to_owned(),
+                "+x".to_owned(),
+                script_path_in_pod.to_owned(),
+            ],
+            NativeRunCommandOptions::default(),
+        )
+        .await?;
+
+        let command = format!(
+            "cd {}/{} && {} {}",
+            self.tmp_dir,
+            identifier,
+            script_path_in_pod,
+            args.join(" ")
+        );
+        let result = self
+            .run_command(vec![command], NativeRunCommandOptions::default())
+            .await?;
+
+        Ok(RunCommandResponse {
+            exit_code: result.exit_code,
+            std_out:   result.std_out,
+            std_err:   result.std_err,
+        })
+    }
+
     async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>> {
         let name: String = resource_def.metadata.name.clone();
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
@@ -181,14 +234,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         }
 
         if let ZombieRole::Temp = resource_def.metadata.labels.zombie_role {
-            self.run_command(
-                vec![command],
-                NativeRunCommandOptions {
-                    allow_fail: Some(true).is_some(),
-                },
-            )
-            .await
-            .expect("Failed to run command");
+            self.run_command(vec![command], NativeRunCommandOptions { allow_fail: true })
+                .await
+                .expect("Failed to run command");
 
             Ok(())
         } else {
@@ -226,6 +274,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         }
     }
 
+    // TODO: Add test
     async fn destroy_namespace(&mut self) -> Result<(), Box<dyn Error>> {
         // get pod names
         let mut memo: Vec<String> = Vec::new();
@@ -268,6 +317,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
+    // TODO: Add test
     async fn get_node_logs(&mut self, name: String) -> Result<String, Box<dyn Error>> {
         // For now in native let's just return all the logs
         let result: Result<String, Box<dyn Error>> = self
@@ -409,16 +459,19 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         )));
     }
 
+    // TODO: Add test
     fn get_pause_args(&mut self, name: String) -> Vec<String> {
         let command = format!("kill -STOP {}", self.process_map[&name].pid);
         [command].to_vec()
     }
 
+    // TODO: Add test
     fn get_resume_args(&mut self, name: String) -> Vec<String> {
         let command = format!("kill -CONT {}", self.process_map[&name].pid);
         [command].to_vec()
     }
 
+    // TODO: Add test
     async fn validate_access(&mut self) -> Result<bool, Box<dyn Error>> {
         let result = self
             .run_command(

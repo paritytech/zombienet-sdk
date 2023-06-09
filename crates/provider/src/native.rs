@@ -1,21 +1,31 @@
-use std::{self, collections::HashMap, collections::hash_map::Entry::{Occupied, Vacant}, error::Error, fmt::Debug, io::ErrorKind, process::Stdio};
+use std::{
+    self,
+    collections::{
+        hash_map::Entry::{Occupied, Vacant},
+        HashMap,
+    },
+    error::Error,
+    fmt::Debug,
+    io::ErrorKind,
+    process::Stdio,
+};
 
 use async_trait::async_trait;
 use serde::Serialize;
+use support::fs::FileSystem;
 use tokio::{
     process::{Child, Command},
     time::{sleep, Duration},
 };
 
 use super::Provider;
-
-use crate::shared::{
-    constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
-    types::{NativeRunCommandOptions, PodDef, Process, RunCommandResponse, ZombieRole},
+use crate::{
+    errors::ProviderError,
+    shared::{
+        constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
+        types::{NativeRunCommandOptions, PodDef, Process, RunCommandResponse, ZombieRole},
+    },
 };
-
-use crate::errors::ProviderError;
-use support::fs::FileSystem;
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
 struct NativeProvider<T: FileSystem + Send + Sync> {
@@ -76,7 +86,11 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    async fn get_port_mapping(&mut self, port: u16, pod_name: String) -> Result<u16, Box<dyn Error>> {
+    async fn get_port_mapping(
+        &mut self,
+        port: u16,
+        pod_name: String,
+    ) -> Result<u16, Box<dyn Error>> {
         match self.process_map.get(&pod_name) {
             Some(process) => {
                 match process.port_mapping.get(&port) {
@@ -86,7 +100,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 }
             },
             // TODO: return specialized error
-            None => {}
+            None => {},
         };
 
         Err(Box::new(ProviderError::TodoErr))
@@ -126,20 +140,22 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .output()
             .await?;
 
-
         if !result.status.success() && !opts.allow_fail {
             return Err(Box::new(std::io::Error::new(
                 ErrorKind::Other,
                 "Allow fail",
             )));
-
         } else {
             // cmd success or we allow to fail
             // in either case we return Ok
             Ok(RunCommandResponse {
                 exit_code: result.status,
                 std_out:   result.stdout,
-                std_err:   if result.stderr.is_empty() { None } else {Some(result.stderr)},
+                std_err:   if result.stderr.is_empty() {
+                    None
+                } else {
+                    Some(result.stderr)
+                },
             })
         }
     }
@@ -211,8 +227,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
         let content: String = serde_json::to_string(&resource_def)?;
 
-        self.filesystem
-            .write(&local_file_path, content)?;
+        self.filesystem.write(&local_file_path, content)?;
 
         let command = if resource_def.spec.command.starts_with("bash") {
             resource_def.spec.command.replace("bash", "")
@@ -251,19 +266,18 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 Occupied(_) => return Err(Box::new(ProviderError::TodoErr)),
                 Vacant(slot) => {
                     slot.insert(Process {
-                        pid: child_process.id().unwrap(),
-                        //TODO: complete this field
-                        log_dir: "".into(),
-                        //TODO: complete this field
+                        pid:          child_process.id().unwrap(),
+                        // TODO: complete this field
+                        log_dir:      "".into(),
+                        // TODO: complete this field
                         port_mapping: HashMap::default(),
-                        command: command,
+                        command,
                     });
-                }
+                },
             }
 
             // TODO: uncomment when resolve the spawn method
-            //let _ = self.wait_node_ready(name).await;
-
+            // let _ = self.wait_node_ready(name).await;
         }
         Ok(())
     }
@@ -483,11 +497,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 mod tests {
     use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
 
+    use support::fs::mock::{MockFilesystem, Operation};
+
     use super::*;
-    use support::fs::mock::{MockFilesystem,Operation};
-    use crate::{
-        shared::types::{PodLabels, PodMetadata, PodSpec},
-    };
+    use crate::shared::types::{PodLabels, PodMetadata, PodSpec};
 
     #[test]
     fn new_native_provider() {

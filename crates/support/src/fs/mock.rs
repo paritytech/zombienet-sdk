@@ -1,10 +1,8 @@
 use std::{error::Error, fs::File};
+
 use async_trait::async_trait;
 
-use super::{FileSystem, Result};
-use super::local_file::LocalFile;
-
-
+use super::{local_file::LocalFile, FileSystem, Result};
 
 #[derive(Debug, PartialEq)]
 pub enum Operation {
@@ -119,11 +117,7 @@ impl FileSystem for MockFilesystem {
         Ok(())
     }
 
-    fn write(
-        &mut self,
-        path: impl Into<String>,
-        content: impl Into<String>,
-    ) -> Result<()> {
+    fn write(&mut self, path: impl Into<String>, content: impl Into<String>) -> Result<()> {
         if let Some(err) = self.write_error.take() {
             return Err(err);
         }
@@ -169,11 +163,7 @@ impl FileSystem for MockFilesystem {
         Ok("This is a test".to_owned())
     }
 
-    fn copy(
-        &mut self,
-        from: impl Into<String>,
-        to: impl Into<String>,
-    ) -> Result<()> {
+    fn copy(&mut self, from: impl Into<String>, to: impl Into<String>) -> Result<()> {
         if let Some(err) = self.copy_error.take() {
             return Err(err);
         }

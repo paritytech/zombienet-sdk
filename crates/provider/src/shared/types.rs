@@ -1,6 +1,5 @@
 use std::{
-    collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf,
-    process::ExitStatus, vec,
+    collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus, vec,
 };
 
 use serde::{Deserialize, Serialize};

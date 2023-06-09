@@ -1,2 +1,2 @@
-pub mod fs;
 pub mod errors;
+pub mod fs;

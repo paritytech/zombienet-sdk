@@ -1,10 +1,10 @@
+mod errors;
 mod native;
 mod shared;
-mod errors;
 
 use std::error::Error;
-use async_trait::async_trait;
 
+use async_trait::async_trait;
 use shared::types::{NativeRunCommandOptions, PodDef, RunCommandResponse};
 
 #[async_trait]
@@ -12,7 +12,11 @@ use shared::types::{NativeRunCommandOptions, PodDef, RunCommandResponse};
 pub trait Provider {
     async fn create_namespace(&mut self) -> Result<(), Box<dyn Error>>;
     async fn get_node_ip(&self) -> Result<String, Box<dyn Error>>;
-    async fn get_port_mapping(&mut self, port: u16, pod_name: String) -> Result<u16, Box<dyn Error>>;
+    async fn get_port_mapping(
+        &mut self,
+        port: u16,
+        pod_name: String,
+    ) -> Result<u16, Box<dyn Error>>;
     async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), Box<dyn Error>>;
     async fn run_command(
         &self,

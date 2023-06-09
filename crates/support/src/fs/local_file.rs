@@ -1,4 +1,4 @@
-use std::{ fs::File, io::Write };
+use std::{fs::File, io::Write};
 
 #[derive(Debug)]
 pub struct LocalFile(File);

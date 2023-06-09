@@ -219,6 +219,19 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         })
     }
 
+    fn copy_file_from_pod(
+        &mut self,
+        pod_file_path: String,
+        local_file_path: String,
+    ) -> Result<(), Box<dyn Error>> {
+        // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
+
+        self.filesystem
+            .copy(&pod_file_path, &local_file_path)
+            .expect("Failed to copy file");
+        Ok(())
+    }
+
     async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>> {
         let name: String = resource_def.metadata.name.clone();
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);

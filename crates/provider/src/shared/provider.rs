@@ -22,6 +22,11 @@ pub trait Provider {
         script_path: String,
         args: Vec<String>,
     ) -> Result<RunCommandResponse, Box<dyn Error>>;
+    fn copy_file_from_pod(
+        &mut self,
+        pod_file_path: String,
+        local_file_path: String,
+    ) -> Result<(), Box<dyn Error>>;
     async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>>;
     async fn wait_node_ready(&mut self, node_name: String) -> Result<(), Box<dyn Error>>;
     async fn get_node_logs(&mut self, node_name: String) -> Result<String, Box<dyn Error>>;

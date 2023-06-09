@@ -86,27 +86,27 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
 
 #[async_trait]
 impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
-    fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
         // Native provider don't have the `namespace` isolation.
         // but we create the `remoteDir` to place files
         self.filesystem.create_dir(&self.remote_dir)?;
         Ok(())
     }
 
-    fn get_port_mapping(&mut self, port: u32, pod_name: String) -> u32 {
-        *self
+    fn get_port_mapping(&mut self, port: u16, pod_name: String) -> Result<u16, Box<dyn Error>> {
+        let result = self
             .process_map
             .get(&pod_name)
             .unwrap()
             .port_mapping
-            .get(&port)
-            .unwrap()
+            .get(&port);
+        Ok(result.unwrap().to_owned())
     }
 
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u32), Box<dyn Error>> {
-        let host_port: u32 = self.get_port_mapping(P2P_PORT, pod_name);
+    fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), Box<dyn Error>> {
+        let host_port = self.get_port_mapping(P2P_PORT, pod_name);
         // const hostPort = await this.getPortMapping(P2P_PORT, podName);
-        Ok((LOCALHOST.to_string(), host_port))
+        Ok((LOCALHOST.to_string(), host_port.unwrap()))
     }
 
     fn get_node_ip(&self) -> Result<String, Box<dyn Error>> {
@@ -166,84 +166,76 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         })
     }
 
-    async fn create_resource(&mut self, resourse_def: PodDef) -> Result<(), Box<dyn Error>> {
-        let name: String = resourse_def.metadata.name.clone();
+    async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>> {
+        let name: String = resource_def.metadata.name.clone();
 
         // This is temporary solution for filling up the process map. To be deleted:
-        self.process_map.insert(
-            name.clone(),
-            Process {
-                pid:          1,
-                log_dir:      format!("{}/{}", self.tmp_dir, name.clone()),
-                port_mapping: HashMap::new(),
-                command:      String::new(),
-            },
-        );
+        // self.process_map.insert(
+        //     name.clone(),
+        //     Process {
+        //         pid:          1,
+        //         log_dir:      format!("{}/{}", self.tmp_dir, name.clone()),
+        //         port_mapping: HashMap::new(),
+        //         command:      String::new(),
+        //     },
+        // );
         // Delete the code above once spawnFromDef is implemented
 
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
-        let content: String = serde_json::to_string(&resourse_def)?;
+        let content: String = serde_json::to_string(&resource_def)?;
 
         self.filesystem
             .write(&local_file_path, content)
             .expect("Create source: Failed to write file");
 
-        let mut command: String = resourse_def.spec.command.clone();
+        let mut command: String = resource_def.spec.command.clone();
         if command.starts_with("bash") {
             command = command.replace("bash", "");
         }
 
-        match resourse_def.metadata.labels.zombie_role {
-            ZombieRole::Temp => {
-                self.run_command(
-                    vec![command],
-                    NativeRunCommandOptions {
-                        allow_fail: Some(true).is_some(),
-                    },
-                )
-                .await
-                .expect("Failed to run command");
+        if let ZombieRole::Temp = resource_def.metadata.labels.zombie_role {
+            self.run_command(
+                vec![command],
+                NativeRunCommandOptions {
+                    allow_fail: Some(true).is_some(),
+                },
+            )
+            .await
+            .expect("Failed to run command");
 
-                Ok(())
-            },
-            ZombieRole::Node
-            | ZombieRole::BootNode
-            | ZombieRole::Collator
-            | ZombieRole::CumulusCollator
-            | ZombieRole::Authority
-            | ZombieRole::FullNode => {
-                // Javier-TODO: We need to see how to handle the logs and creation of file and STDIO
-                // TODO: log::debug!(command);
-                // TODO: log::debug!(resourse_def.spec.command);
-                // TODO: create a file and pass it for STDOUT and STDIN
-                // let file: LocalFile = self
-                //     .filesystem
-                //     .create(&format!("{}/{}", self.tmp_dir, name))
-                //     .expect("Create source: Failed to create file");
+            Ok(())
+        } else {
+            // Javier-TODO: We need to see how to handle the logs and creation of file and STDIO
+            // TODO: log::debug!(command);
+            // TODO: log::debug!(resource_def.spec.command);
+            // TODO: create a file and pass it for STDOUT and STDIN
+            // let file: LocalFile = self
+            //     .filesystem
+            //     .create(&format!("{}/{}", self.tmp_dir, name))
+            //     .expect("Create source: Failed to create file");
 
-                let child_process: Child = match Command::new("sh")
-                    .arg("-c")
-                    .arg(command)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
-                    Err(why) => panic!("Couldn't spawn process: {}", why),
-                    Ok(node_process) => node_process,
-                };
+            let child_process: Child = match Command::new("sh")
+                .arg("-c")
+                .arg(command)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Err(why) => panic!("Couldn't spawn process: {}", why),
+                Ok(node_process) => node_process,
+            };
 
-                // TODO: log::debug!(node_process.id());
-                //   nodeProcess.stdout.pipe(log);
-                //   nodeProcess.stderr.pipe(log);
+            // TODO: log::debug!(node_process.id());
+            //   nodeProcess.stdout.pipe(log);
+            //   nodeProcess.stderr.pipe(log);
 
-                self.process_map.get_mut(&name).unwrap().pid = child_process.id().unwrap();
-                self.process_map.get_mut(&name).unwrap().command =
-                    format!("{}", resourse_def.spec.command);
+            self.process_map.get_mut(&name).unwrap().pid = child_process.id().unwrap();
+            self.process_map.get_mut(&name).unwrap().command =
+                format!("{}", resource_def.spec.command);
 
-                // TODO:  await this.wait_node_ready(name);
-                let _ = self.wait_node_ready(name).await;
-                Ok(())
-            },
+            // TODO:  await this.wait_node_ready(name);
+            let _ = self.wait_node_ready(name).await;
+            Ok(())
         }
     }
 
@@ -326,7 +318,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .expect("Failed to run `ps` command");
 
         if result.exit_code.code().unwrap() > 0 {
-            let lines: String = self.get_node_logs(node_name).await.unwrap();
+            let lines: String = self.get_node_logs(node_name).await?;
             // Javier - TODO: check how we will log with tables
             // TODO: Log with a log table
             // const logTable = new CreateLogTable({
@@ -480,12 +472,12 @@ mod tests {
         assert_eq!(native_provider.data_dir, "./tmp/data");
     }
 
-    #[test]
-    fn test_fielsystem_usage() {
+    #[tokio::test]
+    async fn test_fielsystem_usage() {
         let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
 
-        native_provider.create_namespace().unwrap();
+        let _ = native_provider.create_namespace().await;
 
         assert!(native_provider.filesystem.operations.len() == 1);
 

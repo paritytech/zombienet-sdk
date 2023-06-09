@@ -7,16 +7,16 @@ use super::types::{NativeRunCommandOptions, PodDef, RunCommandResponse};
 #[async_trait]
 #[allow(non_upper_case_globals)]
 pub trait Provider {
-    fn create_namespace(&mut self) -> Result<(), Box<dyn Error>>;
+    async fn create_namespace(&mut self) -> Result<(), Box<dyn Error>>;
     fn get_node_ip(&self) -> Result<String, Box<dyn Error>>;
-    fn get_port_mapping(&mut self, port: u32, pod_name: String) -> u32;
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u32), Box<dyn Error>>;
+    fn get_port_mapping(&mut self, port: u16, pod_name: String) -> Result<u16, Box<dyn Error>>;
+    fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), Box<dyn Error>>;
     async fn run_command(
         &self,
         args: Vec<String>,
         opts: NativeRunCommandOptions,
     ) -> Result<RunCommandResponse, Box<dyn Error>>;
-    async fn create_resource(&mut self, resourse_def: PodDef) -> Result<(), Box<dyn Error>>;
+    async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>>;
     async fn wait_node_ready(&mut self, node_name: String) -> Result<(), Box<dyn Error>>;
     async fn get_node_logs(&mut self, node_name: String) -> Result<String, Box<dyn Error>>;
     async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), Box<dyn Error>>;

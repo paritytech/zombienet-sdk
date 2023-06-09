@@ -1,6 +1,5 @@
 use std::{
-    collections::HashMap, fs::File, io::Write, os::unix::process::ExitStatusExt, path::PathBuf,
-    process::ExitStatus, vec,
+    collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus, vec,
 };
 
 use serde::{Deserialize, Serialize};
@@ -163,23 +162,4 @@ pub struct Process {
     pub log_dir:      String,
     pub port_mapping: HashMap<u16, u16>,
     pub command:      String,
-}
-
-#[derive(Debug)]
-pub struct LocalFile(File);
-
-impl From<File> for LocalFile {
-    fn from(file: File) -> Self {
-        LocalFile(file)
-    }
-}
-
-impl Write for LocalFile {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> Result<(), std::io::Error> {
-        self.0.flush()
-    }
 }

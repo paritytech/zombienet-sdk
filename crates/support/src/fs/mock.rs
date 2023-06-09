@@ -1,6 +1,8 @@
 use std::{error::Error, fs::File};
 
-use crate::{native::FileSystem, shared::types::LocalFile};
+use async_trait::async_trait;
+
+use super::{local_file::LocalFile, FileSystem, Result};
 
 #[derive(Debug, PartialEq)]
 pub enum Operation {
@@ -101,8 +103,11 @@ impl MockFilesystem {
     }
 }
 
+#[async_trait]
 impl FileSystem for MockFilesystem {
-    fn create_dir(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>> {
+    type LocalFile = LocalFile;
+
+    fn create_dir(&mut self, path: impl Into<String>) -> Result<()> {
         if let Some(err) = self.create_dir_error.take() {
             return Err(err);
         }
@@ -112,11 +117,7 @@ impl FileSystem for MockFilesystem {
         Ok(())
     }
 
-    fn write(
-        &mut self,
-        path: impl Into<String>,
-        content: impl Into<String>,
-    ) -> Result<(), Box<dyn Error>> {
+    fn write(&mut self, path: impl Into<String>, content: impl Into<String>) -> Result<()> {
         if let Some(err) = self.write_error.take() {
             return Err(err);
         }
@@ -128,7 +129,7 @@ impl FileSystem for MockFilesystem {
         Ok(())
     }
 
-    fn create(&mut self, path: impl Into<String>) -> Result<LocalFile, Box<dyn Error>> {
+    fn create(&mut self, path: impl Into<String>) -> Result<LocalFile> {
         if let Some(err) = self.create_file_error.take() {
             return Err(err);
         }
@@ -142,7 +143,7 @@ impl FileSystem for MockFilesystem {
         Ok(LocalFile::from(file))
     }
 
-    fn open_file(&mut self, path: impl Into<String>) -> Result<(), Box<dyn Error>> {
+    fn open_file(&mut self, path: impl Into<String>) -> Result<()> {
         if let Some(err) = self.open_file_error.take() {
             return Err(err);
         }
@@ -152,7 +153,7 @@ impl FileSystem for MockFilesystem {
         Ok(())
     }
 
-    fn read_file(&mut self, path: impl Into<String>) -> Result<String, Box<dyn Error>> {
+    fn read_file(&mut self, path: impl Into<String>) -> Result<String> {
         if let Some(err) = self.read_file_error.take() {
             return Err(err);
         }
@@ -162,11 +163,7 @@ impl FileSystem for MockFilesystem {
         Ok("This is a test".to_owned())
     }
 
-    fn copy(
-        &mut self,
-        from: impl Into<String>,
-        to: impl Into<String>,
-    ) -> Result<(), Box<dyn Error>> {
+    fn copy(&mut self, from: impl Into<String>, to: impl Into<String>) -> Result<()> {
         if let Some(err) = self.copy_error.take() {
             return Err(err);
         }

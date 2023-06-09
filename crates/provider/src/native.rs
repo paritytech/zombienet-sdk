@@ -266,9 +266,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 Occupied(_) => return Err(Box::new(ProviderError::TodoErr)),
                 Vacant(slot) => {
                     slot.insert(Process {
-                        pid:          child_process.id().unwrap(),
+                        pid: child_process.id().unwrap(),
                         // TODO: complete this field
-                        log_dir:      "".into(),
+                        log_dir: "".into(),
                         // TODO: complete this field
                         port_mapping: HashMap::default(),
                         command,

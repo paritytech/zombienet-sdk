@@ -590,44 +590,48 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         sleep(Duration::from_millis(timeout * 1000)).await;
 
+        let logs = self.process_map[&name].logs.clone();
+
+        // log::debug!("Command: {}", self.process_map[&name].cmd.join(" "));
+
+        let file_handler = self
+            .filesystem
+            .create(logs.clone())
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
+        let final_command = self.process_map[&name].command.clone();
+
+        let child_process = std::process::Command::new(&self.command)
+        .arg("-c")
+        .arg(final_command.clone())
+        // TODO: set env
+        .stdout(file_handler)
+        // TODO: redirect stderr to the same stdout
+        //.stderr()
+        .spawn()?;
+
+        match self.process_map.entry(name.clone()) {
+            // TODO: return specific error
+            Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
+            Vacant(slot) => {
+                slot.insert(Process {
+                    pid: child_process.id(),
+                    // TODO: complete this field
+                    logs,
+                    // TODO: complete this field
+                    port_mapping: HashMap::default(),
+                    command: final_command,
+                });
+            },
+        }
+        self.wait_node_ready(name).await?;
+
         Ok(true)
     }
 
-    //   // start
-    //   const log = fs.createWriteStream(this.processMap[name].logs);
-    //   console.log(["-c", ...this.processMap[name].cmd!]);
-      const nodeProcess = spawn(this.command, [
-        "-c",
-        ...this.processMap[name].cmd!,
-      ]);
-
-      let file_handler = self
-      .filesystem
-      .create(logs.clone())
-      .await
-      .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-  let final_command = resource_def.spec.command.join(" ");
-
-  let child_process = std::process::Command::new(&self.command)
-      .arg("-c")
-      .arg(final_command.clone())
-      // TODO: set env
-      .stdout(file_handler)
-      // TODO: redirect stderr to the same stdout
-      //.stderr()
-      .spawn()?;
-    //   debug(nodeProcess.pid);
-    //   nodeProcess.stdout.pipe(log);
-    //   nodeProcess.stderr.pipe(log);
-    //   this.processMap[name].pid = nodeProcess.pid;
-
-    //   await this.wait_node_ready(name);
-    //   return true;
-    // }
-
-    // getLogsCommand(name: string): string {
-    //   return `tail -f  ${this.tmpDir}/${name}.log`;
-    // }
+    async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError> {
+        return Ok(format!("tail -f {}/{}.log", self.tmp_dir, name));
+    }
 
     // TODO: Add test
     async fn validate_access(&mut self) -> Result<bool, ProviderError> {

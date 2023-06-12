@@ -54,6 +54,7 @@ pub trait Provider {
     async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError>;
     async fn validate_access(&mut self) -> Result<bool, ProviderError>;
     async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
+    async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
     fn is_pod_monitor_available() -> Result<bool, ProviderError> {
         Ok(false)
     }

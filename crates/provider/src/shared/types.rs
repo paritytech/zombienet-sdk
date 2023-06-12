@@ -32,9 +32,9 @@ enum ImagePullPolicy {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileMap {
-    local_file_path:  PathBuf,
-    remote_file_path: PathBuf,
-    unique:           bool,
+    pub local_file_path:  PathBuf,
+    pub remote_file_path: PathBuf,
+    pub unique:           bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

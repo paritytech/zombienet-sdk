@@ -5,7 +5,7 @@ mod shared;
 use std::error::Error;
 
 use async_trait::async_trait;
-use shared::types::{NativeRunCommandOptions, PodDef, RunCommandResponse};
+use shared::types::{FileMap, NativeRunCommandOptions, PodDef, RunCommandResponse};
 
 #[async_trait]
 #[allow(non_upper_case_globals)]
@@ -29,6 +29,19 @@ pub trait Provider {
         script_path: String,
         args: Vec<String>,
     ) -> Result<RunCommandResponse, Box<dyn Error>>;
+    async fn spawn_from_def(
+        &mut self,
+        pod_def: PodDef,
+        files_to_copy: Vec<FileMap>,
+        keystore: String,
+        chain_spec_id: String,
+        db_snapshot: String,
+    ) -> Result<(), Box<dyn Error>>;
+    fn copy_file_from_pod(
+        &mut self,
+        pod_file_path: String,
+        local_file_path: String,
+    ) -> Result<(), Box<dyn Error>>;
     async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>>;
     async fn wait_node_ready(&mut self, node_name: String) -> Result<(), Box<dyn Error>>;
     async fn get_node_logs(&mut self, node_name: String) -> Result<String, Box<dyn Error>>;

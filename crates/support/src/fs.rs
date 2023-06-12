@@ -1,23 +1,26 @@
-use std::io::Write;
+use std::{io::{Write, Read}, path::Path, process::Stdio};
+
 
 use async_trait::async_trait;
 
 mod local_file;
 pub mod mock;
+pub mod errors;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[async_trait]
 pub trait FileSystem {
-    type LocalFile: Write;
+    type File: Read + Write + Into<Stdio> + Send + Sync;
+    type FSError: std::error::Error + Send + Sync + 'static;
 
-    fn copy(&mut self, from: impl Into<String>, to: impl Into<String>) -> Result<()>;
-    fn create(&mut self, path: impl Into<String>) -> Result<Self::LocalFile>;
-    fn create_dir(&mut self, path: impl Into<String>) -> Result<()>;
-    fn open_file(&mut self, path: impl Into<String>) -> Result<()>;
-    fn read_file(&mut self, path: impl Into<String>) -> Result<String>;
-    fn write(&mut self, path: impl Into<String>, content: impl Into<String>) -> Result<()>;
+    async fn copy<P: AsRef<Path> + Send>(&mut self, from: P, to: P) -> Result<(), Self::FSError>;
+    async fn create<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<Self::File, Self::FSError>;
+    async fn create_dir<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<(), Self::FSError>;
+    async fn open_file<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<(), Self::FSError>;
+    async fn read_file<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<String, Self::FSError>;
+    async fn write<P: AsRef<Path> + Send>(&mut self, path: P, content: impl Into<String> + Send) -> Result<(), Self::FSError>;
 }
 
-#[derive(Debug)]
-struct FilesystemInMemory {}
+
+// #[derive(Debug)]
+// struct FilesystemInMemory {}

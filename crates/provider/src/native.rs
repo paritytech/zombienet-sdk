@@ -7,7 +7,8 @@ use std::{
     error::Error,
     fmt::Debug,
     io::ErrorKind,
-    process::Stdio, path::{Path, PathBuf},
+    path::{Path, PathBuf},
+    process::Stdio,
 };
 
 use async_trait::async_trait;
@@ -84,7 +85,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     async fn create_namespace(&mut self) -> Result<(), ProviderError> {
         // Native provider don't have the `namespace` isolation.
         // but we create the `remoteDir` to place files
-        self.filesystem.create_dir(&self.remote_dir).await.map_err(|e| { ProviderError::FSError(Box::new(e))})?;
+        self.filesystem
+            .create_dir(&self.remote_dir)
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
         Ok(())
     }
 
@@ -96,7 +100,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         let r = match self.process_map.get(&pod_name) {
             Some(process) => {
                 match process.port_mapping.get(&port) {
-                    Some(port) =>  Ok(*port),
+                    Some(port) => Ok(*port),
                     // TODO: return specialized error
                     None => Err(ProviderError::MissingNodeInfo(pod_name, "port".into())),
                 }
@@ -165,7 +169,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         identifier: String,
         script_path: String,
         args: Vec<String>,
-    ) -> Result<RunCommandResponse, Box<dyn Error>> {
+    ) -> Result<RunCommandResponse, ProviderError> {
         let script_filename: &str = Path::new(&script_path)
             .file_name()
             .unwrap()
@@ -175,8 +179,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             format!("{}/{}/{}", self.tmp_dir, identifier, script_filename);
 
         // upload the script
-        self.filesystem
-            .copy(&script_path, &script_path_in_pod).await?;
+        let _ = self
+            .filesystem
+            .copy(&script_path, &script_path_in_pod)
+            .await;
 
         // set as executable
         self.run_command(
@@ -214,13 +220,13 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         keystore: String,
         chain_spec_id: String,
         db_snapshot: String,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), ProviderError> {
         let name = pod_def.metadata.name.clone();
         // TODO: log::debug!(format!("{}", serde_json::to_string(&pod_def)));
 
         // keep this in the client.
         self.process_map.entry(name.clone()).and_modify(|p| {
-            p.log_dir = format!("{}/{}.log", self.tmp_dir, name);
+            p.logs = format!("{}/{}.log", self.tmp_dir, name);
             p.port_mapping = pod_def
                 .spec
                 .ports
@@ -229,7 +235,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 .collect();
         });
 
-        // Javier - TODO: check how we will log with tables
+        // TODO: check how we will log with tables
         // let logTable = new CreateLogTable({
         //   colWidths: [25, 100],
         // });
@@ -251,7 +257,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         // and extract to /data
         let _ = self
             .filesystem
-            .create_dir(format!("{}", pod_def.spec.data_path));
+            .create_dir(format!("{}", pod_def.spec.data_path))
+            .await;
 
         // TODO: await downloadFile(dbSnapshot, `${podDef.spec.dataPath}/db.tgz`);
         let command = format!("cd {}/.. && tar -xzvf data/db.tgz", pod_def.spec.data_path);
@@ -268,9 +275,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
             let _ = self
                 .filesystem
-                .create_dir(format!("{}", keystore_remote_dir));
+                .create_dir(format!("{}", keystore_remote_dir))
+                .await;
 
-            let _ = self.filesystem.copy(&keystore, &keystore_remote_dir);
+            let _ = self.filesystem.copy(&keystore, &keystore_remote_dir).await;
         }
 
         let files_to_copy_iter = files_to_copy.iter();
@@ -304,19 +312,22 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 );
             }
 
-            let _ = self.filesystem.copy(
-                file.clone()
-                    .local_file_path
-                    .into_os_string()
-                    .into_string()
-                    .unwrap(),
-                resolved_remote_file_path,
-            );
+            let _ = self
+                .filesystem
+                .copy(
+                    file.clone()
+                        .local_file_path
+                        .into_os_string()
+                        .into_string()
+                        .unwrap(),
+                    resolved_remote_file_path,
+                )
+                .await;
         }
 
-        self.create_resource(pod_def).await?;
+        self.create_resource(pod_def, false, true).await?;
 
-        // Javier - TODO: check how we will log with tables
+        // TODO: check how we will log with tables
         // logTable = new CreateLogTable({
         //   colWidths: [40, 80],
         // });
@@ -327,25 +338,31 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    fn copy_file_from_pod(
+    async fn copy_file_from_pod(
         &mut self,
         pod_file_path: PathBuf,
         local_file_path: PathBuf,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), ProviderError> {
         // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
 
-        self.filesystem
-            .copy(&pod_file_path, &local_file_path)
-            .await?;
+        let _ = self.filesystem.copy(&pod_file_path, &local_file_path).await;
         Ok(())
     }
 
-    async fn create_resource(&mut self, mut resource_def: PodDef, _scoped: bool, wait_ready: bool) -> Result<(), ProviderError> {
+    async fn create_resource(
+        &mut self,
+        mut resource_def: PodDef,
+        _scoped: bool,
+        wait_ready: bool,
+    ) -> Result<(), ProviderError> {
         let name: String = resource_def.metadata.name.clone();
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
         let content: String = serde_json::to_string(&resource_def)?;
 
-        self.filesystem.write(&local_file_path, content).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
+        self.filesystem
+            .write(&local_file_path, content)
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
 
         if resource_def.spec.command.get(0) == Some(&"bash".into()) {
             resource_def.spec.command.remove(0);
@@ -363,9 +380,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         } else {
             // Allow others are spawned.
             let logs = format!("{}/{}.log", self.tmp_dir, name);
-            let file_handler = self.filesystem.create(logs.clone()).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
+            let file_handler = self
+                .filesystem
+                .create(logs.clone())
+                .await
+                .map_err(|e| ProviderError::FSError(Box::new(e)))?;
             let final_command = resource_def.spec.command.join(" ");
-
 
             let child_process = std::process::Command::new(&self.command)
                 .arg("-c")
@@ -399,20 +419,21 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 },
             }
 
-
             // logs: `${this.tmpDir}/${name}.log`,
             // portMapping: podDef.spec.ports.reduce((memo: any, item: any) => {
             //   memo[item.containerPort] = item.hostPort;
             //   return memo;
             // }, {}),
 
-            if wait_ready { self.wait_node_ready(name).await?; }
+            if wait_ready {
+                self.wait_node_ready(name).await?;
+            }
         }
         Ok(())
     }
 
     // TODO: Add test
-    async fn destroy_namespace(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn destroy_namespace(&mut self) -> Result<(), ProviderError> {
         // get pod names
         let mut memo: Vec<String> = Vec::new();
         let pids: Vec<String> = self
@@ -457,19 +478,23 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     // TODO: Add test
     async fn get_node_logs(&mut self, name: String) -> Result<String, ProviderError> {
         // For now in native let's just return all the logs
-        let result= self
+        let result = self
             .filesystem
-            .read_file(&format!("{}/{}.log", self.tmp_dir, name)).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
-            return Ok(result);
+            .read_file(&format!("{}/{}.log", self.tmp_dir, name))
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
+        return Ok(result);
     }
 
-    async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), Box<dyn Error>> {
+    async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), ProviderError> {
         let dst_file_name: String = format!("{}/logs/{}.log", path, pod_name);
-        self.filesystem
+        let _ = self
+            .filesystem
             .copy(
                 &format!("{}/{}.log", self.tmp_dir, pod_name),
                 &dst_file_name,
-            ).await?;
+            )
+            .await;
         Ok(())
     }
 
@@ -490,7 +515,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         if result.exit_code.code().unwrap() > 0 {
             let lines: String = self.get_node_logs(node_name).await?;
-            // Javier - TODO: check how we will log with tables
+            // TODO: check how we will log with tables
             // TODO: Log with a log table
             // const logTable = new CreateLogTable({
             //   colWidths: [20, 100],
@@ -523,16 +548,15 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         for i in [2000, 6000, 12000] {
             sleep(Duration::from_millis(i)).await;
             let lines_now = self
-            .run_command(
-                vec![format!("wc -l  {}", process_node.logs)],
-                NativeRunCommandOptions::default(),
-            )
-            .await?;
+                .run_command(
+                    vec![format!("wc -l  {}", process_node.logs)],
+                    NativeRunCommandOptions::default(),
+                )
+                .await?;
             if lines_now.std_out > lines_intial.std_out {
                 return Ok(());
             };
         }
-
 
         let error_string = format!(
             "Log lines of process: {} ( node: {} ) doesn't grow, please check logs at {}",
@@ -554,8 +578,54 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         [command].to_vec()
     }
 
+    async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError> {
+        let command = format!("kill -9 {}", self.process_map[&name].pid);
+        let result = self
+            .run_command(vec![command], NativeRunCommandOptions { allow_fail: true })
+            .await?;
+
+        if result.exit_code.code().unwrap() > 0 {
+            return Ok(false);
+        }
+
+        sleep(Duration::from_millis(timeout * 1000)).await;
+
+        Ok(true)
+    }
+
+    // async restartNode(name: string, timeout: number | null): Promise<boolean> {
+    //   // kill
+    //   const result = await this.runCommand(
+    //     ["-c", `kill -9 ${this.processMap[name].pid!.toString()}`],
+    //     { allowFail: true },
+    //   );
+    //   if (result.exitCode !== 0) return false;
+
+    //   // sleep
+    //   if (timeout) await sleep(timeout * 1000);
+
+    //   // start
+    //   const log = fs.createWriteStream(this.processMap[name].logs);
+    //   console.log(["-c", ...this.processMap[name].cmd!]);
+    //   const nodeProcess = spawn(this.command, [
+    //     "-c",
+    //     ...this.processMap[name].cmd!,
+    //   ]);
+    //   debug(nodeProcess.pid);
+    //   nodeProcess.stdout.pipe(log);
+    //   nodeProcess.stderr.pipe(log);
+    //   this.processMap[name].pid = nodeProcess.pid;
+
+    //   await this.wait_node_ready(name);
+    //   return true;
+    // }
+
+    // getLogsCommand(name: string): string {
+    //   return `tail -f  ${this.tmpDir}/${name}.log`;
+    // }
+
     // TODO: Add test
-    async fn validate_access(&mut self) -> Result<bool, Box<dyn Error>> {
+    async fn validate_access(&mut self) -> Result<bool, ProviderError> {
         let result = self
             .run_command(
                 vec!["--help".to_owned()],
@@ -644,8 +714,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_command_when_dash_c_is_provided() {
-        let native_provider =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+        let native_provider = NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let result = native_provider.run_command(
             vec!["-c".into(), "ls".into()],
@@ -658,8 +727,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_command_when_error_return_error() {
-        let native_provider =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+        let native_provider = NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let mut some = native_provider.run_command(
             vec!["ls".into(), "ls".into()],

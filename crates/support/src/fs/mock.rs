@@ -1,4 +1,8 @@
-use std::{error::Error, fs::File, path::{PathBuf, Path}};
+use std::{
+    error::Error,
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
 
@@ -23,16 +27,15 @@ pub enum MockError {
     OpError(String),
     #[error(transparent)]
     Other(#[from] Box<dyn std::error::Error + Sync + Send + 'static>),
-
 }
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MockFilesystem {
-    copy_error:        Option<MockError>,//Option<Box<dyn Error + Send + Sync>>,
-    create_dir_error:  Option<MockError>,//Option<Box<dyn Error + Send + Sync>>,
-    create_file_error: Option<MockError>,//Option<Box<dyn Error + Send + Sync>>,
-    open_file_error:   Option<MockError>,//Option<Box<dyn Error + Send + Sync>>,
-    read_file_error:   Option<MockError>,//Option<Box<dyn Error + Send + Sync>>,
-    write_error:       Option<MockError>,//Option<Box<dyn Error + Send + Sync>>,
+    copy_error:        Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
+    create_dir_error:  Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
+    create_file_error: Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
+    open_file_error:   Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
+    read_file_error:   Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
+    write_error:       Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
     pub operations:    Vec<Operation>,
 }
 
@@ -111,20 +114,25 @@ impl MockFilesystem {
 
 #[async_trait]
 impl FileSystem for MockFilesystem {
-    type File = LocalFile;
     type FSError = MockError;
+    type File = LocalFile;
 
     async fn create_dir<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<(), Self::FSError> {
         if let Some(err) = self.create_dir_error.take() {
             return Err(err);
         }
 
-        self.operations
-            .push(Operation::CreateDir { path: path.as_ref().to_path_buf() });
+        self.operations.push(Operation::CreateDir {
+            path: path.as_ref().to_path_buf(),
+        });
         Ok(())
     }
 
-    async fn write<P: AsRef<Path> + Send>(&mut self, path: P, content: impl Into<String> + Send) -> Result<(), Self::FSError> {
+    async fn write<P: AsRef<Path> + Send>(
+        &mut self,
+        path: P,
+        content: impl Into<String> + Send,
+    ) -> Result<(), Self::FSError> {
         if let Some(err) = self.write_error.take() {
             return Err(err);
         }
@@ -136,7 +144,10 @@ impl FileSystem for MockFilesystem {
         Ok(())
     }
 
-    async fn create<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<Self::File, Self::FSError> {
+    async fn create<P: AsRef<Path> + Send>(
+        &mut self,
+        path: P,
+    ) -> Result<Self::File, Self::FSError> {
         if let Some(err) = self.create_file_error.take() {
             return Err(err);
         }
@@ -150,13 +161,14 @@ impl FileSystem for MockFilesystem {
         Ok(LocalFile::from(file))
     }
 
-    async fn open_file<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<(),Self::FSError> {
+    async fn open_file<P: AsRef<Path> + Send>(&mut self, path: P) -> Result<(), Self::FSError> {
         if let Some(err) = self.open_file_error.take() {
             return Err(err);
         }
 
-        self.operations
-            .push(Operation::OpenFile { path: path.as_ref().to_path_buf() });
+        self.operations.push(Operation::OpenFile {
+            path: path.as_ref().to_path_buf(),
+        });
         Ok(())
     }
 
@@ -165,12 +177,17 @@ impl FileSystem for MockFilesystem {
             return Err(err);
         }
 
-        self.operations
-            .push(Operation::ReadFile { path: path.as_ref().to_path_buf() });
+        self.operations.push(Operation::ReadFile {
+            path: path.as_ref().to_path_buf(),
+        });
         Ok("This is a test".to_owned())
     }
 
-    async fn copy<P: AsRef<Path> + Send>(&mut self, from: P, to: P) -> std::result::Result<(), Self::FSError> {
+    async fn copy<P: AsRef<Path> + Send>(
+        &mut self,
+        from: P,
+        to: P,
+    ) -> std::result::Result<(), Self::FSError> {
         if let Some(err) = self.copy_error.take() {
             return Err(err);
         }

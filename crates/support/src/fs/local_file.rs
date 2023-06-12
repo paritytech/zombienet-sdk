@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write};
+use std::{fs::File, io::{Write, Read}, process::Stdio};
 
 #[derive(Debug)]
 pub struct LocalFile(File);
@@ -9,6 +9,12 @@ impl From<File> for LocalFile {
     }
 }
 
+impl From<LocalFile> for Stdio {
+    fn from(value: LocalFile) -> Self {
+        value.0.into()
+    }
+}
+
 impl Write for LocalFile {
     fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
         self.0.write(buf)
@@ -16,5 +22,11 @@ impl Write for LocalFile {
 
     fn flush(&mut self) -> Result<(), std::io::Error> {
         self.0.flush()
+    }
+}
+
+impl Read for LocalFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
     }
 }

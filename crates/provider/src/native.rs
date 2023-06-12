@@ -220,11 +220,11 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         chain_spec_id: String,
         db_snapshot: String,
     ) -> Result<(), Box<dyn Error>> {
-        let name = pod_def.metadata.name;
+        let name = pod_def.metadata.name.clone();
         // TODO: log::debug!(format!("{}", serde_json::to_string(&pod_def)));
 
         // keep this in the client.
-        &self.process_map.entry(name).and_modify(|p| {
+        self.process_map.entry(name.clone()).and_modify(|p| {
             p.log_dir = format!("{}/{}.log", self.tmp_dir, name);
             p.port_mapping = pod_def
                 .spec
@@ -254,25 +254,28 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         // we need to get the snapshot from a public access
         // and extract to /data
-        self.filesystem
+        let _ = self
+            .filesystem
             .create_dir(format!("{}", pod_def.spec.data_path));
 
         // TODO: await downloadFile(dbSnapshot, `${podDef.spec.dataPath}/db.tgz`);
         let command = format!("cd {}/.. && tar -xzvf data/db.tgz", pod_def.spec.data_path);
 
-        self.run_command(vec![command], NativeRunCommandOptions::default());
+        self.run_command(vec![command], NativeRunCommandOptions::default())
+            .await?;
 
-        if keystore != "" {
+        if !keystore.is_empty() {
             // initialize keystore
             let keystore_remote_dir = format!(
                 "{}/chains/{}/keystore",
                 pod_def.spec.data_path, chain_spec_id
             );
 
-            self.filesystem
+            let _ = self
+                .filesystem
                 .create_dir(format!("{}", keystore_remote_dir));
 
-            self.filesystem.copy(&keystore, &keystore_remote_dir);
+            let _ = self.filesystem.copy(&keystore, &keystore_remote_dir);
         }
 
         let files_to_copy_iter = files_to_copy.iter();
@@ -291,23 +294,27 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 .into_string()
                 .unwrap();
 
-            let mut resolved_remote_file_path: String;
+            let mut resolved_remote_file_path = String::new();
             if remote_file_path_str.contains(&self.remote_dir) {
                 resolved_remote_file_path = format!(
                     "{}/{}",
-                    pod_def.spec.cfg_path,
+                    &pod_def.spec.cfg_path,
                     remote_file_path_str.replace(&self.remote_dir, "")
                 );
             } else {
                 resolved_remote_file_path = format!(
                     "{}/{}",
-                    pod_def.spec.data_path,
+                    &pod_def.spec.data_path,
                     remote_file_path_str.replace(&self.data_dir, "")
                 );
             }
 
-            self.filesystem.copy(
-                file.local_file_path.into_os_string().into_string().unwrap(),
+            let _ = self.filesystem.copy(
+                file.clone()
+                    .local_file_path
+                    .into_os_string()
+                    .into_string()
+                    .unwrap(),
                 resolved_remote_file_path,
             );
         }

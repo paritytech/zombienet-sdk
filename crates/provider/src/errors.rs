@@ -1,10 +1,8 @@
 //! Zombienet Provider error definitions.
 
-use support::fs::FileSystem;
-use support::fs::errors::FileSystemError;
+use support::fs::{errors::FileSystemError, FileSystem};
 
 use crate::native::NativeProvider;
-
 
 macro_rules! from_error {
     ($type:ty, $target:ident, $targetvar:expr) => {
@@ -15,7 +13,6 @@ macro_rules! from_error {
         }
     };
 }
-
 
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -39,8 +36,12 @@ pub enum ProviderError {
     #[error("Serialization error")]
     SerializationError(serde_json::Error),
     #[error("IO error: {0}")]
-    IOError(std::io::Error)
+    IOError(std::io::Error),
 }
 
-from_error!(serde_json::Error, ProviderError, ProviderError::SerializationError);
+from_error!(
+    serde_json::Error,
+    ProviderError,
+    ProviderError::SerializationError
+);
 from_error!(std::io::Error, ProviderError, ProviderError::IOError);

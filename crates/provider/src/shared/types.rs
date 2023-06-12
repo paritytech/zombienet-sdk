@@ -159,7 +159,7 @@ pub struct Settings {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Process {
     pub pid:          u32,
-    pub logs:      String,
+    pub logs:         String,
     pub port_mapping: HashMap<u16, u16>,
     pub command:      String,
 }

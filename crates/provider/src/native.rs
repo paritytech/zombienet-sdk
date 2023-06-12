@@ -593,24 +593,29 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(true)
     }
 
-    // async restartNode(name: string, timeout: number | null): Promise<boolean> {
-    //   // kill
-    //   const result = await this.runCommand(
-    //     ["-c", `kill -9 ${this.processMap[name].pid!.toString()}`],
-    //     { allowFail: true },
-    //   );
-    //   if (result.exitCode !== 0) return false;
-
-    //   // sleep
-    //   if (timeout) await sleep(timeout * 1000);
-
     //   // start
     //   const log = fs.createWriteStream(this.processMap[name].logs);
     //   console.log(["-c", ...this.processMap[name].cmd!]);
-    //   const nodeProcess = spawn(this.command, [
-    //     "-c",
-    //     ...this.processMap[name].cmd!,
-    //   ]);
+      const nodeProcess = spawn(this.command, [
+        "-c",
+        ...this.processMap[name].cmd!,
+      ]);
+
+      let file_handler = self
+      .filesystem
+      .create(logs.clone())
+      .await
+      .map_err(|e| ProviderError::FSError(Box::new(e)))?;
+  let final_command = resource_def.spec.command.join(" ");
+
+  let child_process = std::process::Command::new(&self.command)
+      .arg("-c")
+      .arg(final_command.clone())
+      // TODO: set env
+      .stdout(file_handler)
+      // TODO: redirect stderr to the same stdout
+      //.stderr()
+      .spawn()?;
     //   debug(nodeProcess.pid);
     //   nodeProcess.stdout.pipe(log);
     //   nodeProcess.stderr.pipe(log);

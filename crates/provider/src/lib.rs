@@ -30,6 +30,14 @@ pub trait Provider {
         script_path: String,
         args: Vec<String>,
     ) -> Result<RunCommandResponse, Box<dyn Error>>;
+    async fn spawn_from_def(
+        &mut self,
+        pod_def: PodDef,
+        files_to_copy: Vec<FileMap>,
+        keystore: String,
+        chain_spec_id: String,
+        db_snapshot: String,
+    ) -> Result<(), Box<dyn ProviderError>>;
     async fn copy_file_from_pod(
         &mut self,
         pod_file_path: PathBuf,

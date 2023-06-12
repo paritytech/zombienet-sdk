@@ -23,7 +23,9 @@ use crate::{
     errors::ProviderError,
     shared::{
         constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
-        types::{NativeRunCommandOptions, PodDef, Process, RunCommandResponse, ZombieRole},
+        types::{
+            FileMap, NativeRunCommandOptions, PodDef, Process, RunCommandResponse, ZombieRole,
+        },
     },
 };
 
@@ -205,7 +207,120 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         })
     }
 
-    async fn copy_file_from_pod(
+    async fn spawn_from_def(
+        &mut self,
+        pod_def: PodDef,
+        files_to_copy: Vec<FileMap>,
+        keystore: String,
+        chain_spec_id: String,
+        db_snapshot: String,
+    ) -> Result<(), Box<dyn Error>> {
+        let name = pod_def.metadata.name;
+        // TODO: log::debug!(format!("{}", serde_json::to_string(&pod_def)));
+
+        // keep this in the client.
+        &self.process_map.entry(name).and_modify(|p| {
+            p.log_dir = format!("{}/{}.log", self.tmp_dir, name);
+            p.port_mapping = pod_def
+                .spec
+                .ports
+                .iter()
+                .map(|item| (item.container_port, item.host_port))
+                .collect();
+        });
+
+        // Javier - TODO: check how we will log with tables
+        // let logTable = new CreateLogTable({
+        //   colWidths: [25, 100],
+        // });
+
+        // const logs = [
+        //   [decorators.cyan("Pod"), decorators.green(name)],
+        //   [decorators.cyan("Status"), decorators.green("Launching")],
+        //   [
+        //     decorators.cyan("Command"),
+        //     decorators.white(podDef.spec.command.join(" ")),
+        //   ],
+        // ];
+        // if (dbSnapshot) {
+        //   logs.push([decorators.cyan("DB Snapshot"), decorators.green(dbSnapshot)]);
+        // }
+        // logTable.pushToPrint(logs);
+
+        // we need to get the snapshot from a public access
+        // and extract to /data
+        self.filesystem
+            .create_dir(format!("{}", pod_def.spec.data_path));
+
+        // TODO: await downloadFile(dbSnapshot, `${podDef.spec.dataPath}/db.tgz`);
+        let command = format!("cd {}/.. && tar -xzvf data/db.tgz", pod_def.spec.data_path);
+
+        self.run_command(vec![command], NativeRunCommandOptions::default());
+
+        if keystore != "" {
+            // initialize keystore
+            let keystore_remote_dir = format!(
+                "{}/chains/{}/keystore",
+                pod_def.spec.data_path, chain_spec_id
+            );
+
+            self.filesystem
+                .create_dir(format!("{}", keystore_remote_dir));
+
+            self.filesystem.copy(&keystore, &keystore_remote_dir);
+        }
+
+        let files_to_copy_iter = files_to_copy.iter();
+
+        for file in files_to_copy_iter {
+            // log::debug!(format!("file.local_file_path: {}", file.local_file_path));
+            // log::debug!(format!("file.remote_file_path: {}", file.remote_file_path));
+
+            // log::debug!(format!("self.remote_dir: {}", self.remote_dir);
+            // log::debug!(format!("self.data_dir: {}", self.data_dir);
+
+            let remote_file_path_str: String = file
+                .clone()
+                .remote_file_path
+                .into_os_string()
+                .into_string()
+                .unwrap();
+
+            let mut resolved_remote_file_path: String;
+            if remote_file_path_str.contains(&self.remote_dir) {
+                resolved_remote_file_path = format!(
+                    "{}/{}",
+                    pod_def.spec.cfg_path,
+                    remote_file_path_str.replace(&self.remote_dir, "")
+                );
+            } else {
+                resolved_remote_file_path = format!(
+                    "{}/{}",
+                    pod_def.spec.data_path,
+                    remote_file_path_str.replace(&self.data_dir, "")
+                );
+            }
+
+            self.filesystem.copy(
+                file.local_file_path.into_os_string().into_string().unwrap(),
+                resolved_remote_file_path,
+            );
+        }
+
+        self.create_resource(pod_def).await?;
+
+        // Javier - TODO: check how we will log with tables
+        // logTable = new CreateLogTable({
+        //   colWidths: [40, 80],
+        // });
+        // logTable.pushToPrint([
+        //   [decorators.cyan("Pod"), decorators.green(name)],
+        //   [decorators.cyan("Status"), decorators.green("Ready")],
+        // ]);
+        Ok(())
+    }
+
+    fn copy_file_from_pod(
         &mut self,
         pod_file_path: PathBuf,
         local_file_path: PathBuf,

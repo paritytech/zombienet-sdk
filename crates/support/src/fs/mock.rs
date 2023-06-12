@@ -36,6 +36,12 @@ pub struct MockFilesystem {
     pub operations:    Vec<Operation>,
 }
 
+impl Default for MockFilesystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockFilesystem {
     pub fn new() -> Self {
         Self::default()

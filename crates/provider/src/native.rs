@@ -285,6 +285,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             // log::debug!(format!("self.data_dir: {}", self.data_dir);
 
             let remote_file_path_str: String = file
+                .clone()
                 .remote_file_path
                 .into_os_string()
                 .into_string()

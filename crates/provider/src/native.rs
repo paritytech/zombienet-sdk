@@ -7,7 +7,7 @@ use std::{
     error::Error,
     fmt::Debug,
     io::ErrorKind,
-    process::Stdio,
+    process::Stdio, path::{Path, PathBuf},
 };
 
 use async_trait::async_trait;
@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
-struct NativeProvider<T: FileSystem + Send + Sync> {
+pub(crate) struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client
     namespace:                String,
     // Path where configuration relies
@@ -79,10 +79,10 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
 
 #[async_trait]
 impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
-    async fn create_namespace(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn create_namespace(&mut self) -> Result<(), ProviderError> {
         // Native provider don't have the `namespace` isolation.
         // but we create the `remoteDir` to place files
-        self.filesystem.create_dir(&self.remote_dir)?;
+        self.filesystem.create_dir(&self.remote_dir).await.map_err(|e| { ProviderError::FSError(Box::new(e))})?;
         Ok(())
     }
 
@@ -90,28 +90,28 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         &mut self,
         port: u16,
         pod_name: String,
-    ) -> Result<u16, Box<dyn Error>> {
-        match self.process_map.get(&pod_name) {
+    ) -> Result<u16, ProviderError> {
+        let r = match self.process_map.get(&pod_name) {
             Some(process) => {
                 match process.port_mapping.get(&port) {
-                    Some(port) => return Ok(*port),
+                    Some(port) =>  Ok(*port),
                     // TODO: return specialized error
-                    None => {},
+                    None => Err(ProviderError::MissingNodeInfo(pod_name, "port".into())),
                 }
             },
             // TODO: return specialized error
-            None => {},
+            None => Err(ProviderError::MissingNodeInfo(pod_name, "process".into())),
         };
 
-        Err(Box::new(ProviderError::TodoErr))
+        return r;
     }
 
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), Box<dyn Error>> {
+    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), ProviderError> {
         let host_port = self.get_port_mapping(P2P_PORT, pod_name).await?;
         Ok((LOCALHOST.to_string(), host_port))
     }
 
-    async fn get_node_ip(&self) -> Result<String, Box<dyn Error>> {
+    async fn get_node_ip(&self) -> Result<String, ProviderError> {
         Ok(LOCALHOST.to_owned())
     }
 
@@ -119,7 +119,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         &self,
         mut args: Vec<String>,
         opts: NativeRunCommandOptions,
-    ) -> Result<RunCommandResponse, Box<dyn Error>> {
+    ) -> Result<RunCommandResponse, ProviderError> {
         if let Some(arg) = args.get(0) {
             if arg == "bash" {
                 args.remove(0);
@@ -141,20 +141,17 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .await?;
 
         if !result.status.success() && !opts.allow_fail {
-            return Err(Box::new(std::io::Error::new(
-                ErrorKind::Other,
-                "Allow fail",
-            )));
+            return Err(ProviderError::RunCommandError(args.join(" ")));
         } else {
             // cmd success or we allow to fail
             // in either case we return Ok
             Ok(RunCommandResponse {
                 exit_code: result.status,
-                std_out:   result.stdout,
+                std_out:   String::from_utf8_lossy(&result.stdout).into(),
                 std_err:   if result.stderr.is_empty() {
                     None
                 } else {
-                    Some(result.stderr)
+                    Some(String::from_utf8_lossy(&result.stderr).into())
                 },
             })
         }
@@ -177,8 +174,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         // upload the script
         self.filesystem
-            .copy(&script_path, &script_path_in_pod)
-            .expect("Failed to copy file");
+            .copy(&script_path, &script_path_in_pod).await?;
 
         // set as executable
         self.run_command(
@@ -209,53 +205,58 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         })
     }
 
-    fn copy_file_from_pod(
+    async fn copy_file_from_pod(
         &mut self,
-        pod_file_path: String,
-        local_file_path: String,
+        pod_file_path: PathBuf,
+        local_file_path: PathBuf,
     ) -> Result<(), Box<dyn Error>> {
         // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
 
         self.filesystem
             .copy(&pod_file_path, &local_file_path)
-            .expect("Failed to copy file");
+            .await?;
         Ok(())
     }
 
-    async fn create_resource(&mut self, resource_def: PodDef) -> Result<(), Box<dyn Error>> {
+    async fn create_resource(&mut self, mut resource_def: PodDef, _scoped: bool, wait_ready: bool) -> Result<(), ProviderError> {
         let name: String = resource_def.metadata.name.clone();
         let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
         let content: String = serde_json::to_string(&resource_def)?;
 
-        self.filesystem.write(&local_file_path, content)?;
+        self.filesystem.write(&local_file_path, content).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
 
-        let command = if resource_def.spec.command.starts_with("bash") {
-            resource_def.spec.command.replace("bash", "")
-        } else {
-            resource_def.spec.command
-        };
+        if resource_def.spec.command.get(0) == Some(&"bash".into()) {
+            resource_def.spec.command.remove(0);
+        }
 
         if resource_def.metadata.labels.zombie_role == ZombieRole::Temp {
             // for temp we run some short living cmds
             self.run_command(
-                vec![command],
+                resource_def.spec.command,
                 NativeRunCommandOptions {
                     allow_fail: Some(true).is_some(),
                 },
             )
             .await?;
         } else {
-            // Allo others are spawned.
-            let child_process: Child = match Command::new("sh")
+            // Allow others are spawned.
+            let logs = format!("{}/{}.log", self.tmp_dir, name);
+            let file_handler = self.filesystem.create(logs.clone()).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
+            let final_command = resource_def.spec.command.join(" ");
+
+
+            let child_process = std::process::Command::new(&self.command)
                 .arg("-c")
-                .arg(command.clone())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
-                Err(why) => panic!("Couldn't spawn process: {}", why),
-                Ok(node_process) => node_process,
-            };
+                .arg(final_command.clone())
+                // TODO: set env
+                .stdout(file_handler)
+                // TODO: redirect stderr to the same stdout
+                //.stderr()
+                .spawn()?;
+            // {
+            //     Err(why) => panic!("Couldn't spawn process: {}", why),
+            //     Ok(node_process) => node_process,
+            // };
 
             // TODO: log::debug!(node_process.id());
             //   nodeProcess.stdout.pipe(log);
@@ -263,21 +264,27 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
             match self.process_map.entry(name.clone()) {
                 // TODO: return specific error
-                Occupied(_) => return Err(Box::new(ProviderError::TodoErr)),
+                Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
                 Vacant(slot) => {
                     slot.insert(Process {
-                        pid: child_process.id().unwrap(),
+                        pid: child_process.id(),
                         // TODO: complete this field
-                        log_dir: "".into(),
+                        logs,
                         // TODO: complete this field
                         port_mapping: HashMap::default(),
-                        command,
+                        command: final_command,
                     });
                 },
             }
 
-            // TODO: uncomment when resolve the spawn method
-            // let _ = self.wait_node_ready(name).await;
+
+            // logs: `${this.tmpDir}/${name}.log`,
+            // portMapping: podDef.spec.ports.reduce((memo: any, item: any) => {
+            //   memo[item.containerPort] = item.hostPort;
+            //   return memo;
+            // }, {}),
+
+            if wait_ready { self.wait_node_ready(name).await?; }
         }
         Ok(())
     }
@@ -311,8 +318,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         if result.exit_code.code().unwrap() == 0 {
             let pids_to_kill: Vec<String> = result
                 .std_out
-                .split(|c| c == &b'\n')
-                .map(|s| String::from_utf8(s.to_vec()).unwrap())
+                .split(|c| c == '\n')
+                .map(|s| s.into())
                 .collect();
 
             self.run_command(
@@ -326,12 +333,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 
     // TODO: Add test
-    async fn get_node_logs(&mut self, name: String) -> Result<String, Box<dyn Error>> {
+    async fn get_node_logs(&mut self, name: String) -> Result<String, ProviderError> {
         // For now in native let's just return all the logs
-        let result: Result<String, Box<dyn Error>> = self
+        let result= self
             .filesystem
-            .read_file(&format!("{}/{}.log", self.tmp_dir, name));
-        return result;
+            .read_file(&format!("{}/{}.log", self.tmp_dir, name)).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
+            return Ok(result);
     }
 
     async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), Box<dyn Error>> {
@@ -340,27 +347,24 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .copy(
                 &format!("{}/{}.log", self.tmp_dir, pod_name),
                 &dst_file_name,
-            )
-            .expect("Failed to copy file");
+            ).await?;
         Ok(())
     }
 
-    async fn wait_node_ready(&mut self, node_name: String) -> Result<(), Box<dyn Error>> {
+    async fn wait_node_ready(&mut self, node_name: String) -> Result<(), ProviderError> {
         // check if the process is alive after 1 seconds
         sleep(Duration::from_millis(1000)).await;
 
-        let process_node_name = self.process_map.get_mut(&node_name).unwrap();
-
-        let pid = process_node_name.pid;
-        let log_dir = process_node_name.log_dir.clone();
+        let Some(process_node) = self.process_map.get(&node_name) else {
+            return Err(ProviderError::MissingNodeInfo(node_name, "process".into()));
+        };
 
         let result = self
             .run_command(
-                vec![format!("ps {}", pid)],
+                vec![format!("ps {}", process_node.pid)],
                 NativeRunCommandOptions { allow_fail: true },
             )
-            .await
-            .expect("Failed to run `ps` command");
+            .await?;
 
         if result.exit_code.code().unwrap() > 0 {
             let lines: String = self.get_node_logs(node_name).await?;
@@ -382,89 +386,38 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             //   [decorators.cyan("Output"), decorators.white(lines)],
             // ]);
 
-            return Err(Box::new(std::io::Error::new(
-                ErrorKind::Other,
-                "An error occured",
-            )));
+            return Err(ProviderError::NodeNotReady(lines));
         }
 
+        // Process pid is
         // check log lines grow between 2/6/12 secs
-        let lines_1: RunCommandResponse = self
+        let lines_intial: RunCommandResponse = self
             .run_command(
-                vec![format!("wc -l  {}", log_dir)],
+                vec![format!("wc -l  {}", process_node.logs)],
                 NativeRunCommandOptions::default(),
             )
-            .await
-            .expect("Failed to run `wc -l` command");
-        sleep(Duration::from_millis(2000)).await;
+            .await?;
 
-        let lines_2: RunCommandResponse = self
+        for i in [2000, 6000, 12000] {
+            sleep(Duration::from_millis(i)).await;
+            let lines_now = self
             .run_command(
-                vec![format!("wc -l  {}", log_dir)],
+                vec![format!("wc -l  {}", process_node.logs)],
                 NativeRunCommandOptions::default(),
             )
-            .await
-            .expect("Failed to run `wc -l` command");
+            .await?;
+            if lines_now.std_out > lines_intial.std_out {
+                return Ok(());
+            };
+        }
 
-        // Javier-TODO: This looks weird and wrong
-        let lines_1_output: u32 = String::from_utf8(lines_1.std_out)
-            .unwrap()
-            .parse::<u32>()
-            .expect("Error while converting 1st time, lines, to u32");
-        let lines_2_output: u32 = String::from_utf8(lines_2.std_out)
-            .unwrap()
-            .parse::<u32>()
-            .expect("Error while converting 2nd time, lines, to u32");
-
-        if lines_2_output > lines_1_output {
-            return Ok(());
-        };
-        sleep(Duration::from_millis(6000)).await;
-
-        let lines_3: RunCommandResponse = self
-            .run_command(
-                vec![format!("wc -l  {}", log_dir)],
-                NativeRunCommandOptions::default(),
-            )
-            .await
-            .expect("Failed to run `wc -l` command");
-
-        let lines_3_output: u32 = String::from_utf8(lines_3.std_out)
-            .unwrap()
-            .parse::<u32>()
-            .expect("Error while converting 3rd time, lines, to u32");
-
-        if lines_3_output > lines_1_output {
-            return Ok(());
-        };
-        sleep(Duration::from_millis(12000)).await;
-
-        let lines_4: RunCommandResponse = self
-            .run_command(
-                vec![format!("wc -l  {}", log_dir)],
-                NativeRunCommandOptions::default(),
-            )
-            .await
-            .expect("Failed to run `wc -l` command");
-
-        let lines_4_output: u32 = String::from_utf8(lines_4.std_out)
-            .unwrap()
-            .parse::<u32>()
-            .expect("Error while converting 4th time, lines, to u32");
-
-        if lines_4_output > lines_1_output {
-            return Ok(());
-        };
 
         let error_string = format!(
             "Log lines of process: {} ( node: {} ) doesn't grow, please check logs at {}",
-            pid, node_name, log_dir
+            process_node.pid, node_name, process_node.logs
         );
 
-        return Err(Box::new(std::io::Error::new(
-            ErrorKind::Other,
-            error_string,
-        )));
+        Err(ProviderError::NodeNotReady(error_string))
     }
 
     // TODO: Add test
@@ -505,24 +458,24 @@ mod tests {
     #[test]
     fn new_native_provider() {
         let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.namespace, "something");
         assert_eq!(native_provider.config_path, "./");
         assert!(native_provider.is_debug);
         assert_eq!(native_provider.timeout, 60);
-        assert_eq!(native_provider.tmp_dir, "./tmp");
+        assert_eq!(native_provider.tmp_dir, "/tmp");
         assert_eq!(native_provider.command, "bash");
         assert!(!native_provider.is_pod_monitor_available);
-        assert_eq!(native_provider.local_magic_file_path, "./tmp/finished.txt");
-        assert_eq!(native_provider.remote_dir, "./tmp/cfg");
-        assert_eq!(native_provider.data_dir, "./tmp/data");
+        assert_eq!(native_provider.local_magic_file_path, "/tmp/finished.txt");
+        assert_eq!(native_provider.remote_dir, "/tmp/cfg");
+        assert_eq!(native_provider.data_dir, "/tmp/data");
     }
 
     #[tokio::test]
     async fn test_fielsystem_usage() {
         let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let _ = native_provider.create_namespace().await;
 
@@ -531,7 +484,7 @@ mod tests {
         assert_eq!(
             native_provider.filesystem.operations[0],
             Operation::CreateDir {
-                path: "./tmp/cfg".into(),
+                path: "/tmp/cfg".into(),
             }
         );
     }
@@ -539,7 +492,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_node_ip() {
         let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.get_node_ip().await.unwrap(), LOCALHOST);
     }
@@ -547,7 +500,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_when_bash_is_removed() {
         let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let result: RunCommandResponse = native_provider
             .run_command(
@@ -570,7 +523,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_when_dash_c_is_provided() {
         let native_provider =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let result = native_provider.run_command(
             vec!["-c".into(), "ls".into()],
@@ -584,7 +537,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_when_error_return_error() {
         let native_provider =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let mut some = native_provider.run_command(
             vec!["ls".into(), "ls".into()],
@@ -604,7 +557,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_resource() {
         let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "./tmp", MockFilesystem::new());
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
         let mut env = std::collections::HashMap::new();
         env.insert("SOME".to_owned(), "VALUE".to_owned());
@@ -625,13 +578,49 @@ mod tests {
                 cfg_path: "string".to_owned(),
                 data_path: "string".to_owned(),
                 ports: vec![],
-                command: "ls".to_owned(),
+                command: vec!["ls".to_owned()],
                 env,
             },
         };
 
         native_provider
-            .create_resource(resource_def)
+            .create_resource(resource_def, false, false)
+            .await
+            .expect("err");
+
+        assert_eq!(native_provider.process_map.len(), 1);
+    }
+    #[tokio::test]
+    async fn test_create_resource_wait_ready() {
+        let mut native_provider: NativeProvider<MockFilesystem> =
+            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+
+        let mut env = std::collections::HashMap::new();
+        env.insert("SOME".to_owned(), "VALUE".to_owned());
+
+        let resource_def: PodDef = PodDef {
+            metadata: PodMetadata {
+                name:      "string".to_owned(),
+                namespace: "string".to_owned(),
+                labels:    PodLabels {
+                    app:         "String".to_owned(),
+                    zombie_ns:   "String".to_owned(),
+                    name:        "String".to_owned(),
+                    instance:    "String".to_owned(),
+                    zombie_role: ZombieRole::Node,
+                },
+            },
+            spec:     PodSpec {
+                cfg_path: "string".to_owned(),
+                data_path: "string".to_owned(),
+                ports: vec![],
+                command: vec!["for i in $(seq 1 10); do echo $i;sleep 1;done".into()],
+                env,
+            },
+        };
+
+        native_provider
+            .create_resource(resource_def, false, true)
             .await
             .expect("err");
 

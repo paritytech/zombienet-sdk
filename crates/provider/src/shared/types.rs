@@ -40,15 +40,15 @@ pub struct FileMap {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunCommandResponse {
     pub exit_code: ExitStatus,
-    pub std_out:   Vec<u8>,
-    pub std_err:   Option<Vec<u8>>,
+    pub std_out:   String,
+    pub std_err:   Option<String>,
 }
 
 impl RunCommandResponse {
     pub fn default() -> Self {
         Self {
             exit_code: ExitStatus::from_raw(0),
-            std_out:   vec![],
+            std_out:   String::default(),
             std_err:   None,
         }
     }
@@ -99,7 +99,7 @@ pub struct PodSpec {
     pub cfg_path:  String,
     pub data_path: String,
     pub ports:     Vec<Port>,
-    pub command:   String,
+    pub command:   Vec<String>,
     pub env:       ProcessEnvironment,
 }
 
@@ -159,7 +159,7 @@ pub struct Settings {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Process {
     pub pid:          u32,
-    pub log_dir:      String,
+    pub logs:      String,
     pub port_mapping: HashMap<u16, u16>,
     pub command:      String,
 }

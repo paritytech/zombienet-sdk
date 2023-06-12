@@ -4,18 +4,15 @@ use std::{
         hash_map::Entry::{Occupied, Vacant},
         HashMap,
     },
-    error::Error,
     fmt::Debug,
-    io::ErrorKind,
     path::{Path, PathBuf},
-    process::Stdio,
 };
 
 use async_trait::async_trait;
 use serde::Serialize;
 use support::fs::FileSystem;
 use tokio::{
-    process::{Child, Command},
+    process::Command,
     time::{sleep, Duration},
 };
 

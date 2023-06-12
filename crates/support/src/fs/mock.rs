@@ -28,7 +28,7 @@ pub enum MockError {
     #[error(transparent)]
     Other(#[from] Box<dyn std::error::Error + Sync + Send + 'static>),
 }
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MockFilesystem {
     copy_error:        Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
     create_dir_error:  Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
@@ -37,12 +37,6 @@ pub struct MockFilesystem {
     read_file_error:   Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
     write_error:       Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
     pub operations:    Vec<Operation>,
-}
-
-impl Default for MockFilesystem {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl MockFilesystem {

@@ -1,23 +1,24 @@
 use std::{fmt::Debug, marker::PhantomData};
 
 use crate::shared::{
+    helpers::merge_errors,
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation},
+    types::{Arg, AssetLocation, Chain, Command, Image},
 };
 
 /// A relaychain configuration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelaychainConfig {
     /// Chain to use (e.g. rococo-local).
-    chain: String,
+    chain: Chain,
 
     /// Default command to run the node. Can be overriden on each node.
-    default_command: Option<String>,
+    default_command: Option<Command>,
 
     /// Default image to use (only podman/k8s). Can be overriden on each node.
-    default_image: Option<String>,
+    default_image: Option<Image>,
 
     /// Default resources. Can be overriden on each node.
     default_resources: Option<Resources>,
@@ -42,16 +43,16 @@ pub struct RelaychainConfig {
 }
 
 impl RelaychainConfig {
-    pub fn chain(&self) -> &str {
+    pub fn chain(&self) -> &Chain {
         &self.chain
     }
 
-    pub fn default_command(&self) -> Option<&str> {
-        self.default_command.as_deref()
+    pub fn default_command(&self) -> Option<&Command> {
+        self.default_command.as_ref()
     }
 
-    pub fn default_image(&self) -> Option<&str> {
-        self.default_image.as_deref()
+    pub fn default_image(&self) -> Option<&Image> {
+        self.default_image.as_ref()
     }
 
     pub fn default_resources(&self) -> Option<&Resources> {
@@ -92,14 +93,21 @@ states! {
 
 macro_rules! common_builder_methods {
     () => {
-        pub fn with_default_image(self, image: impl Into<String>) -> Self {
-            Self::transition(
-                RelaychainConfig {
-                    default_image: Some(image.into()),
-                    ..self.config
-                },
-                self.errors,
-            )
+        pub fn with_default_image(self, image: impl TryInto<Image>) -> Self {
+            match image.try_into() {
+                Ok(image) => Self::transition(
+                    RelaychainConfig {
+                        default_image: Some(image),
+                        ..self.config
+                    },
+                    self.errors,
+                ),
+                Err(_error) => Self::transition(
+                    self.config,
+                    // merge_errors(self.errors, format!("default_image: {error}")),
+                    merge_errors(self.errors, format!("default_image: ")),
+                ),
+            }
         }
 
         pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
@@ -123,18 +131,10 @@ macro_rules! common_builder_methods {
                     },
                     self.errors,
                 ),
-                Err(_) => Self::transition(
-                    RelaychainConfig {
-                        default_db_snapshot: None,
-                        ..self.config
-                    },
-                    vec![
-                        self.errors,
-                        vec![format!(
-                            "default_db_snapshot: unable to convert into AssetLocation"
-                        )],
-                    ]
-                    .concat(),
+                Err(_error) => Self::transition(
+                    self.config,
+                    // merge_errors(self.errors, format!("default_db_snapshot: {error}")),
+                    merge_errors(self.errors, format!("default_db_snapshot: ")),
                 ),
             }
         }
@@ -148,18 +148,10 @@ macro_rules! common_builder_methods {
                     },
                     self.errors,
                 ),
-                Err(_) => Self::transition(
-                    RelaychainConfig {
-                        chain_spec_path: None,
-                        ..self.config
-                    },
-                    vec![
-                        self.errors,
-                        vec![format!(
-                            "chain_spec_path: unable to convert into AssetLocation"
-                        )],
-                    ]
-                    .concat(),
+                Err(_error) => Self::transition(
+                    self.config,
+                    // merge_errors(self.errors, format!("chain_spec_path: {error}")),
+                    merge_errors(self.errors, format!("chain_spec_path: ")),
                 ),
             }
         }
@@ -207,13 +199,13 @@ impl Default for RelaychainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: RelaychainConfig {
-                chain: "".into(),
-                default_command: None,
-                default_image: None,
-                default_resources: None,
-                default_db_snapshot: None,
-                chain_spec_path: None,
-                default_args: vec![],
+                chain:                   "".try_into().expect("empty string is valid"),
+                default_command:         None,
+                default_image:           None,
+                default_resources:       None,
+                default_db_snapshot:     None,
+                chain_spec_path:         None,
+                default_args:            vec![],
                 random_nominators_count: None,
                 max_nominations: None,
                 nodes: vec![],
@@ -239,14 +231,21 @@ impl RelaychainConfigBuilder<Initial> {
         Self::default()
     }
 
-    pub fn with_chain(self, chain: &str) -> RelaychainConfigBuilder<WithChain> {
-        Self::transition(
-            RelaychainConfig {
-                chain: chain.to_owned(),
-                ..self.config
-            },
-            self.errors,
-        )
+    pub fn with_chain(self, chain: impl TryInto<Chain>) -> RelaychainConfigBuilder<WithChain> {
+        match chain.try_into() {
+            Ok(chain) => Self::transition(
+                RelaychainConfig {
+                    chain,
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("chain: {error}")),
+                merge_errors(self.errors, format!("chain: ")),
+            ),
+        }
     }
 }
 
@@ -255,15 +254,22 @@ impl RelaychainConfigBuilder<WithChain> {
 
     pub fn with_default_command(
         self,
-        command: &str,
+        command: impl TryInto<Command>,
     ) -> RelaychainConfigBuilder<WithDefaultCommand> {
-        Self::transition(
-            RelaychainConfig {
-                default_command: Some(command.to_owned()),
-                ..self.config
-            },
-            self.errors,
-        )
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                RelaychainConfig {
+                    default_command: Some(command),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("default_command: {error}")),
+                merge_errors(self.errors, format!("default_command: ")),
+            ),
+        }
     }
 
     pub fn with_node(
@@ -359,25 +365,28 @@ mod tests {
             })
             .build();
 
-        assert_eq!(relaychain_config.chain(), "polkadot");
+        assert_eq!(relaychain_config.chain().as_str(), "polkadot");
         assert_eq!(relaychain_config.nodes().len(), 2);
         let &node1 = relaychain_config.nodes().first().unwrap();
         assert_eq!(node1.name(), "node1");
-        assert_eq!(node1.command().unwrap(), "default_command");
+        assert_eq!(node1.command().unwrap().as_str(), "default_command");
         assert!(node1.is_bootnode());
         let &node2 = relaychain_config.nodes().last().unwrap();
         assert_eq!(node2.name(), "node2");
-        assert_eq!(node2.command().unwrap(), "command2");
+        assert_eq!(node2.command().unwrap().as_str(), "command2");
         assert!(node2.is_validator(), "node2");
         assert_eq!(
-            relaychain_config.default_command().unwrap(),
+            relaychain_config.default_command().unwrap().as_str(),
             "default_command"
         );
-        assert_eq!(relaychain_config.default_image().unwrap(), "myrepo:myimage");
+        assert_eq!(
+            relaychain_config.default_image().unwrap().as_str(),
+            "myrepo:myimage"
+        );
         let default_resources = relaychain_config.default_resources().unwrap();
-        assert_eq!(default_resources.limit_cpu().unwrap().value(), "500M");
-        assert_eq!(default_resources.limit_memory().unwrap().value(), "1G");
-        assert_eq!(default_resources.request_cpu().unwrap().value(), "250M");
+        assert_eq!(default_resources.limit_cpu().unwrap().as_str(), "500M");
+        assert_eq!(default_resources.limit_memory().unwrap().as_str(), "1G");
+        assert_eq!(default_resources.request_cpu().unwrap().as_str(), "250M");
         assert!(matches!(
             relaychain_config.default_db_snapshot().unwrap(),
             AssetLocation::Url(value) if value.as_str() == "https://www.urltomysnapshot.com/file.tgz",

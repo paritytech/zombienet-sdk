@@ -1,5 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
+use lazy_static::lazy_static;
+use regex::Regex;
 use url::Url;
 
 pub type Duration = u32;
@@ -7,6 +9,82 @@ pub type Duration = u32;
 pub type Port = u16;
 
 pub type ParaId = u32;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Chain(String);
+
+impl TryFrom<&str> for Chain {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.contains(char::is_whitespace) {
+            return Err(format!("'{value}' shouldn't contains whitespace"));
+        }
+
+        Ok(Self(value.to_string()))
+    }
+}
+
+impl Chain {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Image(String);
+
+impl TryFrom<&str> for Image {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        static IP_PART: &str = "((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]).){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))";
+        static HOSTNAME_PART: &str = "((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]).)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9]))";
+        static TAG_NAME_PART: &str = "([a-z0-9](-*[a-z0-9])*)";
+        static TAG_VERSION_PART: &str = "([a-z0-9_]([-._a-z0-9])*)";
+        lazy_static! {
+            static ref RE: Regex = Regex::new(&format!(
+                "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
+            ))
+            .expect("compile with succes");
+        };
+
+        if !RE.is_match(value) {
+            return Err(format!(
+                "'{value}' doesn't match regex ^([ip]|[hostname]/)?[tag_name]:[tag_version]?$"
+            ));
+        }
+
+        Ok(Self(value.to_string()))
+    }
+}
+
+impl Image {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Command(String);
+
+impl TryFrom<&str> for Command {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.contains(char::is_whitespace) {
+            return Err(format!("'{value}' shouldn't contains whitespace"));
+        }
+
+        Ok(Self(value.to_string()))
+    }
+}
+
+impl Command {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssetLocation {
@@ -38,7 +116,9 @@ impl TryFrom<&str> for AssetLocation {
             return Ok(Self::FilePath(parsed_path));
         }
 
-        Err("unable to convert into url::Url or path::PathBuf".to_string())
+        Err(format!(
+            "unable to convert '{value}' into url::Url or path::PathBuf"
+        ))
     }
 }
 

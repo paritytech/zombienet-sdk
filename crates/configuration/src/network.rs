@@ -1,8 +1,5 @@
 use std::marker::PhantomData;
 
-use lazy_static::lazy_static;
-use regex::Regex;
-
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
@@ -139,69 +136,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     }
 
     pub fn build(self) -> Result<NetworkConfig, Vec<String>> {
-        NetworkConfigValidator::new(&self.config).validate()?;
-
         Ok(self.config)
-    }
-}
-
-struct NetworkConfigValidator<'a> {
-    config: &'a NetworkConfig,
-}
-
-impl<'a> NetworkConfigValidator<'a> {
-    fn new(config: &'a NetworkConfig) -> Self {
-        Self { config }
-    }
-
-    fn validate_default_command(&self, default_command: Option<&str>) -> Result<(), &'static str> {
-        if let Some(default_command) = default_command {
-            if default_command.contains(char::is_whitespace) {
-                return Err("error");
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_default_image(&self, default_image: Option<&str>) -> Result<(), &'static str> {
-        if let Some(default_image) = default_image {
-            static IP_PART: &str = "((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]).){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))";
-            static HOSTNAME_PART: &str = "((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]).)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9]))";
-            static TAG_NAME_PART: &str = "([a-z0-9](-*[a-z0-9])*)";
-            static TAG_VERSION_PART: &str = "([a-z0-9_]([-._a-z0-9])*)";
-            lazy_static! {
-                static ref RE: Regex = Regex::new(&format!(
-                    "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
-                ))
-                .unwrap();
-            };
-
-            if !RE.is_match(default_image) {
-                return Err("error");
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate(&self) -> Result<(), Vec<String>> {
-        let mut errors = vec![];
-
-        if let Err(err) = self.validate_default_command(self.config.relaychain().default_command())
-        {
-            errors.push(format!("relaychain.default_command: {err}"));
-        }
-
-        if let Err(err) = self.validate_default_image(self.config.relaychain().default_image()) {
-            errors.push(format!("relaychain.default_image: {err}"));
-        }
-
-        if !errors.is_empty() {
-            Err(errors)
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -218,7 +153,7 @@ mod tests {
                     .with_random_nominators_count(10)
                     .with_node(|node| {
                         node.with_name("node")
-                            .with_command("node command")
+                            .with_command("command")
                             .validator(true)
                     })
             })
@@ -228,7 +163,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
-                            .with_command("collator1 command")
+                            .with_command("command1")
                             .validator(true)
                     })
                     .with_initial_balance(100_000)
@@ -239,7 +174,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("collator2")
-                            .with_command("collator2 command")
+                            .with_command("command2")
                             .validator(true)
                     })
                     .with_initial_balance(0)
@@ -267,11 +202,11 @@ mod tests {
             .unwrap();
 
         // relaychain
-        assert_eq!(network_config.relaychain().chain(), "polkadot");
+        assert_eq!(network_config.relaychain().chain().as_str(), "polkadot");
         assert_eq!(network_config.relaychain().nodes().len(), 1);
         let &node = network_config.relaychain().nodes().first().unwrap();
         assert_eq!(node.name(), "node");
-        assert_eq!(node.command().unwrap(), "node command");
+        assert_eq!(node.command().unwrap().as_str(), "command");
         assert!(node.is_validator());
         assert_eq!(
             network_config.relaychain().random_minators_count().unwrap(),
@@ -287,7 +222,7 @@ mod tests {
         assert_eq!(parachain1.collators().len(), 1);
         let &collator = parachain1.collators().first().unwrap();
         assert_eq!(collator.name(), "collator1");
-        assert_eq!(collator.command().unwrap(), "collator1 command");
+        assert_eq!(collator.command().unwrap().as_str(), "command1");
         assert!(collator.is_validator());
         assert_eq!(parachain1.initial_balance(), 100_000);
 
@@ -297,7 +232,7 @@ mod tests {
         assert_eq!(parachain2.collators().len(), 1);
         let &collator = parachain2.collators().first().unwrap();
         assert_eq!(collator.name(), "collator2");
-        assert_eq!(collator.command().unwrap(), "collator2 command");
+        assert_eq!(collator.command().unwrap().as_str(), "command2");
         assert!(collator.is_validator());
         assert_eq!(parachain2.initial_balance(), 0);
 

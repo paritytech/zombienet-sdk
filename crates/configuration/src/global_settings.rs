@@ -2,7 +2,7 @@ use std::{net::IpAddr, str::FromStr};
 
 use multiaddr::Multiaddr;
 
-use crate::shared::types::Duration;
+use crate::shared::{helpers::merge_errors, types::Duration};
 
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq)]
@@ -83,7 +83,7 @@ impl GlobalSettingsBuilder {
         for addr in bootnode_addresses {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(_) => errors.push("error multiaddr".to_string()),
+                Err(error) => errors.push(error),
             }
         }
 
@@ -92,7 +92,8 @@ impl GlobalSettingsBuilder {
                 bootnodes_addresses: addrs,
                 ..self.config
             },
-            vec![self.errors, errors].concat(),
+            // vec![self.errors, errors].concat(),
+            self.errors,
         )
     }
 
@@ -125,16 +126,9 @@ impl GlobalSettingsBuilder {
                 },
                 self.errors,
             ),
-            Err(_) => Self::transition(
-                GlobalSettings {
-                    local_ip: None,
-                    ..self.config
-                },
-                vec![
-                    self.errors,
-                    vec![format!("local_ip: unable to convert into IpAddr")],
-                ]
-                .concat(),
+            Err(error) => Self::transition(
+                self.config,
+                merge_errors(self.errors, format!("local_ip: {error}")),
             ),
         }
     }

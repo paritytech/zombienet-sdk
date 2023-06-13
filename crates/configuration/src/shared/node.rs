@@ -2,7 +2,12 @@ use std::marker::PhantomData;
 
 use multiaddr::Multiaddr;
 
-use super::{macros::states, resources::ResourcesBuilder, types::AssetLocation};
+use super::{
+    helpers::merge_errors,
+    macros::states,
+    resources::ResourcesBuilder,
+    types::{AssetLocation, Command, Image},
+};
 use crate::shared::{
     resources::Resources,
     types::{Arg, Port},
@@ -30,10 +35,10 @@ pub struct NodeConfig {
     name: String,
 
     /// Image to run (only podman/k8s). Override the default.
-    image: Option<String>,
+    image: Option<Image>,
 
     /// Command to run the node. Override the default.
-    command: Option<String>,
+    command: Option<Command>,
 
     /// Arguments to use for node. Appended to default.
     args: Vec<Arg>,
@@ -84,12 +89,12 @@ impl NodeConfig {
         &self.name
     }
 
-    pub fn image(&self) -> Option<&str> {
-        self.image.as_deref()
+    pub fn image(&self) -> Option<&Image> {
+        self.image.as_ref()
     }
 
-    pub fn command(&self) -> Option<&str> {
-        self.command.as_deref()
+    pub fn command(&self) -> Option<&Command> {
+        self.command.as_ref()
     }
 
     pub fn args(&self) -> Vec<&Arg> {
@@ -200,7 +205,7 @@ impl<A> NodeConfigBuilder<A> {
 }
 
 impl NodeConfigBuilder<Initial> {
-    pub fn new(default_command: Option<String>) -> Self {
+    pub fn new(default_command: Option<Command>) -> Self {
         Self::transition(
             NodeConfig {
                 command: default_command,
@@ -222,24 +227,38 @@ impl NodeConfigBuilder<Initial> {
 }
 
 impl NodeConfigBuilder<Buildable> {
-    pub fn with_command(self, command: impl Into<String>) -> Self {
-        Self::transition(
-            NodeConfig {
-                command: Some(command.into()),
-                ..self.config
-            },
-            self.errors,
-        )
+    pub fn with_command(self, command: impl TryInto<Command>) -> Self {
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                NodeConfig {
+                    command: Some(command),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("command: {error}")),
+                merge_errors(self.errors, format!("command: ")),
+            ),
+        }
     }
 
-    pub fn with_image(self, image: impl Into<String>) -> Self {
-        Self::transition(
-            NodeConfig {
-                image: Some(image.into()),
-                ..self.config
-            },
-            self.errors,
-        )
+    pub fn with_image(self, image: impl TryInto<Image>) -> Self {
+        match image.try_into() {
+            Ok(image) => Self::transition(
+                NodeConfig {
+                    image: Some(image),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("image: {error}")),
+                merge_errors(self.errors, format!("image: ")),
+            ),
+        }
     }
 
     pub fn with_args(self, args: Vec<Arg>) -> Self {
@@ -392,16 +411,10 @@ impl NodeConfigBuilder<Buildable> {
                 },
                 self.errors,
             ),
-            Err(_) => Self::transition(
-                NodeConfig {
-                    db_snapshot: None,
-                    ..self.config
-                },
-                vec![
-                    self.errors,
-                    vec![format!("db_snapshot: error asset location",)],
-                ]
-                .concat(),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("db_snapshot: {error}"))
+                merge_errors(self.errors, format!("db_snapshot: ")),
             ),
         }
     }
@@ -447,8 +460,8 @@ mod tests {
             .build();
 
         assert_eq!(node_config.name(), "node");
-        assert_eq!(node_config.command().unwrap(), "mycommand");
-        assert_eq!(node_config.image().unwrap(), "myrepo:myimage");
+        assert_eq!(node_config.command().unwrap().as_str(), "mycommand");
+        assert_eq!(node_config.image().unwrap().as_str(), "myrepo:myimage");
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(node_config.args(), args.iter().collect::<Vec<_>>());
         assert!(node_config.is_validator());
@@ -466,10 +479,10 @@ mod tests {
             bootnodes_addresses.iter().collect::<Vec<_>>()
         );
         let resources = node_config.resources().unwrap();
-        assert_eq!(resources.request_cpu().unwrap().value(), "200M");
-        assert_eq!(resources.request_memory().unwrap().value(), "500M");
-        assert_eq!(resources.limit_cpu().unwrap().value(), "1G");
-        assert_eq!(resources.limit_memory().unwrap().value(), "2G");
+        assert_eq!(resources.request_cpu().unwrap().as_str(), "200M");
+        assert_eq!(resources.request_memory().unwrap().as_str(), "500M");
+        assert_eq!(resources.limit_cpu().unwrap().as_str(), "1G");
+        assert_eq!(resources.limit_memory().unwrap().as_str(), "2G");
         assert_eq!(node_config.ws_port().unwrap(), 5000);
         assert_eq!(node_config.rpc_port().unwrap(), 6000);
         assert_eq!(node_config.prometheus_port().unwrap(), 7000);

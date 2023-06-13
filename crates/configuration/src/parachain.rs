@@ -3,9 +3,10 @@ use std::marker::PhantomData;
 use multiaddr::Multiaddr;
 
 use crate::shared::{
+    helpers::merge_errors,
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
-    types::AssetLocation,
+    types::{AssetLocation, Chain, Command},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +22,7 @@ pub struct ParachainConfig {
     id: u32,
 
     /// Chain to use (use None if you are running adder-collator or undying-collator).
-    chain: Option<String>,
+    chain: Option<Chain>,
 
     /// Registration strategy for the parachain.
     registration_strategy: Option<RegistrationStrategy>,
@@ -33,13 +34,13 @@ pub struct ParachainConfig {
     genesis_wasm_path: Option<AssetLocation>,
 
     /// Command to generate the WASM runtime.
-    genesis_wasm_generator: Option<String>,
+    genesis_wasm_generator: Option<Command>,
 
     /// Path to the gensis `state` file.
     genesis_state_path: Option<AssetLocation>,
 
     /// Command to generate the genesis `state`.
-    genesis_state_generator: Option<String>,
+    genesis_state_generator: Option<Command>,
 
     /// Use a pre-generated chain specification.
     chain_spec_path: Option<AssetLocation>,
@@ -59,8 +60,8 @@ impl ParachainConfig {
         self.id
     }
 
-    pub fn chain(&self) -> Option<&str> {
-        self.chain.as_deref()
+    pub fn chain(&self) -> Option<&Chain> {
+        self.chain.as_ref()
     }
 
     pub fn registration_strategy(&self) -> Option<&RegistrationStrategy> {
@@ -75,16 +76,16 @@ impl ParachainConfig {
         self.genesis_wasm_path.as_ref()
     }
 
-    pub fn genesis_wasm_generator(&self) -> Option<&str> {
-        self.genesis_wasm_generator.as_deref()
+    pub fn genesis_wasm_generator(&self) -> Option<&Command> {
+        self.genesis_wasm_generator.as_ref()
     }
 
     pub fn genesis_state_path(&self) -> Option<&AssetLocation> {
         self.genesis_state_path.as_ref()
     }
 
-    pub fn genesis_state_generator(&self) -> Option<&str> {
-        self.genesis_state_generator.as_deref()
+    pub fn genesis_state_generator(&self) -> Option<&Command> {
+        self.genesis_state_generator.as_ref()
     }
 
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
@@ -178,14 +179,21 @@ impl ParachainConfigBuilder<WithId> {
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
-    pub fn with_chain(self, chain: impl Into<String>) -> Self {
-        Self::transition(
-            ParachainConfig {
-                chain: Some(chain.into()),
-                ..self.config
-            },
-            self.errors,
-        )
+    pub fn with_chain(self, chain: impl TryInto<Chain>) -> Self {
+        match chain.try_into() {
+            Ok(chain) => Self::transition(
+                ParachainConfig {
+                    chain: Some(chain),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("chain: {error}")),
+                merge_errors(self.errors, format!("chain: ")),
+            ),
+        }
     }
 
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
@@ -217,30 +225,29 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_) => Self::transition(
-                ParachainConfig {
-                    genesis_wasm_path: None,
-                    ..self.config
-                },
-                vec![
-                    self.errors,
-                    vec![format!(
-                        "genesis_wasm_path: unable to convert into AssetLocation"
-                    )],
-                ]
-                .concat(),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("genesis_wasm_path: {error}")),
+                merge_errors(self.errors, format!("genesis_wasm_path: ")),
             ),
         }
     }
 
-    pub fn with_genesis_wasm_generator(self, command: impl Into<String>) -> Self {
-        Self::transition(
-            ParachainConfig {
-                genesis_wasm_generator: Some(command.into()),
-                ..self.config
-            },
-            self.errors,
-        )
+    pub fn with_genesis_wasm_generator(self, command: impl TryInto<Command>) -> Self {
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                ParachainConfig {
+                    genesis_wasm_generator: Some(command),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("genesis_wasm_generator: {error}")),
+                merge_errors(self.errors, format!("genesis_wasm_generator: ")),
+            ),
+        }
     }
 
     pub fn with_genesis_state_path(self, location: impl TryInto<AssetLocation>) -> Self {
@@ -252,30 +259,29 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_) => Self::transition(
-                ParachainConfig {
-                    genesis_state_path: None,
-                    ..self.config
-                },
-                vec![
-                    self.errors,
-                    vec![format!(
-                        "genesis_state_path: unable to convert into AssetLocation"
-                    )],
-                ]
-                .concat(),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("genesis_state_path: {error}")),
+                merge_errors(self.errors, format!("genesis_state_path: ")),
             ),
         }
     }
 
-    pub fn with_genesis_state_generator(self, command: impl Into<String>) -> Self {
-        Self::transition(
-            ParachainConfig {
-                genesis_state_generator: Some(command.into()),
-                ..self.config
-            },
-            self.errors,
-        )
+    pub fn with_genesis_state_generator(self, command: impl TryInto<Command>) -> Self {
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                ParachainConfig {
+                    genesis_state_generator: Some(command),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("genesis_state_generator: {error}")),
+                merge_errors(self.errors, format!("genesis_state_generator: ")),
+            ),
+        }
     }
 
     pub fn with_chain_spec_path(self, location: impl TryInto<AssetLocation>) -> Self {
@@ -287,18 +293,10 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_) => Self::transition(
-                ParachainConfig {
-                    chain_spec_path: None,
-                    ..self.config
-                },
-                vec![
-                    self.errors,
-                    vec![format!(
-                        "chain_spec_path: unable to convert into AssetLocation"
-                    )],
-                ]
-                .concat(),
+            Err(_error) => Self::transition(
+                self.config,
+                // merge_errors(self.errors, format!("chain_spec_path: {error}")),
+                merge_errors(self.errors, format!("chain_spec_path: ")),
             ),
         }
     }
@@ -323,7 +321,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         for addr in bootnodes_addresses {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(_) => errors.push("error multiaddr".to_string()),
+                Err(error) => errors.push(error),
             }
         }
 
@@ -332,7 +330,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 bootnodes_addresses: addrs,
                 ..self.config
             },
-            vec![self.errors, errors].concat(),
+            self.errors, // vec![self.errors, errors].concat(),
         )
     }
 
@@ -380,9 +378,9 @@ mod tests {
             .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
             .with_initial_balance(100_000_042)
             .with_genesis_wasm_path("https://www.backupsite.com/my/wasm/file.tgz")
-            .with_genesis_wasm_generator("my wasm generator command")
+            .with_genesis_wasm_generator("generator_wasm")
             .with_genesis_state_path("./path/to/genesis/state")
-            .with_genesis_state_generator("my state generator command")
+            .with_genesis_state_generator("generator_state")
             .with_chain_spec_path("./path/to/chain/spec.json")
             .cumulus_based(false)
             .with_bootnodes_addresses(vec![
@@ -395,13 +393,13 @@ mod tests {
         assert_eq!(parachain_config.collators().len(), 2);
         let &collator1 = parachain_config.collators().first().unwrap();
         assert_eq!(collator1.name(), "collator1");
-        assert_eq!(collator1.command().unwrap(), "command1");
+        assert_eq!(collator1.command().unwrap().as_str(), "command1");
         assert!(collator1.is_bootnode());
         let &collator2 = parachain_config.collators().last().unwrap();
         assert_eq!(collator2.name(), "collator2");
-        assert_eq!(collator2.command().unwrap(), "command2");
+        assert_eq!(collator2.command().unwrap().as_str(), "command2");
         assert!(collator2.is_validator(), "node2");
-        assert_eq!(parachain_config.chain().unwrap(), "mychainname");
+        assert_eq!(parachain_config.chain().unwrap().as_str(), "mychainname");
         assert_eq!(
             parachain_config.registration_strategy().unwrap(),
             &RegistrationStrategy::UsingExtrinsic
@@ -412,16 +410,16 @@ mod tests {
             AssetLocation::Url(value) if value.as_str() == "https://www.backupsite.com/my/wasm/file.tgz"
         ));
         assert_eq!(
-            parachain_config.genesis_wasm_generator().unwrap(),
-            "my wasm generator command"
+            parachain_config.genesis_wasm_generator().unwrap().as_str(),
+            "generator_wasm"
         );
         assert!(matches!(
             parachain_config.genesis_state_path().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/genesis/state"
         ));
         assert_eq!(
-            parachain_config.genesis_state_generator().unwrap(),
-            "my state generator command"
+            parachain_config.genesis_state_generator().unwrap().as_str(),
+            "generator_state"
         );
         assert!(matches!(
             parachain_config.chain_spec_path().unwrap(),

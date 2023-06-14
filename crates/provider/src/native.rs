@@ -9,6 +9,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use configuration::IpAddress;
 use serde::Serialize;
 use support::{fs::FileSystem, net::download_file};
 use tokio::{
@@ -22,30 +23,30 @@ use crate::{
     shared::{
         constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
         types::{
-            FileMap, NativeRunCommandOptions, PodDef, Process, RunCommandResponse, ZombieRole,
+            FileMap, NativeRunCommandOptions, PodDef, Port, Process, RunCommandResponse, ZombieRole,
         },
     },
 };
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client
-    namespace:                String,
+    namespace: String,
     // Path where configuration relies
-    config_path:              String,
+    config_path: String,
     // Variable that shows if debug is activated
-    is_debug:                 bool,
+    is_debug: bool,
     // The timeout for the client to exit
-    timeout:                  u32,
+    timeout: u32,
     // Command sent to client
-    command:                  String,
+    command: String,
     // Temporary directory
-    tmp_dir:                  String,
+    tmp_dir: String,
     is_pod_monitor_available: bool,
-    local_magic_file_path:    String,
-    remote_dir:               String,
-    data_dir:                 String,
-    process_map:              HashMap<String, Process>,
-    filesystem:               T,
+    local_magic_file_path: String,
+    remote_dir: String,
+    data_dir: String,
+    process_map: HashMap<String, Process>,
+    filesystem: T,
 }
 
 impl<T: FileSystem + Send + Sync> NativeProvider<T> {
@@ -90,9 +91,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     async fn get_port_mapping(
         &mut self,
-        port: u16,
+        port: Port,
         pod_name: String,
-    ) -> Result<u16, ProviderError> {
+    ) -> Result<Port, ProviderError> {
         let r = match self.process_map.get(&pod_name) {
             Some(process) => match process.port_mapping.get(&port) {
                 Some(port) => Ok(*port),
@@ -104,13 +105,16 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         return r;
     }
 
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), ProviderError> {
+    async fn get_node_info(
+        &mut self,
+        pod_name: String,
+    ) -> Result<(IpAddress, Port), ProviderError> {
         let host_port = self.get_port_mapping(P2P_PORT, pod_name).await?;
-        Ok((LOCALHOST.to_string(), host_port))
+        Ok((LOCALHOST, host_port))
     }
 
-    async fn get_node_ip(&self) -> Result<String, ProviderError> {
-        Ok(LOCALHOST.to_owned())
+    async fn get_node_ip(&self) -> Result<IpAddress, ProviderError> {
+        Ok(LOCALHOST)
     }
 
     async fn run_command(
@@ -145,8 +149,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             // in either case we return Ok
             Ok(RunCommandResponse {
                 exit_code: result.status,
-                std_out:   String::from_utf8_lossy(&result.stdout).into(),
-                std_err:   if result.stderr.is_empty() {
+                std_out: String::from_utf8_lossy(&result.stdout).into(),
+                std_err: if result.stderr.is_empty() {
                     None
                 } else {
                     Some(String::from_utf8_lossy(&result.stderr).into())
@@ -200,8 +204,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         Ok(RunCommandResponse {
             exit_code: result.exit_code,
-            std_out:   result.std_out,
-            std_err:   result.std_err,
+            std_out: result.std_out,
+            std_err: result.std_err,
         })
     }
 
@@ -431,6 +435,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             })
             .collect();
 
+        // TODO: use a crate (or even std) to get this info instead of relying on bash
         let result = self
             .run_command(
                 [format!(
@@ -629,7 +634,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 
     // TODO: Add test
-    async fn validate_access(&mut self) -> Result<bool, ProviderError> {
+    async fn get_help_info(&mut self) -> Result<bool, ProviderError> {
         let result = self
             .run_command(
                 vec!["--help".to_owned()],
@@ -709,8 +714,8 @@ mod tests {
             result,
             RunCommandResponse {
                 exit_code: ExitStatus::from_raw(0),
-                std_out:   "Cargo.toml\nsrc\n".into(),
-                std_err:   None,
+                std_out: "Cargo.toml\nsrc\n".into(),
+                std_err: None,
             }
         );
     }
@@ -759,17 +764,17 @@ mod tests {
 
         let resource_def: PodDef = PodDef {
             metadata: PodMetadata {
-                name:      "string".to_owned(),
+                name: "string".to_owned(),
                 namespace: "string".to_owned(),
-                labels:    PodLabels {
-                    app:         "String".to_owned(),
-                    zombie_ns:   "String".to_owned(),
-                    name:        "String".to_owned(),
-                    instance:    "String".to_owned(),
+                labels: PodLabels {
+                    app: "String".to_owned(),
+                    zombie_ns: "String".to_owned(),
+                    name: "String".to_owned(),
+                    instance: "String".to_owned(),
                     zombie_role: ZombieRole::Node,
                 },
             },
-            spec:     PodSpec {
+            spec: PodSpec {
                 cfg_path: "string".to_owned(),
                 data_path: "string".to_owned(),
                 ports: vec![],
@@ -795,17 +800,17 @@ mod tests {
 
         let resource_def: PodDef = PodDef {
             metadata: PodMetadata {
-                name:      "string".to_owned(),
+                name: "string".to_owned(),
                 namespace: "string".to_owned(),
-                labels:    PodLabels {
-                    app:         "String".to_owned(),
-                    zombie_ns:   "String".to_owned(),
-                    name:        "String".to_owned(),
-                    instance:    "String".to_owned(),
+                labels: PodLabels {
+                    app: "String".to_owned(),
+                    zombie_ns: "String".to_owned(),
+                    name: "String".to_owned(),
+                    instance: "String".to_owned(),
                     zombie_role: ZombieRole::Node,
                 },
             },
-            spec:     PodSpec {
+            spec: PodSpec {
                 cfg_path: "string".to_owned(),
                 data_path: "string".to_owned(),
                 ports: vec![],

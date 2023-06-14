@@ -4,9 +4,9 @@ use crate::shared::{macros::states, types::ParaId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HrmpChannelConfig {
-    sender:           ParaId,
-    recipient:        ParaId,
-    max_capacity:     u32,
+    sender: ParaId,
+    recipient: ParaId,
+    max_capacity: u32,
     max_message_size: u32,
 }
 
@@ -44,9 +44,9 @@ impl Default for HrmpChannelConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: HrmpChannelConfig {
-                sender:           0,
-                recipient:        0,
-                max_capacity:     8,
+                sender: 0,
+                recipient: 0,
+                max_capacity: 8,
                 max_message_size: 512,
             },
             _state: PhantomData,

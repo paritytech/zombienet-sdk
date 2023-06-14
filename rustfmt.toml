@@ -10,8 +10,8 @@ use_field_init_shorthand = true
 use_try_shorthand = true
 
 # alignment
-struct_field_align_threshold = 100
-enum_discrim_align_threshold = 100
+struct_field_align_threshold = 0
+enum_discrim_align_threshold = 0
 
 # normalization
 normalize_comments = true

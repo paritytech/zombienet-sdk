@@ -26,13 +26,13 @@ pub enum MockError {
 }
 #[derive(Debug, Default)]
 pub struct MockFilesystem {
-    copy_error:        Option<MockError>,
-    create_dir_error:  Option<MockError>,
+    copy_error: Option<MockError>,
+    create_dir_error: Option<MockError>,
     create_file_error: Option<MockError>,
-    open_file_error:   Option<MockError>,
-    read_file_error:   Option<MockError>,
-    write_error:       Option<MockError>,
-    pub operations:    Vec<Operation>,
+    open_file_error: Option<MockError>,
+    read_file_error: Option<MockError>,
+    write_error: Option<MockError>,
+    pub operations: Vec<Operation>,
 }
 
 impl MockFilesystem {
@@ -112,7 +112,7 @@ impl FileSystem for MockFilesystem {
         }
 
         self.operations.push(Operation::Write {
-            path:    path.as_ref().to_path_buf(),
+            path: path.as_ref().to_path_buf(),
             content: content.into(),
         });
         Ok(())
@@ -168,7 +168,7 @@ impl FileSystem for MockFilesystem {
 
         self.operations.push(Operation::Copy {
             from: from.as_ref().to_path_buf(),
-            to:   to.as_ref().to_path_buf(),
+            to: to.as_ref().to_path_buf(),
         });
         Ok(())
     }

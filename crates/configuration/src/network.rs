@@ -60,9 +60,9 @@ impl Default for NetworkConfigBuilder<Initial> {
         Self {
             config: NetworkConfig {
                 global_settings: GlobalSettingsBuilder::new().build(),
-                relaychain:      None,
-                parachains:      vec![],
-                hrmp_channels:   vec![],
+                relaychain: None,
+                parachains: vec![],
+                hrmp_channels: vec![],
             },
             _state: PhantomData,
         }

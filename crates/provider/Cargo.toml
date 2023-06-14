@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 support = { path = "../support" }
+configuration = { path = "../configuration" }
 async-trait = {workspace = true }
 futures = {workspace = true }
 #napi = { version="2.12.7", features=["async"]}

@@ -5,17 +5,21 @@ mod shared;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
+use configuration::IpAddress;
 use errors::ProviderError;
-use shared::types::{FileMap, NativeRunCommandOptions, PodDef, RunCommandResponse};
+use shared::types::{FileMap, NativeRunCommandOptions, PodDef, Port, RunCommandResponse};
 
 #[async_trait]
-#[allow(non_upper_case_globals)]
 pub trait Provider {
     async fn create_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_node_ip(&self) -> Result<String, ProviderError>;
-    async fn get_port_mapping(&mut self, port: u16, pod_name: String)
-        -> Result<u16, ProviderError>;
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(String, u16), ProviderError>;
+    async fn get_node_ip(&self) -> Result<IpAddress, ProviderError>;
+    async fn get_port_mapping(
+        &mut self,
+        port: Port,
+        pod_name: String,
+    ) -> Result<Port, ProviderError>;
+    async fn get_node_info(&mut self, pod_name: String)
+        -> Result<(IpAddress, Port), ProviderError>;
     async fn run_command(
         &self,
         args: Vec<String>,
@@ -52,11 +56,15 @@ pub trait Provider {
     fn get_pause_args(&mut self, name: String) -> Vec<String>;
     fn get_resume_args(&mut self, name: String) -> Vec<String>;
     async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError>;
-    async fn validate_access(&mut self) -> Result<bool, ProviderError>;
+    async fn get_help_info(&mut self) -> Result<bool, ProviderError>;
     async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
     async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
-    //TODO: need to implement
-    async fn put_local_magic_file(&self, _name: String, _container: Option<String>) -> Result<(), ProviderError> {
+    // TODO: need to implement
+    async fn put_local_magic_file(
+        &self,
+        _name: String,
+        _container: Option<String>,
+    ) -> Result<(), ProviderError> {
         Ok(())
     }
     fn is_pod_monitor_available() -> Result<bool, ProviderError> {
@@ -79,7 +87,7 @@ pub trait Provider {
         Ok(())
     }
     async fn upsert_cron_job() -> Result<(), ProviderError> {
-        todo!();
+        unimplemented!();
     }
 }
 

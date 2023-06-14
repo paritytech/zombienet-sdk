@@ -756,9 +756,6 @@ mod tests {
         let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
-        let mut env = std::collections::HashMap::new();
-        env.insert("SOME".to_owned(), "VALUE".to_owned());
-
         let resource_def: PodDef = PodDef {
             metadata: PodMetadata {
                 name: "string".to_owned(),
@@ -776,7 +773,7 @@ mod tests {
                 data_path: "string".to_owned(),
                 ports: vec![],
                 command: vec!["ls".to_owned()],
-                env,
+                env: vec![],
             },
         };
 
@@ -791,9 +788,6 @@ mod tests {
     async fn test_create_resource_wait_ready() {
         let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
-
-        let mut env = std::collections::HashMap::new();
-        env.insert("SOME".to_owned(), "VALUE".to_owned());
 
         let resource_def: PodDef = PodDef {
             metadata: PodMetadata {
@@ -812,7 +806,7 @@ mod tests {
                 data_path: "string".to_owned(),
                 ports: vec![],
                 command: vec!["for i in $(seq 1 10); do echo $i;sleep 1;done".into()],
-                env,
+                env: vec![],
             },
         };
 

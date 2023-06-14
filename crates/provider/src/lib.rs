@@ -2,24 +2,22 @@ mod errors;
 mod native;
 mod shared;
 
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf};
 
 use async_trait::async_trait;
-use configuration::IpAddress;
 use errors::ProviderError;
 use shared::types::{FileMap, NativeRunCommandOptions, PodDef, Port, RunCommandResponse};
 
 #[async_trait]
 pub trait Provider {
     async fn create_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_node_ip(&self) -> Result<IpAddress, ProviderError>;
+    async fn get_node_ip(&self) -> Result<IpAddr, ProviderError>;
     async fn get_port_mapping(
         &mut self,
         port: Port,
         pod_name: String,
     ) -> Result<Port, ProviderError>;
-    async fn get_node_info(&mut self, pod_name: String)
-        -> Result<(IpAddress, Port), ProviderError>;
+    async fn get_node_info(&mut self, pod_name: String) -> Result<(IpAddr, Port), ProviderError>;
     async fn run_command(
         &self,
         args: Vec<String>,

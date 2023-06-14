@@ -1,4 +1,6 @@
-use crate::shared::types::{Duration, IpAddress, MultiAddress};
+use std::net::IpAddr;
+
+use crate::shared::types::{Duration, MultiAddress};
 
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,7 +19,7 @@ pub struct GlobalSettings {
     node_spawn_timeout: Duration,
 
     /// Local IP used to expose local services (including RPC, metrics and monitoring).
-    local_ip: Option<IpAddress>,
+    local_ip: Option<IpAddr>,
 }
 
 impl GlobalSettings {
@@ -33,7 +35,7 @@ impl GlobalSettings {
         self.node_spawn_timeout
     }
 
-    pub fn local_ip(&self) -> Option<&IpAddress> {
+    pub fn local_ip(&self) -> Option<&IpAddr> {
         self.local_ip.as_ref()
     }
 }
@@ -86,7 +88,7 @@ impl GlobalSettingsBuilder {
         })
     }
 
-    pub fn with_local_ip(self, local_ip: IpAddress) -> Self {
+    pub fn with_local_ip(self, local_ip: IpAddr) -> Self {
         Self::transition(GlobalSettings {
             local_ip: Some(local_ip),
             ..self.config
@@ -111,7 +113,7 @@ mod tests {
             ])
             .with_network_spawn_timeout(600)
             .with_node_spawn_timeout(120)
-            .with_local_ip("10.0.0.1".into())
+            .with_local_ip("10.0.0.1".parse().unwrap())
             .build();
 
         let bootnodes_addresses: Vec<MultiAddress> = vec![
@@ -125,7 +127,7 @@ mod tests {
         assert_eq!(global_settings_config.network_spawn_timeout(), 600);
         assert_eq!(global_settings_config.node_spawn_timeout(), 120);
         assert_eq!(
-            global_settings_config.local_ip().unwrap().value(),
+            global_settings_config.local_ip().unwrap().to_string(),
             "10.0.0.1"
         );
     }

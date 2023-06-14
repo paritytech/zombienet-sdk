@@ -5,11 +5,11 @@ use std::{
         HashMap,
     },
     fmt::Debug,
+    net::IpAddr,
     path::{Path, PathBuf},
 };
 
 use async_trait::async_trait;
-use configuration::IpAddress;
 use serde::Serialize;
 use support::{fs::FileSystem, net::download_file};
 use tokio::{
@@ -105,15 +105,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         return r;
     }
 
-    async fn get_node_info(
-        &mut self,
-        pod_name: String,
-    ) -> Result<(IpAddress, Port), ProviderError> {
+    async fn get_node_info(&mut self, pod_name: String) -> Result<(IpAddr, Port), ProviderError> {
         let host_port = self.get_port_mapping(P2P_PORT, pod_name).await?;
         Ok((LOCALHOST, host_port))
     }
 
-    async fn get_node_ip(&self) -> Result<IpAddress, ProviderError> {
+    async fn get_node_ip(&self) -> Result<IpAddr, ProviderError> {
         Ok(LOCALHOST)
     }
 

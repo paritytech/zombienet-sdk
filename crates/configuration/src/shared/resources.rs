@@ -66,30 +66,30 @@ impl ResourcesBuilder {
         Self { config }
     }
 
-    pub fn with_request_memory(self, quantity: &str) -> Self {
+    pub fn with_request_memory(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            request_memory: Some(ResourceQuantity(quantity.to_owned())),
+            request_memory: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }
 
-    pub fn with_request_cpu(self, quantity: &str) -> Self {
+    pub fn with_request_cpu(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            request_cpu: Some(ResourceQuantity(quantity.to_owned())),
+            request_cpu: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }
 
-    pub fn with_limit_memory(self, quantity: &str) -> Self {
+    pub fn with_limit_memory(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            limit_memory: Some(ResourceQuantity(quantity.to_owned())),
+            limit_memory: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }
 
-    pub fn with_limit_cpu(self, quantity: &str) -> Self {
+    pub fn with_limit_cpu(self, quantity: impl Into<String>) -> Self {
         Self::transition(Resources {
-            limit_cpu: Some(ResourceQuantity(quantity.to_owned())),
+            limit_cpu: Some(ResourceQuantity(quantity.into())),
             ..self.config
         })
     }

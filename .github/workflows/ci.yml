@@ -22,6 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: Init nigthly install for fmt
+        run: rustup update nightly && rustup default nightly && rustup component add rustfmt
+
+      - name: Check format
+        run: cargo +nightly fmt --check --all
+
       - name: Init install
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
       

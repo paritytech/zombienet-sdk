@@ -149,8 +149,7 @@ impl NodeConfig {
 
 states! {
     Initial,
-    WithName,
-    WithCommand
+    Buildable
 }
 
 #[derive(Debug)]
@@ -196,31 +195,32 @@ impl<A> NodeConfigBuilder<A> {
 }
 
 impl NodeConfigBuilder<Initial> {
-    pub fn new() -> NodeConfigBuilder<Initial> {
-        Self::default()
+    pub fn new(default_command: Option<String>) -> Self {
+        Self::transition(NodeConfig {
+            command: default_command,
+            ..Self::default().config
+        })
     }
 
-    pub fn with_name(self, name: &str) -> NodeConfigBuilder<WithName> {
+    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
         Self::transition(NodeConfig {
-            name: name.to_owned(),
+            name: name.into(),
             ..self.config
         })
     }
 }
 
-impl NodeConfigBuilder<WithName> {
-    pub fn with_command(self, command: &str) -> NodeConfigBuilder<WithCommand> {
+impl NodeConfigBuilder<Buildable> {
+    pub fn with_command(self, command: impl Into<String>) -> Self {
         Self::transition(NodeConfig {
-            command: Some(command.to_owned()),
+            command: Some(command.into()),
             ..self.config
         })
     }
-}
 
-impl NodeConfigBuilder<WithCommand> {
-    pub fn with_image(self, image: &str) -> Self {
+    pub fn with_image(self, image: impl Into<String>) -> Self {
         Self::transition(NodeConfig {
-            image: Some(image.to_owned()),
+            image: Some(image.into()),
             ..self.config
         })
     }
@@ -308,9 +308,9 @@ impl NodeConfigBuilder<WithCommand> {
         })
     }
 
-    pub fn with_p2p_cert_hash(self, p2p_cert_hash: &str) -> Self {
+    pub fn with_p2p_cert_hash(self, p2p_cert_hash: impl Into<String>) -> Self {
         Self::transition(NodeConfig {
-            p2p_cert_hash: Some(p2p_cert_hash.to_owned()),
+            p2p_cert_hash: Some(p2p_cert_hash.into()),
             ..self.config
         })
     }
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn node_config_builder_should_build_a_new_node_config_correctly() {
-        let node_config = NodeConfigBuilder::new()
+        let node_config = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_command("mycommand")
             .with_image("myrepo:myimage")

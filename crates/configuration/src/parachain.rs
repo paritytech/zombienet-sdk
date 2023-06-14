@@ -158,9 +158,9 @@ impl ParachainConfigBuilder<Initial> {
 impl ParachainConfigBuilder<WithId> {
     pub fn with_collator(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::WithCommand>,
+        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
-        let new_collator = f(NodeConfigBuilder::new()).build();
+        let new_collator = f(NodeConfigBuilder::new(None)).build();
 
         Self::transition(ParachainConfig {
             collators: vec![new_collator],
@@ -170,7 +170,7 @@ impl ParachainConfigBuilder<WithId> {
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
-    pub fn with_chain(self, chain: &str) -> Self {
+    pub fn with_chain(self, chain: impl Into<String>) -> Self {
         Self::transition(ParachainConfig {
             chain: Some(chain.into()),
             ..self.config
@@ -198,9 +198,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         })
     }
 
-    pub fn with_genesis_wasm_generator(self, command: &str) -> Self {
+    pub fn with_genesis_wasm_generator(self, command: impl Into<String>) -> Self {
         Self::transition(ParachainConfig {
-            genesis_wasm_generator: Some(command.to_owned()),
+            genesis_wasm_generator: Some(command.into()),
             ..self.config
         })
     }
@@ -212,9 +212,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         })
     }
 
-    pub fn with_genesis_state_generator(self, command: &str) -> Self {
+    pub fn with_genesis_state_generator(self, command: impl Into<String>) -> Self {
         Self::transition(ParachainConfig {
-            genesis_state_generator: Some(command.to_owned()),
+            genesis_state_generator: Some(command.into()),
             ..self.config
         })
     }
@@ -242,9 +242,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
     pub fn with_collator(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::WithCommand>,
+        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        let new_collator = f(NodeConfigBuilder::new()).build();
+        let new_collator = f(NodeConfigBuilder::new(None)).build();
 
         Self::transition(ParachainConfig {
             collators: vec![self.config.collators, vec![new_collator]].concat(),

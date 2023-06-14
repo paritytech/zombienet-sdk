@@ -1,6 +1,7 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{error::Error, fmt::Debug, marker::PhantomData};
 
 use crate::shared::{
+    errors::FieldError,
     helpers::merge_errors,
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
@@ -93,7 +94,11 @@ states! {
 
 macro_rules! common_builder_methods {
     () => {
-        pub fn with_default_image(self, image: impl TryInto<Image>) -> Self {
+        pub fn with_default_image<T>(self, image: T) -> Self
+        where
+            T: TryInto<Image>,
+            T::Error: Error + 'static,
+        {
             match image.try_into() {
                 Ok(image) => Self::transition(
                     RelaychainConfig {
@@ -102,10 +107,9 @@ macro_rules! common_builder_methods {
                     },
                     self.errors,
                 ),
-                Err(_error) => Self::transition(
+                Err(error) => Self::transition(
                     self.config,
-                    // merge_errors(self.errors, format!("default_image: {error}")),
-                    merge_errors(self.errors, format!("default_image: ")),
+                    merge_errors(self.errors, FieldError::InvalidDefaultImage(error).into()),
                 ),
             }
         }
@@ -122,7 +126,11 @@ macro_rules! common_builder_methods {
             )
         }
 
-        pub fn with_default_db_snapshot(self, location: impl TryInto<AssetLocation>) -> Self {
+        pub fn with_default_db_snapshot<T>(self, location: T) -> Self
+        where
+            T: TryInto<AssetLocation>,
+            T::Error: Error + 'static,
+        {
             match location.try_into() {
                 Ok(location) => Self::transition(
                     RelaychainConfig {
@@ -131,15 +139,21 @@ macro_rules! common_builder_methods {
                     },
                     self.errors,
                 ),
-                Err(_error) => Self::transition(
+                Err(error) => Self::transition(
                     self.config,
-                    // merge_errors(self.errors, format!("default_db_snapshot: {error}")),
-                    merge_errors(self.errors, format!("default_db_snapshot: ")),
+                    merge_errors(
+                        self.errors,
+                        FieldError::InvalidDefaultDbSnapshot(error).into(),
+                    ),
                 ),
             }
         }
 
-        pub fn with_chain_spec_path(self, location: impl TryInto<AssetLocation>) -> Self {
+        pub fn with_chain_spec_path<T>(self, location: T) -> Self
+        where
+            T: TryInto<AssetLocation>,
+            T::Error: Error + 'static,
+        {
             match location.try_into() {
                 Ok(location) => Self::transition(
                     RelaychainConfig {
@@ -148,10 +162,9 @@ macro_rules! common_builder_methods {
                     },
                     self.errors,
                 ),
-                Err(_error) => Self::transition(
+                Err(error) => Self::transition(
                     self.config,
-                    // merge_errors(self.errors, format!("chain_spec_path: {error}")),
-                    merge_errors(self.errors, format!("chain_spec_path: ")),
+                    merge_errors(self.errors, FieldError::InvalidChainSpecPath(error).into()),
                 ),
             }
         }
@@ -191,7 +204,7 @@ macro_rules! common_builder_methods {
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
-    errors: Vec<String>,
+    errors: Vec<Box<dyn Error>>,
     _state: PhantomData<State>,
 }
 
@@ -217,7 +230,10 @@ impl Default for RelaychainConfigBuilder<Initial> {
 }
 
 impl<A> RelaychainConfigBuilder<A> {
-    fn transition<B>(config: RelaychainConfig, errors: Vec<String>) -> RelaychainConfigBuilder<B> {
+    fn transition<B>(
+        config: RelaychainConfig,
+        errors: Vec<Box<dyn Error>>,
+    ) -> RelaychainConfigBuilder<B> {
         RelaychainConfigBuilder {
             config,
             errors,
@@ -231,7 +247,11 @@ impl RelaychainConfigBuilder<Initial> {
         Self::default()
     }
 
-    pub fn with_chain(self, chain: impl TryInto<Chain>) -> RelaychainConfigBuilder<WithChain> {
+    pub fn with_chain<T>(self, chain: T) -> RelaychainConfigBuilder<WithChain>
+    where
+        T: TryInto<Chain>,
+        T::Error: Error + 'static,
+    {
         match chain.try_into() {
             Ok(chain) => Self::transition(
                 RelaychainConfig {
@@ -240,10 +260,9 @@ impl RelaychainConfigBuilder<Initial> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("chain: {error}")),
-                merge_errors(self.errors, format!("chain: ")),
+                merge_errors(self.errors, FieldError::InvalidChain(error).into()),
             ),
         }
     }
@@ -252,10 +271,11 @@ impl RelaychainConfigBuilder<Initial> {
 impl RelaychainConfigBuilder<WithChain> {
     common_builder_methods!();
 
-    pub fn with_default_command(
-        self,
-        command: impl TryInto<Command>,
-    ) -> RelaychainConfigBuilder<WithDefaultCommand> {
+    pub fn with_default_command<T>(self, command: T) -> RelaychainConfigBuilder<WithDefaultCommand>
+    where
+        T: TryInto<Command>,
+        T::Error: Error + 'static,
+    {
         match command.try_into() {
             Ok(command) => Self::transition(
                 RelaychainConfig {
@@ -264,10 +284,9 @@ impl RelaychainConfigBuilder<WithChain> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("default_command: {error}")),
-                merge_errors(self.errors, format!("default_command: ")),
+                merge_errors(self.errors, FieldError::InvalidDefaultCommand(error).into()),
             ),
         }
     }

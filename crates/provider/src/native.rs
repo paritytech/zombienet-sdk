@@ -252,7 +252,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         // and extract to /data
         let _ = self
             .filesystem
-            .create_dir(format!("{}", pod_def.spec.data_path))
+            .create_dir(pod_def.spec.data_path.clone())
             .await;
 
         let _ = download_file(db_snapshot, format!("{}/db.tgz", pod_def.spec.data_path)).await;
@@ -270,7 +270,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
             let _ = self
                 .filesystem
-                .create_dir(format!("{}", keystore_remote_dir))
+                .create_dir(keystore_remote_dir.clone())
                 .await;
 
             let _ = self.filesystem.copy(&keystore, &keystore_remote_dir).await;

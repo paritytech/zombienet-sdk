@@ -1,9 +1,5 @@
 //! Zombienet Provider error definitions.
 
-use support::fs::{errors::FileSystemError, FileSystem};
-
-use crate::native::NativeProvider;
-
 macro_rules! from_error {
     ($type:ty, $target:ident, $targetvar:expr) => {
         impl From<$type> for $target {

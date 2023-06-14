@@ -1,8 +1,12 @@
-use std::{net::IpAddr, str::FromStr};
+use std::{error::Error, net::IpAddr, str::FromStr};
 
 use multiaddr::Multiaddr;
 
-use crate::shared::{helpers::merge_errors, types::Duration};
+use crate::shared::{
+    errors::FieldError,
+    helpers::{merge_errors, merge_errors_vecs},
+    types::Duration,
+};
 
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,7 +51,7 @@ impl GlobalSettings {
 #[derive(Debug)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
-    errors: Vec<String>,
+    errors: Vec<Box<dyn Error>>,
 }
 
 impl Default for GlobalSettingsBuilder {
@@ -65,25 +69,26 @@ impl Default for GlobalSettingsBuilder {
 }
 
 impl GlobalSettingsBuilder {
-    pub fn new() -> GlobalSettingsBuilder {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    fn transition(config: GlobalSettings, errors: Vec<String>) -> Self {
+    fn transition(config: GlobalSettings, errors: Vec<Box<dyn Error>>) -> Self {
         Self { config, errors }
     }
 
-    pub fn with_bootnodes_addresses(
-        self,
-        bootnode_addresses: Vec<impl TryInto<Multiaddr>>,
-    ) -> Self {
+    pub fn with_bootnodes_addresses<T>(self, bootnode_addresses: Vec<T>) -> Self
+    where
+        T: TryInto<Multiaddr>,
+        T::Error: Error + 'static,
+    {
         let mut addrs = vec![];
         let mut errors = vec![];
 
         for addr in bootnode_addresses {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(error),
+                Err(error) => errors.push(error.into()),
             }
         }
 
@@ -92,8 +97,7 @@ impl GlobalSettingsBuilder {
                 bootnodes_addresses: addrs,
                 ..self.config
             },
-            // vec![self.errors, errors].concat(),
-            self.errors,
+            merge_errors_vecs(self.errors, errors),
         )
     }
 
@@ -128,7 +132,7 @@ impl GlobalSettingsBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, format!("local_ip: {error}")),
+                merge_errors(self.errors, FieldError::InvalidLocalIp(error).into()),
             ),
         }
     }

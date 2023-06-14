@@ -9,4 +9,5 @@ edition = "2021"
 thiserror = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+reqwest = "0.11.18"
 

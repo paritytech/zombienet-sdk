@@ -113,7 +113,22 @@ pub struct PodDef {
     pub spec: PodSpec,
 }
 
-type ProcessEnvironment = HashMap<String, String>;
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnvVar {
+    name: String,
+    value: String,
+}
+
+impl From<(&str, &str)> for EnvVar {
+    fn from(value: (&str, &str)) -> Self {
+        Self {
+            name: value.0.into(),
+            value: value.1.into(),
+        }
+    }
+}
+
+type ProcessEnvironment = Vec<EnvVar>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PortInfo {

@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
-pub(crate) struct NativeProvider<T: FileSystem + Send + Sync> {
+pub struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client
     namespace:                String,
     // Path where configuration relies
@@ -50,6 +50,7 @@ pub(crate) struct NativeProvider<T: FileSystem + Send + Sync> {
 }
 
 impl<T: FileSystem + Send + Sync> NativeProvider<T> {
+    // TODO: needs docs.
     pub fn new(
         namespace: impl Into<String>,
         config_path: impl Into<String>,
@@ -57,7 +58,6 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
         filesystem: T,
     ) -> Self {
         let tmp_dir: String = tmp_dir.into();
-
         let process_map: HashMap<String, Process> = HashMap::new();
 
         Self {
@@ -216,7 +216,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         files_to_copy: Vec<FileMap>,
         keystore: String,
         chain_spec_id: String,
-        db_snapshot: String,
+        // TODO: add logic to download the snapshot
+        _db_snapshot: String,
     ) -> Result<(), ProviderError> {
         let name = pod_def.metadata.name.clone();
         // TODO: log::debug!(format!("{}", serde_json::to_string(&pod_def)));
@@ -294,20 +295,19 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 .into_string()
                 .unwrap();
 
-            let mut resolved_remote_file_path = String::new();
-            if remote_file_path_str.contains(&self.remote_dir) {
-                resolved_remote_file_path = format!(
+            let resolved_remote_file_path = if remote_file_path_str.contains(&self.remote_dir) {
+                format!(
                     "{}/{}",
                     &pod_def.spec.cfg_path,
                     remote_file_path_str.replace(&self.remote_dir, "")
-                );
+                )
             } else {
-                resolved_remote_file_path = format!(
+                format!(
                     "{}/{}",
                     &pod_def.spec.data_path,
                     remote_file_path_str.replace(&self.data_dir, "")
-                );
-            }
+                )
+            };
 
             let _ = self
                 .filesystem
@@ -382,8 +382,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 .create(logs.clone())
                 .await
                 .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-            let final_command = resource_def.spec.command.join(" ");
 
+            let final_command = resource_def.spec.command.join(" ");
             let child_process = std::process::Command::new(&self.command)
                 .arg("-c")
                 .arg(final_command.clone())
@@ -392,17 +392,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 // TODO: redirect stderr to the same stdout
                 //.stderr()
                 .spawn()?;
-            // {
-            //     Err(why) => panic!("Couldn't spawn process: {}", why),
-            //     Ok(node_process) => node_process,
-            // };
 
             // TODO: log::debug!(node_process.id());
             //   nodeProcess.stdout.pipe(log);
             //   nodeProcess.stderr.pipe(log);
 
             match self.process_map.entry(name.clone()) {
-                // TODO: return specific error
                 Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
                 Vacant(slot) => {
                     slot.insert(Process {

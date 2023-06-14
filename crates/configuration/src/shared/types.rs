@@ -4,6 +4,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use url::Url;
 
+use super::errors::ConversionError;
+
 pub type Duration = u32;
 
 pub type Port = u16;
@@ -14,11 +16,11 @@ pub type ParaId = u32;
 pub struct Chain(String);
 
 impl TryFrom<&str> for Chain {
-    type Error = String;
+    type Error = ConversionError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if value.contains(char::is_whitespace) {
-            return Err(format!("'{value}' shouldn't contains whitespace"));
+            return Err(ConversionError::ContainsWhitespaces(value.to_string()));
         }
 
         Ok(Self(value.to_string()))
@@ -35,7 +37,7 @@ impl Chain {
 pub struct Image(String);
 
 impl TryFrom<&str> for Image {
-    type Error = String;
+    type Error = ConversionError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         static IP_PART: &str = "((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]).){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))";
@@ -50,9 +52,10 @@ impl TryFrom<&str> for Image {
         };
 
         if !RE.is_match(value) {
-            return Err(format!(
-                "'{value}' doesn't match regex ^([ip]|[hostname]/)?[tag_name]:[tag_version]?$"
-            ));
+            return Err(ConversionError::DoesntMatchRegex {
+                value: value.to_string(),
+                regex: "^([ip]|[hostname]/)?[tag_name]:[tag_version]?$".to_string(),
+            });
         }
 
         Ok(Self(value.to_string()))
@@ -69,11 +72,11 @@ impl Image {
 pub struct Command(String);
 
 impl TryFrom<&str> for Command {
-    type Error = String;
+    type Error = ConversionError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if value.contains(char::is_whitespace) {
-            return Err(format!("'{value}' shouldn't contains whitespace"));
+            return Err(ConversionError::ContainsWhitespaces(value.to_string()));
         }
 
         Ok(Self(value.to_string()))
@@ -105,7 +108,7 @@ impl From<PathBuf> for AssetLocation {
 }
 
 impl TryFrom<&str> for AssetLocation {
-    type Error = String;
+    type Error = ConversionError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if let Ok(parsed_url) = Url::parse(value) {
@@ -116,9 +119,7 @@ impl TryFrom<&str> for AssetLocation {
             return Ok(Self::FilePath(parsed_path));
         }
 
-        Err(format!(
-            "unable to convert '{value}' into url::Url or path::PathBuf"
-        ))
+        Err(ConversionError::InvalidUrlOrPathBuf(value.to_string()))
     }
 }
 

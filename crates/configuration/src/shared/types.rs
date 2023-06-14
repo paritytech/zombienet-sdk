@@ -13,20 +13,6 @@ impl From<&str> for MultiAddress {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct IpAddress(String);
-
-impl IpAddress {
-    pub fn value(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<&str> for IpAddress {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
-    }
-}
 
 pub type Duration = u32;
 

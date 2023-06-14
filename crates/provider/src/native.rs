@@ -213,7 +213,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         keystore: String,
         chain_spec_id: String,
         // TODO: add logic to download the snapshot
-        _db_snapshot: String,
+        db_snapshot: String,
     ) -> Result<(), ProviderError> {
         let name = pod_def.metadata.name.clone();
         // TODO: log::debug!(format!("{}", serde_json::to_string(&pod_def)));
@@ -452,14 +452,14 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 .map(|s| s.into())
                 .collect();
 
-            self.run_command(
-                [format!("kill -9 {}", pids_to_kill.join(" "))].to_vec(),
-                NativeRunCommandOptions {
-                    is_failure_allowed: true,
-                },
-            )
-            .await
-            .expect("Failed to kill process");
+            let _ = self
+                .run_command(
+                    [format!("kill -9 {}", pids_to_kill.join(" "))].to_vec(),
+                    NativeRunCommandOptions {
+                        is_failure_allowed: true,
+                    },
+                )
+                .await?;
         }
         Ok(())
     }
@@ -635,8 +635,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 vec!["--help".to_owned()],
                 NativeRunCommandOptions::default(),
             )
-            .await
-            .expect("Failed to run `--help` command");
+            .await?;
+
         Ok(result.exit_code.code().unwrap() == 0)
     }
 }
@@ -703,7 +703,7 @@ mod tests {
                 NativeRunCommandOptions::default(),
             )
             .await
-            .expect("Error");
+            .unwrap();
 
         assert_eq!(
             result,
@@ -781,7 +781,7 @@ mod tests {
         native_provider
             .create_resource(resource_def, false, false)
             .await
-            .expect("err");
+            .unwrap();
 
         assert_eq!(native_provider.process_map.len(), 1);
     }
@@ -817,7 +817,7 @@ mod tests {
         native_provider
             .create_resource(resource_def, false, true)
             .await
-            .expect("err");
+            .unwrap();
 
         assert_eq!(native_provider.process_map.len(), 1);
     }

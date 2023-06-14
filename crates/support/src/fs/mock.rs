@@ -39,17 +39,13 @@ impl MockFilesystem {
     pub fn new() -> Self {
         Self::default()
     }
+
     // TODO: add test
     #[allow(dead_code)]
     fn with_create_dir_error(error: MockError) -> Self {
         Self {
-            copy_error:        None,
-            create_dir_error:  Some(error),
-            open_file_error:   None,
-            create_file_error: None,
-            read_file_error:   None,
-            write_error:       None,
-            operations:        vec![],
+            create_dir_error: Some(error),
+            ..Self::default()
         }
     }
 
@@ -57,13 +53,8 @@ impl MockFilesystem {
     #[allow(dead_code)]
     fn with_create_file_error(error: MockError) -> Self {
         Self {
-            copy_error:        None,
-            create_dir_error:  None,
-            open_file_error:   None,
             create_file_error: Some(error),
-            read_file_error:   None,
-            write_error:       None,
-            operations:        vec![],
+            ..Self::default()
         }
     }
 
@@ -71,13 +62,8 @@ impl MockFilesystem {
     #[allow(dead_code)]
     fn with_read_file_error(error: MockError) -> Self {
         Self {
-            copy_error:        None,
-            create_dir_error:  None,
-            open_file_error:   None,
-            create_file_error: None,
-            read_file_error:   Some(error),
-            write_error:       None,
-            operations:        vec![],
+            read_file_error: Some(error),
+            ..Self::default()
         }
     }
 
@@ -85,13 +71,8 @@ impl MockFilesystem {
     #[allow(dead_code)]
     fn with_copy_error(error: MockError) -> Self {
         Self {
-            copy_error:        Some(error),
-            create_dir_error:  None,
-            open_file_error:   None,
-            create_file_error: None,
-            read_file_error:   None,
-            write_error:       None,
-            operations:        vec![],
+            copy_error: Some(error),
+            ..Self::default()
         }
     }
 
@@ -99,13 +80,8 @@ impl MockFilesystem {
     #[allow(dead_code)]
     fn with_write_error(error: MockError) -> Self {
         Self {
-            copy_error:        None,
-            create_dir_error:  None,
-            open_file_error:   None,
-            create_file_error: None,
-            read_file_error:   None,
-            write_error:       Some(error),
-            operations:        vec![],
+            write_error: Some(error),
+            ..Self::default()
         }
     }
 }

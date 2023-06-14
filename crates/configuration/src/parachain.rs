@@ -1,9 +1,10 @@
-use std::marker::PhantomData;
+use std::{error::Error, marker::PhantomData};
 
 use multiaddr::Multiaddr;
 
 use crate::shared::{
-    helpers::merge_errors,
+    errors::FieldError,
+    helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     types::{AssetLocation, Chain, Command},
@@ -112,10 +113,10 @@ states! {
 }
 
 #[derive(Debug)]
-pub struct ParachainConfigBuilder<State> {
+pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
-    errors: Vec<String>,
-    _state: PhantomData<State>,
+    errors: Vec<Box<dyn Error>>,
+    _state: PhantomData<S>,
 }
 
 impl Default for ParachainConfigBuilder<Initial> {
@@ -142,7 +143,10 @@ impl Default for ParachainConfigBuilder<Initial> {
 }
 
 impl<A> ParachainConfigBuilder<A> {
-    fn transition<B>(config: ParachainConfig, errors: Vec<String>) -> ParachainConfigBuilder<B> {
+    fn transition<B>(
+        config: ParachainConfig,
+        errors: Vec<Box<dyn Error>>,
+    ) -> ParachainConfigBuilder<B> {
         ParachainConfigBuilder {
             config,
             errors,
@@ -179,7 +183,11 @@ impl ParachainConfigBuilder<WithId> {
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
-    pub fn with_chain(self, chain: impl TryInto<Chain>) -> Self {
+    pub fn with_chain<T>(self, chain: T) -> Self
+    where
+        T: TryInto<Chain>,
+        T::Error: Error + 'static,
+    {
         match chain.try_into() {
             Ok(chain) => Self::transition(
                 ParachainConfig {
@@ -188,10 +196,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("chain: {error}")),
-                merge_errors(self.errors, format!("chain: ")),
+                merge_errors(self.errors, FieldError::InvalidChain(error).into()),
             ),
         }
     }
@@ -216,7 +223,11 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         )
     }
 
-    pub fn with_genesis_wasm_path(self, location: impl TryInto<AssetLocation>) -> Self {
+    pub fn with_genesis_wasm_path<T>(self, location: T) -> Self
+    where
+        T: TryInto<AssetLocation>,
+        T::Error: Error + 'static,
+    {
         match location.try_into() {
             Ok(location) => Self::transition(
                 ParachainConfig {
@@ -225,15 +236,21 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("genesis_wasm_path: {error}")),
-                merge_errors(self.errors, format!("genesis_wasm_path: ")),
+                merge_errors(
+                    self.errors,
+                    FieldError::InvalidGenesisWasmPath(error).into(),
+                ),
             ),
         }
     }
 
-    pub fn with_genesis_wasm_generator(self, command: impl TryInto<Command>) -> Self {
+    pub fn with_genesis_wasm_generator<T>(self, command: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + 'static,
+    {
         match command.try_into() {
             Ok(command) => Self::transition(
                 ParachainConfig {
@@ -242,15 +259,21 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("genesis_wasm_generator: {error}")),
-                merge_errors(self.errors, format!("genesis_wasm_generator: ")),
+                merge_errors(
+                    self.errors,
+                    FieldError::InvalidGenesisWasmGenerator(error).into(),
+                ),
             ),
         }
     }
 
-    pub fn with_genesis_state_path(self, location: impl TryInto<AssetLocation>) -> Self {
+    pub fn with_genesis_state_path<T>(self, location: T) -> Self
+    where
+        T: TryInto<AssetLocation>,
+        T::Error: Error + 'static,
+    {
         match location.try_into() {
             Ok(location) => Self::transition(
                 ParachainConfig {
@@ -259,15 +282,21 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("genesis_state_path: {error}")),
-                merge_errors(self.errors, format!("genesis_state_path: ")),
+                merge_errors(
+                    self.errors,
+                    FieldError::InvalidGenesisStatePath(error).into(),
+                ),
             ),
         }
     }
 
-    pub fn with_genesis_state_generator(self, command: impl TryInto<Command>) -> Self {
+    pub fn with_genesis_state_generator<T>(self, command: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + 'static,
+    {
         match command.try_into() {
             Ok(command) => Self::transition(
                 ParachainConfig {
@@ -276,15 +305,21 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("genesis_state_generator: {error}")),
-                merge_errors(self.errors, format!("genesis_state_generator: ")),
+                merge_errors(
+                    self.errors,
+                    FieldError::InvalidGenesisStateGenerator(error).into(),
+                ),
             ),
         }
     }
 
-    pub fn with_chain_spec_path(self, location: impl TryInto<AssetLocation>) -> Self {
+    pub fn with_chain_spec_path<T>(self, location: T) -> Self
+    where
+        T: TryInto<AssetLocation>,
+        T::Error: Error + 'static,
+    {
         match location.try_into() {
             Ok(location) => Self::transition(
                 ParachainConfig {
@@ -293,10 +328,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("chain_spec_path: {error}")),
-                merge_errors(self.errors, format!("chain_spec_path: ")),
+                merge_errors(self.errors, FieldError::InvalidChainSpecPath(error).into()),
             ),
         }
     }
@@ -311,17 +345,18 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         )
     }
 
-    pub fn with_bootnodes_addresses(
-        self,
-        bootnodes_addresses: Vec<impl TryInto<Multiaddr>>,
-    ) -> Self {
+    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    where
+        T: TryInto<Multiaddr>,
+        T::Error: Error + 'static,
+    {
         let mut addrs = vec![];
         let mut errors = vec![];
 
-        for addr in bootnodes_addresses {
+        for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(error),
+                Err(error) => errors.push(FieldError::InvalidBootnodesAddress(index, error).into()),
             }
         }
 
@@ -330,7 +365,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
                 bootnodes_addresses: addrs,
                 ..self.config
             },
-            self.errors, // vec![self.errors, errors].concat(),
+            merge_errors_vecs(self.errors, errors),
         )
     }
 

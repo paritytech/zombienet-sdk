@@ -1,7 +1,12 @@
+use std::error::Error;
+
 use lazy_static::lazy_static;
 use regex::Regex;
 
-use super::helpers::merge_errors;
+use super::{
+    errors::{ConversionError, FieldError},
+    helpers::merge_errors,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceQuantity(String);
@@ -13,7 +18,7 @@ impl ResourceQuantity {
 }
 
 impl TryFrom<&str> for ResourceQuantity {
-    type Error = String;
+    type Error = ConversionError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         lazy_static! {
@@ -22,7 +27,10 @@ impl TryFrom<&str> for ResourceQuantity {
         }
 
         if !RE.is_match(value) {
-            return Err("".to_string());
+            return Err(ConversionError::DoesntMatchRegex {
+                value: value.to_string(),
+                regex: r"^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$".to_string(),
+            });
         }
 
         Ok(Self(value.to_string()))
@@ -64,7 +72,7 @@ impl Resources {
 #[derive(Debug, Default)]
 pub struct ResourcesBuilder {
     config: Resources,
-    errors: Vec<String>,
+    errors: Vec<Box<dyn Error>>,
 }
 
 impl ResourcesBuilder {
@@ -72,11 +80,15 @@ impl ResourcesBuilder {
         Self::default()
     }
 
-    fn transition(config: Resources, errors: Vec<String>) -> Self {
+    fn transition(config: Resources, errors: Vec<Box<dyn Error>>) -> Self {
         Self { config, errors }
     }
 
-    pub fn with_request_memory(self, quantity: impl TryInto<ResourceQuantity>) -> Self {
+    pub fn with_request_memory<T>(self, quantity: T) -> Self
+    where
+        T: TryInto<ResourceQuantity>,
+        T::Error: Error + 'static,
+    {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
                 Resources {
@@ -85,15 +97,18 @@ impl ResourcesBuilder {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("request_memory: {error}")),
-                merge_errors(self.errors, format!("request_memory: ")),
+                merge_errors(self.errors, FieldError::InvalidRequestMemory(error).into()),
             ),
         }
     }
 
-    pub fn with_request_cpu(self, quantity: impl TryInto<ResourceQuantity>) -> Self {
+    pub fn with_request_cpu<T>(self, quantity: T) -> Self
+    where
+        T: TryInto<ResourceQuantity>,
+        T::Error: Error + 'static,
+    {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
                 Resources {
@@ -102,15 +117,18 @@ impl ResourcesBuilder {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("request_cpu: {error}")),
-                merge_errors(self.errors, format!("request_cpu: ")),
+                merge_errors(self.errors, FieldError::InvalidRequestCpu(error).into()),
             ),
         }
     }
 
-    pub fn with_limit_memory(self, quantity: impl TryInto<ResourceQuantity>) -> Self {
+    pub fn with_limit_memory<T>(self, quantity: T) -> Self
+    where
+        T: TryInto<ResourceQuantity>,
+        T::Error: Error + 'static,
+    {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
                 Resources {
@@ -119,15 +137,18 @@ impl ResourcesBuilder {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("limit_memory: {error}")),
-                merge_errors(self.errors, format!("limit_memory: ")),
+                merge_errors(self.errors, FieldError::InvalidLimitMemory(error).into()),
             ),
         }
     }
 
-    pub fn with_limit_cpu(self, quantity: impl TryInto<ResourceQuantity>) -> Self {
+    pub fn with_limit_cpu<T>(self, quantity: T) -> Self
+    where
+        T: TryInto<ResourceQuantity>,
+        T::Error: Error + 'static,
+    {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
                 Resources {
@@ -136,10 +157,9 @@ impl ResourcesBuilder {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("limit_cpu: {error}")),
-                merge_errors(self.errors, format!("limit_cpu: ")),
+                merge_errors(self.errors, FieldError::InvalidLimitCpu(error).into()),
             ),
         }
     }

@@ -27,6 +27,3 @@ pub trait FileSystem {
         content: impl Into<String> + Send,
     ) -> Result<(), Self::FSError>;
 }
-
-// #[derive(Debug)]
-// struct FilesystemInMemory {}

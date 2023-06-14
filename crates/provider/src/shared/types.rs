@@ -34,7 +34,7 @@ enum ImagePullPolicy {
 pub struct FileMap {
     pub local_file_path:  PathBuf,
     pub remote_file_path: PathBuf,
-    pub unique:           bool,
+    pub is_unique:        bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,7 +56,7 @@ impl RunCommandResponse {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct NativeRunCommandOptions {
-    pub allow_fail: bool,
+    pub is_failure_allowed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

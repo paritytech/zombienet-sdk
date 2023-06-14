@@ -10,7 +10,7 @@ use std::{
 
 use async_trait::async_trait;
 use serde::Serialize;
-use support::fs::FileSystem;
+use support::{fs::FileSystem, net::download_file};
 use tokio::{
     process::Command,
     time::{sleep, Duration},
@@ -26,7 +26,6 @@ use crate::{
         },
     },
 };
-
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub(crate) struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client
@@ -95,14 +94,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         pod_name: String,
     ) -> Result<u16, ProviderError> {
         let r = match self.process_map.get(&pod_name) {
-            Some(process) => {
-                match process.port_mapping.get(&port) {
-                    Some(port) => Ok(*port),
-                    // TODO: return specialized error
-                    None => Err(ProviderError::MissingNodeInfo(pod_name, "port".into())),
-                }
+            Some(process) => match process.port_mapping.get(&port) {
+                Some(port) => Ok(*port),
+                None => Err(ProviderError::MissingNodeInfo(pod_name, "port".into())),
             },
-            // TODO: return specialized error
             None => Err(ProviderError::MissingNodeInfo(pod_name, "process".into())),
         };
 
@@ -143,7 +138,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .output()
             .await?;
 
-        if !result.status.success() && !opts.allow_fail {
+        if !result.status.success() && !opts.is_failure_allowed {
             return Err(ProviderError::RunCommandError(args.join(" ")));
         } else {
             // cmd success or we allow to fail
@@ -210,6 +205,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         })
     }
 
+    // TODO: Add test
     async fn spawn_from_def(
         &mut self,
         pod_def: PodDef,
@@ -257,7 +253,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .create_dir(format!("{}", pod_def.spec.data_path))
             .await;
 
-        // TODO: await downloadFile(dbSnapshot, `${podDef.spec.dataPath}/db.tgz`);
+        let _ = download_file(db_snapshot, format!("{}/db.tgz", pod_def.spec.data_path)).await;
         let command = format!("cd {}/.. && tar -xzvf data/db.tgz", pod_def.spec.data_path);
 
         self.run_command(vec![command], NativeRunCommandOptions::default())
@@ -370,7 +366,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             self.run_command(
                 resource_def.spec.command,
                 NativeRunCommandOptions {
-                    allow_fail: Some(true).is_some(),
+                    is_failure_allowed: Some(true).is_some(),
                 },
             )
             .await?;
@@ -387,7 +383,6 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             let child_process = std::process::Command::new(&self.command)
                 .arg("-c")
                 .arg(final_command.clone())
-                // TODO: set env
                 .stdout(file_handler)
                 // TODO: redirect stderr to the same stdout
                 //.stderr()
@@ -402,25 +397,22 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             //   nodeProcess.stderr.pipe(log);
 
             match self.process_map.entry(name.clone()) {
-                // TODO: return specific error
                 Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
                 Vacant(slot) => {
                     slot.insert(Process {
                         pid: child_process.id(),
-                        // TODO: complete this field
                         logs,
-                        // TODO: complete this field
-                        port_mapping: HashMap::default(),
+                        port_mapping: resource_def.spec.ports.iter().fold(
+                            HashMap::new(),
+                            |mut memo: HashMap<u16, u16>, item| {
+                                memo.insert(item.container_port, item.host_port);
+                                memo
+                            },
+                        ),
                         command: final_command,
                     });
                 },
             }
-
-            // logs: `${this.tmpDir}/${name}.log`,
-            // portMapping: podDef.spec.ports.reduce((memo: any, item: any) => {
-            //   memo[item.containerPort] = item.hostPort;
-            //   return memo;
-            // }, {}),
 
             if wait_ready {
                 self.wait_node_ready(name).await?;
@@ -450,7 +442,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                     pids.join("|")
                 )]
                 .to_vec(),
-                NativeRunCommandOptions { allow_fail: true },
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
             )
             .await
             .unwrap();
@@ -464,7 +458,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
             self.run_command(
                 [format!("kill -9 {}", pids_to_kill.join(" "))].to_vec(),
-                NativeRunCommandOptions { allow_fail: true },
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
             )
             .await
             .expect("Failed to kill process");
@@ -506,7 +502,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         let result = self
             .run_command(
                 vec![format!("ps {}", process_node.pid)],
-                NativeRunCommandOptions { allow_fail: true },
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
             )
             .await?;
 
@@ -578,7 +576,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError> {
         let command = format!("kill -9 {}", self.process_map[&name].pid);
         let result = self
-            .run_command(vec![command], NativeRunCommandOptions { allow_fail: true })
+            .run_command(
+                vec![command],
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
+            )
             .await?;
 
         if result.exit_code.code().unwrap() > 0 {
@@ -608,7 +611,6 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         .spawn()?;
 
         match self.process_map.entry(name.clone()) {
-            // TODO: return specific error
             Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
             Vacant(slot) => {
                 slot.insert(Process {
@@ -643,7 +645,6 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 }
 
-// Javier-TODO: File Testings (copy etc etc)
 #[cfg(test)]
 mod tests {
     use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
@@ -744,7 +745,9 @@ mod tests {
 
         some = native_provider.run_command(
             vec!["ls".into(), "ls".into()],
-            NativeRunCommandOptions { allow_fail: true },
+            NativeRunCommandOptions {
+                is_failure_allowed: true,
+            },
         );
 
         assert!(some.await.is_ok());

@@ -1,9 +1,10 @@
-use std::marker::PhantomData;
+use std::{error::Error, marker::PhantomData};
 
 use multiaddr::Multiaddr;
 
 use super::{
-    helpers::merge_errors,
+    errors::FieldError,
+    helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     resources::ResourcesBuilder,
     types::{AssetLocation, Command, Image},
@@ -160,10 +161,10 @@ states! {
 }
 
 #[derive(Debug)]
-pub struct NodeConfigBuilder<State> {
+pub struct NodeConfigBuilder<S> {
     config: NodeConfig,
-    errors: Vec<String>,
-    _state: PhantomData<State>,
+    errors: Vec<Box<dyn Error>>,
+    _state: PhantomData<S>,
 }
 
 impl Default for NodeConfigBuilder<Initial> {
@@ -195,7 +196,7 @@ impl Default for NodeConfigBuilder<Initial> {
 }
 
 impl<A> NodeConfigBuilder<A> {
-    fn transition<B>(config: NodeConfig, errors: Vec<String>) -> NodeConfigBuilder<B> {
+    fn transition<B>(config: NodeConfig, errors: Vec<Box<dyn Error>>) -> NodeConfigBuilder<B> {
         NodeConfigBuilder {
             config,
             errors,
@@ -227,7 +228,11 @@ impl NodeConfigBuilder<Initial> {
 }
 
 impl NodeConfigBuilder<Buildable> {
-    pub fn with_command(self, command: impl TryInto<Command>) -> Self {
+    pub fn with_command<T>(self, command: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + 'static,
+    {
         match command.try_into() {
             Ok(command) => Self::transition(
                 NodeConfig {
@@ -236,15 +241,18 @@ impl NodeConfigBuilder<Buildable> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("command: {error}")),
-                merge_errors(self.errors, format!("command: ")),
+                merge_errors(self.errors, FieldError::InvalidCommand(error).into()),
             ),
         }
     }
 
-    pub fn with_image(self, image: impl TryInto<Image>) -> Self {
+    pub fn with_image<T>(self, image: T) -> Self
+    where
+        T: TryInto<Image>,
+        T::Error: Error + 'static,
+    {
         match image.try_into() {
             Ok(image) => Self::transition(
                 NodeConfig {
@@ -253,10 +261,9 @@ impl NodeConfigBuilder<Buildable> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("image: {error}")),
-                merge_errors(self.errors, format!("image: ")),
+                merge_errors(self.errors, FieldError::InvalidImage(error).into()),
             ),
         }
     }
@@ -317,17 +324,18 @@ impl NodeConfigBuilder<Buildable> {
         Self::transition(NodeConfig { env, ..self.config }, self.errors)
     }
 
-    pub fn with_bootnodes_addresses(
-        self,
-        bootnodes_addresses: Vec<impl TryInto<Multiaddr>>,
-    ) -> Self {
+    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    where
+        T: TryInto<Multiaddr>,
+        T::Error: Error + 'static,
+    {
         let mut addrs = vec![];
         let mut errors = vec![];
 
-        for addr in bootnodes_addresses {
+        for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(_) => errors.push("error multiaddr".to_string()),
+                Err(error) => errors.push(FieldError::InvalidBootnodesAddress(index, error).into()),
             }
         }
 
@@ -336,7 +344,7 @@ impl NodeConfigBuilder<Buildable> {
                 bootnodes_addresses: addrs,
                 ..self.config
             },
-            vec![self.errors, errors].concat(),
+            merge_errors_vecs(self.errors, errors),
         )
     }
 
@@ -402,7 +410,11 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    pub fn with_db_snapshot(self, location: impl TryInto<AssetLocation>) -> Self {
+    pub fn with_db_snapshot<T>(self, location: T) -> Self
+    where
+        T: TryInto<AssetLocation>,
+        T::Error: Error + 'static,
+    {
         match location.try_into() {
             Ok(location) => Self::transition(
                 NodeConfig {
@@ -411,10 +423,9 @@ impl NodeConfigBuilder<Buildable> {
                 },
                 self.errors,
             ),
-            Err(_error) => Self::transition(
+            Err(error) => Self::transition(
                 self.config,
-                // merge_errors(self.errors, format!("db_snapshot: {error}"))
-                merge_errors(self.errors, format!("db_snapshot: ")),
+                merge_errors(self.errors, FieldError::InvalidDbSnapshot(error).into()),
             ),
         }
     }

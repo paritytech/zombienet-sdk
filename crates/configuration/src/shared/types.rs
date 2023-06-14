@@ -13,7 +13,6 @@ impl From<&str> for MultiAddress {
     }
 }
 
-
 pub type Duration = u32;
 
 pub type Port = u16;

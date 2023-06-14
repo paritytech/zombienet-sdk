@@ -55,6 +55,10 @@ pub trait Provider {
     async fn validate_access(&mut self) -> Result<bool, ProviderError>;
     async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
     async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
+    //TODO: need to implement
+    async fn put_local_magic_file(&self, _name: String, _container: Option<String>) -> Result<(), ProviderError> {
+        Ok(())
+    }
     fn is_pod_monitor_available() -> Result<bool, ProviderError> {
         Ok(false)
     }
@@ -78,3 +82,6 @@ pub trait Provider {
         todo!();
     }
 }
+
+// re-exports
+pub use native::NativeProvider;

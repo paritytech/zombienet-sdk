@@ -1,5 +1,4 @@
 use std::{
-    error::Error,
     fs::File,
     path::{Path, PathBuf},
 };
@@ -10,9 +9,6 @@ use super::{local_file::LocalFile, FileSystem};
 
 #[derive(Debug, PartialEq)]
 pub enum Operation {
-    // DeleteFile { path: String },
-    // DeleteDir,
-    // LinkFile,
     Copy { from: PathBuf, to: PathBuf },
     ReadFile { path: PathBuf },
     CreateFile { path: PathBuf },
@@ -30,12 +26,12 @@ pub enum MockError {
 }
 #[derive(Debug, Default)]
 pub struct MockFilesystem {
-    copy_error:        Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
-    create_dir_error:  Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
-    create_file_error: Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
-    open_file_error:   Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
-    read_file_error:   Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
-    write_error:       Option<MockError>, // Option<Box<dyn Error + Send + Sync>>,
+    copy_error:        Option<MockError>,
+    create_dir_error:  Option<MockError>,
+    create_file_error: Option<MockError>,
+    open_file_error:   Option<MockError>,
+    read_file_error:   Option<MockError>,
+    write_error:       Option<MockError>,
     pub operations:    Vec<Operation>,
 }
 
@@ -43,11 +39,12 @@ impl MockFilesystem {
     pub fn new() -> Self {
         Self::default()
     }
-
-    fn with_create_dir_error(error: impl Error + Send + Sync + 'static) -> Self {
+    // TODO: add test
+    #[allow(dead_code)]
+    fn with_create_dir_error(error: MockError) -> Self {
         Self {
             copy_error:        None,
-            create_dir_error:  Some(MockError::OpError("create_dir".into())),
+            create_dir_error:  Some(error),
             open_file_error:   None,
             create_file_error: None,
             read_file_error:   None,
@@ -56,33 +53,39 @@ impl MockFilesystem {
         }
     }
 
-    fn with_create_file_error(error: impl Error + Send + Sync + 'static) -> Self {
+    // TODO: add test
+    #[allow(dead_code)]
+    fn with_create_file_error(error: MockError) -> Self {
         Self {
             copy_error:        None,
             create_dir_error:  None,
             open_file_error:   None,
-            create_file_error: Some(MockError::OpError("create_file".into())),
+            create_file_error: Some(error),
             read_file_error:   None,
             write_error:       None,
             operations:        vec![],
         }
     }
 
-    fn with_read_file_error(error: impl Error + Send + Sync + 'static) -> Self {
+    // TODO: add test
+    #[allow(dead_code)]
+    fn with_read_file_error(error: MockError) -> Self {
         Self {
             copy_error:        None,
             create_dir_error:  None,
             open_file_error:   None,
             create_file_error: None,
-            read_file_error:   Some(MockError::OpError("read".into())),
+            read_file_error:   Some(error),
             write_error:       None,
             operations:        vec![],
         }
     }
 
-    fn with_copy_error(error: impl Error + Send + Sync + 'static) -> Self {
+    // TODO: add test
+    #[allow(dead_code)]
+    fn with_copy_error(error: MockError) -> Self {
         Self {
-            copy_error:        Some(MockError::OpError("copy".into())),
+            copy_error:        Some(error),
             create_dir_error:  None,
             open_file_error:   None,
             create_file_error: None,
@@ -92,15 +95,16 @@ impl MockFilesystem {
         }
     }
 
-    /// check crate: thisError for easier implementation of errors!
-    fn with_write_error(error: impl Error + Send + Sync + 'static) -> Self {
+    // TODO: add test
+    #[allow(dead_code)]
+    fn with_write_error(error: MockError) -> Self {
         Self {
             copy_error:        None,
             create_dir_error:  None,
             open_file_error:   None,
             create_file_error: None,
             read_file_error:   None,
-            write_error:       Some(MockError::OpError("write".into())),
+            write_error:       Some(error),
             operations:        vec![],
         }
     }

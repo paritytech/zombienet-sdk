@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus, vec,
+    collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus,
 };
 
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,8 @@ pub enum PortName {
     P2P,
 }
 
+//TODO: remove when we implement k8s/podman
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 enum ImagePullPolicy {
     IfNotPresent,

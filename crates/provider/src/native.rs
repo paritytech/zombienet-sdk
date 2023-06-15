@@ -676,7 +676,7 @@ mod tests {
         let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
-        let _ = native_provider.create_namespace().await.unwrap();
+        native_provider.create_namespace().await.unwrap();
 
         assert!(native_provider.filesystem.operations.len() == 1);
 
@@ -698,7 +698,7 @@ mod tests {
             MockFilesystem::with_create_dir_error(MockError::OpError("create".into())),
         );
 
-        let _ = native_provider.create_namespace().await.unwrap();
+        native_provider.create_namespace().await.unwrap();
     }
 
     #[tokio::test]

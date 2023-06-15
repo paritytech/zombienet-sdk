@@ -57,7 +57,6 @@ pub trait Provider {
     async fn get_help_info(&mut self) -> Result<(), ProviderError>;
     async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
     async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
-    // TODO: need to implement
     async fn put_local_magic_file(
         &self,
         _name: String,

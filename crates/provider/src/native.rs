@@ -29,17 +29,17 @@ use crate::{
 };
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct NativeProvider<T: FileSystem + Send + Sync> {
-    /// Namespace of the client (isolation directory)
+    // Namespace of the client (isolation directory)
     namespace: String,
-    /// Path where configuration relies, all the `files` are accessed relative to this.
+    // Path where configuration relies, all the `files` are accessed relative to this.
     config_path: String,
-    /// Variable that shows if debug is activated
+    // Variable that shows if debug is activated
     is_debug: bool,
-    /// The timeout for start the node
+    // The timeout for start the node
     timeout: u32,
-    /// Command to use, e.g "bash"
+    // Command to use, e.g "bash"
     command: String,
-    /// Temporary directory, root directory for the network
+    // Temporary directory, root directory for the network
     tmp_dir: String,
     local_magic_file_path: String,
     remote_dir: String,
@@ -174,8 +174,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         let script_path_in_pod = format!("{}/{}/{}", self.tmp_dir, identifier, script_filename);
 
         // upload the script
-        let _ = self
-            .filesystem
+        self.filesystem
             .copy(&script_path, &script_path_in_pod)
             .await
             .map_err(|e| ProviderError::FSError(Box::new(e)))?;
@@ -342,8 +341,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     ) -> Result<(), ProviderError> {
         // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
 
-        let _ = self
-            .filesystem
+        self.filesystem
             .copy(&pod_file_path, &local_file_path)
             .await
             .map_err(|e| ProviderError::FSError(Box::new(e)))?;

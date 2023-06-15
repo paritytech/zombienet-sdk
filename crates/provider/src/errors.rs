@@ -33,6 +33,8 @@ pub enum ProviderError {
     SerializationError(serde_json::Error),
     #[error("IO error: {0}")]
     IOError(std::io::Error),
+    #[error("Invalid script_path: {0}")]
+    InvalidScriptPath(String)
 }
 
 from_error!(

@@ -40,9 +40,7 @@ impl MockFilesystem {
         Self::default()
     }
 
-    // TODO: add test
-    #[allow(dead_code)]
-    fn with_create_dir_error(error: MockError) -> Self {
+    pub fn with_create_dir_error(error: MockError) -> Self {
         Self {
             create_dir_error: Some(error),
             ..Self::default()

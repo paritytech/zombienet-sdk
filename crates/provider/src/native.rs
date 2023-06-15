@@ -29,19 +29,18 @@ use crate::{
 };
 #[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct NativeProvider<T: FileSystem + Send + Sync> {
-    // Namespace of the client
+    /// Namespace of the client (isolation directory)
     namespace: String,
-    // Path where configuration relies
+    /// Path where configuration relies, all the `files` are accessed relative to this.
     config_path: String,
-    // Variable that shows if debug is activated
+    /// Variable that shows if debug is activated
     is_debug: bool,
-    // The timeout for the client to exit
+    /// The timeout for start the node
     timeout: u32,
-    // Command sent to client
+    /// Command to use, e.g "bash"
     command: String,
-    // Temporary directory
+    /// Temporary directory, root directory for the network
     tmp_dir: String,
-    is_pod_monitor_available: bool,
     local_magic_file_path: String,
     remote_dir: String,
     data_dir: String,
@@ -70,7 +69,6 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
             data_dir: format!("{}{}", &tmp_dir, DEFAULT_DATA_DIR),
             command: "bash".into(),
             tmp_dir,
-            is_pod_monitor_available: false,
             process_map,
             filesystem,
         }
@@ -133,7 +131,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             }
         }
 
-        let result = Command::new("sh")
+        let result = Command::new(&self.command)
             .arg("-c")
             .arg(args.join(" "))
             .output()
@@ -163,26 +161,26 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         script_path: String,
         args: Vec<String>,
     ) -> Result<RunCommandResponse, ProviderError> {
-        let script_filename: &str = Path::new(&script_path)
+        let script_filename = Path::new(&script_path)
             .file_name()
-            .unwrap()
+            .ok_or(ProviderError::InvalidScriptPath(script_path.clone()))?
             .to_str()
-            .unwrap();
-        let script_path_in_pod: String =
-            format!("{}/{}/{}", self.tmp_dir, identifier, script_filename);
+            .ok_or(ProviderError::InvalidScriptPath(script_path.clone()))?;
+        let script_path_in_pod = format!("{}/{}/{}", self.tmp_dir, identifier, script_filename);
 
         // upload the script
         let _ = self
             .filesystem
             .copy(&script_path, &script_path_in_pod)
-            .await;
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
 
         // set as executable
         self.run_command(
             vec![
                 "chmod".to_owned(),
                 "+x".to_owned(),
-                script_path_in_pod.to_owned(),
+                script_path_in_pod.clone(),
             ],
             NativeRunCommandOptions::default(),
         )
@@ -339,7 +337,11 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     ) -> Result<(), ProviderError> {
         // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
 
-        let _ = self.filesystem.copy(&pod_file_path, &local_file_path).await;
+        let _ = self
+            .filesystem
+            .copy(&pod_file_path, &local_file_path)
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
         Ok(())
     }
 
@@ -420,16 +422,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn destroy_namespace(&mut self) -> Result<(), ProviderError> {
-        // get pod names
-        let mut memo: Vec<String> = Vec::new();
+        // get pids to kill all related process
         let pids: Vec<String> = self
             .process_map
             .iter()
             .filter(|(_, process)| process.pid != 0)
-            .map(|(_, process)| {
-                memo.push(process.pid.to_string());
-                process.pid.to_string()
-            })
+            .map(|(_, process)| process.pid.to_string())
             .collect();
 
         // TODO: use a crate (or even std) to get this info instead of relying on bash
@@ -562,13 +560,13 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     // TODO: Add test
     fn get_pause_args(&mut self, name: String) -> Vec<String> {
         let command = format!("kill -STOP {}", self.process_map[&name].pid);
-        [command].to_vec()
+        vec![command]
     }
 
     // TODO: Add test
     fn get_resume_args(&mut self, name: String) -> Vec<String> {
         let command = format!("kill -CONT {}", self.process_map[&name].pid);
-        [command].to_vec()
+        vec![command]
     }
 
     async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError> {
@@ -627,19 +625,19 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 
     async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError> {
-        return Ok(format!("tail -f {}/{}.log", self.tmp_dir, name));
+        Ok(format!("tail -f {}/{}.log", self.tmp_dir, name))
     }
 
     // TODO: Add test
-    async fn get_help_info(&mut self) -> Result<bool, ProviderError> {
-        let result = self
+    async fn get_help_info(&mut self) -> Result<(), ProviderError> {
+        let _ = self
             .run_command(
                 vec!["--help".to_owned()],
                 NativeRunCommandOptions::default(),
             )
             .await?;
 
-        Ok(result.exit_code.code().unwrap() == 0)
+        Ok(())
     }
 }
 
@@ -647,7 +645,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 mod tests {
     use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
 
-    use support::fs::mock::{MockFilesystem, Operation};
+    use support::fs::mock::{MockError, MockFilesystem, Operation};
 
     use super::*;
     use crate::shared::types::{PodLabels, PodMetadata, PodSpec};
@@ -663,7 +661,6 @@ mod tests {
         assert_eq!(native_provider.timeout, 60);
         assert_eq!(native_provider.tmp_dir, "/tmp");
         assert_eq!(native_provider.command, "bash");
-        assert!(!native_provider.is_pod_monitor_available);
         assert_eq!(native_provider.local_magic_file_path, "/tmp/finished.txt");
         assert_eq!(native_provider.remote_dir, "/tmp/cfg");
         assert_eq!(native_provider.data_dir, "/tmp/data");
@@ -674,7 +671,7 @@ mod tests {
         let mut native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
-        let _ = native_provider.create_namespace().await;
+        let _ = native_provider.create_namespace().await.unwrap();
 
         assert!(native_provider.filesystem.operations.len() == 1);
 
@@ -684,6 +681,19 @@ mod tests {
                 path: "/tmp/cfg".into(),
             }
         );
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "FSError(OpError(\"create\"))")]
+    async fn test_fielsystem_usage_fails() {
+        let mut native_provider: NativeProvider<MockFilesystem> = NativeProvider::new(
+            "something",
+            "./",
+            "/tmp",
+            MockFilesystem::with_create_dir_error(MockError::OpError("create".into())),
+        );
+
+        let _ = native_provider.create_namespace().await.unwrap();
     }
 
     #[tokio::test]

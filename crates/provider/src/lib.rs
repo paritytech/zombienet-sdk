@@ -54,7 +54,7 @@ pub trait Provider {
     fn get_pause_args(&mut self, name: String) -> Vec<String>;
     fn get_resume_args(&mut self, name: String) -> Vec<String>;
     async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError>;
-    async fn get_help_info(&mut self) -> Result<bool, ProviderError>;
+    async fn get_help_info(&mut self) -> Result<(), ProviderError>;
     async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
     async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
     // TODO: need to implement

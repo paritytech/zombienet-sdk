@@ -172,7 +172,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         let _ = self
             .filesystem
             .copy(&script_path, &script_path_in_pod)
-            .await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
 
         // set as executable
         self.run_command(
@@ -336,7 +337,11 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     ) -> Result<(), ProviderError> {
         // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
 
-        let _ = self.filesystem.copy(&pod_file_path, &local_file_path).await.map_err(|e| ProviderError::FSError(Box::new(e)))?;
+        let _ = self
+            .filesystem
+            .copy(&pod_file_path, &local_file_path)
+            .await
+            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
         Ok(())
     }
 
@@ -422,9 +427,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .process_map
             .iter()
             .filter(|(_, process)| process.pid != 0)
-            .map(|(_, process)| {
-                process.pid.to_string()
-            })
+            .map(|(_, process)| process.pid.to_string())
             .collect();
 
         // TODO: use a crate (or even std) to get this info instead of relying on bash
@@ -642,7 +645,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 mod tests {
     use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
 
-    use support::fs::mock::{MockFilesystem, Operation, MockError};
+    use support::fs::mock::{MockError, MockFilesystem, Operation};
 
     use super::*;
     use crate::shared::types::{PodLabels, PodMetadata, PodSpec};
@@ -683,8 +686,12 @@ mod tests {
     #[tokio::test]
     #[should_panic(expected = "FSError(OpError(\"create\"))")]
     async fn test_fielsystem_usage_fails() {
-        let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::with_create_dir_error(MockError::OpError("create".into())));
+        let mut native_provider: NativeProvider<MockFilesystem> = NativeProvider::new(
+            "something",
+            "./",
+            "/tmp",
+            MockFilesystem::with_create_dir_error(MockError::OpError("create".into())),
+        );
 
         let _ = native_provider.create_namespace().await.unwrap();
     }

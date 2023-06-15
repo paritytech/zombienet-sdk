@@ -34,7 +34,7 @@ pub enum ProviderError {
     #[error("IO error: {0}")]
     IOError(std::io::Error),
     #[error("Invalid script_path: {0}")]
-    InvalidScriptPath(String)
+    InvalidScriptPath(String),
 }
 
 from_error!(

@@ -16,9 +16,9 @@ impl From<&str> for ResourceQuantity {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
-    request_cpu:    Option<ResourceQuantity>,
-    limit_memory:   Option<ResourceQuantity>,
-    limit_cpu:      Option<ResourceQuantity>,
+    request_cpu: Option<ResourceQuantity>,
+    limit_memory: Option<ResourceQuantity>,
+    limit_cpu: Option<ResourceQuantity>,
 }
 
 impl Resources {
@@ -49,9 +49,9 @@ impl Default for ResourcesBuilder {
         Self {
             config: Resources {
                 request_memory: None,
-                request_cpu:    None,
-                limit_memory:   None,
-                limit_cpu:      None,
+                request_cpu: None,
+                limit_memory: None,
+                limit_cpu: None,
             },
         }
     }

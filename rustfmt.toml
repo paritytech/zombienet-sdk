@@ -9,10 +9,6 @@ match_block_trailing_comma = true
 use_field_init_shorthand = true
 use_try_shorthand = true
 
-# alignment
-struct_field_align_threshold = 100
-enum_discrim_align_threshold = 100
-
 # normalization
 normalize_comments = true
 normalize_doc_attributes = true

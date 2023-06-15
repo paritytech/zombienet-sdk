@@ -49,7 +49,12 @@ pub struct NativeProvider<T: FileSystem + Send + Sync> {
 }
 
 impl<T: FileSystem + Send + Sync> NativeProvider<T> {
-    // TODO: needs docs.
+    /// Zombienet `native` provider allows to run the nodes as a local process in the local environment
+    /// params:
+    ///   namespace:  Namespace of the clien
+    ///   config_path: Path where configuration relies
+    ///   tmp_dir: Temporary directory where files will be placed
+    ///   filesystem: Filesystem to use (std::fs::FileSystem, mock etc.)
     pub fn new(
         namespace: impl Into<String>,
         config_path: impl Into<String>,

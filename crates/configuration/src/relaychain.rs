@@ -1,8 +1,8 @@
 use std::{error::Error, fmt::Debug, marker::PhantomData};
 
 use crate::shared::{
-    errors::FieldError,
-    helpers::merge_errors,
+    errors::{ConfigError, FieldError},
+    helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
@@ -115,15 +115,25 @@ macro_rules! common_builder_methods {
         }
 
         pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
-            let default_resources = Some(f(ResourcesBuilder::new()).build());
-
-            Self::transition(
-                RelaychainConfig {
-                    default_resources,
-                    ..self.config
-                },
-                self.errors,
-            )
+            match f(ResourcesBuilder::new()).build() {
+                Ok(default_resources) => Self::transition(
+                    RelaychainConfig {
+                        default_resources: Some(default_resources),
+                        ..self.config
+                    },
+                    self.errors,
+                ),
+                Err(errors) => Self::transition(
+                    self.config,
+                    merge_errors_vecs(
+                        self.errors,
+                        errors
+                            .into_iter()
+                            .map(|error| ConfigError::Resources(error).into())
+                            .collect::<Vec<_>>(),
+                    ),
+                ),
+            }
         }
 
         pub fn with_default_db_snapshot<T>(self, location: T) -> Self
@@ -295,15 +305,25 @@ impl RelaychainConfigBuilder<WithChain> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
-        let new_node = f(NodeConfigBuilder::new(None)).build();
-
-        Self::transition(
-            RelaychainConfig {
-                nodes: vec![new_node],
-                ..self.config
-            },
-            self.errors,
-        )
+        match f(NodeConfigBuilder::new(None)).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: vec![node],
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 }
 
@@ -317,15 +337,26 @@ impl RelaychainConfigBuilder<WithDefaultCommand> {
         let default_command = self.config.default_command
         .clone()
             .expect("typestate should ensure the default_command isn't None at this point, this is a bug please report it");
-        let new_node = f(NodeConfigBuilder::new(Some(default_command))).build();
 
-        Self::transition(
-            RelaychainConfig {
-                nodes: vec![new_node],
-                ..self.config
-            },
-            self.errors,
-        )
+        match f(NodeConfigBuilder::new(Some(default_command))).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: vec![node],
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 }
 
@@ -334,23 +365,33 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        let new_node = if let Some(default_command) = self.config.default_command.clone() {
-            f(NodeConfigBuilder::new(Some(default_command))).build()
-        } else {
-            f(NodeConfigBuilder::new(None)).build()
-        };
-
-        Self::transition(
-            RelaychainConfig {
-                nodes: vec![self.config.nodes, vec![new_node]].concat(),
-                ..self.config
-            },
-            self.errors,
-        )
+        match f(NodeConfigBuilder::new(self.config.default_command.clone())).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: vec![self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 
-    pub fn build(self) -> RelaychainConfig {
-        self.config
+    pub fn build(self) -> Result<RelaychainConfig, Vec<Box<dyn Error>>> {
+        if !self.errors.is_empty() {
+            return Err(self.errors);
+        }
+
+        Ok(self.config)
     }
 }
 
@@ -382,7 +423,8 @@ mod tests {
                     .with_command("command2")
                     .validator(true)
             })
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(relaychain_config.chain().as_str(), "polkadot");
         assert_eq!(relaychain_config.nodes().len(), 2);

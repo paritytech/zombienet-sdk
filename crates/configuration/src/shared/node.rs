@@ -3,7 +3,7 @@ use std::{error::Error, marker::PhantomData};
 use multiaddr::Multiaddr;
 
 use super::{
-    errors::FieldError,
+    errors::{ConfigError, FieldError},
     helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     resources::ResourcesBuilder,
@@ -349,15 +349,25 @@ impl NodeConfigBuilder<Buildable> {
     }
 
     pub fn with_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
-        let resources = Some(f(ResourcesBuilder::new()).build());
-
-        Self::transition(
-            NodeConfig {
-                resources,
-                ..self.config
-            },
-            self.errors,
-        )
+        match f(ResourcesBuilder::new()).build() {
+            Ok(resources) => Self::transition(
+                NodeConfig {
+                    resources: Some(resources),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Resources(error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 
     pub fn with_ws_port(self, ws_port: Port) -> Self {
@@ -430,8 +440,12 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    pub fn build(self) -> NodeConfig {
-        self.config
+    pub fn build(self) -> Result<NodeConfig, (String, Vec<Box<dyn Error>>)> {
+        if !self.errors.is_empty() {
+            return Err((self.config.name.clone(), self.errors));
+        }
+
+        Ok(self.config)
     }
 }
 
@@ -468,7 +482,8 @@ mod tests {
             .with_p2p_port(8000)
             .with_p2p_cert_hash("ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f")
             .with_db_snapshot("/tmp/mysnapshot")
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(node_config.name(), "node");
         assert_eq!(node_config.command().unwrap().as_str(), "mycommand");

@@ -164,8 +164,12 @@ impl ResourcesBuilder {
         }
     }
 
-    pub fn build(self) -> Resources {
-        self.config
+    pub fn build(self) -> Result<Resources, Vec<Box<dyn Error>>> {
+        if !self.errors.is_empty() {
+            return Err(self.errors);
+        }
+
+        Ok(self.config)
     }
 }
 
@@ -180,7 +184,8 @@ mod tests {
             .with_request_cpu("1G")
             .with_limit_cpu("500M")
             .with_limit_memory("2G")
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(resources.request_memory().unwrap().as_str(), "200M");
         assert_eq!(resources.request_cpu().unwrap().as_str(), "1G");

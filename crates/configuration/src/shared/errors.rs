@@ -24,58 +24,58 @@ pub enum ConfigError<E> {
 #[derive(thiserror::Error, Debug)]
 pub enum FieldError<E> {
     #[error("chain: {0}")]
-    InvalidChain(E),
+    Chain(E),
 
     #[error("image: {0}")]
-    InvalidImage(E),
+    Image(E),
 
     #[error("default_image: {0}")]
-    InvalidDefaultImage(E),
+    DefaultImage(E),
 
     #[error("command: {0}")]
-    InvalidCommand(E),
+    Command(E),
 
     #[error("default_command: {0}")]
-    InvalidDefaultCommand(E),
+    DefaultCommand(E),
 
     #[error("db_snapshot: {0}")]
-    InvalidDbSnapshot(E),
+    DbSnapshot(E),
 
     #[error("default_db_snapshot: {0}")]
-    InvalidDefaultDbSnapshot(E),
+    DefaultDbSnapshot(E),
 
     #[error("bootnodes_addresses[{0}]: {1}")]
-    InvalidBootnodesAddress(usize, E),
+    BootnodesAddress(usize, E),
 
     #[error("chain_spec_path: {0}")]
-    InvalidChainSpecPath(E),
+    ChainSpecPath(E),
 
     #[error("genesis_wasm_path: {0}")]
-    InvalidGenesisWasmPath(E),
+    GenesisWasmPath(E),
 
     #[error("genesis_wasm_generator: {0}")]
-    InvalidGenesisWasmGenerator(E),
+    GenesisWasmGenerator(E),
 
     #[error("genesis_state_path: {0}")]
-    InvalidGenesisStatePath(E),
+    GenesisStatePath(E),
 
     #[error("genesis_state_generator: {0}")]
-    InvalidGenesisStateGenerator(E),
+    GenesisStateGenerator(E),
 
     #[error("local_ip: {0}")]
-    InvalidLocalIp(E),
+    LocalIp(E),
 
     #[error("request_memory: {0}")]
-    InvalidRequestMemory(E),
+    RequestMemory(E),
 
     #[error("request_cpu: {0}")]
-    InvalidRequestCpu(E),
+    RequestCpu(E),
 
     #[error("limit_memory: {0}")]
-    InvalidLimitMemory(E),
+    LimitMemory(E),
 
     #[error("limit_cpu: {0}")]
-    InvalidLimitCpu(E),
+    LimitCpu(E),
 }
 
 #[derive(thiserror::Error, Debug)]

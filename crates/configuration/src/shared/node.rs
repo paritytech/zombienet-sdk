@@ -243,7 +243,7 @@ impl NodeConfigBuilder<Buildable> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidCommand(error).into()),
+                merge_errors(self.errors, FieldError::Command(error).into()),
             ),
         }
     }
@@ -263,7 +263,7 @@ impl NodeConfigBuilder<Buildable> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidImage(error).into()),
+                merge_errors(self.errors, FieldError::Image(error).into()),
             ),
         }
     }
@@ -335,7 +335,7 @@ impl NodeConfigBuilder<Buildable> {
         for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(FieldError::InvalidBootnodesAddress(index, error).into()),
+                Err(error) => errors.push(FieldError::BootnodesAddress(index, error).into()),
             }
         }
 
@@ -435,7 +435,7 @@ impl NodeConfigBuilder<Buildable> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidDbSnapshot(error).into()),
+                merge_errors(self.errors, FieldError::DbSnapshot(error).into()),
             ),
         }
     }

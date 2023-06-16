@@ -109,7 +109,7 @@ macro_rules! common_builder_methods {
                 ),
                 Err(error) => Self::transition(
                     self.config,
-                    merge_errors(self.errors, FieldError::InvalidDefaultImage(error).into()),
+                    merge_errors(self.errors, FieldError::DefaultImage(error).into()),
                 ),
             }
         }
@@ -151,10 +151,7 @@ macro_rules! common_builder_methods {
                 ),
                 Err(error) => Self::transition(
                     self.config,
-                    merge_errors(
-                        self.errors,
-                        FieldError::InvalidDefaultDbSnapshot(error).into(),
-                    ),
+                    merge_errors(self.errors, FieldError::DefaultDbSnapshot(error).into()),
                 ),
             }
         }
@@ -174,7 +171,7 @@ macro_rules! common_builder_methods {
                 ),
                 Err(error) => Self::transition(
                     self.config,
-                    merge_errors(self.errors, FieldError::InvalidChainSpecPath(error).into()),
+                    merge_errors(self.errors, FieldError::ChainSpecPath(error).into()),
                 ),
             }
         }
@@ -272,7 +269,7 @@ impl RelaychainConfigBuilder<Initial> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidChain(error).into()),
+                merge_errors(self.errors, FieldError::Chain(error).into()),
             ),
         }
     }
@@ -296,7 +293,7 @@ impl RelaychainConfigBuilder<WithChain> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidDefaultCommand(error).into()),
+                merge_errors(self.errors, FieldError::DefaultCommand(error).into()),
             ),
         }
     }

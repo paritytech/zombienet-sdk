@@ -99,7 +99,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidRequestMemory(error).into()),
+                merge_errors(self.errors, FieldError::RequestMemory(error).into()),
             ),
         }
     }
@@ -119,7 +119,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidRequestCpu(error).into()),
+                merge_errors(self.errors, FieldError::RequestCpu(error).into()),
             ),
         }
     }
@@ -139,7 +139,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidLimitMemory(error).into()),
+                merge_errors(self.errors, FieldError::LimitMemory(error).into()),
             ),
         }
     }
@@ -159,7 +159,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidLimitCpu(error).into()),
+                merge_errors(self.errors, FieldError::LimitCpu(error).into()),
             ),
         }
     }

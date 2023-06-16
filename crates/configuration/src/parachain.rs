@@ -208,7 +208,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidChain(error).into()),
+                merge_errors(self.errors, FieldError::Chain(error).into()),
             ),
         }
     }
@@ -248,10 +248,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(
-                    self.errors,
-                    FieldError::InvalidGenesisWasmPath(error).into(),
-                ),
+                merge_errors(self.errors, FieldError::GenesisWasmPath(error).into()),
             ),
         }
     }
@@ -271,10 +268,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(
-                    self.errors,
-                    FieldError::InvalidGenesisWasmGenerator(error).into(),
-                ),
+                merge_errors(self.errors, FieldError::GenesisWasmGenerator(error).into()),
             ),
         }
     }
@@ -294,10 +288,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(
-                    self.errors,
-                    FieldError::InvalidGenesisStatePath(error).into(),
-                ),
+                merge_errors(self.errors, FieldError::GenesisStatePath(error).into()),
             ),
         }
     }
@@ -317,10 +308,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(
-                    self.errors,
-                    FieldError::InvalidGenesisStateGenerator(error).into(),
-                ),
+                merge_errors(self.errors, FieldError::GenesisStateGenerator(error).into()),
             ),
         }
     }
@@ -340,7 +328,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidChainSpecPath(error).into()),
+                merge_errors(self.errors, FieldError::ChainSpecPath(error).into()),
             ),
         }
     }
@@ -366,7 +354,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(FieldError::InvalidBootnodesAddress(index, error).into()),
+                Err(error) => errors.push(FieldError::BootnodesAddress(index, error).into()),
             }
         }
 

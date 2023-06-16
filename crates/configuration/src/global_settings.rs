@@ -130,7 +130,7 @@ impl GlobalSettingsBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::InvalidLocalIp(error).into()),
+                merge_errors(self.errors, FieldError::LocalIp(error).into()),
             ),
         }
     }

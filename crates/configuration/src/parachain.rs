@@ -3,11 +3,11 @@ use std::{error::Error, marker::PhantomData};
 use multiaddr::Multiaddr;
 
 use crate::shared::{
-    errors::FieldError,
+    errors::{ConfigError, FieldError},
     helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
-    types::{AssetLocation, Chain, Command},
+    types::{AssetLocation, Chain, Command, ParaId},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -170,15 +170,25 @@ impl ParachainConfigBuilder<WithId> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
-        let new_collator = f(NodeConfigBuilder::new(None)).build();
-
-        Self::transition(
-            ParachainConfig {
-                collators: vec![new_collator],
-                ..self.config
-            },
-            self.errors,
-        )
+        match f(NodeConfigBuilder::new(None)).build() {
+            Ok(collator) => Self::transition(
+                ParachainConfig {
+                    collators: vec![collator],
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 }
 
@@ -373,19 +383,33 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        let new_collator = f(NodeConfigBuilder::new(None)).build();
-
-        Self::transition(
-            ParachainConfig {
-                collators: vec![self.config.collators, vec![new_collator]].concat(),
-                ..self.config
-            },
-            self.errors,
-        )
+        match f(NodeConfigBuilder::new(None)).build() {
+            Ok(collator) => Self::transition(
+                ParachainConfig {
+                    collators: vec![self.config.collators, vec![collator]].concat(),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 
-    pub fn build(self) -> ParachainConfig {
-        self.config
+    pub fn build(self) -> Result<ParachainConfig, (ParaId, Vec<Box<dyn Error>>)> {
+        if !self.errors.is_empty() {
+            return Err((self.config.id, self.errors));
+        }
+
+        Ok(self.config)
     }
 }
 
@@ -422,7 +446,8 @@ mod tests {
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
-            .build();
+            .build()
+            .unwrap();
 
         assert_eq!(parachain_config.id(), 1000);
         assert_eq!(parachain_config.collators().len(), 2);

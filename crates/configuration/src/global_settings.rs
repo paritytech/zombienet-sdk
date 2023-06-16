@@ -26,7 +26,6 @@ pub struct GlobalSettings {
 
     /// Local IP used to expose local services (including RPC, metrics and monitoring).
     local_ip: Option<IpAddr>,
-    local_ip: Option<IpAddr>,
 }
 
 impl GlobalSettings {
@@ -42,7 +41,6 @@ impl GlobalSettings {
         self.node_spawn_timeout
     }
 
-    pub fn local_ip(&self) -> Option<&IpAddr> {
     pub fn local_ip(&self) -> Option<&IpAddr> {
         self.local_ip.as_ref()
     }

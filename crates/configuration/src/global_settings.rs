@@ -137,8 +137,12 @@ impl GlobalSettingsBuilder {
         }
     }
 
-    pub fn build(self) -> GlobalSettings {
-        self.config
+    pub fn build(self) -> Result<GlobalSettings, Vec<Box<dyn Error>>> {
+        if !self.errors.is_empty() {
+            return Err(self.errors);
+        }
+
+        Ok(self.config)
     }
 }
 
@@ -156,7 +160,8 @@ mod tests {
             .with_network_spawn_timeout(600)
             .with_node_spawn_timeout(120)
             .with_local_ip("10.0.0.1")
-            .build();
+            .build()
+            .unwrap();
 
         let bootnodes_addresses: Vec<Multiaddr> = vec![
             "/ip4/10.41.122.55/tcp/45421".try_into().unwrap(),

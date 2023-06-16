@@ -63,9 +63,9 @@ impl Default for NetworkConfigBuilder<Initial> {
                 global_settings: GlobalSettingsBuilder::new()
                     .build()
                     .expect("no errors for default builder"),
-                relaychain:      None,
-                parachains:      vec![],
-                hrmp_channels:   vec![],
+                relaychain: None,
+                parachains: vec![],
+                hrmp_channels: vec![],
             },
             errors: vec![],
             _state: PhantomData,

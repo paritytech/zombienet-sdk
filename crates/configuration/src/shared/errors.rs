@@ -1,9 +1,28 @@
-use std::error::Error;
+use super::types::ParaId;
 
-use thiserror::Error as ThisError;
+#[derive(thiserror::Error, Debug)]
+pub enum ConfigError<E> {
+    #[error("relaychain.{0}")]
+    Relaychain(E),
 
-#[derive(ThisError, Debug)]
-pub enum FieldError<E: Error> {
+    #[error("parachain[{0}].{1}")]
+    Parachain(ParaId, E),
+
+    #[error("global_settings.{0}")]
+    GlobalSettings(E),
+
+    #[error("node[{0}].{1}")]
+    Node(String, E),
+
+    #[error("collator[{0}].{1}")]
+    Collator(String, E),
+
+    #[error("resources.{0}")]
+    Resources(E),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FieldError<E> {
     #[error("chain: {0}")]
     InvalidChain(E),
 
@@ -59,7 +78,7 @@ pub enum FieldError<E: Error> {
     InvalidLimitCpu(E),
 }
 
-#[derive(ThisError, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ConversionError {
     #[error("'{0}' shouldn't contains whitespace")]
     ContainsWhitespaces(String),

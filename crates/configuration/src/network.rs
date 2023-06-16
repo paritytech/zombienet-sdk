@@ -1,11 +1,11 @@
-use std::marker::PhantomData;
+use std::{error::Error, marker::PhantomData};
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::macros::states,
+    shared::{errors::ConfigError, helpers::merge_errors_vecs, macros::states},
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
@@ -52,6 +52,7 @@ states! {
 #[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
+    errors: Vec<Box<dyn Error>>,
     _state: PhantomData<State>,
 }
 
@@ -59,20 +60,27 @@ impl Default for NetworkConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: NetworkConfig {
-                global_settings: GlobalSettingsBuilder::new().build(),
-                relaychain: None,
-                parachains: vec![],
-                hrmp_channels: vec![],
+                global_settings: GlobalSettingsBuilder::new()
+                    .build()
+                    .expect("no errors for default builder"),
+                relaychain:      None,
+                parachains:      vec![],
+                hrmp_channels:   vec![],
             },
+            errors: vec![],
             _state: PhantomData,
         }
     }
 }
 
 impl<A> NetworkConfigBuilder<A> {
-    fn transition<B>(config: NetworkConfig) -> NetworkConfigBuilder<B> {
+    fn transition<B>(
+        config: NetworkConfig,
+        errors: Vec<Box<dyn Error>>,
+    ) -> NetworkConfigBuilder<B> {
         NetworkConfigBuilder {
             config,
+            errors,
             _state: PhantomData,
         }
     }
@@ -89,10 +97,22 @@ impl NetworkConfigBuilder<Initial> {
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
-        Self::transition(NetworkConfig {
-            relaychain: Some(f(RelaychainConfigBuilder::new()).build()),
-            ..self.config
-        })
+        match f(RelaychainConfigBuilder::new()).build() {
+            Ok(relaychain) => Self::transition(
+                NetworkConfig {
+                    relaychain: Some(relaychain),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                errors
+                    .into_iter()
+                    .map(|error| ConfigError::Relaychain(error).into())
+                    .collect::<Vec<_>>(),
+            ),
+        }
     }
 }
 
@@ -101,10 +121,25 @@ impl NetworkConfigBuilder<WithRelaychain> {
         self,
         f: fn(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
     ) -> Self {
-        Self::transition(NetworkConfig {
-            global_settings: f(GlobalSettingsBuilder::new()).build(),
-            ..self.config
-        })
+        match f(GlobalSettingsBuilder::new()).build() {
+            Ok(global_settings) => Self::transition(
+                NetworkConfig {
+                    global_settings,
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::GlobalSettings(error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 
     pub fn with_parachain(
@@ -113,12 +148,22 @@ impl NetworkConfigBuilder<WithRelaychain> {
             ParachainConfigBuilder<parachain::Initial>,
         ) -> ParachainConfigBuilder<parachain::WithAtLeastOneCollator>,
     ) -> Self {
-        let new_parachain = f(ParachainConfigBuilder::new()).build();
-
-        Self::transition(NetworkConfig {
-            parachains: vec![self.config.parachains, vec![new_parachain]].concat(),
-            ..self.config
-        })
+        match f(ParachainConfigBuilder::new()).build() {
+            Ok(parachain) => Self::transition(
+                NetworkConfig {
+                    parachains: vec![self.config.parachains, vec![parachain]].concat(),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((para_id, errors)) => Self::transition(
+                self.config,
+                errors
+                    .into_iter()
+                    .map(|error| ConfigError::Parachain(para_id, error).into())
+                    .collect::<Vec<_>>(),
+            ),
+        }
     }
 
     pub fn with_hrmp_channel(
@@ -129,13 +174,20 @@ impl NetworkConfigBuilder<WithRelaychain> {
     ) -> Self {
         let new_hrmp_channel = f(HrmpChannelConfigBuilder::new()).build();
 
-        Self::transition(NetworkConfig {
-            hrmp_channels: vec![self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
-            ..self.config
-        })
+        Self::transition(
+            NetworkConfig {
+                hrmp_channels: vec![self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn build(self) -> Result<NetworkConfig, Vec<String>> {
+    pub fn build(self) -> Result<NetworkConfig, Vec<Box<dyn Error>>> {
+        if !self.errors.is_empty() {
+            return Err(self.errors);
+        }
+
         Ok(self.config)
     }
 }

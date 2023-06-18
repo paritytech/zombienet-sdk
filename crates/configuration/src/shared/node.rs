@@ -454,7 +454,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn node_config_builder_should_build_a_new_node_config_correctly() {
+    fn node_config_builder_should_returns_a_node_config_correctly() {
         let node_config = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_command("mycommand")
@@ -517,15 +517,8 @@ mod tests {
             node_config.p2p_cert_hash().unwrap(),
             "ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f"
         );
-        assert_eq!(
-            node_config
-                .db_snapshot()
-                .unwrap()
-                .as_path_buf()
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "/tmp/mysnapshot"
-        );
+        assert!(matches!(
+            node_config.db_snapshot().unwrap(), AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
+        ));
     }
 }

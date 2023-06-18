@@ -285,6 +285,13 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
+        assert!(matches!(
+            got.first()
+                .unwrap()
+                .downcast_ref::<FieldError<ConversionError>>()
+                .unwrap(),
+            FieldError::RequestMemory(_)
+        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
@@ -298,6 +305,13 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
+        assert!(matches!(
+            got.first()
+                .unwrap()
+                .downcast_ref::<FieldError<ConversionError>>()
+                .unwrap(),
+            FieldError::RequestCpu(_)
+        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
@@ -311,6 +325,13 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
+        assert!(matches!(
+            got.first()
+                .unwrap()
+                .downcast_ref::<FieldError<ConversionError>>()
+                .unwrap(),
+            FieldError::LimitMemory(_)
+        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"limit_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
@@ -324,6 +345,13 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
+        assert!(matches!(
+            got.first()
+                .unwrap()
+                .downcast_ref::<FieldError<ConversionError>>()
+                .unwrap(),
+            FieldError::LimitCpu(_)
+        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"

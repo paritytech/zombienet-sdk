@@ -174,11 +174,26 @@ impl ResourcesBuilder {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
     use super::*;
 
+    macro_rules! resources_unit_test_impl {
+        ($val:literal) => {{
+            let resources = ResourcesBuilder::new()
+                .with_request_memory($val)
+                .build()
+                .unwrap();
+
+            assert_eq!(resources.request_memory().unwrap().as_str(), $val);
+            assert_eq!(resources.request_cpu(), None);
+            assert_eq!(resources.limit_cpu(), None);
+            assert_eq!(resources.limit_memory(), None);
+        }};
+    }
+
     #[test]
-    fn resources_config_builder_should_build_a_new_resources_config_correctly() {
+    fn resources_config_builder_should_returns_a_resources_config_correctly() {
         let resources = ResourcesBuilder::new()
             .with_request_memory("200M")
             .with_request_cpu("1G")
@@ -191,5 +206,141 @@ mod tests {
         assert_eq!(resources.request_cpu().unwrap().as_str(), "1G");
         assert_eq!(resources.limit_cpu().unwrap().as_str(), "500M");
         assert_eq!(resources.limit_memory().unwrap().as_str(), "2G");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_without_unit()
+    {
+        resources_unit_test_impl!("1000");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_m_unit()
+    {
+        resources_unit_test_impl!("100m");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_K_unit()
+    {
+        resources_unit_test_impl!("50K");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_M_unit()
+    {
+        resources_unit_test_impl!("100M");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_G_unit()
+    {
+        resources_unit_test_impl!("1G");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_T_unit()
+    {
+        resources_unit_test_impl!("0.01T");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_P_unit()
+    {
+        resources_unit_test_impl!("0.00001P");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_E_unit()
+    {
+        resources_unit_test_impl!("0.000000001E");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Ki_unit()
+    {
+        resources_unit_test_impl!("50Ki");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Mi_unit()
+    {
+        resources_unit_test_impl!("100Mi");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Gi_unit()
+    {
+        resources_unit_test_impl!("1Gi");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Ti_unit()
+    {
+        resources_unit_test_impl!("0.01Ti");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Pi_unit()
+    {
+        resources_unit_test_impl!("0.00001Pi");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Ei_unit()
+    {
+        resources_unit_test_impl!("0.000000001Ei");
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_request_memory() {
+        let resources_builder = ResourcesBuilder::new().with_request_memory("invalid");
+
+        let got = resources_builder.build().err().unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(
+            got.first().unwrap().to_string(),
+            r"request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_request_cpu() {
+        let resources_builder = ResourcesBuilder::new().with_request_cpu("invalid");
+
+        let got = resources_builder.build().err().unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(
+            got.first().unwrap().to_string(),
+            r"request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_limit_memory() {
+        let resources_builder = ResourcesBuilder::new().with_limit_memory("invalid");
+
+        let got = resources_builder.build().err().unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(
+            got.first().unwrap().to_string(),
+            r"limit_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_limit_cpu() {
+        let resources_builder = ResourcesBuilder::new().with_limit_cpu("invalid");
+
+        let got = resources_builder.build().err().unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(
+            got.first().unwrap().to_string(),
+            r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
     }
 }

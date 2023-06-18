@@ -199,7 +199,9 @@ impl Default for RelaychainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: RelaychainConfig {
-                chain: "".try_into().expect("empty string is valid"),
+                chain: ""
+                    .try_into()
+                    .expect("empty string should be valid. this is a bug, please report it"),
                 default_command: None,
                 default_image: None,
                 default_resources: None,
@@ -313,7 +315,7 @@ impl RelaychainConfigBuilder<WithDefaultCommand> {
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
         let default_command = self.config.default_command
         .clone()
-            .expect("typestate should ensure the default_command isn't None at this point, this is a bug please report it");
+            .expect("typestate should ensure the default_command isn't None at this point. this is a bug, please report it");
 
         match f(NodeConfigBuilder::new(Some(default_command))).build() {
             Ok(node) => Self::transition(

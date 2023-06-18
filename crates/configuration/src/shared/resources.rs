@@ -23,7 +23,7 @@ impl TryFrom<&str> for ResourceQuantity {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$")
-                .expect("compile with success");
+                .expect("should compile with success. this is a bug, please report it");
         }
 
         if !RE.is_match(value) {

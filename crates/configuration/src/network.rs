@@ -60,9 +60,9 @@ impl Default for NetworkConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: NetworkConfig {
-                global_settings: GlobalSettingsBuilder::new()
-                    .build()
-                    .expect("no errors for default builder"),
+                global_settings: GlobalSettingsBuilder::new().build().expect(
+                    "should have no errors for default builder. this is a bug, please report it",
+                ),
                 relaychain: None,
                 parachains: vec![],
                 hrmp_channels: vec![],

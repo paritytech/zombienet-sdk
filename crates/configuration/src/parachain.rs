@@ -233,24 +233,14 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         )
     }
 
-    pub fn with_genesis_wasm_path<T>(self, location: T) -> Self
-    where
-        T: TryInto<AssetLocation>,
-        T::Error: Error + 'static,
-    {
-        match location.try_into() {
-            Ok(location) => Self::transition(
-                ParachainConfig {
-                    genesis_wasm_path: Some(location),
-                    ..self.config
-                },
-                self.errors,
-            ),
-            Err(error) => Self::transition(
-                self.config,
-                merge_errors(self.errors, FieldError::GenesisWasmPath(error).into()),
-            ),
-        }
+    pub fn with_genesis_wasm_path(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                genesis_wasm_path: Some(location.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_genesis_wasm_generator<T>(self, command: T) -> Self
@@ -273,24 +263,14 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         }
     }
 
-    pub fn with_genesis_state_path<T>(self, location: T) -> Self
-    where
-        T: TryInto<AssetLocation>,
-        T::Error: Error + 'static,
-    {
-        match location.try_into() {
-            Ok(location) => Self::transition(
-                ParachainConfig {
-                    genesis_state_path: Some(location),
-                    ..self.config
-                },
-                self.errors,
-            ),
-            Err(error) => Self::transition(
-                self.config,
-                merge_errors(self.errors, FieldError::GenesisStatePath(error).into()),
-            ),
-        }
+    pub fn with_genesis_state_path(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                genesis_state_path: Some(location.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn with_genesis_state_generator<T>(self, command: T) -> Self
@@ -313,24 +293,14 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         }
     }
 
-    pub fn with_chain_spec_path<T>(self, location: T) -> Self
-    where
-        T: TryInto<AssetLocation>,
-        T::Error: Error + 'static,
-    {
-        match location.try_into() {
-            Ok(location) => Self::transition(
-                ParachainConfig {
-                    chain_spec_path: Some(location),
-                    ..self.config
-                },
-                self.errors,
-            ),
-            Err(error) => Self::transition(
-                self.config,
-                merge_errors(self.errors, FieldError::ChainSpecPath(error).into()),
-            ),
-        }
+    pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                chain_spec_path: Some(location.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn cumulus_based(self, choice: bool) -> Self {

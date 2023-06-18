@@ -420,24 +420,14 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    pub fn with_db_snapshot<T>(self, location: T) -> Self
-    where
-        T: TryInto<AssetLocation>,
-        T::Error: Error + 'static,
-    {
-        match location.try_into() {
-            Ok(location) => Self::transition(
-                NodeConfig {
-                    db_snapshot: Some(location),
-                    ..self.config
-                },
-                self.errors,
-            ),
-            Err(error) => Self::transition(
-                self.config,
-                merge_errors(self.errors, FieldError::DbSnapshot(error).into()),
-            ),
-        }
+    pub fn with_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            NodeConfig {
+                db_snapshot: Some(location.into()),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     pub fn build(self) -> Result<NodeConfig, (String, Vec<Box<dyn Error>>)> {

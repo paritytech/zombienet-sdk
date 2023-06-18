@@ -136,44 +136,24 @@ macro_rules! common_builder_methods {
             }
         }
 
-        pub fn with_default_db_snapshot<T>(self, location: T) -> Self
-        where
-            T: TryInto<AssetLocation>,
-            T::Error: Error + 'static,
-        {
-            match location.try_into() {
-                Ok(location) => Self::transition(
-                    RelaychainConfig {
-                        default_db_snapshot: Some(location),
-                        ..self.config
-                    },
-                    self.errors,
-                ),
-                Err(error) => Self::transition(
-                    self.config,
-                    merge_errors(self.errors, FieldError::DefaultDbSnapshot(error).into()),
-                ),
-            }
+        pub fn with_default_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
+            Self::transition(
+                RelaychainConfig {
+                    default_db_snapshot: Some(location.into()),
+                    ..self.config
+                },
+                self.errors,
+            )
         }
 
-        pub fn with_chain_spec_path<T>(self, location: T) -> Self
-        where
-            T: TryInto<AssetLocation>,
-            T::Error: Error + 'static,
-        {
-            match location.try_into() {
-                Ok(location) => Self::transition(
-                    RelaychainConfig {
-                        chain_spec_path: Some(location),
-                        ..self.config
-                    },
-                    self.errors,
-                ),
-                Err(error) => Self::transition(
-                    self.config,
-                    merge_errors(self.errors, FieldError::ChainSpecPath(error).into()),
-                ),
-            }
+        pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
+            Self::transition(
+                RelaychainConfig {
+                    chain_spec_path: Some(location.into()),
+                    ..self.config
+                },
+                self.errors,
+            )
         }
 
         pub fn with_default_args(self, args: Vec<Arg>) -> Self {

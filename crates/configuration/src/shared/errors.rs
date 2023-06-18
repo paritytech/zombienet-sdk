@@ -38,26 +38,11 @@ pub enum FieldError<E> {
     #[error("default_command: {0}")]
     DefaultCommand(E),
 
-    #[error("db_snapshot: {0}")]
-    DbSnapshot(E),
-
-    #[error("default_db_snapshot: {0}")]
-    DefaultDbSnapshot(E),
-
     #[error("bootnodes_addresses[{0}]: {1}")]
     BootnodesAddress(usize, E),
 
-    #[error("chain_spec_path: {0}")]
-    ChainSpecPath(E),
-
-    #[error("genesis_wasm_path: {0}")]
-    GenesisWasmPath(E),
-
     #[error("genesis_wasm_generator: {0}")]
     GenesisWasmGenerator(E),
-
-    #[error("genesis_state_path: {0}")]
-    GenesisStatePath(E),
 
     #[error("genesis_state_generator: {0}")]
     GenesisStateGenerator(E),

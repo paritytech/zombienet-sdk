@@ -78,14 +78,11 @@ pub enum FieldError<E> {
     LimitCpu(E),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum ConversionError {
     #[error("'{0}' shouldn't contains whitespace")]
     ContainsWhitespaces(String),
 
     #[error("'{}' doesn't match regex '{}'", .value, .regex)]
     DoesntMatchRegex { value: String, regex: String },
-
-    #[error("unable to convert '{0}' into url::Url or path::PathBuf")]
-    InvalidUrlOrPathBuf(String),
 }

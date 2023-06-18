@@ -178,7 +178,7 @@ impl ResourcesBuilder {
 mod tests {
     use super::*;
 
-    macro_rules! resources_unit_test_impl {
+    macro_rules! resources_quantity_unit_test_impl {
         ($val:literal) => {{
             let resources = ResourcesBuilder::new()
                 .with_request_memory($val)
@@ -190,6 +190,76 @@ mod tests {
             assert_eq!(resources.limit_cpu(), None);
             assert_eq!(resources.limit_memory(), None);
         }};
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_string_a_resource_quantity_without_unit() {
+        resources_quantity_unit_test_impl!("1000");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_m_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("100m");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_K_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("50K");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_M_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("100M");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_G_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("1G");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_T_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("0.01T");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_P_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("0.00001P");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_E_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("0.000000001E");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_Ki_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("50Ki");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_Mi_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("100Mi");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_Gi_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("1Gi");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_Ti_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("0.01Ti");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_Pi_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("0.00001Pi");
+    }
+
+    #[test]
+    fn we_should_be_able_to_convert_a_str_with_Ei_unit_into_a_resource_quantity() {
+        resources_quantity_unit_test_impl!("0.000000001Ei");
     }
 
     #[test]
@@ -206,90 +276,6 @@ mod tests {
         assert_eq!(resources.request_cpu().unwrap().as_str(), "1G");
         assert_eq!(resources.limit_cpu().unwrap().as_str(), "500M");
         assert_eq!(resources.limit_memory().unwrap().as_str(), "2G");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_without_unit()
-    {
-        resources_unit_test_impl!("1000");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_m_unit()
-    {
-        resources_unit_test_impl!("100m");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_K_unit()
-    {
-        resources_unit_test_impl!("50K");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_M_unit()
-    {
-        resources_unit_test_impl!("100M");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_G_unit()
-    {
-        resources_unit_test_impl!("1G");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_T_unit()
-    {
-        resources_unit_test_impl!("0.01T");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_P_unit()
-    {
-        resources_unit_test_impl!("0.00001P");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_E_unit()
-    {
-        resources_unit_test_impl!("0.000000001E");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Ki_unit()
-    {
-        resources_unit_test_impl!("50Ki");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Mi_unit()
-    {
-        resources_unit_test_impl!("100Mi");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Gi_unit()
-    {
-        resources_unit_test_impl!("1Gi");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Ti_unit()
-    {
-        resources_unit_test_impl!("0.01Ti");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Pi_unit()
-    {
-        resources_unit_test_impl!("0.00001Pi");
-    }
-
-    #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly_when_used_with_Ei_unit()
-    {
-        resources_unit_test_impl!("0.000000001Ei");
     }
 
     #[test]

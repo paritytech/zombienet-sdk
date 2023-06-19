@@ -163,7 +163,7 @@ states! {
 #[derive(Debug)]
 pub struct NodeConfigBuilder<S> {
     config: NodeConfig,
-    errors: Vec<Box<dyn Error>>,
+    errors: Vec<anyhow::Error>,
     _state: PhantomData<S>,
 }
 
@@ -196,7 +196,7 @@ impl Default for NodeConfigBuilder<Initial> {
 }
 
 impl<A> NodeConfigBuilder<A> {
-    fn transition<B>(config: NodeConfig, errors: Vec<Box<dyn Error>>) -> NodeConfigBuilder<B> {
+    fn transition<B>(config: NodeConfig, errors: Vec<anyhow::Error>) -> NodeConfigBuilder<B> {
         NodeConfigBuilder {
             config,
             errors,
@@ -231,7 +231,7 @@ impl NodeConfigBuilder<Buildable> {
     pub fn with_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match command.try_into() {
             Ok(command) => Self::transition(
@@ -243,7 +243,7 @@ impl NodeConfigBuilder<Buildable> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::Command(error).into()),
+                merge_errors(self.errors, FieldError::Command(error.into()).into()),
             ),
         }
     }
@@ -251,7 +251,7 @@ impl NodeConfigBuilder<Buildable> {
     pub fn with_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match image.try_into() {
             Ok(image) => Self::transition(
@@ -263,7 +263,7 @@ impl NodeConfigBuilder<Buildable> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::Image(error).into()),
+                merge_errors(self.errors, FieldError::Image(error.into()).into()),
             ),
         }
     }
@@ -326,8 +326,8 @@ impl NodeConfigBuilder<Buildable> {
 
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
-        T: TryInto<Multiaddr>,
-        T::Error: Error + 'static,
+        T: TryInto<Multiaddr> + ToString + Copy,
+        T::Error: Error + Send + Sync + 'static,
     {
         let mut addrs = vec![];
         let mut errors = vec![];
@@ -335,7 +335,9 @@ impl NodeConfigBuilder<Buildable> {
         for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(FieldError::BootnodesAddress(index, error).into()),
+                Err(error) => errors.push(
+                    FieldError::BootnodesAddress(index, addr.to_string(), error.into()).into(),
+                ),
             }
         }
 
@@ -363,7 +365,7 @@ impl NodeConfigBuilder<Buildable> {
                     self.errors,
                     errors
                         .into_iter()
-                        .map(|error| ConfigError::Resources(error).into())
+                        .map(|error| ConfigError::Resources(error.into()).into())
                         .collect::<Vec<_>>(),
                 ),
             ),
@@ -430,7 +432,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    pub fn build(self) -> Result<NodeConfig, (String, Vec<Box<dyn Error>>)> {
+    pub fn build(self) -> Result<NodeConfig, (String, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
             return Err((self.config.name.clone(), self.errors));
         }
@@ -510,5 +512,117 @@ mod tests {
         assert!(matches!(
             node_config.db_snapshot().unwrap(), AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
         ));
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_an_error_and_node_name_if_command_is_invalid() {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_command("invalid command")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "command: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_an_error_and_node_name_if_image_is_invalid() {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_image("myinvalid.image")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "image: 'myinvalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_an_error_and_node_name_if_one_bootnode_address_is_invalid(
+    ) {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_errors_and_node_name_if_multiple_bootnode_address_are_invalid(
+    ) {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 2);
+        // first error
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+        // second error
+        assert_eq!(
+            errors.last().unwrap().to_string(),
+            "bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_an_error_and_node_name_if_resources_has_an_error() {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_resources(|resources| resources.with_limit_cpu("invalid"))
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_errors_and_node_name_if_resources_has_multiple_errors() {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_resources(|resources| {
+                resources
+                    .with_limit_cpu("invalid")
+                    .with_request_memory("invalid")
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+        assert_eq!(
+            errors.last().unwrap().to_string(),
+            r"resources.request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
     }
 }

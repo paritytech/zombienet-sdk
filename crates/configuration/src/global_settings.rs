@@ -3,7 +3,7 @@ use std::{error::Error, net::IpAddr, str::FromStr};
 use multiaddr::Multiaddr;
 
 use crate::shared::{
-    errors::FieldError,
+    errors::{ConfigError, FieldError},
     helpers::{merge_errors, merge_errors_vecs},
     types::Duration,
 };
@@ -49,7 +49,7 @@ impl GlobalSettings {
 #[derive(Debug)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
-    errors: Vec<Box<dyn Error>>,
+    errors: Vec<anyhow::Error>,
 }
 
 impl Default for GlobalSettingsBuilder {
@@ -71,22 +71,24 @@ impl GlobalSettingsBuilder {
         Self::default()
     }
 
-    fn transition(config: GlobalSettings, errors: Vec<Box<dyn Error>>) -> Self {
+    fn transition(config: GlobalSettings, errors: Vec<anyhow::Error>) -> Self {
         Self { config, errors }
     }
 
-    pub fn with_bootnodes_addresses<T>(self, bootnode_addresses: Vec<T>) -> Self
+    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
-        T: TryInto<Multiaddr>,
-        T::Error: Error + 'static,
+        T: TryInto<Multiaddr> + ToString + Copy,
+        T::Error: Error + Send + Sync + 'static,
     {
         let mut addrs = vec![];
         let mut errors = vec![];
 
-        for addr in bootnode_addresses {
+        for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(error.into()),
+                Err(error) => errors.push(
+                    FieldError::BootnodesAddress(index, addr.to_string(), error.into()).into(),
+                ),
             }
         }
 
@@ -130,14 +132,18 @@ impl GlobalSettingsBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::LocalIp(error).into()),
+                merge_errors(self.errors, FieldError::LocalIp(error.into()).into()),
             ),
         }
     }
 
-    pub fn build(self) -> Result<GlobalSettings, Vec<Box<dyn Error>>> {
+    pub fn build(self) -> Result<GlobalSettings, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
-            return Err(self.errors);
+            return Err(self
+                .errors
+                .into_iter()
+                .map(|error| ConfigError::GlobalSettings(error).into())
+                .collect::<Vec<_>>());
         }
 
         Ok(self.config)
@@ -178,6 +184,54 @@ mod tests {
                 .to_string()
                 .as_str(),
             "10.0.0.1"
+        );
+    }
+
+    #[test]
+    fn global_settings_builder_should_returns_an_error_if_one_bootnode_address_is_invalid() {
+        let errors = GlobalSettingsBuilder::new()
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+    }
+
+    #[test]
+    fn global_settings_builder_should_returns_errors_if_multiple_bootnode_address_are_invalid() {
+        let errors = GlobalSettingsBuilder::new()
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        // first error
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+        // second error
+        assert_eq!(
+            errors.last().unwrap().to_string(),
+            "global_settings.bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
+        );
+    }
+
+    #[test]
+    fn global_settings_builder_should_returns_error_if_local_ip_is_invalid() {
+        let errors = GlobalSettingsBuilder::new()
+            .with_local_ip("invalid")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "global_settings.local_ip: invalid IP address syntax"
         );
     }
 }

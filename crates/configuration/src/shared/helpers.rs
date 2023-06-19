@@ -1,6 +1,4 @@
-use std::error::Error;
-
-pub fn merge_errors(errors: Vec<Box<dyn Error>>, new_error: Box<dyn Error>) -> Vec<Box<dyn Error>> {
+pub fn merge_errors(errors: Vec<anyhow::Error>, new_error: anyhow::Error) -> Vec<anyhow::Error> {
     let mut errors = errors;
     errors.push(new_error);
 
@@ -8,9 +6,9 @@ pub fn merge_errors(errors: Vec<Box<dyn Error>>, new_error: Box<dyn Error>) -> V
 }
 
 pub fn merge_errors_vecs(
-    errors: Vec<Box<dyn Error>>,
-    new_errors: Vec<Box<dyn Error>>,
-) -> Vec<Box<dyn Error>> {
+    errors: Vec<anyhow::Error>,
+    new_errors: Vec<anyhow::Error>,
+) -> Vec<anyhow::Error> {
     let mut errors = errors;
 
     for new_error in new_errors.into_iter() {

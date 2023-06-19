@@ -1,66 +1,66 @@
 use super::types::ParaId;
 
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum ConfigError<E> {
+#[derive(thiserror::Error, Debug)]
+pub enum ConfigError {
     #[error("relaychain.{0}")]
-    Relaychain(E),
+    Relaychain(anyhow::Error),
 
     #[error("parachain[{0}].{1}")]
-    Parachain(ParaId, E),
+    Parachain(ParaId, anyhow::Error),
 
     #[error("global_settings.{0}")]
-    GlobalSettings(E),
+    GlobalSettings(anyhow::Error),
 
     #[error("node[{0}].{1}")]
-    Node(String, E),
+    Node(String, anyhow::Error),
 
     #[error("collator[{0}].{1}")]
-    Collator(String, E),
+    Collator(String, anyhow::Error),
 
     #[error("resources.{0}")]
-    Resources(E),
+    Resources(anyhow::Error),
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
-pub enum FieldError<E> {
+#[derive(thiserror::Error, Debug)]
+pub enum FieldError {
     #[error("chain: {0}")]
-    Chain(E),
+    Chain(anyhow::Error),
 
     #[error("image: {0}")]
-    Image(E),
+    Image(anyhow::Error),
 
     #[error("default_image: {0}")]
-    DefaultImage(E),
+    DefaultImage(anyhow::Error),
 
     #[error("command: {0}")]
-    Command(E),
+    Command(anyhow::Error),
 
     #[error("default_command: {0}")]
-    DefaultCommand(E),
+    DefaultCommand(anyhow::Error),
 
     #[error("bootnodes_addresses[{0}]: '{1}' {2}")]
-    BootnodesAddress(usize, String, E),
+    BootnodesAddress(usize, String, anyhow::Error),
 
     #[error("genesis_wasm_generator: {0}")]
-    GenesisWasmGenerator(E),
+    GenesisWasmGenerator(anyhow::Error),
 
     #[error("genesis_state_generator: {0}")]
-    GenesisStateGenerator(E),
+    GenesisStateGenerator(anyhow::Error),
 
     #[error("local_ip: {0}")]
-    LocalIp(E),
+    LocalIp(anyhow::Error),
 
     #[error("request_memory: {0}")]
-    RequestMemory(E),
+    RequestMemory(anyhow::Error),
 
     #[error("request_cpu: {0}")]
-    RequestCpu(E),
+    RequestCpu(anyhow::Error),
 
     #[error("limit_memory: {0}")]
-    LimitMemory(E),
+    LimitMemory(anyhow::Error),
 
     #[error("limit_cpu: {0}")]
-    LimitCpu(E),
+    LimitCpu(anyhow::Error),
 }
 
 #[derive(thiserror::Error, Debug, Clone)]

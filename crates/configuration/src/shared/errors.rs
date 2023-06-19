@@ -1,6 +1,6 @@
 use super::types::ParaId;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum ConfigError<E> {
     #[error("relaychain.{0}")]
     Relaychain(E),
@@ -21,7 +21,7 @@ pub enum ConfigError<E> {
     Resources(E),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum FieldError<E> {
     #[error("chain: {0}")]
     Chain(E),
@@ -38,8 +38,8 @@ pub enum FieldError<E> {
     #[error("default_command: {0}")]
     DefaultCommand(E),
 
-    #[error("bootnodes_addresses[{0}]: {1}")]
-    BootnodesAddress(usize, E),
+    #[error("bootnodes_addresses[{0}]: '{1}' {2}")]
+    BootnodesAddress(usize, String, E),
 
     #[error("genesis_wasm_generator: {0}")]
     GenesisWasmGenerator(E),

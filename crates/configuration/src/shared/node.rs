@@ -365,7 +365,7 @@ impl NodeConfigBuilder<Buildable> {
                     self.errors,
                     errors
                         .into_iter()
-                        .map(|error| ConfigError::Resources(error.into()).into())
+                        .map(|error| ConfigError::Resources(error).into())
                         .collect::<Vec<_>>(),
                 ),
             ),

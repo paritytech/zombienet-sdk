@@ -97,7 +97,7 @@ macro_rules! common_builder_methods {
         pub fn with_default_image<T>(self, image: T) -> Self
         where
             T: TryInto<Image>,
-            T::Error: Error + 'static,
+            T::Error: Error + Send + Sync + 'static,
         {
             match image.try_into() {
                 Ok(image) => Self::transition(
@@ -109,7 +109,7 @@ macro_rules! common_builder_methods {
                 ),
                 Err(error) => Self::transition(
                     self.config,
-                    merge_errors(self.errors, FieldError::DefaultImage(error).into()),
+                    merge_errors(self.errors, FieldError::DefaultImage(error.into()).into()),
                 ),
             }
         }
@@ -191,7 +191,7 @@ macro_rules! common_builder_methods {
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
-    errors: Vec<Box<dyn Error>>,
+    errors: Vec<anyhow::Error>,
     _state: PhantomData<State>,
 }
 
@@ -221,7 +221,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
 impl<A> RelaychainConfigBuilder<A> {
     fn transition<B>(
         config: RelaychainConfig,
-        errors: Vec<Box<dyn Error>>,
+        errors: Vec<anyhow::Error>,
     ) -> RelaychainConfigBuilder<B> {
         RelaychainConfigBuilder {
             config,
@@ -239,7 +239,7 @@ impl RelaychainConfigBuilder<Initial> {
     pub fn with_chain<T>(self, chain: T) -> RelaychainConfigBuilder<WithChain>
     where
         T: TryInto<Chain>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match chain.try_into() {
             Ok(chain) => Self::transition(
@@ -251,7 +251,7 @@ impl RelaychainConfigBuilder<Initial> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::Chain(error).into()),
+                merge_errors(self.errors, FieldError::Chain(error.into()).into()),
             ),
         }
     }
@@ -263,7 +263,7 @@ impl RelaychainConfigBuilder<WithChain> {
     pub fn with_default_command<T>(self, command: T) -> RelaychainConfigBuilder<WithDefaultCommand>
     where
         T: TryInto<Command>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match command.try_into() {
             Ok(command) => Self::transition(
@@ -275,7 +275,7 @@ impl RelaychainConfigBuilder<WithChain> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::DefaultCommand(error).into()),
+                merge_errors(self.errors, FieldError::DefaultCommand(error.into()).into()),
             ),
         }
     }
@@ -365,7 +365,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         }
     }
 
-    pub fn build(self) -> Result<RelaychainConfig, Vec<Box<dyn Error>>> {
+    pub fn build(self) -> Result<RelaychainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);
         }

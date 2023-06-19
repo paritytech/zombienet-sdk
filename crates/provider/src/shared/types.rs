@@ -4,6 +4,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+// TODO: The `Node` definition should `live` in the orchestrator.
+pub struct Node {}
+
 pub type Port = u16;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,7 +111,7 @@ pub struct PodSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PodDef {
+struct PodDef {
     pub metadata: PodMetadata,
     pub spec: PodSpec,
 }

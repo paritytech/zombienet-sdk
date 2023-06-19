@@ -6,85 +6,73 @@ use std::{net::IpAddr, path::PathBuf};
 
 use async_trait::async_trait;
 use errors::ProviderError;
-use shared::types::{FileMap, NativeRunCommandOptions, PodDef, Port, RunCommandResponse};
+use shared::types::{FileMap, NativeRunCommandOptions, Node, Port, RunCommandResponse};
 
 #[async_trait]
 pub trait Provider {
+    /// Create namespace
     async fn create_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_node_ip(&self) -> Result<IpAddr, ProviderError>;
-    async fn get_port_mapping(
+    /// Destroy namespace (and inner resources).
+    async fn destroy_namespace(&self) -> Result<(), ProviderError>;
+    /// Spawn a long live node/process.
+    async fn spawn_node(
         &mut self,
-        port: Port,
-        pod_name: String,
-    ) -> Result<Port, ProviderError>;
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(IpAddr, Port), ProviderError>;
+        node: Node,
+        // Files to inject, `before` we run the provider command.
+        files_inject: Vec<FileMap>,
+        // TODO: keystore logic should live in the orchestrator
+        keystore: &str,
+        //chain_spec_id: String,
+        // TODO: abstract logic for download and uncompress
+        db_snapshot: &str,
+    ) -> Result<(), ProviderError>;
+    /// Spawn a temporary node, will be shutodown after `get` the desired files or output.
+    async fn spawn_temp(
+        &self,
+        node: Node,
+        // Files to inject, `before` we run the provider command.
+        files_inject: Vec<FileMap>,
+        // Files to get, `after` we run the provider command.
+        files_get: Vec<FileMap>
+    ) -> Result<(), ProviderError>;
+    /// Copy a single file from node to local filesystem.
+    async fn copy_file_from_node(
+        &mut self,
+        node_file_path: PathBuf,
+        local_file_path: PathBuf,
+    ) -> Result<(), ProviderError>;
+    /// Run a command inside the node.
     async fn run_command(
         &self,
         args: Vec<String>,
         opts: NativeRunCommandOptions,
     ) -> Result<RunCommandResponse, ProviderError>;
+    /// Run a script inside the node, should be a shell script and zombienet will
+    /// upload the content first.
     async fn run_script(
         &mut self,
         identifier: String,
         script_path: String,
         args: Vec<String>,
     ) -> Result<RunCommandResponse, ProviderError>;
-    async fn spawn_from_def(
-        &mut self,
-        pod_def: PodDef,
-        files_to_copy: Vec<FileMap>,
-        keystore: String,
-        chain_spec_id: String,
-        db_snapshot: String,
-    ) -> Result<(), ProviderError>;
-    async fn copy_file_from_pod(
-        &mut self,
-        pod_file_path: PathBuf,
-        local_file_path: PathBuf,
-    ) -> Result<(), ProviderError>;
-    async fn create_resource(
-        &mut self,
-        resource_def: PodDef,
-        scoped: bool,
-        wait_ready: bool,
-    ) -> Result<(), ProviderError>;
-    async fn wait_node_ready(&mut self, node_name: String) -> Result<(), ProviderError>;
-    async fn get_node_logs(&mut self, node_name: String) -> Result<String, ProviderError>;
-    async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), ProviderError>;
-    fn get_pause_args(&mut self, name: String) -> Vec<String>;
-    fn get_resume_args(&mut self, name: String) -> Vec<String>;
-    async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError>;
-    async fn get_help_info(&mut self) -> Result<(), ProviderError>;
-    async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
-    async fn put_local_magic_file(
+    async fn get_node_logs(&mut self, node_name: &str) -> Result<String, ProviderError>;
+    async fn dump_logs(&mut self, path: String, node_name: String) -> Result<(), ProviderError>;
+    async fn get_logs_command(&self, node_name: &str) -> Result<String, ProviderError>;
+    async fn pause(&self, node_name: &str) -> Result<(), ProviderError>;
+    async fn resume(&self, node_name: &str) -> Result<(), ProviderError>;
+    async fn restart(&mut self, node_name: &str, after_sec: u16) -> Result<bool, ProviderError>;
+    async fn get_node_info(&self, node_name: &str) -> Result<(IpAddr, Port), ProviderError>;
+    async fn get_node_ip(&self, node_name: &str) -> Result<IpAddr, ProviderError>;
+    async fn get_port_mapping(
         &self,
-        _name: String,
-        _container: Option<String>,
-    ) -> Result<(), ProviderError> {
-        Ok(())
-    }
-    fn is_pod_monitor_available() -> Result<bool, ProviderError> {
-        Ok(false)
-    }
-    async fn spawn_introspector() -> Result<(), ProviderError> {
-        Ok(())
-    }
-
+        port: Port,
+        node_name: &str,
+    ) -> Result<Port, ProviderError>;
     async fn static_setup() -> Result<(), ProviderError> {
-        Ok(())
+        unimplemented!()
     }
     async fn create_static_resource() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn create_pod_monitor() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn setup_cleaner() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn upsert_cron_job() -> Result<(), ProviderError> {
-        unimplemented!();
+        unimplemented!()
     }
 }
 

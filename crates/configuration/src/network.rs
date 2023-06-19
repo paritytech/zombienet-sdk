@@ -1,4 +1,4 @@
-use std::{error::Error, marker::PhantomData};
+use std::marker::PhantomData;
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
@@ -52,7 +52,7 @@ states! {
 #[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
-    errors: Vec<Box<dyn Error>>,
+    errors: Vec<anyhow::Error>,
     _state: PhantomData<State>,
 }
 
@@ -74,10 +74,7 @@ impl Default for NetworkConfigBuilder<Initial> {
 }
 
 impl<A> NetworkConfigBuilder<A> {
-    fn transition<B>(
-        config: NetworkConfig,
-        errors: Vec<Box<dyn Error>>,
-    ) -> NetworkConfigBuilder<B> {
+    fn transition<B>(config: NetworkConfig, errors: Vec<anyhow::Error>) -> NetworkConfigBuilder<B> {
         NetworkConfigBuilder {
             config,
             errors,
@@ -183,7 +180,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         )
     }
 
-    pub fn build(self) -> Result<NetworkConfig, Vec<Box<dyn Error>>> {
+    pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);
         }

@@ -290,7 +290,7 @@ mod tests {
                 .unwrap()
                 .downcast_ref::<FieldError<ConversionError>>()
                 .unwrap(),
-            FieldError::RequestMemory(_)
+            FieldError::RequestMemory(ConversionError::DoesntMatchRegex { value: _, regex: _ })
         ));
         assert_eq!(
             got.first().unwrap().to_string(),
@@ -310,7 +310,7 @@ mod tests {
                 .unwrap()
                 .downcast_ref::<FieldError<ConversionError>>()
                 .unwrap(),
-            FieldError::RequestCpu(_)
+            FieldError::RequestCpu(ConversionError::DoesntMatchRegex { value: _, regex: _ })
         ));
         assert_eq!(
             got.first().unwrap().to_string(),
@@ -330,7 +330,7 @@ mod tests {
                 .unwrap()
                 .downcast_ref::<FieldError<ConversionError>>()
                 .unwrap(),
-            FieldError::LimitMemory(_)
+            FieldError::LimitMemory(ConversionError::DoesntMatchRegex { value: _, regex: _ })
         ));
         assert_eq!(
             got.first().unwrap().to_string(),
@@ -350,7 +350,7 @@ mod tests {
                 .unwrap()
                 .downcast_ref::<FieldError<ConversionError>>()
                 .unwrap(),
-            FieldError::LimitCpu(_)
+            FieldError::LimitCpu(ConversionError::DoesntMatchRegex { value: _, regex: _ })
         ));
         assert_eq!(
             got.first().unwrap().to_string(),

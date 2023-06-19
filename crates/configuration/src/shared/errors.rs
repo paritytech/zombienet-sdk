@@ -11,14 +11,13 @@ pub enum ConfigError {
     #[error("global_settings.{0}")]
     GlobalSettings(anyhow::Error),
 
-    #[error("node[{0}].{1}")]
+    #[error("nodes['{0}'].{1}")]
     Node(String, anyhow::Error),
 
-    #[error("collator[{0}].{1}")]
+    #[error("collators['{0}'].{1}")]
     Collator(String, anyhow::Error),
 
-    #[error("resources.{0}")]
-    Resources(anyhow::Error),
+
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -49,6 +48,12 @@ pub enum FieldError {
 
     #[error("local_ip: {0}")]
     LocalIp(anyhow::Error),
+
+    #[error("default_resources.{0}")]
+    DefaultResources(anyhow::Error),
+
+    #[error("resources.{0}")]
+    Resources(anyhow::Error),
 
     #[error("request_memory: {0}")]
     RequestMemory(anyhow::Error),

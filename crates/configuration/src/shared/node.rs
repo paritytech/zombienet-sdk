@@ -3,7 +3,7 @@ use std::{error::Error, marker::PhantomData};
 use multiaddr::Multiaddr;
 
 use super::{
-    errors::{ConfigError, FieldError},
+    errors::FieldError,
     helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     resources::ResourcesBuilder,
@@ -365,7 +365,7 @@ impl NodeConfigBuilder<Buildable> {
                     self.errors,
                     errors
                         .into_iter()
-                        .map(|error| ConfigError::Resources(error).into())
+                        .map(|error| FieldError::Resources(error).into())
                         .collect::<Vec<_>>(),
                 ),
             ),

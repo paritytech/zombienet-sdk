@@ -9,3 +9,4 @@ lazy_static = { workspace = true }
 multiaddr = { workspace = true }
 url = { workspace = true }
 thiserror = { workspace = true }
+anyhow = { workspace = true }

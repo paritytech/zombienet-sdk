@@ -10,6 +10,7 @@ members = [
 
 [workspace.dependencies]
 thiserror = "1.0"
+anyhow = "1.0"
 async-trait = "0.1"
 futures = "0.3"
 serde = "1.0"

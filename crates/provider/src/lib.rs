@@ -22,7 +22,7 @@ pub trait Provider {
         files_inject: Vec<FileMap>,
         // TODO: keystore logic should live in the orchestrator
         keystore: &str,
-        //chain_spec_id: String,
+        // chain_spec_id: String,
         // TODO: abstract logic for download and uncompress
         db_snapshot: &str,
     ) -> Result<(), ProviderError>;
@@ -33,7 +33,7 @@ pub trait Provider {
         // Files to inject, `before` we run the provider command.
         files_inject: Vec<FileMap>,
         // Files to get, `after` we run the provider command.
-        files_get: Vec<FileMap>
+        files_get: Vec<FileMap>,
     ) -> Result<(), ProviderError>;
     /// Copy a single file from node to local filesystem.
     async fn copy_file_from_node(
@@ -63,11 +63,7 @@ pub trait Provider {
     async fn restart(&mut self, node_name: &str, after_sec: u16) -> Result<bool, ProviderError>;
     async fn get_node_info(&self, node_name: &str) -> Result<(IpAddr, Port), ProviderError>;
     async fn get_node_ip(&self, node_name: &str) -> Result<IpAddr, ProviderError>;
-    async fn get_port_mapping(
-        &self,
-        port: Port,
-        node_name: &str,
-    ) -> Result<Port, ProviderError>;
+    async fn get_port_mapping(&self, port: Port, node_name: &str) -> Result<Port, ProviderError>;
     async fn static_setup() -> Result<(), ProviderError> {
         unimplemented!()
     }

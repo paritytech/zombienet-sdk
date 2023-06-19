@@ -23,7 +23,7 @@ use crate::{
     shared::{
         constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
         types::{
-            FileMap, NativeRunCommandOptions, Port, Process, RunCommandResponse, ZombieRole, Node
+            FileMap, NativeRunCommandOptions, Node, Port, Process, RunCommandResponse, ZombieRole,
         },
     },
 };
@@ -84,7 +84,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
 
 #[async_trait]
 impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
-    async fn create_namespace(&mut self) -> Result<(),ProviderError> {
+    async fn create_namespace(&mut self) -> Result<(), ProviderError> {
         // Native provider don't have the `namespace` isolation.
         // but we create the `remoteDir` to place files
         self.filesystem
@@ -94,7 +94,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    async fn destroy_namespace(&self) -> Result<(),ProviderError> {
+    async fn destroy_namespace(&self) -> Result<(), ProviderError> {
         // get pids to kill all related process
         let pids: Vec<String> = self
             .process_map
@@ -137,7 +137,13 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    async fn spawn_node(&mut self, node: Node, files_inject: Vec<FileMap>, keystore: &str, db_snapshot: &str) -> Result<(),ProviderError> {
+    async fn spawn_node(
+        &mut self,
+        node: Node,
+        files_inject: Vec<FileMap>,
+        keystore: &str,
+        db_snapshot: &str,
+    ) -> Result<(), ProviderError> {
         // TODO: We should implement the logic to go from the `Node` (nodeSpec)
         // to the running node, since we will no expose anymore the underline `Def`.
         // We can follow the logic of the spawn_from_def later.
@@ -145,7 +151,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    async fn spawn_temp(&self, node: Node, files_inject: Vec<FileMap>, files_get: Vec<FileMap> ) -> Result<(),ProviderError> {
+    async fn spawn_temp(
+        &self,
+        node: Node,
+        files_inject: Vec<FileMap>,
+        files_get: Vec<FileMap>,
+    ) -> Result<(), ProviderError> {
         // TODO: We should implement the logic to go from the `Node` (nodeSpec)
         // to the running node, since we will no expose anymore the underline `Def`.
         // We can follow the logic of the spawn_from_def later.
@@ -289,10 +300,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         // TODO: impl using run_command
         Ok(())
     }
+
     async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
         // TODO: impl using run_command
         Ok(())
     }
+
     async fn restart(&mut self, node_name: &str, after_secs: u16) -> Result<bool, ProviderError> {
         // TODO: impl using run_command
         // use &mut here since we mostly need to update the the pid/maps
@@ -308,22 +321,23 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(LOCALHOST)
     }
 
-    async fn get_port_mapping(
-        &self,
-        port: Port,
-        node_name: &str,
-    ) -> Result<Port, ProviderError> {
+    async fn get_port_mapping(&self, port: Port, node_name: &str) -> Result<Port, ProviderError> {
         let r = match self.process_map.get(node_name) {
             Some(process) => match process.port_mapping.get(&port) {
                 Some(port) => Ok(*port),
-                None => Err(ProviderError::MissingNodeInfo(node_name.to_owned(), "port".into())),
+                None => Err(ProviderError::MissingNodeInfo(
+                    node_name.to_owned(),
+                    "port".into(),
+                )),
             },
-            None => Err(ProviderError::MissingNodeInfo(node_name.to_owned(), "process".into())),
+            None => Err(ProviderError::MissingNodeInfo(
+                node_name.to_owned(),
+                "process".into(),
+            )),
         };
 
         return r;
     }
-
 }
 
 #[cfg(test)]
@@ -386,7 +400,10 @@ mod tests {
         let native_provider: NativeProvider<MockFilesystem> =
             NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
 
-        assert_eq!(native_provider.get_node_ip("some").await.unwrap(), LOCALHOST);
+        assert_eq!(
+            native_provider.get_node_ip("some").await.unwrap(),
+            LOCALHOST
+        );
     }
 
     #[tokio::test]

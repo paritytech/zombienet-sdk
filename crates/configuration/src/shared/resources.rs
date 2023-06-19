@@ -72,7 +72,7 @@ impl Resources {
 #[derive(Debug, Default)]
 pub struct ResourcesBuilder {
     config: Resources,
-    errors: Vec<Box<dyn Error>>,
+    errors: Vec<anyhow::Error>,
 }
 
 impl ResourcesBuilder {
@@ -80,14 +80,14 @@ impl ResourcesBuilder {
         Self::default()
     }
 
-    fn transition(config: Resources, errors: Vec<Box<dyn Error>>) -> Self {
+    fn transition(config: Resources, errors: Vec<anyhow::Error>) -> Self {
         Self { config, errors }
     }
 
     pub fn with_request_memory<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
@@ -99,7 +99,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::RequestMemory(error).into()),
+                merge_errors(self.errors, FieldError::RequestMemory(error.into()).into()),
             ),
         }
     }
@@ -107,7 +107,7 @@ impl ResourcesBuilder {
     pub fn with_request_cpu<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
@@ -119,7 +119,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::RequestCpu(error).into()),
+                merge_errors(self.errors, FieldError::RequestCpu(error.into()).into()),
             ),
         }
     }
@@ -127,7 +127,7 @@ impl ResourcesBuilder {
     pub fn with_limit_memory<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
@@ -139,7 +139,7 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::LimitMemory(error).into()),
+                merge_errors(self.errors, FieldError::LimitMemory(error.into()).into()),
             ),
         }
     }
@@ -147,7 +147,7 @@ impl ResourcesBuilder {
     pub fn with_limit_cpu<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match quantity.try_into() {
             Ok(quantity) => Self::transition(
@@ -159,12 +159,12 @@ impl ResourcesBuilder {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::LimitCpu(error).into()),
+                merge_errors(self.errors, FieldError::LimitCpu(error.into()).into()),
             ),
         }
     }
 
-    pub fn build(self) -> Result<Resources, Vec<Box<dyn Error>>> {
+    pub fn build(self) -> Result<Resources, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);
         }
@@ -285,13 +285,6 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
-        assert!(matches!(
-            got.first()
-                .unwrap()
-                .downcast_ref::<FieldError<ConversionError>>()
-                .unwrap(),
-            FieldError::RequestMemory(ConversionError::DoesntMatchRegex { value: _, regex: _ })
-        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
@@ -305,13 +298,6 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
-        assert!(matches!(
-            got.first()
-                .unwrap()
-                .downcast_ref::<FieldError<ConversionError>>()
-                .unwrap(),
-            FieldError::RequestCpu(ConversionError::DoesntMatchRegex { value: _, regex: _ })
-        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
@@ -325,13 +311,6 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
-        assert!(matches!(
-            got.first()
-                .unwrap()
-                .downcast_ref::<FieldError<ConversionError>>()
-                .unwrap(),
-            FieldError::LimitMemory(ConversionError::DoesntMatchRegex { value: _, regex: _ })
-        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"limit_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
@@ -345,13 +324,6 @@ mod tests {
         let got = resources_builder.build().err().unwrap();
 
         assert_eq!(got.len(), 1);
-        assert!(matches!(
-            got.first()
-                .unwrap()
-                .downcast_ref::<FieldError<ConversionError>>()
-                .unwrap(),
-            FieldError::LimitCpu(ConversionError::DoesntMatchRegex { value: _, regex: _ })
-        ));
         assert_eq!(
             got.first().unwrap().to_string(),
             r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"

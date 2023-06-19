@@ -16,8 +16,6 @@ pub enum ConfigError {
 
     #[error("collators['{0}'].{1}")]
     Collator(String, anyhow::Error),
-
-
 }
 
 #[derive(thiserror::Error, Debug)]

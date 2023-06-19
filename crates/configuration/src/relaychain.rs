@@ -486,7 +486,8 @@ mod tests {
     }
 
     #[test]
-    fn relaychain_config_builder_with_default_command_should_returns_an_error_if_default_image_is_invalid() {
+    fn relaychain_config_builder_with_default_command_should_returns_an_error_if_default_image_is_invalid(
+    ) {
         let errors = RelaychainConfigBuilder::new()
             .with_chain("chain")
             .with_default_command("command")
@@ -568,7 +569,8 @@ mod tests {
     }
 
     #[test]
-    fn relaychain_config_builder_with_a_first_node_should_returns_an_error_if_a_second_node_is_invalid() {
+    fn relaychain_config_builder_with_a_first_node_should_returns_an_error_if_a_second_node_is_invalid(
+    ) {
         let errors = RelaychainConfigBuilder::new()
             .with_chain("chain")
             .with_node(|node| {

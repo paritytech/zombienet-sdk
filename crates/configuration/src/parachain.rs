@@ -115,7 +115,7 @@ states! {
 #[derive(Debug)]
 pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
-    errors: Vec<Box<dyn Error>>,
+    errors: Vec<anyhow::Error>,
     _state: PhantomData<S>,
 }
 
@@ -145,7 +145,7 @@ impl Default for ParachainConfigBuilder<Initial> {
 impl<A> ParachainConfigBuilder<A> {
     fn transition<B>(
         config: ParachainConfig,
-        errors: Vec<Box<dyn Error>>,
+        errors: Vec<anyhow::Error>,
     ) -> ParachainConfigBuilder<B> {
         ParachainConfigBuilder {
             config,
@@ -196,7 +196,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
     pub fn with_chain<T>(self, chain: T) -> Self
     where
         T: TryInto<Chain>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match chain.try_into() {
             Ok(chain) => Self::transition(
@@ -208,7 +208,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::Chain(error).into()),
+                merge_errors(self.errors, FieldError::Chain(error.into()).into()),
             ),
         }
     }
@@ -246,7 +246,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
     pub fn with_genesis_wasm_generator<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match command.try_into() {
             Ok(command) => Self::transition(
@@ -258,7 +258,10 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::GenesisWasmGenerator(error).into()),
+                merge_errors(
+                    self.errors,
+                    FieldError::GenesisWasmGenerator(error.into()).into(),
+                ),
             ),
         }
     }
@@ -276,7 +279,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
     pub fn with_genesis_state_generator<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         match command.try_into() {
             Ok(command) => Self::transition(
@@ -288,7 +291,10 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
             ),
             Err(error) => Self::transition(
                 self.config,
-                merge_errors(self.errors, FieldError::GenesisStateGenerator(error).into()),
+                merge_errors(
+                    self.errors,
+                    FieldError::GenesisStateGenerator(error.into()).into(),
+                ),
             ),
         }
     }
@@ -316,7 +322,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + ToString + Copy,
-        T::Error: Error + 'static,
+        T::Error: Error + Send + Sync + 'static,
     {
         let mut addrs = vec![];
         let mut errors = vec![];
@@ -324,9 +330,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => {
-                    errors.push(FieldError::BootnodesAddress(index, addr.to_string(), error).into())
-                },
+                Err(error) => errors.push(
+                    FieldError::BootnodesAddress(index, addr.to_string(), error.into()).into(),
+                ),
             }
         }
 
@@ -364,7 +370,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         }
     }
 
-    pub fn build(self) -> Result<ParachainConfig, (ParaId, Vec<Box<dyn Error>>)> {
+    pub fn build(self) -> Result<ParachainConfig, (ParaId, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
             return Err((self.config.id, self.errors));
         }

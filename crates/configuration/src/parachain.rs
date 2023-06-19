@@ -315,7 +315,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
-        T: TryInto<Multiaddr>,
+        T: TryInto<Multiaddr> + ToString + Copy,
         T::Error: Error + 'static,
     {
         let mut addrs = vec![];
@@ -324,7 +324,9 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         for (index, addr) in bootnodes_addresses.into_iter().enumerate() {
             match addr.try_into() {
                 Ok(addr) => addrs.push(addr),
-                Err(error) => errors.push(FieldError::BootnodesAddress(index, error).into()),
+                Err(error) => {
+                    errors.push(FieldError::BootnodesAddress(index, addr.to_string(), error).into())
+                },
             }
         }
 

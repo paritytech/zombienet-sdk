@@ -1,6 +1,7 @@
 use std::{
     self,
     collections::HashMap,
+    env,
     fmt::Debug,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -9,7 +10,6 @@ use std::{
 use async_trait::async_trait;
 use serde::Serialize;
 use support::fs::FileSystem;
-use sysinfo::{ProcessExt, System, SystemExt};
 use tokio::process::Command;
 
 use super::Provider;
@@ -331,9 +331,41 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(())
     }
 
-    async fn restart(&mut self, _node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
-        // TODO: impl using run_command
-        // use &mut here since we mostly need to update the the pid/maps
+    // TODO: Add test
+    async fn restart(&mut self, node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
+        let process: Result<Process, ProviderError> = match self.process_map.get(node_name) {
+            Some(pr) => Ok(pr.clone()),
+            None => Err(ProviderError::MissingNodeInfo(
+                node_name.to_owned(),
+                "process".into(),
+            )),
+        };
+
+        let mut process = process?;
+
+        let pid = process.pid;
+        let command = process.command.clone();
+
+        let _ = self
+            .run_command(
+                [format!("kill -9 {}", pid)].to_vec(),
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
+            )
+            .await?;
+
+        let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
+
+        let res = Command::new(command).arg("-c").envs(&mapped_env).spawn();
+
+        let restarted_process = match res {
+            Ok(process) => process,
+            Err(e) => return Err(ProviderError::ErrorSpawningNode(e.to_string())),
+        };
+
+        process.pid = restarted_process.id().unwrap();
+
         Ok(true)
     }
 

@@ -184,4 +184,5 @@ pub struct Process {
     pub logs: String,
     pub port_mapping: HashMap<u16, u16>,
     pub command: String,
+    pub env: Vec<EnvVar>,
 }

@@ -475,7 +475,7 @@ mod tests {
             .build()
             .unwrap_err();
 
-        assert_eq!(para_id, 14321);
+        assert_eq!(para_id, 1000);
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors.get(0).unwrap().to_string(),
@@ -498,7 +498,7 @@ mod tests {
             .build()
             .unwrap_err();
 
-        assert_eq!(para_id, 5425);
+        assert_eq!(para_id, 1000);
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors.get(0).unwrap().to_string(),
@@ -510,7 +510,7 @@ mod tests {
     fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_genesis_wasm_generator_is_invalid(
     ) {
         let (para_id, errors) = ParachainConfigBuilder::new()
-            .with_id(1000)
+            .with_id(2000)
             .with_collator(|collator| {
                 collator
                     .with_name("collator")
@@ -521,7 +521,7 @@ mod tests {
             .build()
             .unwrap_err();
 
-        assert_eq!(para_id, 1234);
+        assert_eq!(para_id, 2000);
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors.get(0).unwrap().to_string(),
@@ -544,7 +544,7 @@ mod tests {
             .build()
             .unwrap_err();
 
-        assert_eq!(para_id, 12345);
+        assert_eq!(para_id, 1000);
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors.get(0).unwrap().to_string(),

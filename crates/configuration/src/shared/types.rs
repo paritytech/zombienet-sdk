@@ -172,8 +172,8 @@ mod tests {
     }
 
     #[test]
-    fn converting_a_str_containing_hostname_tag_name_and_tag_version_into_an_image_should_succeeds(
-    ) {
+    fn converting_a_str_containing_hostname_tag_name_and_tag_version_into_an_image_should_succeeds()
+    {
         let got: Result<Image, ConversionError> = "myrepository.com/myimage:version".try_into();
 
         assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage:version");
@@ -187,8 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn converting_a_str_containing_ip_tag_name_and_tag_version_into_an_image_should_succeeds(
-    ) {
+    fn converting_a_str_containing_ip_tag_name_and_tag_version_into_an_image_should_succeeds() {
         let got: Result<Image, ConversionError> = "127.0.0.1/myimage:version".try_into();
 
         assert_eq!(got.unwrap().as_str(), "127.0.0.1/myimage:version");

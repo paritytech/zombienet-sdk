@@ -585,7 +585,8 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_resources_has_an_error() {
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_resources_has_an_error(
+    ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_resources(|resources| resources.with_limit_cpu("invalid"))

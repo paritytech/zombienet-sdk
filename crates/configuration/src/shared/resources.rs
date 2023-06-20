@@ -279,7 +279,8 @@ mod tests {
     }
 
     #[test]
-    fn resources_config_builder_should_fails_and_returns_an_error_if_couldnt_parse_request_memory() {
+    fn resources_config_builder_should_fails_and_returns_an_error_if_couldnt_parse_request_memory()
+    {
         let resources_builder = ResourcesBuilder::new().with_request_memory("invalid");
 
         let errors = resources_builder.build().err().unwrap();
@@ -331,7 +332,8 @@ mod tests {
     }
 
     #[test]
-    fn resources_config_builder_should_fails_and_returns_multiple_error_if_couldnt_parse_multiple_fields() {
+    fn resources_config_builder_should_fails_and_returns_multiple_error_if_couldnt_parse_multiple_fields(
+    ) {
         let resources_builder = ResourcesBuilder::new()
             .with_limit_cpu("invalid")
             .with_request_memory("invalid");

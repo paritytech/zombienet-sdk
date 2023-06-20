@@ -384,7 +384,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parachain_config_builder_should_build_a_new_parachain_config_correctly() {
+    fn parachain_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
         let parachain_config = ParachainConfigBuilder::new()
             .with_id(1000)
             .with_collator(|collator1| {
@@ -459,6 +459,204 @@ mod tests {
         assert_eq!(
             parachain_config.bootnodes_addresses(),
             bootnodes_addresses.iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_first_collator_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("invalid command")
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 14321);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "collators['collator'].command: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_chain_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .with_chain("invalid chain")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 5425);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "chain: 'invalid chain' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_genesis_wasm_generator_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .with_genesis_wasm_generator("invalid command")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 1234);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "genesis_wasm_generator: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_genesis_state_generator_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .with_genesis_state_generator("invalid command")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 12345);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "genesis_state_generator: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_bootnodes_addresses_are_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(2000)
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 2000);
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_second_collator_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(2000)
+            .with_collator(|collator1| {
+                collator1
+                    .with_name("collator1")
+                    .with_command("command1")
+                    .invulnerable(true)
+                    .bootnode(true)
+            })
+            .with_collator(|collator2| {
+                collator2
+                    .with_name("collator2")
+                    .with_command("invalid command")
+                    .with_initial_balance(20000000)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 2000);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "collators['collator2'].command: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_multiple_errors_if_multiple_fields_are_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(2000)
+            .with_collator(|collator1| {
+                collator1
+                    .with_name("collator1")
+                    .with_command("invalid command")
+                    .invulnerable(true)
+                    .bootnode(true)
+                    .with_resources(|resources| {
+                        resources
+                            .with_limit_cpu("invalid")
+                            .with_request_memory("1G")
+                    })
+            })
+            .with_collator(|collator2| {
+                collator2
+                    .with_name("collator2")
+                    .with_command("command2")
+                    .with_image("invalid.image")
+                    .with_initial_balance(20000000)
+            })
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 2000);
+        assert_eq!(errors.len(), 5);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            r"collators['collator1'].resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'",
+        );
+        assert_eq!(
+            errors.get(2).unwrap().to_string(),
+            "collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+        assert_eq!(
+            errors.get(3).unwrap().to_string(),
+            "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+        assert_eq!(
+            errors.get(4).unwrap().to_string(),
+            "bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
         );
     }
 }

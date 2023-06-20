@@ -446,7 +446,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn node_config_builder_should_returns_a_node_config_correctly() {
+    fn node_config_builder_should_succeeds_and_returns_a_node_config() {
         let node_config = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_command("mycommand")
@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_an_error_and_node_name_if_command_is_invalid() {
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_command_is_invalid() {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_command("invalid command")
@@ -531,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_an_error_and_node_name_if_image_is_invalid() {
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_image_is_invalid() {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_image("myinvalid.image")
@@ -547,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_an_error_and_node_name_if_one_bootnode_address_is_invalid(
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_one_bootnode_address_is_invalid(
     ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
@@ -564,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_mulitle_errors_and_node_name_if_multiple_bootnode_address_are_invalid(
+    fn node_config_builder_should_fails_and_returns_mulitle_errors_and_node_name_if_multiple_bootnode_address_are_invalid(
     ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_an_error_and_node_name_if_resources_has_an_error() {
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_resources_has_an_error() {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_resources(|resources| resources.with_limit_cpu("invalid"))
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_multiple_errors_and_node_name_if_resources_has_multiple_errors(
+    fn node_config_builder_should_fails_and_returns_multiple_errors_and_node_name_if_resources_has_multiple_errors(
     ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_returns_multiple_errors_and_node_name_if_multiple_fields_have_errors(
+    fn node_config_builder_should_fails_and_returns_multiple_errors_and_node_name_if_multiple_fields_have_errors(
     ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")

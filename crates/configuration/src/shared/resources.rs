@@ -178,7 +178,7 @@ impl ResourcesBuilder {
 mod tests {
     use super::*;
 
-    macro_rules! resources_quantity_unit_test_impl {
+    macro_rules! impl_resources_quantity_unit_test {
         ($val:literal) => {{
             let resources = ResourcesBuilder::new()
                 .with_request_memory($val)
@@ -193,77 +193,77 @@ mod tests {
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_string_a_resource_quantity_without_unit() {
-        resources_quantity_unit_test_impl!("1000");
+    fn converting_a_string_a_resource_quantity_without_unit_should_succeeds() {
+        impl_resources_quantity_unit_test!("1000");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_m_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("100m");
+    fn converting_a_str_with_m_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("100m");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_K_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("50K");
+    fn converting_a_str_with_K_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("50K");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_M_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("100M");
+    fn converting_a_str_with_M_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("100M");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_G_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("1G");
+    fn converting_a_str_with_G_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("1G");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_T_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("0.01T");
+    fn converting_a_str_with_T_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("0.01T");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_P_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("0.00001P");
+    fn converting_a_str_with_P_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("0.00001P");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_E_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("0.000000001E");
+    fn converting_a_str_with_E_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("0.000000001E");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_Ki_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("50Ki");
+    fn converting_a_str_with_Ki_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("50Ki");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_Mi_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("100Mi");
+    fn converting_a_str_with_Mi_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("100Mi");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_Gi_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("1Gi");
+    fn converting_a_str_with_Gi_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("1Gi");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_Ti_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("0.01Ti");
+    fn converting_a_str_with_Ti_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("0.01Ti");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_Pi_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("0.00001Pi");
+    fn converting_a_str_with_Pi_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("0.00001Pi");
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_with_Ei_unit_into_a_resource_quantity() {
-        resources_quantity_unit_test_impl!("0.000000001Ei");
+    fn converting_a_str_with_Ei_unit_into_a_resource_quantity_should_succeeds() {
+        impl_resources_quantity_unit_test!("0.000000001Ei");
     }
 
     #[test]
-    fn resources_config_builder_should_returns_a_resources_config_correctly() {
+    fn resources_config_builder_should_succeeds_and_returns_a_resources_config() {
         let resources = ResourcesBuilder::new()
             .with_request_memory("200M")
             .with_request_cpu("1G")
@@ -279,54 +279,73 @@ mod tests {
     }
 
     #[test]
-    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_request_memory() {
+    fn resources_config_builder_should_fails_and_returns_an_error_if_couldnt_parse_request_memory() {
         let resources_builder = ResourcesBuilder::new().with_request_memory("invalid");
 
-        let got = resources_builder.build().err().unwrap();
+        let errors = resources_builder.build().err().unwrap();
 
-        assert_eq!(got.len(), 1);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            got.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             r"request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 
     #[test]
-    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_request_cpu() {
+    fn resources_config_builder_should_fails_and_returns_an_error_if_couldnt_parse_request_cpu() {
         let resources_builder = ResourcesBuilder::new().with_request_cpu("invalid");
 
-        let got = resources_builder.build().err().unwrap();
+        let errors = resources_builder.build().err().unwrap();
 
-        assert_eq!(got.len(), 1);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            got.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             r"request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 
     #[test]
-    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_limit_memory() {
+    fn resources_config_builder_should_fails_and_returns_an_error_if_couldnt_parse_limit_memory() {
         let resources_builder = ResourcesBuilder::new().with_limit_memory("invalid");
 
-        let got = resources_builder.build().err().unwrap();
+        let errors = resources_builder.build().err().unwrap();
 
-        assert_eq!(got.len(), 1);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            got.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             r"limit_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 
     #[test]
-    fn resources_config_builder_should_returns_an_error_if_couldnt_parse_limit_cpu() {
+    fn resources_config_builder_should_fails_and_returns_an_error_if_couldnt_parse_limit_cpu() {
         let resources_builder = ResourcesBuilder::new().with_limit_cpu("invalid");
 
-        let got = resources_builder.build().err().unwrap();
+        let errors = resources_builder.build().err().unwrap();
 
-        assert_eq!(got.len(), 1);
+        assert_eq!(errors.len(), 1);
         assert_eq!(
-            got.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn resources_config_builder_should_fails_and_returns_multiple_error_if_couldnt_parse_multiple_fields() {
+        let resources_builder = ResourcesBuilder::new()
+            .with_limit_cpu("invalid")
+            .with_request_memory("invalid");
+
+        let errors = resources_builder.build().err().unwrap();
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            r"request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 }

@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             "command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -541,7 +541,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             "image: 'myinvalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
     }
@@ -558,13 +558,13 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
     }
 
     #[test]
-    fn node_config_builder_should_returns_errors_and_node_name_if_multiple_bootnode_address_are_invalid(
+    fn node_config_builder_should_returns_mulitle_errors_and_node_name_if_multiple_bootnode_address_are_invalid(
     ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
@@ -574,14 +574,12 @@ mod tests {
 
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 2);
-        // first error
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
-        // second error
         assert_eq!(
-            errors.last().unwrap().to_string(),
+            errors.get(1).unwrap().to_string(),
             "bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
         );
     }
@@ -597,13 +595,14 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 
     #[test]
-    fn node_config_builder_should_returns_errors_and_node_name_if_resources_has_multiple_errors() {
+    fn node_config_builder_should_returns_multiple_errors_and_node_name_if_resources_has_multiple_errors(
+    ) {
         let (node_name, errors) = NodeConfigBuilder::new(None)
             .with_name("node")
             .with_resources(|resources| {
@@ -617,11 +616,46 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
         assert_eq!(
-            errors.last().unwrap().to_string(),
+            errors.get(1).unwrap().to_string(),
+            r"resources.request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_returns_multiple_errors_and_node_name_if_multiple_fields_have_errors(
+    ) {
+        let (node_name, errors) = NodeConfigBuilder::new(None)
+            .with_name("node")
+            .with_command("invalid command")
+            .with_image("myinvalid.image")
+            .with_resources(|resources| {
+                resources
+                    .with_limit_cpu("invalid")
+                    .with_request_memory("invalid")
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 4);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "command: 'invalid command' shouldn't contains whitespace"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "image: 'myinvalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+        assert_eq!(
+            errors.get(2).unwrap().to_string(),
+            r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+        assert_eq!(
+            errors.get(3).unwrap().to_string(),
             r"resources.request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }

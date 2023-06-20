@@ -144,14 +144,114 @@ mod tests {
     use super::*;
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_without_whitespaces_into_a_chain() {
+    fn converting_a_str_without_whitespaces_into_a_chain_should_succeeds() {
         let got: Result<Chain, ConversionError> = "mychain".try_into();
 
         assert_eq!(got.unwrap().as_str(), "mychain");
     }
 
     #[test]
-    fn we_shouldnt_be_able_to_convert_a_str_with_whitespaces_into_a_chain() {
+    fn converting_a_str_containing_tag_name_into_an_image_should_succeeds() {
+        let got: Result<Image, ConversionError> = "myimage".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "myimage");
+    }
+
+    #[test]
+    fn converting_a_str_containing_tag_name_and_tag_version_into_an_image_should_succeeds() {
+        let got: Result<Image, ConversionError> = "myimage:version".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "myimage:version");
+    }
+
+    #[test]
+    fn converting_a_str_containing_hostname_and_tag_name_into_an_image_should_succeeds() {
+        let got: Result<Image, ConversionError> = "myrepository.com/myimage".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage");
+    }
+
+    #[test]
+    fn converting_a_str_containing_hostname_tag_name_and_tag_version_into_an_image_should_succeeds(
+    ) {
+        let got: Result<Image, ConversionError> = "myrepository.com/myimage:version".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage:version");
+    }
+
+    #[test]
+    fn converting_a_str_containing_ip_and_tag_name_into_an_image_should_succeeds() {
+        let got: Result<Image, ConversionError> = "myrepository.com/myimage".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage");
+    }
+
+    #[test]
+    fn converting_a_str_containing_ip_tag_name_and_tag_version_into_an_image_should_succeeds(
+    ) {
+        let got: Result<Image, ConversionError> = "127.0.0.1/myimage:version".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "127.0.0.1/myimage:version");
+    }
+
+    #[test]
+    fn converting_a_str_without_whitespaces_into_a_command_should_succeeds() {
+        let got: Result<Command, ConversionError> = "mycommand".try_into();
+
+        assert_eq!(got.unwrap().as_str(), "mycommand");
+    }
+
+    #[test]
+    fn converting_an_url_into_an_asset_location_should_succeeds() {
+        let url = Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap();
+        let got: AssetLocation = url.clone().into();
+
+        assert!(matches!(got, AssetLocation::Url(value) if value == url));
+    }
+
+    #[test]
+    fn converting_a_pathbuf_into_an_asset_location_should_succeeds() {
+        let pathbuf = PathBuf::from_str("/tmp/path/to/my/file").unwrap();
+        let got: AssetLocation = pathbuf.clone().into();
+
+        assert!(matches!(got, AssetLocation::FilePath(value) if value == pathbuf));
+    }
+
+    #[test]
+    fn converting_a_str_into_an_url_asset_location_should_succeeds() {
+        let url = "https://mycloudstorage.com/path/to/my/file.tgz";
+        let got: AssetLocation = url.into();
+
+        assert!(matches!(got, AssetLocation::Url(value) if value == Url::from_str(url).unwrap()));
+    }
+
+    #[test]
+    fn converting_a_str_into_an_filepath_asset_location_should_succeeds() {
+        let filepath = "/tmp/path/to/my/file";
+        let got: AssetLocation = filepath.into();
+
+        assert!(matches!(
+            got,
+            AssetLocation::FilePath(value) if value == PathBuf::from_str(filepath).unwrap()
+        ));
+    }
+
+    #[test]
+    fn converting_a_str_into_an_flag_arg_should_succeeds() {
+        let got: Arg = "myflag".into();
+
+        assert!(matches!(got, Arg::Flag(flag) if flag == "myflag"));
+    }
+
+    #[test]
+    fn converting_a_str_tuple_into_an_option_arg_should_succeeds() {
+        let got: Arg = ("name", "value").into();
+
+        assert!(matches!(got, Arg::Option(name, value) if name == "name" && value == "value"));
+    }
+
+    #[test]
+    fn converting_a_str_with_whitespaces_into_a_chain_should_fails() {
         let got: Result<Chain, ConversionError> = "my chain".try_into();
 
         assert!(matches!(
@@ -165,50 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_containing_tag_name_into_an_image() {
-        let got: Result<Image, ConversionError> = "myimage".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "myimage");
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_containing_tag_name_and_tag_version_into_an_image() {
-        let got: Result<Image, ConversionError> = "myimage:version".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "myimage:version");
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_containing_hostname_and_tag_name_into_an_image() {
-        let got: Result<Image, ConversionError> = "myrepository.com/myimage".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage");
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_containing_hostname_tag_name_and_tag_version_into_an_image(
-    ) {
-        let got: Result<Image, ConversionError> = "myrepository.com/myimage:version".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage:version");
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_containing_ip_and_tag_name_into_an_image() {
-        let got: Result<Image, ConversionError> = "myrepository.com/myimage".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "myrepository.com/myimage");
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_containing_ip_tag_name_and_tag_version_into_an_image() {
-        let got: Result<Image, ConversionError> = "127.0.0.1/myimage:version".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "127.0.0.1/myimage:version");
-    }
-
-    #[test]
-    fn we_shouldnt_be_able_to_convert_a_str_containing_only_ip_into_an_image() {
+    fn converting_a_str_containing_only_ip_into_an_image_should_fails() {
         let got: Result<Image, ConversionError> = "127.0.0.1".try_into();
 
         assert!(matches!(
@@ -222,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn we_shouldnt_be_able_to_convert_a_str_containing_only_ip_and_tag_version_into_an_image() {
+    fn converting_a_str_containing_only_ip_and_tag_version_into_an_image_should_fails() {
         let got: Result<Image, ConversionError> = "127.0.0.1:version".try_into();
 
         assert!(matches!(
@@ -231,8 +288,9 @@ mod tests {
         ));
         assert_eq!(got.unwrap_err().to_string(), "'127.0.0.1:version' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'");
     }
+
     #[test]
-    fn we_shouldnt_be_able_to_convert_a_str_containing_only_hostname_into_an_image() {
+    fn converting_a_str_containing_only_hostname_into_an_image_should_fails() {
         let got: Result<Image, ConversionError> = "myrepository.com".try_into();
 
         assert!(matches!(
@@ -243,8 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn we_shouldnt_be_able_to_convert_a_str_containing_only_hostname_and_tag_version_into_an_image()
-    {
+    fn converting_a_str_containing_only_hostname_and_tag_version_into_an_image_should_fails() {
         let got: Result<Image, ConversionError> = "myrepository.com:version".try_into();
 
         assert!(matches!(
@@ -255,14 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn we_should_be_able_to_convert_a_str_without_whitespaces_into_a_command() {
-        let got: Result<Command, ConversionError> = "mycommand".try_into();
-
-        assert_eq!(got.unwrap().as_str(), "mycommand");
-    }
-
-    #[test]
-    fn we_shouldnt_be_able_to_convert_a_str_with_whitespaces_into_a_command() {
+    fn converting_a_str_with_whitespaces_into_a_command_should_fails() {
         let got: Result<Command, ConversionError> = "my command".try_into();
 
         assert!(matches!(
@@ -273,54 +323,5 @@ mod tests {
             got.unwrap_err().to_string(),
             "'my command' shouldn't contains whitespace"
         );
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_an_url_into_an_asset_location() {
-        let url = Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap();
-        let got: AssetLocation = url.clone().into();
-
-        assert!(matches!(got, AssetLocation::Url(value) if value == url));
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_pathbuf_into_an_asset_location() {
-        let pathbuf = PathBuf::from_str("/tmp/path/to/my/file").unwrap();
-        let got: AssetLocation = pathbuf.clone().into();
-
-        assert!(matches!(got, AssetLocation::FilePath(value) if value == pathbuf));
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_into_an_url_asset_location() {
-        let url = "https://mycloudstorage.com/path/to/my/file.tgz";
-        let got: AssetLocation = url.into();
-
-        assert!(matches!(got, AssetLocation::Url(value) if value == Url::from_str(url).unwrap()));
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_into_an_filepath_asset_location() {
-        let filepath = "/tmp/path/to/my/file";
-        let got: AssetLocation = filepath.into();
-
-        assert!(matches!(
-            got,
-            AssetLocation::FilePath(value) if value == PathBuf::from_str(filepath).unwrap()
-        ));
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_into_an_flag_arg() {
-        let got: Arg = "myflag".into();
-
-        assert!(matches!(got, Arg::Flag(flag) if flag == "myflag"));
-    }
-
-    #[test]
-    fn we_should_be_able_to_convert_a_str_tuple_into_an_option_arg() {
-        let got: Arg = ("name", "value").into();
-
-        assert!(matches!(got, Arg::Option(name, value) if name == "name" && value == "value"));
     }
 }

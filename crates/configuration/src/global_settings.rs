@@ -155,7 +155,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn global_settings_config_builder_should_build_a_new_global_settings_config_correctly() {
+    fn global_settings_config_builder_should_succeeds_and_returns_a_global_settings_config() {
         let global_settings_config = GlobalSettingsBuilder::new()
             .with_bootnodes_addresses(vec![
                 "/ip4/10.41.122.55/tcp/45421",
@@ -188,7 +188,8 @@ mod tests {
     }
 
     #[test]
-    fn global_settings_builder_should_returns_an_error_if_one_bootnode_address_is_invalid() {
+    fn global_settings_builder_should_fails_and_returns_an_error_if_one_bootnode_address_is_invalid(
+    ) {
         let errors = GlobalSettingsBuilder::new()
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
             .build()
@@ -196,33 +197,32 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
     }
 
     #[test]
-    fn global_settings_builder_should_returns_errors_if_multiple_bootnode_address_are_invalid() {
+    fn global_settings_builder_should_fails_and_returns_multiple_errors_if_multiple_bootnodes_addresses_are_invalid(
+    ) {
         let errors = GlobalSettingsBuilder::new()
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .build()
             .unwrap_err();
 
         assert_eq!(errors.len(), 2);
-        // first error
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
             "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
-        // second error
         assert_eq!(
-            errors.last().unwrap().to_string(),
+            errors.get(1).unwrap().to_string(),
             "global_settings.bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
         );
     }
 
     #[test]
-    fn global_settings_builder_should_returns_error_if_local_ip_is_invalid() {
+    fn global_settings_builder_should_fails_and_returns_an_error_if_local_ip_is_invalid() {
         let errors = GlobalSettingsBuilder::new()
             .with_local_ip("invalid")
             .build()
@@ -230,7 +230,31 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.first().unwrap().to_string(),
+            errors.get(0).unwrap().to_string(),
+            "global_settings.local_ip: invalid IP address syntax"
+        );
+    }
+
+    #[test]
+    fn global_settings_builder_should_fails_and_returns_multiple_errors_if_multiple_fields_are_invalid(
+    ) {
+        let errors = GlobalSettingsBuilder::new()
+            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_local_ip("invalid")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 3);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "global_settings.bootnodes_addresses[1]: '//10.42.153.10/tcp/43111' unknown protocol string: "
+        );
+        assert_eq!(
+            errors.get(2).unwrap().to_string(),
             "global_settings.local_ip: invalid IP address syntax"
         );
     }

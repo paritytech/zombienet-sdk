@@ -9,6 +9,7 @@ use std::{
 use async_trait::async_trait;
 use serde::Serialize;
 use support::fs::FileSystem;
+use sysinfo::{ProcessExt, System, SystemExt};
 use tokio::process::Command;
 
 use super::Provider;
@@ -288,13 +289,45 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(format!("tail -f {}/{}.log", self.tmp_dir, name))
     }
 
-    async fn pause(&self, _node_name: &str) -> Result<(), ProviderError> {
-        // TODO: impl using run_command
+    // TODO: Add test
+    async fn pause(&self, node_name: &str) -> Result<(), ProviderError> {
+        let process_id: Result<u32, ProviderError> = match self.process_map.get(node_name) {
+            Some(process) => Ok(process.pid),
+            None => Err(ProviderError::MissingNodeInfo(
+                node_name.to_owned(),
+                "process".into(),
+            )),
+        };
+
+        let _ = self
+            .run_command(
+                [format!("kill -TSTP {}", process_id.unwrap())].to_vec(),
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
+            )
+            .await?;
         Ok(())
     }
 
-    async fn resume(&self, _node_name: &str) -> Result<(), ProviderError> {
-        // TODO: impl using run_command
+    // TODO: Add test
+    async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
+        let process_id: Result<u32, ProviderError> = match self.process_map.get(node_name) {
+            Some(process) => Ok(process.pid),
+            None => Err(ProviderError::MissingNodeInfo(
+                node_name.to_owned(),
+                "process".into(),
+            )),
+        };
+
+        let _ = self
+            .run_command(
+                [format!("kill -CONT {}", process_id.unwrap())].to_vec(),
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
+            )
+            .await?;
         Ok(())
     }
 

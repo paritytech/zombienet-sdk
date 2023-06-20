@@ -1,9 +1,6 @@
 use std::{
     self,
-    collections::{
-        hash_map::Entry::{Occupied, Vacant},
-        HashMap,
-    },
+    collections::HashMap,
     fmt::Debug,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -11,20 +8,15 @@ use std::{
 
 use async_trait::async_trait;
 use serde::Serialize;
-use support::{fs::FileSystem, net::download_file};
-use tokio::{
-    process::Command,
-    time::{sleep, Duration},
-};
+use support::fs::FileSystem;
+use tokio::process::Command;
 
 use super::Provider;
 use crate::{
     errors::ProviderError,
     shared::{
         constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
-        types::{
-            FileMap, NativeRunCommandOptions, Node, Port, Process, RunCommandResponse, ZombieRole,
-        },
+        types::{FileMap, NativeRunCommandOptions, Node, Port, Process, RunCommandResponse},
     },
 };
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -61,7 +53,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
         tmp_dir: impl Into<String>,
         filesystem: T,
     ) -> Self {
-        let e = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "error");
+        let _e = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "error");
 
         let tmp_dir: String = tmp_dir.into();
         let process_map: HashMap<String, Process> = HashMap::new();
@@ -139,10 +131,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     async fn spawn_node(
         &mut self,
-        node: Node,
-        files_inject: Vec<FileMap>,
-        keystore: &str,
-        db_snapshot: &str,
+        _node: Node,
+        _files_inject: Vec<FileMap>,
+        _keystore: &str,
+        _db_snapshot: &str,
     ) -> Result<(), ProviderError> {
         // TODO: We should implement the logic to go from the `Node` (nodeSpec)
         // to the running node, since we will no expose anymore the underline `Def`.
@@ -153,9 +145,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     async fn spawn_temp(
         &self,
-        node: Node,
-        files_inject: Vec<FileMap>,
-        files_get: Vec<FileMap>,
+        _node: Node,
+        _files_inject: Vec<FileMap>,
+        _files_get: Vec<FileMap>,
     ) -> Result<(), ProviderError> {
         // TODO: We should implement the logic to go from the `Node` (nodeSpec)
         // to the running node, since we will no expose anymore the underline `Def`.
@@ -296,17 +288,17 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok(format!("tail -f {}/{}.log", self.tmp_dir, name))
     }
 
-    async fn pause(&self, node_name: &str) -> Result<(), ProviderError> {
+    async fn pause(&self, _node_name: &str) -> Result<(), ProviderError> {
         // TODO: impl using run_command
         Ok(())
     }
 
-    async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
+    async fn resume(&self, _node_name: &str) -> Result<(), ProviderError> {
         // TODO: impl using run_command
         Ok(())
     }
 
-    async fn restart(&mut self, node_name: &str, after_secs: u16) -> Result<bool, ProviderError> {
+    async fn restart(&mut self, _node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
         // TODO: impl using run_command
         // use &mut here since we mostly need to update the the pid/maps
         Ok(true)
@@ -317,7 +309,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         Ok((LOCALHOST, host_port))
     }
 
-    async fn get_node_ip(&self, node_name: &str) -> Result<IpAddr, ProviderError> {
+    async fn get_node_ip(&self, _node_name: &str) -> Result<IpAddr, ProviderError> {
         Ok(LOCALHOST)
     }
 
@@ -347,7 +339,6 @@ mod tests {
     use support::fs::mock::{MockError, MockFilesystem, Operation};
 
     use super::*;
-    use crate::shared::types::{PodLabels, PodMetadata, PodSpec};
 
     #[test]
     fn new_native_provider() {

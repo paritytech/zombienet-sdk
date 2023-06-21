@@ -54,7 +54,6 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
         tmp_dir: impl Into<String>,
         filesystem: T,
     ) -> Self {
-        let _e = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "error");
 
         let tmp_dir: String = tmp_dir.into();
         let process_map: HashMap<String, Process> = HashMap::new();

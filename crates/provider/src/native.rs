@@ -359,12 +359,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .arg(process.command.clone())
             .envs(&mapped_env)
             .spawn()
-            .map_err(|e| match e {
-                std::io::Error { .. } if e.kind() == std::io::ErrorKind::NotFound => {
-                    ProviderError::ErrorSpawningNode(e.to_string())
-                },
-                _ => ProviderError::ErrorSpawningNode(e.to_string()),
-            })?;
+            .map_err(|e| ProviderError::ErrorSpawningNode(e.to_string()))?;
 
         Ok(true)
     }

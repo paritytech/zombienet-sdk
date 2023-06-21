@@ -32,7 +32,7 @@ impl NetworkConfig {
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
-            .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it")
+            .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues")
     }
 
     pub fn parachains(&self) -> Vec<&ParachainConfig> {

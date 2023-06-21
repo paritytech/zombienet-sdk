@@ -1,4 +1,4 @@
-use std::{error::Error, net::IpAddr, str::FromStr};
+use std::{error::Error, fmt::Display, net::IpAddr, str::FromStr};
 
 use multiaddr::Multiaddr;
 
@@ -77,7 +77,7 @@ impl GlobalSettingsBuilder {
 
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
-        T: TryInto<Multiaddr> + ToString + Copy,
+        T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
     {
         let mut addrs = vec![];

@@ -201,7 +201,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
             config: RelaychainConfig {
                 chain: ""
                     .try_into()
-                    .expect("empty string should be valid. this is a bug, please report it"),
+                    .expect("empty string should be valid. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
                 default_command: None,
                 default_image: None,
                 default_resources: None,

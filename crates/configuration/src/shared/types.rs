@@ -48,7 +48,7 @@ impl TryFrom<&str> for Image {
             static ref RE: Regex = Regex::new(&format!(
                 "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
             ))
-            .expect("should compile with success. this is a bug, please report it");
+            .expect("should compile with success. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues");
         };
 
         if !RE.is_match(value) {

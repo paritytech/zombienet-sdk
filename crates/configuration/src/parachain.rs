@@ -1,4 +1,4 @@
-use std::{error::Error, marker::PhantomData};
+use std::{error::Error, fmt::Display, marker::PhantomData};
 
 use multiaddr::Multiaddr;
 
@@ -321,7 +321,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
-        T: TryInto<Multiaddr> + ToString + Copy,
+        T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
     {
         let mut addrs = vec![];

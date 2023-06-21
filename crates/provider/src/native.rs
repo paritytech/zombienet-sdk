@@ -289,17 +289,17 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn pause(&self, node_name: &str) -> Result<(), ProviderError> {
-        let process_id: Result<u32, ProviderError> = match self.process_map.get(node_name) {
-            Some(process) => Ok(process.pid),
-            None => Err(ProviderError::MissingNodeInfo(
+        let process = self
+            .process_map
+            .get(node_name)
+            .ok_or(ProviderError::MissingNodeInfo(
                 node_name.to_owned(),
                 "process".into(),
-            )),
-        };
+            ))?;
 
         let _ = self
             .run_command(
-                vec![format!("kill -TSTP {}", process_id.unwrap())],
+                vec![format!("kill -STOP {}", process.pid)],
                 NativeRunCommandOptions {
                     is_failure_allowed: true,
                 },
@@ -310,17 +310,17 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
-        let process_id: Result<u32, ProviderError> = match self.process_map.get(node_name) {
-            Some(process) => Ok(process.pid),
-            None => Err(ProviderError::MissingNodeInfo(
+        let process = self
+            .process_map
+            .get(node_name)
+            .ok_or(ProviderError::MissingNodeInfo(
                 node_name.to_owned(),
                 "process".into(),
-            )),
-        };
+            ))?;
 
         let _ = self
             .run_command(
-                vec![format!("kill -CONT {}", process_id.unwrap())],
+                vec![format!("kill -CONT {}", process.pid)],
                 NativeRunCommandOptions {
                     is_failure_allowed: true,
                 },
@@ -337,7 +337,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .ok_or(ProviderError::MissingNodeInfo(
                 node_name.to_owned(),
                 "process".into(),
-            ));
+            ))?;
         self.run_command(
             [format!("kill -9 {:?}", pid)].to_vec(),
             NativeRunCommandOptions {

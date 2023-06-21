@@ -354,8 +354,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
 
-        Command::new(process.command.clone())
+        Command::new(self.command.clone())
             .arg("-c")
+            .arg(process.command.clone())
             .envs(&mapped_env)
             .spawn()
             .map_err(|e| match e {

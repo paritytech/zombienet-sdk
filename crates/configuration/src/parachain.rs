@@ -424,7 +424,7 @@ mod tests {
         let &collator2 = parachain_config.collators().last().unwrap();
         assert_eq!(collator2.name(), "collator2");
         assert_eq!(collator2.command().unwrap().as_str(), "command2");
-        assert!(collator2.is_validator(), "node2");
+        assert!(collator2.is_validator());
         assert_eq!(parachain_config.chain().unwrap().as_str(), "mychainname");
         assert_eq!(
             parachain_config.registration_strategy().unwrap(),

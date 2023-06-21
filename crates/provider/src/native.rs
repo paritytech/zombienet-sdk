@@ -354,17 +354,16 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
 
-        let res = Command::new(self.command.clone())
+        Command::new(process.command.clone())
             .arg("-c")
             .envs(&mapped_env)
-            .spawn();
-
-        let restarted_process = match res {
-            Ok(process) => process,
-            Err(e) => return Err(ProviderError::ErrorSpawningNode(e.to_string())),
-        };
-
-        process.pid = restarted_process.id().unwrap();
+            .spawn()
+            .map_err(|e| match e {
+                std::io::Error { .. } if e.kind() == std::io::ErrorKind::NotFound => {
+                    ProviderError::ErrorSpawningNode(e.to_string())
+                },
+                _ => ProviderError::ErrorSpawningNode(e.to_string()),
+            })?;
 
         Ok(true)
     }

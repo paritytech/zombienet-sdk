@@ -10,7 +10,7 @@ use std::{
 use async_trait::async_trait;
 use serde::Serialize;
 use support::fs::FileSystem;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 use super::Provider;
 use crate::{
@@ -331,7 +331,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn restart(&mut self, node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
-        let pid = self
+        let process = self
             .process_map
             .get(node_name)
             .ok_or(ProviderError::MissingNodeInfo(
@@ -339,27 +339,38 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 "process".into(),
             ))?;
         self.run_command(
-            [format!("kill -9 {:?}", pid)].to_vec(),
+            vec![format!("kill -9 {:?}", process.pid)],
             NativeRunCommandOptions {
                 is_failure_allowed: true,
             },
         )
         .await?;
 
-        let Some(process) = self.process_map.get_mut(node_name) else {
-          return Err(ProviderError::MissingNodeInfo(
-                      node_name.to_owned(),
-                      "process".into(),));
-      };
+        let process: &mut Process =
+            self.process_map
+                .get_mut(node_name)
+                .ok_or(ProviderError::MissingNodeInfo(
+                    node_name.to_owned(),
+                    "process".into(),
+                ))?;
 
         let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
 
-        Command::new(self.command.clone())
+        let child_process: Child = Command::new(self.command.clone())
             .arg("-c")
             .arg(process.command.clone())
             .envs(&mapped_env)
             .spawn()
             .map_err(|e| ProviderError::ErrorSpawningNode(e.to_string()))?;
+
+        let pid = if let Some(pid) = child_process.id() {
+            pid
+        } else {
+            return Err(ProviderError::ErrorSpawningNode(
+                "Failed to get pid".to_string(),
+            ));
+        };
+        process.pid = pid;
 
         Ok(true)
     }

@@ -54,8 +54,6 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
         tmp_dir: impl Into<String>,
         filesystem: T,
     ) -> Self {
-        let _e = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "error");
-
         let tmp_dir: String = tmp_dir.into();
         let process_map: HashMap<String, Process> = HashMap::new();
 
@@ -333,35 +331,30 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn restart(&mut self, node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
-        // let process: Result<Process, ProviderError> = match self.process_map.get_mut(node_name) {
-        //     Some(pr) => Ok(pr),
-        //     None => Err(ProviderError::MissingNodeInfo(
-        //         node_name.to_owned(),
-        //         "process".into(),
-        //     )),
-        // };
-
-        // let mut process = process?;
-
-        let Some(ref mut process) = self.process_map.get_mut("demo") else {
-            return Err(ProviderError::MissingNodeInfo(
-                        node_name.to_owned(),
-                        "process".into(),));
-        };
-
-        let pid = process.pid.clone();
-
+        let pid = self
+            .process_map
+            .get(node_name)
+            .ok_or(ProviderError::MissingNodeInfo(
+                node_name.to_owned(),
+                "process".into(),
+            ));
         self.run_command(
-            [format!("kill -9 {}", pid)].to_vec(),
+            [format!("kill -9 {:?}", pid)].to_vec(),
             NativeRunCommandOptions {
                 is_failure_allowed: true,
             },
         )
         .await?;
 
+        let Some(process) = self.process_map.get_mut(node_name) else {
+          return Err(ProviderError::MissingNodeInfo(
+                      node_name.to_owned(),
+                      "process".into(),));
+      };
+
         let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
 
-        let res = Command::new(&process.command)
+        let res = Command::new(self.command.clone())
             .arg("-c")
             .envs(&mapped_env)
             .spawn();

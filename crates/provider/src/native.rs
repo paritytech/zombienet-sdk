@@ -301,7 +301,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         let _ = self
             .run_command(
-                [format!("kill -TSTP {}", process_id.unwrap())].to_vec(),
+                vec![format!("kill -TSTP {}", process_id.unwrap())],
                 NativeRunCommandOptions {
                     is_failure_allowed: true,
                 },
@@ -322,7 +322,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
         let _ = self
             .run_command(
-                [format!("kill -CONT {}", process_id.unwrap())].to_vec(),
+                vec![format!("kill -CONT {}", process_id.unwrap())],
                 NativeRunCommandOptions {
                     is_failure_allowed: true,
                 },
@@ -333,31 +333,38 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn restart(&mut self, node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
-        let process: Result<Process, ProviderError> = match self.process_map.get(node_name) {
-            Some(pr) => Ok(pr.clone()),
-            None => Err(ProviderError::MissingNodeInfo(
-                node_name.to_owned(),
-                "process".into(),
-            )),
+        // let process: Result<Process, ProviderError> = match self.process_map.get_mut(node_name) {
+        //     Some(pr) => Ok(pr),
+        //     None => Err(ProviderError::MissingNodeInfo(
+        //         node_name.to_owned(),
+        //         "process".into(),
+        //     )),
+        // };
+
+        // let mut process = process?;
+
+        let Some(ref mut process) = self.process_map.get_mut("demo") else {
+            return Err(ProviderError::MissingNodeInfo(
+                        node_name.to_owned(),
+                        "process".into(),));
         };
 
-        let mut process = process?;
+        let pid = process.pid.clone();
 
-        let pid = process.pid;
-        let command = process.command.clone();
-
-        let _ = self
-            .run_command(
-                [format!("kill -9 {}", pid)].to_vec(),
-                NativeRunCommandOptions {
-                    is_failure_allowed: true,
-                },
-            )
-            .await?;
+        self.run_command(
+            [format!("kill -9 {}", pid)].to_vec(),
+            NativeRunCommandOptions {
+                is_failure_allowed: true,
+            },
+        )
+        .await?;
 
         let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
 
-        let res = Command::new(command).arg("-c").envs(&mapped_env).spawn();
+        let res = Command::new(&process.command)
+            .arg("-c")
+            .envs(&mapped_env)
+            .spawn();
 
         let restarted_process = match res {
             Ok(process) => process,

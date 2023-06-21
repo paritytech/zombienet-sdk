@@ -5,7 +5,7 @@ use crate::{
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::macros::states,
+    shared::{errors::ConfigError, helpers::merge_errors_vecs, macros::states},
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
@@ -32,7 +32,7 @@ impl NetworkConfig {
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
-            .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it")
+            .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues")
     }
 
     pub fn parachains(&self) -> Vec<&ParachainConfig> {
@@ -52,6 +52,7 @@ states! {
 #[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
+    errors: Vec<anyhow::Error>,
     _state: PhantomData<State>,
 }
 
@@ -59,20 +60,24 @@ impl Default for NetworkConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: NetworkConfig {
-                global_settings: GlobalSettingsBuilder::new().build(),
+                global_settings: GlobalSettingsBuilder::new().build().expect(
+                    "should have no errors for default builder. this is a bug, please report it",
+                ),
                 relaychain: None,
                 parachains: vec![],
                 hrmp_channels: vec![],
             },
+            errors: vec![],
             _state: PhantomData,
         }
     }
 }
 
 impl<A> NetworkConfigBuilder<A> {
-    fn transition<B>(config: NetworkConfig) -> NetworkConfigBuilder<B> {
+    fn transition<B>(config: NetworkConfig, errors: Vec<anyhow::Error>) -> NetworkConfigBuilder<B> {
         NetworkConfigBuilder {
             config,
+            errors,
             _state: PhantomData,
         }
     }
@@ -89,10 +94,16 @@ impl NetworkConfigBuilder<Initial> {
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
-        Self::transition(NetworkConfig {
-            relaychain: Some(f(RelaychainConfigBuilder::new()).build()),
-            ..self.config
-        })
+        match f(RelaychainConfigBuilder::new()).build() {
+            Ok(relaychain) => Self::transition(
+                NetworkConfig {
+                    relaychain: Some(relaychain),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, errors),
+        }
     }
 }
 
@@ -101,10 +112,16 @@ impl NetworkConfigBuilder<WithRelaychain> {
         self,
         f: fn(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
     ) -> Self {
-        Self::transition(NetworkConfig {
-            global_settings: f(GlobalSettingsBuilder::new()).build(),
-            ..self.config
-        })
+        match f(GlobalSettingsBuilder::new()).build() {
+            Ok(global_settings) => Self::transition(
+                NetworkConfig {
+                    global_settings,
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, merge_errors_vecs(self.errors, errors)),
+        }
     }
 
     pub fn with_parachain(
@@ -113,12 +130,25 @@ impl NetworkConfigBuilder<WithRelaychain> {
             ParachainConfigBuilder<parachain::Initial>,
         ) -> ParachainConfigBuilder<parachain::WithAtLeastOneCollator>,
     ) -> Self {
-        let new_parachain = f(ParachainConfigBuilder::new()).build();
-
-        Self::transition(NetworkConfig {
-            parachains: vec![self.config.parachains, vec![new_parachain]].concat(),
-            ..self.config
-        })
+        match f(ParachainConfigBuilder::new()).build() {
+            Ok(parachain) => Self::transition(
+                NetworkConfig {
+                    parachains: vec![self.config.parachains, vec![parachain]].concat(),
+                    ..self.config
+                },
+                self.errors,
+            ),
+            Err((para_id, errors)) => Self::transition(
+                self.config,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Parachain(para_id, error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 
     pub fn with_hrmp_channel(
@@ -129,14 +159,21 @@ impl NetworkConfigBuilder<WithRelaychain> {
     ) -> Self {
         let new_hrmp_channel = f(HrmpChannelConfigBuilder::new()).build();
 
-        Self::transition(NetworkConfig {
-            hrmp_channels: vec![self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
-            ..self.config
-        })
+        Self::transition(
+            NetworkConfig {
+                hrmp_channels: vec![self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
-    pub fn build(self) -> NetworkConfig {
-        self.config
+    pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
+        if !self.errors.is_empty() {
+            return Err(self.errors);
+        }
+
+        Ok(self.config)
     }
 }
 
@@ -145,7 +182,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn network_config_builder_should_build_a_new_network_config_correctly() {
+    fn network_config_builder_should_succeeds_and_returns_a_network_config() {
         let network_config = NetworkConfigBuilder::new()
             .with_relaychain(|relaychain| {
                 relaychain
@@ -153,7 +190,7 @@ mod tests {
                     .with_random_nominators_count(10)
                     .with_node(|node| {
                         node.with_name("node")
-                            .with_command("node command")
+                            .with_command("command")
                             .validator(true)
                     })
             })
@@ -163,7 +200,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
-                            .with_command("collator1 command")
+                            .with_command("command1")
                             .validator(true)
                     })
                     .with_initial_balance(100_000)
@@ -174,7 +211,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("collator2")
-                            .with_command("collator2 command")
+                            .with_command("command2")
                             .validator(true)
                     })
                     .with_initial_balance(0)
@@ -198,14 +235,15 @@ mod tests {
                     .with_network_spawn_timeout(1200)
                     .with_node_spawn_timeout(240)
             })
-            .build();
+            .build()
+            .unwrap();
 
         // relaychain
-        assert_eq!(network_config.relaychain().chain(), "polkadot");
+        assert_eq!(network_config.relaychain().chain().as_str(), "polkadot");
         assert_eq!(network_config.relaychain().nodes().len(), 1);
         let &node = network_config.relaychain().nodes().first().unwrap();
         assert_eq!(node.name(), "node");
-        assert_eq!(node.command().unwrap(), "node command");
+        assert_eq!(node.command().unwrap().as_str(), "command");
         assert!(node.is_validator());
         assert_eq!(
             network_config.relaychain().random_minators_count().unwrap(),
@@ -221,7 +259,7 @@ mod tests {
         assert_eq!(parachain1.collators().len(), 1);
         let &collator = parachain1.collators().first().unwrap();
         assert_eq!(collator.name(), "collator1");
-        assert_eq!(collator.command().unwrap(), "collator1 command");
+        assert_eq!(collator.command().unwrap().as_str(), "command1");
         assert!(collator.is_validator());
         assert_eq!(parachain1.initial_balance(), 100_000);
 
@@ -231,7 +269,7 @@ mod tests {
         assert_eq!(parachain2.collators().len(), 1);
         let &collator = parachain2.collators().first().unwrap();
         assert_eq!(collator.name(), "collator2");
-        assert_eq!(collator.command().unwrap(), "collator2 command");
+        assert_eq!(collator.command().unwrap().as_str(), "command2");
         assert!(collator.is_validator());
         assert_eq!(parachain2.initial_balance(), 0);
 
@@ -258,5 +296,227 @@ mod tests {
             1200
         );
         assert_eq!(network_config.global_settings().node_spawn_timeout(), 240);
+    }
+
+    #[test]
+    fn network_config_builder_should_fails_and_returns_multiple_errors_if_relaychain_is_invalid() {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_random_nominators_count(10)
+                    .with_default_image("invalid.image")
+                    .with_node(|node| {
+                        node.with_name("node")
+                            .with_command("invalid command")
+                            .validator(true)
+                    })
+            })
+            .with_parachain(|parachain1| {
+                parachain1
+                    .with_id(1)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator1")
+                            .with_command("command1")
+                            .validator(true)
+                    })
+                    .with_initial_balance(100_000)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "relaychain.default_image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "relaychain.nodes['node'].command: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn network_config_builder_should_fails_and_returns_multiple_errors_if_parachain_is_invalid() {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_random_nominators_count(10)
+                    .with_node(|node| {
+                        node.with_name("node")
+                            .with_command("command")
+                            .validator(true)
+                    })
+            })
+            .with_parachain(|parachain1| {
+                parachain1
+                    .with_id(1000)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator1")
+                            .with_command("invalid command")
+                            .with_image("invalid.image")
+                            .validator(true)
+                    })
+                    .with_initial_balance(100_000)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "parachain[1000].collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "parachain[1000].collators['collator1'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+    }
+
+    #[test]
+    fn network_config_builder_should_fails_and_returns_multiple_errors_if_multiple_parachains_are_invalid(
+    ) {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_random_nominators_count(10)
+                    .with_node(|node| {
+                        node.with_name("node")
+                            .with_command("command")
+                            .validator(true)
+                    })
+            })
+            .with_parachain(|parachain1| {
+                parachain1
+                    .with_id(1000)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator")
+                            .with_command("invalid command")
+                            .validator(true)
+                    })
+                    .with_initial_balance(100_000)
+            })
+            .with_parachain(|parachain2| {
+                parachain2
+                    .with_id(2000)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator")
+                            .validator(true)
+                            .with_resources(|resources| {
+                                resources
+                                    .with_limit_cpu("1000m")
+                                    .with_request_memory("1Gi")
+                                    .with_request_cpu("invalid")
+                            })
+                    })
+                    .with_initial_balance(100_000)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "parachain[1000].collators['collator'].command: 'invalid command' shouldn't contains whitespace"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "parachain[2000].collators['collator'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn network_config_builder_should_fails_and_returns_multiple_errors_if_global_settings_is_invalid(
+    ) {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_random_nominators_count(10)
+                    .with_node(|node| {
+                        node.with_name("node")
+                            .with_command("command")
+                            .validator(true)
+                    })
+            })
+            .with_parachain(|parachain1| {
+                parachain1
+                    .with_id(1000)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator")
+                            .with_command("command")
+                            .validator(true)
+                    })
+                    .with_initial_balance(100_000)
+            })
+            .with_global_settings(|global_settings| {
+                global_settings
+                    .with_local_ip("127.0.0000.1")
+                    .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "global_settings.local_ip: invalid IP address syntax"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
+        );
+    }
+
+    #[test]
+    fn network_config_builder_should_fails_and_returns_multiple_errors_if_multiple_fields_are_invalid(
+    ) {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_random_nominators_count(10)
+                    .with_node(|node| {
+                        node.with_name("node")
+                            .with_command("invalid command")
+                            .validator(true)
+                    })
+            })
+            .with_parachain(|parachain1| {
+                parachain1
+                    .with_id(1000)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator")
+                            .with_command("command")
+                            .with_image("invalid.image")
+                            .validator(true)
+                    })
+                    .with_initial_balance(100_000)
+            })
+            .with_global_settings(|global_settings| global_settings.with_local_ip("127.0.0000.1"))
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 3);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "relaychain.nodes['node'].command: 'invalid command' shouldn't contains whitespace"
+        );
+        assert_eq!(
+            errors.get(1).unwrap().to_string(),
+            "parachain[1000].collators['collator'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+        assert_eq!(
+            errors.get(2).unwrap().to_string(),
+            "global_settings.local_ip: invalid IP address syntax"
+        );
     }
 }

@@ -363,14 +363,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             .spawn()
             .map_err(|e| ProviderError::ErrorSpawningNode(e.to_string()))?;
 
-        let pid = if let Some(pid) = child_process.id() {
-            pid
-        } else {
-            return Err(ProviderError::ErrorSpawningNode(
-                "Failed to get pid".to_string(),
-            ));
-        };
-        process.pid = pid;
+        process.pid = child_process.id().ok_or(ProviderError::ErrorSpawningNode(
+            "Failed to get pid".to_string(),
+        ))?;
 
         Ok(true)
     }

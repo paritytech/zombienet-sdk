@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+configuration = { path = "../configuration" }
+support = { path = "../support" }
+provider = { path = "../provider" }
+tokio = { workspace = true, features = ["time"] }
+thiserror = { workspace = true }
+log = { workspace = true }

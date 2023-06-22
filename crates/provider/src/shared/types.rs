@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap, os::unix::process::ExitStatusExt, path::PathBuf, process::ExitStatus,
 };
-
 use serde::{Deserialize, Serialize};
 
 // TODO: The `Node` definition should `live` in the orchestrator.
@@ -118,8 +117,8 @@ struct PodDef {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnvVar {
-    name: String,
-    value: String,
+    pub(crate) name: String,
+    pub(crate)value: String,
 }
 
 impl From<(&str, &str)> for EnvVar {
@@ -130,6 +129,18 @@ impl From<(&str, &str)> for EnvVar {
         }
     }
 }
+
+impl From<(String, String)> for EnvVar {
+    fn from(value: (String, String)) -> Self {
+        Self {
+            name: value.0,
+            value: value.1,
+        }
+    }
+}
+
+
+
 
 type ProcessEnvironment = Vec<EnvVar>;
 
@@ -184,5 +195,5 @@ pub struct Process {
     pub logs: String,
     pub port_mapping: HashMap<u16, u16>,
     pub command: String,
-    pub env: Vec<EnvVar>,
+    pub env: ProcessEnvironment,
 }

@@ -26,17 +26,13 @@ use crate::{
 pub struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client (isolation directory)
     namespace: String,
+    // TODO: re-iterate, since we are creating the config with the sdk
     // Path where configuration relies, all the `files` are accessed relative to this.
     config_path: String,
-    // Variable that shows if debug is activated
-    is_debug: bool,
-    // The timeout for start the node
-    timeout: u32,
     // Command to use, e.g "bash"
     command: String,
     // Temporary directory, root directory for the network
     tmp_dir: String,
-    local_magic_file_path: String,
     remote_dir: String,
     data_dir: String,
     process_map: HashMap<String, Process>,
@@ -46,7 +42,7 @@ pub struct NativeProvider<T: FileSystem + Send + Sync> {
 impl<T: FileSystem + Send + Sync> NativeProvider<T> {
     /// Zombienet `native` provider allows to run the nodes as a local process in the local environment
     /// params:
-    ///   namespace:  Namespace of the clien
+    ///   namespace:  Namespace of the client
     ///   config_path: Path where configuration relies
     ///   tmp_dir: Temporary directory where files will be placed
     ///   filesystem: Filesystem to use (std::fs::FileSystem, mock etc.)
@@ -56,17 +52,14 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
         tmp_dir: impl Into<String>,
         filesystem: T,
     ) -> Self {
-        let tmp_dir: String = tmp_dir.into();
+        let tmp_dir = tmp_dir.into();
         let process_map: HashMap<String, Process> = HashMap::new();
 
         Self {
             namespace: namespace.into(),
             config_path: config_path.into(),
-            is_debug: true,
-            timeout: 60, // seconds
-            local_magic_file_path: format!("{}/finished.txt", &tmp_dir),
             remote_dir: format!("{}{}", &tmp_dir, DEFAULT_REMOTE_DIR),
-            data_dir: format!("{}{}", &tmp_dir, DEFAULT_DATA_DIR),
+            data_dir:  format!("{}{}", &tmp_dir,DEFAULT_DATA_DIR),
             command: "bash".into(),
             tmp_dir,
             process_map,
@@ -171,7 +164,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         pod_file_path: PathBuf,
         local_file_path: PathBuf,
     ) -> Result<(), ProviderError> {
-        // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
+        log::debug!("cp {} {}", pod_file_path.to_string_lossy(), local_file_path.to_string_lossy());
 
         self.filesystem
             .copy(&pod_file_path, &local_file_path)
@@ -336,13 +329,15 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     ) -> Result<bool, ProviderError> {
         let process = self.get_process_by_node_name(node_name)?;
 
-        self.run_command(
+        let resp = self.run_command(
             vec![format!("kill -9 {:?}", process.pid)],
             NativeRunCommandOptions {
                 is_failure_allowed: true,
             },
         )
         .await?;
+
+        log::debug!("{:?}", &resp);
 
         if let Some(secs) = after_secs {
             sleep(Duration::from_secs(secs.into())).await;
@@ -356,12 +351,14 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                     "process".into(),
                 ))?;
 
-        // let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
+        let mapped_env: HashMap<&str, &str> = process.env.iter().map(|env_var| {
+            (env_var.name.as_str(), env_var.value.as_str())
+        }).collect();
 
         let child_process: Child = Command::new(self.command.clone())
             .arg("-c")
             .arg(process.command.clone())
-            // .envs(&mapped_env)
+            .envs(&mapped_env)
             .spawn()
             .map_err(|e| ProviderError::ErrorSpawningNode(e.to_string()))?;
 
@@ -382,7 +379,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 
     async fn get_port_mapping(&self, port: Port, node_name: &str) -> Result<Port, ProviderError> {
-        let r = match self.process_map.get(node_name) {
+        match self.process_map.get(node_name) {
             Some(process) => match process.port_mapping.get(&port) {
                 Some(port) => Ok(*port),
                 None => Err(ProviderError::MissingNodeInfo(
@@ -394,9 +391,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 node_name.to_owned(),
                 "process".into(),
             )),
-        };
-
-        return r;
+        }
     }
 }
 
@@ -415,11 +410,8 @@ mod tests {
 
         assert_eq!(native_provider.namespace, "something");
         assert_eq!(native_provider.config_path, "./");
-        assert!(native_provider.is_debug);
-        assert_eq!(native_provider.timeout, 60);
         assert_eq!(native_provider.tmp_dir, "/tmp");
         assert_eq!(native_provider.command, "bash");
-        assert_eq!(native_provider.local_magic_file_path, "/tmp/finished.txt");
         assert_eq!(native_provider.remote_dir, "/tmp/cfg");
         assert_eq!(native_provider.data_dir, "/tmp/data");
     }

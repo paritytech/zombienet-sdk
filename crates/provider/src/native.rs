@@ -345,8 +345,9 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         )
         .await?;
 
-        let sec: u64 = after_secs.unwrap_or(5).into();
-        sleep(Duration::from_millis(sec * 1000)).await;
+        if let Some(secs) = after_secs {
+            sleep(Duration::from_secs(secs.into())).await;
+        }
 
         let process: &mut Process =
             self.process_map

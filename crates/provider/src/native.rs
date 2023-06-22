@@ -71,6 +71,15 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
             filesystem,
         }
     }
+
+    pub fn get_node_from_name(&self, node_name: &str) -> Result<&Process, ProviderError> {
+        self.process_map
+            .get(node_name)
+            .ok_or(ProviderError::MissingNodeInfo(
+                node_name.to_owned(),
+                "process".into(),
+            ))
+    }
 }
 
 #[async_trait]
@@ -289,13 +298,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn pause(&self, node_name: &str) -> Result<(), ProviderError> {
-        let process = self
-            .process_map
-            .get(node_name)
-            .ok_or(ProviderError::MissingNodeInfo(
-                node_name.to_owned(),
-                "process".into(),
-            ))?;
+        let process = self.get_node_from_name(node_name)?;
 
         let _ = self
             .run_command(
@@ -310,13 +313,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
-        let process = self
-            .process_map
-            .get(node_name)
-            .ok_or(ProviderError::MissingNodeInfo(
-                node_name.to_owned(),
-                "process".into(),
-            ))?;
+        let process = self.get_node_from_name(node_name)?;
 
         let _ = self
             .run_command(
@@ -331,13 +328,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
 
     // TODO: Add test
     async fn restart(&mut self, node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
-        let process = self
-            .process_map
-            .get(node_name)
-            .ok_or(ProviderError::MissingNodeInfo(
-                node_name.to_owned(),
-                "process".into(),
-            ))?;
+        let process = self.get_node_from_name(node_name)?;
+
         self.run_command(
             vec![format!("kill -9 {:?}", process.pid)],
             NativeRunCommandOptions {

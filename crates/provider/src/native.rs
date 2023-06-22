@@ -10,7 +10,10 @@ use std::{
 use async_trait::async_trait;
 use serde::Serialize;
 use support::fs::FileSystem;
-use tokio::process::{Child, Command};
+use tokio::{
+    process::{Child, Command},
+    time::{sleep, Duration},
+};
 
 use super::Provider;
 use crate::{
@@ -327,7 +330,7 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 
     // TODO: Add test
-    async fn restart(&mut self, node_name: &str, _after_secs: u16) -> Result<bool, ProviderError> {
+    async fn restart(&mut self, node_name: &str, after_secs: u16) -> Result<bool, ProviderError> {
         let process = self.get_node_from_name(node_name)?;
 
         self.run_command(
@@ -337,6 +340,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
             },
         )
         .await?;
+
+        sleep(Duration::from_millis(after_secs as u64)).await;
 
         let process: &mut Process =
             self.process_map

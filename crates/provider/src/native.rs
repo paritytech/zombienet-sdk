@@ -357,12 +357,12 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                     "process".into(),
                 ))?;
 
-        let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
+        // let mapped_env: HashMap<String, String> = env::vars().map(|(k, v)| (k, v)).collect();
 
         let child_process: Child = Command::new(self.command.clone())
             .arg("-c")
             .arg(process.command.clone())
-            .envs(&mapped_env)
+            // .envs(&mapped_env)
             .spawn()
             .map_err(|e| ProviderError::ErrorSpawningNode(e.to_string()))?;
 

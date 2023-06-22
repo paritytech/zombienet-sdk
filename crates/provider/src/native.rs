@@ -330,7 +330,11 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
     }
 
     // TODO: Add test
-    async fn restart(&mut self, node_name: &str, after_secs: u16) -> Result<bool, ProviderError> {
+    async fn restart(
+        &mut self,
+        node_name: &str,
+        after_secs: Option<u16>,
+    ) -> Result<bool, ProviderError> {
         let process = self.get_node_from_name(node_name)?;
 
         self.run_command(
@@ -341,7 +345,8 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
         )
         .await?;
 
-        sleep(Duration::from_millis(after_secs as u64)).await;
+        let sec: u64 = after_secs.unwrap_or(5).into();
+        sleep(Duration::from_millis(sec * 1000)).await;
 
         let process: &mut Process =
             self.process_map

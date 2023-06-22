@@ -60,7 +60,11 @@ pub trait Provider {
     async fn get_logs_command(&self, node_name: &str) -> Result<String, ProviderError>;
     async fn pause(&self, node_name: &str) -> Result<(), ProviderError>;
     async fn resume(&self, node_name: &str) -> Result<(), ProviderError>;
-    async fn restart(&mut self, node_name: &str, after_sec: u16) -> Result<bool, ProviderError>;
+    async fn restart(
+        &mut self,
+        node_name: &str,
+        after_sec: Option<u16>,
+    ) -> Result<bool, ProviderError>;
     async fn get_node_info(&self, node_name: &str) -> Result<(IpAddr, Port), ProviderError>;
     async fn get_node_ip(&self, node_name: &str) -> Result<IpAddr, ProviderError>;
     async fn get_port_mapping(&self, port: Port, node_name: &str) -> Result<Port, ProviderError>;

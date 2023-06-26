@@ -206,14 +206,14 @@ impl<A> NodeConfigBuilder<A> {
 }
 
 impl NodeConfigBuilder<Initial> {
-    pub fn new(chain_default_context: ChainDefaultContext) -> Self {
+    pub fn new(context: ChainDefaultContext) -> Self {
         Self::transition(
             NodeConfig {
-                command: chain_default_context.default_command,
-                image: chain_default_context.default_image,
-                resources: chain_default_context.default_resources,
-                db_snapshot: chain_default_context.default_db_snapshot,
-                args: chain_default_context.default_args,
+                command: context.default_command,
+                image: context.default_image,
+                resources: context.default_resources,
+                db_snapshot: context.default_db_snapshot,
+                args: context.default_args,
                 ..Self::default().config
             },
             vec![],

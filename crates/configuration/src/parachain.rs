@@ -170,7 +170,7 @@ impl ParachainConfigBuilder<WithId> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
-        match f(NodeConfigBuilder::new(None)).build() {
+        match f(NodeConfigBuilder::new(None, None, None, None, vec![])).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: vec![collator],
@@ -349,7 +349,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(None)).build() {
+        match f(NodeConfigBuilder::new(None, None, None, None, vec![])).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: vec![self.config.collators, vec![collator]].concat(),

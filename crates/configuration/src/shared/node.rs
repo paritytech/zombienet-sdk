@@ -206,10 +206,20 @@ impl<A> NodeConfigBuilder<A> {
 }
 
 impl NodeConfigBuilder<Initial> {
-    pub fn new(default_command: Option<Command>) -> Self {
+    pub fn new(
+        default_command: Option<Command>,
+        default_image: Option<Image>,
+        default_resources: Option<Resources>,
+        default_db_snapshot: Option<AssetLocation>,
+        default_args: Vec<Arg>,
+    ) -> Self {
         Self::transition(
             NodeConfig {
                 command: default_command,
+                image: default_image,
+                resources: default_resources,
+                db_snapshot: default_db_snapshot,
+                args: default_args,
                 ..Self::default().config
             },
             vec![],
@@ -447,7 +457,7 @@ mod tests {
 
     #[test]
     fn node_config_builder_should_succeeds_and_returns_a_node_config() {
-        let node_config = NodeConfigBuilder::new(None)
+        let node_config = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_command("mycommand")
             .with_image("myrepo:myimage")
@@ -516,7 +526,7 @@ mod tests {
 
     #[test]
     fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_command_is_invalid() {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_command("invalid command")
             .build()
@@ -532,7 +542,7 @@ mod tests {
 
     #[test]
     fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_image_is_invalid() {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_image("myinvalid.image")
             .build()
@@ -549,7 +559,7 @@ mod tests {
     #[test]
     fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_one_bootnode_address_is_invalid(
     ) {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
             .build()
@@ -566,7 +576,7 @@ mod tests {
     #[test]
     fn node_config_builder_should_fails_and_returns_mulitle_errors_and_node_name_if_multiple_bootnode_address_are_invalid(
     ) {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .build()
@@ -587,7 +597,7 @@ mod tests {
     #[test]
     fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_resources_has_an_error(
     ) {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_resources(|resources| resources.with_limit_cpu("invalid"))
             .build()
@@ -604,7 +614,7 @@ mod tests {
     #[test]
     fn node_config_builder_should_fails_and_returns_multiple_errors_and_node_name_if_resources_has_multiple_errors(
     ) {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_resources(|resources| {
                 resources
@@ -629,7 +639,7 @@ mod tests {
     #[test]
     fn node_config_builder_should_fails_and_returns_multiple_errors_and_node_name_if_multiple_fields_have_errors(
     ) {
-        let (node_name, errors) = NodeConfigBuilder::new(None)
+        let (node_name, errors) = NodeConfigBuilder::new(None, None, None, None, vec![])
             .with_name("node")
             .with_command("invalid command")
             .with_image("myinvalid.image")

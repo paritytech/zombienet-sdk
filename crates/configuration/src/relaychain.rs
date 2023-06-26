@@ -6,7 +6,7 @@ use crate::shared::{
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation, Chain, Command, Image},
+    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
 };
 
 /// A relaychain configuration, composed of nodes and fine-grained configuration options.
@@ -130,6 +130,16 @@ impl<A> RelaychainConfigBuilder<A> {
             config,
             errors,
             _state: PhantomData,
+        }
+    }
+
+    fn default_context(&self) -> ChainDefaultContext {
+        ChainDefaultContext {
+            default_command: self.config.default_command.clone(),
+            default_image: self.config.default_image.clone(),
+            default_resources: self.config.default_resources.clone(),
+            default_db_snapshot: self.config.default_db_snapshot.clone(),
+            default_args: self.config.default_args.clone(),
         }
     }
 }
@@ -277,15 +287,7 @@ impl RelaychainConfigBuilder<WithChain> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
-        match f(NodeConfigBuilder::new(
-            self.config.default_command.clone(),
-            self.config.default_image.clone(),
-            self.config.default_resources.clone(),
-            self.config.default_db_snapshot.clone(),
-            self.config.default_args.clone(),
-        ))
-        .build()
-        {
+        match f(NodeConfigBuilder::new(self.default_context())).build() {
             Ok(node) => Self::transition(
                 RelaychainConfig {
                     nodes: vec![node],
@@ -312,15 +314,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(
-            self.config.default_command.clone(),
-            self.config.default_image.clone(),
-            self.config.default_resources.clone(),
-            self.config.default_db_snapshot.clone(),
-            self.config.default_args.clone(),
-        ))
-        .build()
-        {
+        match f(NodeConfigBuilder::new(self.default_context())).build() {
             Ok(node) => Self::transition(
                 RelaychainConfig {
                     nodes: vec![self.config.nodes, vec![node]].concat(),

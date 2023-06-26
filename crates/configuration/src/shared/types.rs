@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use url::Url;
 
-use super::errors::ConversionError;
+use super::{errors::ConversionError, resources::Resources};
 
 pub type Duration = u32;
 
@@ -137,6 +137,15 @@ impl From<(&str, &str)> for Arg {
     fn from((option, value): (&str, &str)) -> Self {
         Self::Option(option.to_owned(), value.to_owned())
     }
+}
+
+#[derive(Default)]
+pub struct ChainDefaultContext {
+    pub(crate) default_command: Option<Command>,
+    pub(crate) default_image: Option<Image>,
+    pub(crate) default_resources: Option<Resources>,
+    pub(crate) default_db_snapshot: Option<AssetLocation>,
+    pub(crate) default_args: Vec<Arg>,
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ pub struct ParachainConfig {
     id: u32,
 
     /// Chain to use (use None if you are running adder-collator or undying-collator).
-    chain: Chain,
+    chain: Option<Chain>,
 
     /// Registration strategy for the parachain.
     registration_strategy: Option<RegistrationStrategy>,
@@ -72,8 +72,8 @@ impl ParachainConfig {
         self.id
     }
 
-    pub fn chain(&self) -> &Chain {
-        &self.chain
+    pub fn chain(&self) -> Option<&Chain> {
+        self.chain.as_ref()
     }
 
     pub fn registration_strategy(&self) -> Option<&RegistrationStrategy> {
@@ -82,6 +82,26 @@ impl ParachainConfig {
 
     pub fn initial_balance(&self) -> u128 {
         self.initial_balance
+    }
+
+    pub fn default_command(&self) -> Option<&Command> {
+        self.default_command.as_ref()
+    }
+
+    pub fn default_image(&self) -> Option<&Image> {
+        self.default_image.as_ref()
+    }
+
+    pub fn default_resources(&self) -> Option<&Resources> {
+        self.default_resources.as_ref()
+    }
+
+    pub fn default_db_snapshot(&self) -> Option<&AssetLocation> {
+        self.default_db_snapshot.as_ref()
+    }
+
+    pub fn default_args(&self) -> Vec<&Arg> {
+        self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
     pub fn genesis_wasm_path(&self) -> Option<&AssetLocation> {
@@ -120,7 +140,6 @@ impl ParachainConfig {
 states! {
     Initial,
     WithId,
-    WithChain,
     WithAtLeastOneCollator
 }
 
@@ -136,9 +155,7 @@ impl Default for ParachainConfigBuilder<Initial> {
         Self {
             config: ParachainConfig {
                 id: 100,
-                chain: ""
-                    .try_into()
-                    .expect("empty string should be valid. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
+                chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
                 initial_balance: 2_000_000_000_000,
                 default_command: None,
@@ -195,7 +212,7 @@ impl ParachainConfigBuilder<Initial> {
 }
 
 impl ParachainConfigBuilder<WithId> {
-    pub fn with_chain<T>(self, chain: T) -> ParachainConfigBuilder<WithChain>
+    pub fn with_chain<T>(self, chain: T) -> Self
     where
         T: TryInto<Chain>,
         T::Error: Error + Send + Sync + 'static,
@@ -203,7 +220,7 @@ impl ParachainConfigBuilder<WithId> {
         match chain.try_into() {
             Ok(chain) => Self::transition(
                 ParachainConfig {
-                    chain,
+                    chain: Some(chain),
                     ..self.config
                 },
                 self.errors,
@@ -214,9 +231,7 @@ impl ParachainConfigBuilder<WithId> {
             ),
         }
     }
-}
 
-impl ParachainConfigBuilder<WithChain> {
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         Self::transition(
             ParachainConfig {
@@ -503,6 +518,16 @@ mod tests {
             .with_chain("mychainname")
             .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
             .with_initial_balance(100_000_042)
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .with_default_resources(|resources| {
+                resources
+                    .with_limit_cpu("500M")
+                    .with_limit_memory("1G")
+                    .with_request_cpu("250M")
+            })
+            .with_default_db_snapshot("https://www.urltomysnapshot.com/file.tgz")
+            .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_genesis_wasm_path("https://www.backupsite.com/my/wasm/file.tgz")
             .with_genesis_wasm_generator("generator_wasm")
             .with_genesis_state_path("./path/to/genesis/state")
@@ -538,12 +563,37 @@ mod tests {
         assert_eq!(collator2.name(), "collator2");
         assert_eq!(collator2.command().unwrap().as_str(), "command2");
         assert!(collator2.is_validator());
-        assert_eq!(parachain_config.chain().as_str(), "mychainname");
+        assert_eq!(parachain_config.chain().unwrap().as_str(), "mychainname");
         assert_eq!(
             parachain_config.registration_strategy().unwrap(),
             &RegistrationStrategy::UsingExtrinsic
         );
         assert_eq!(parachain_config.initial_balance(), 100_000_042);
+        assert_eq!(
+            parachain_config.default_command().unwrap().as_str(),
+            "default_command"
+        );
+        assert_eq!(
+            parachain_config.default_image().unwrap().as_str(),
+            "myrepo:myimage"
+        );
+        let default_resources = parachain_config.default_resources().unwrap();
+        assert_eq!(default_resources.limit_cpu().unwrap().as_str(), "500M");
+        assert_eq!(default_resources.limit_memory().unwrap().as_str(), "1G");
+        assert_eq!(default_resources.request_cpu().unwrap().as_str(), "250M");
+        assert!(matches!(
+            parachain_config.default_db_snapshot().unwrap(),
+            AssetLocation::Url(value) if value.as_str() == "https://www.urltomysnapshot.com/file.tgz",
+        ));
+        assert!(matches!(
+            parachain_config.chain_spec_path().unwrap(),
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"
+        ));
+        let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
+        assert_eq!(
+            parachain_config.default_args(),
+            args.iter().collect::<Vec<_>>()
+        );
         assert!(matches!(
             parachain_config.genesis_wasm_path().unwrap(),
             AssetLocation::Url(value) if value.as_str() == "https://www.backupsite.com/my/wasm/file.tgz"
@@ -576,29 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_first_collator_is_invalid(
-    ) {
-        let (para_id, errors) = ParachainConfigBuilder::new()
-            .with_id(1000)
-            .with_chain("myparachain")
-            .with_collator(|collator| {
-                collator
-                    .with_name("collator")
-                    .with_command("invalid command")
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(para_id, 1000);
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            "collators['collator'].command: 'invalid command' shouldn't contains whitespace"
-        );
-    }
-
-    #[test]
-    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_chain_is_invalid(
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_chain_is_invalid(
     ) {
         let (para_id, errors) = ParachainConfigBuilder::new()
             .with_id(1000)
@@ -621,7 +649,83 @@ mod tests {
     }
 
     #[test]
-    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_genesis_wasm_generator_is_invalid(
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_default_command_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_chain("chain")
+            .with_default_command("invalid command")
+            .with_collator(|collator| {
+                collator
+                    .with_name("node")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 1000);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "default_command: 'invalid command' shouldn't contains whitespace"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_default_image_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_chain("chain")
+            .with_default_image("invalid image")
+            .with_collator(|collator| {
+                collator
+                    .with_name("node")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 1000);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            r"default_image: 'invalid image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
+        );
+    }
+
+    #[test]
+    fn relaychain_config_builder_should_fails_and_returns_an_error_if_default_resources_are_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_chain("chain")
+            .with_default_resources(|default_resources| {
+                default_resources
+                    .with_limit_memory("100m")
+                    .with_request_cpu("invalid")
+            })
+            .with_collator(|collator| {
+                collator
+                    .with_name("node")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 1000);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            r"default_resources.request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+        );
+    }
+
+    #[test]
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_genesis_wasm_generator_is_invalid(
     ) {
         let (para_id, errors) = ParachainConfigBuilder::new()
             .with_id(2000)
@@ -645,7 +749,7 @@ mod tests {
     }
 
     #[test]
-    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_genesis_state_generator_is_invalid(
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_genesis_state_generator_is_invalid(
     ) {
         let (para_id, errors) = ParachainConfigBuilder::new()
             .with_id(1000)
@@ -669,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_a_para_id_and_an_error_if_bootnodes_addresses_are_invalid(
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_bootnodes_addresses_are_invalid(
     ) {
         let (para_id, errors) = ParachainConfigBuilder::new()
             .with_id(2000)
@@ -777,6 +881,27 @@ mod tests {
             errors.get(4).unwrap().to_string(),
             "collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
 
+    #[test]
+    fn parachain_config_builder_should_fails_and_returns_a_para_id_and_an_error_if_first_collator_is_invalid(
+    ) {
+        let (para_id, errors) = ParachainConfigBuilder::new()
+            .with_id(1000)
+            .with_chain("myparachain")
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("invalid command")
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(para_id, 1000);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "collators['collator'].command: 'invalid command' shouldn't contains whitespace"
+        );
     }
 }

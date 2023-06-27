@@ -5,7 +5,7 @@ use crate::{
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::{errors::ConfigError, helpers::merge_errors_vecs, macros::states},
+    shared::{helpers::merge_errors_vecs, macros::states},
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.

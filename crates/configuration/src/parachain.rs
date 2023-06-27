@@ -8,7 +8,7 @@ use crate::shared::{
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ParaId},
+    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
 };
 
 #[derive(Debug, Clone, PartialEq)]

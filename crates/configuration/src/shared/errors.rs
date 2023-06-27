@@ -73,4 +73,7 @@ pub enum ConversionError {
 
     #[error("'{}' doesn't match regex '{}'", .value, .regex)]
     DoesntMatchRegex { value: String, regex: String },
+
+    #[error("can't be empty")]
+    CantBeEmpty,
 }

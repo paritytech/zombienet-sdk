@@ -5,7 +5,7 @@ use crate::{
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::{errors::ConfigError, helpers::merge_errors_vecs, macros::states},
+    shared::{helpers::merge_errors_vecs, macros::states},
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
@@ -138,16 +138,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
                 },
                 self.errors,
             ),
-            Err((para_id, errors)) => Self::transition(
-                self.config,
-                merge_errors_vecs(
-                    self.errors,
-                    errors
-                        .into_iter()
-                        .map(|error| ConfigError::Parachain(para_id, error).into())
-                        .collect::<Vec<_>>(),
-                ),
-            ),
+            Err(errors) => Self::transition(self.config, merge_errors_vecs(self.errors, errors)),
         }
     }
 
@@ -194,27 +185,29 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1)
+                    .with_chain("myparachain1")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
                             .with_command("command1")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
-            .with_parachain(|parachain2| {
-                parachain2
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(2)
+                    .with_chain("myparachain2")
+                    .with_initial_balance(0)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator2")
                             .with_command("command2")
                             .validator(true)
                     })
-                    .with_initial_balance(0)
             })
             .with_hrmp_channel(|hrmp_channel1| {
                 hrmp_channel1
@@ -312,16 +305,17 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
                             .with_command("command1")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .build()
             .unwrap_err();
@@ -350,9 +344,11 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
@@ -360,7 +356,6 @@ mod tests {
                             .with_image("invalid.image")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .build()
             .unwrap_err();
@@ -393,17 +388,20 @@ mod tests {
             .with_parachain(|parachain1| {
                 parachain1
                     .with_id(1000)
+                    .with_chain("myparachain1")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator")
                             .with_command("invalid command")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .with_parachain(|parachain2| {
                 parachain2
                     .with_id(2000)
+                    .with_chain("myparachain2")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator")
@@ -415,7 +413,6 @@ mod tests {
                                     .with_request_cpu("invalid")
                             })
                     })
-                    .with_initial_balance(100_000)
             })
             .build()
             .unwrap_err();
@@ -445,16 +442,17 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator")
                             .with_command("command")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .with_global_settings(|global_settings| {
                 global_settings
@@ -489,9 +487,11 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator")
@@ -499,7 +499,6 @@ mod tests {
                             .with_image("invalid.image")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .with_global_settings(|global_settings| global_settings.with_local_ip("127.0.0000.1"))
             .build()

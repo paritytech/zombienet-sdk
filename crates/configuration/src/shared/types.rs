@@ -23,6 +23,10 @@ impl TryFrom<&str> for Chain {
             return Err(ConversionError::ContainsWhitespaces(value.to_string()));
         }
 
+        if value.is_empty() {
+            return Err(ConversionError::CantBeEmpty);
+        }
+
         Ok(Self(value.to_string()))
     }
 }
@@ -270,6 +274,17 @@ mod tests {
             got.unwrap_err().to_string(),
             "'my chain' shouldn't contains whitespace"
         );
+    }
+
+    #[test]
+    fn converting_an_empty_str_into_a_chain_should_fails() {
+        let got: Result<Chain, ConversionError> = "".try_into();
+
+        assert!(matches!(
+            got.clone().unwrap_err(),
+            ConversionError::CantBeEmpty
+        ));
+        assert_eq!(got.unwrap_err().to_string(), "can't be empty");
     }
 
     #[test]

@@ -138,16 +138,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
                 },
                 self.errors,
             ),
-            Err((para_id, errors)) => Self::transition(
-                self.config,
-                merge_errors_vecs(
-                    self.errors,
-                    errors
-                        .into_iter()
-                        .map(|error| ConfigError::Parachain(para_id, error).into())
-                        .collect::<Vec<_>>(),
-                ),
-            ),
+            Err(errors) => Self::transition(self.config, merge_errors_vecs(self.errors, errors)),
         }
     }
 

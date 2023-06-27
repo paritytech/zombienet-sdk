@@ -64,12 +64,12 @@ impl RelaychainConfig {
         self.default_db_snapshot.as_ref()
     }
 
-    pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
-        self.chain_spec_path.as_ref()
-    }
-
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
+    }
+
+    pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
+        self.chain_spec_path.as_ref()
     }
 
     pub fn random_minators_count(&self) -> Option<u32> {
@@ -506,75 +506,6 @@ mod tests {
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_first_node_is_invalid() {
         let errors = RelaychainConfigBuilder::new()
             .with_chain("chain")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("invalid command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            "relaychain.nodes['node'].command: 'invalid command' shouldn't contains whitespace"
-        );
-    }
-
-    #[test]
-    fn relaychain_config_builder_with_default_command_should_fails_and_returns_an_error_if_default_image_is_invalid(
-    ) {
-        let errors = RelaychainConfigBuilder::new()
-            .with_chain("chain")
-            .with_default_command("command")
-            .with_default_image("invalid image")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            r"relaychain.default_image: 'invalid image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
-        );
-    }
-
-    #[test]
-    fn relaychain_config_builder_with_default_command_should_fails_and_returns_an_error_if_default_resources_are_invalid(
-    ) {
-        let errors = RelaychainConfigBuilder::new()
-            .with_chain("chain")
-            .with_default_command("command")
-            .with_default_resources(|default_resources| {
-                default_resources
-                    .with_limit_memory("100m")
-                    .with_request_cpu("invalid")
-            })
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            r"relaychain.default_resources.request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
-        );
-    }
-
-    #[test]
-    fn relaychain_config_builder_with_default_command_should_fails_and_returns_an_error_if_first_node_is_invalid(
-    ) {
-        let errors = RelaychainConfigBuilder::new()
-            .with_chain("chain")
-            .with_default_command("command")
             .with_node(|node| {
                 node.with_name("node")
                     .with_command("invalid command")

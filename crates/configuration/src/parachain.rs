@@ -7,7 +7,7 @@ use crate::shared::{
     helpers::{merge_errors, merge_errors_vecs},
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
-    types::{AssetLocation, Chain, Command, ParaId},
+    types::{AssetLocation, Chain, ChainDefaultContext, Command, ParaId},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -170,7 +170,7 @@ impl ParachainConfigBuilder<WithId> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
-        match f(NodeConfigBuilder::new(None)).build() {
+        match f(NodeConfigBuilder::new(ChainDefaultContext::default())).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: vec![collator],
@@ -349,7 +349,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(None)).build() {
+        match f(NodeConfigBuilder::new(ChainDefaultContext::default())).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: vec![self.config.collators, vec![collator]].concat(),

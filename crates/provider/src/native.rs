@@ -1,7 +1,6 @@
 use std::{
     self,
     collections::HashMap,
-    env,
     fmt::Debug,
     net::IpAddr,
     path::{Path, PathBuf},

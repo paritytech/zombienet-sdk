@@ -542,14 +542,14 @@ mod tests {
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
-            .with_collator(|collator1| {
-                collator1
+            .with_collator(|collator| {
+                collator
                     .with_name("collator1")
                     .with_command("command1")
                     .bootnode(true)
             })
-            .with_collator(|collator2| {
-                collator2
+            .with_collator(|collator| {
+                collator
                     .with_name("collator2")
                     .with_command("command2")
                     .validator(true)
@@ -820,15 +820,15 @@ mod tests {
         let errors = ParachainConfigBuilder::new()
             .with_id(2000)
             .with_chain("myparachain")
-            .with_collator(|collator1| {
-                collator1
+            .with_collator(|collator| {
+                collator
                     .with_name("collator1")
                     .with_command("command1")
                     .invulnerable(true)
                     .bootnode(true)
             })
-            .with_collator(|collator2| {
-                collator2
+            .with_collator(|collator| {
+                collator
                     .with_name("collator2")
                     .with_command("invalid command")
                     .with_initial_balance(20000000)
@@ -850,8 +850,8 @@ mod tests {
             .with_id(2000)
             .with_chain("myparachain")
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
-            .with_collator(|collator1| {
-                collator1
+            .with_collator(|collator| {
+                collator
                     .with_name("collator1")
                     .with_command("invalid command")
                     .invulnerable(true)
@@ -862,8 +862,8 @@ mod tests {
                             .with_request_memory("1G")
                     })
             })
-            .with_collator(|collator2| {
-                collator2
+            .with_collator(|collator| {
+                collator
                     .with_name("collator2")
                     .with_command("command2")
                     .with_image("invalid.image")

@@ -185,8 +185,8 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1)
                     .with_chain("myparachain1")
                     .with_initial_balance(100_000)
@@ -197,8 +197,8 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain2| {
-                parachain2
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(2)
                     .with_chain("myparachain2")
                     .with_initial_balance(0)

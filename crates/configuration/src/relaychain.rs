@@ -369,10 +369,9 @@ mod tests {
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
-            .with_node(|node1| node1.with_name("node1").bootnode(true))
-            .with_node(|node2| {
-                node2
-                    .with_name("node2")
+            .with_node(|node| node.with_name("node1").bootnode(true))
+            .with_node(|node| {
+                node.with_name("node2")
                     .with_command("command2")
                     .validator(true)
             })

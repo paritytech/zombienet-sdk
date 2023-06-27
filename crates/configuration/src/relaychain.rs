@@ -102,9 +102,9 @@ impl Default for RelaychainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: RelaychainConfig {
-                chain: ""
+                chain: "default"
                     .try_into()
-                    .expect("empty string should be valid. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
+                    .expect("'default' overriding should be ensured by typestate. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
                 default_command: None,
                 default_image: None,
                 default_resources: None,

@@ -14,10 +14,30 @@ use crate::shared::{
     types::{Arg, Port},
 };
 
+/// An environment variable with a name and a value.
+/// It can be constructed from a `(&str, &str)`.
+///
+/// # Examples:
+///
+/// ```
+/// # use configuration::shared::node::EnvVar;
+/// let simple_var: EnvVar = ("FOO", "BAR").into();
+/// 
+/// assert_eq!(
+///     simple_var,
+///     EnvVar {
+///         name: "FOO".into(),
+///         value: "BAR".into()
+///     }
+/// )
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnvVar {
-    name: String,
-    value: String,
+    /// The name of the environment variable.
+    pub name: String,
+
+    /// The value of the environment variable.
+    pub value: String,
 }
 
 impl From<(&str, &str)> for EnvVar {
@@ -32,124 +52,118 @@ impl From<(&str, &str)> for EnvVar {
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeConfig {
-    /// Node name (should be unique or an index will be appended).
     name: String,
-
-    /// Image to run (only podman/k8s). Override the default.
     image: Option<Image>,
-
-    /// Command to run the node. Override the default.
     command: Option<Command>,
-
-    /// Arguments to use for node. Appended to default.
     args: Vec<Arg>,
-
-    /// Wether the node is a validator.
     is_validator: bool,
-
-    /// Whether the node keys must be added to invulnerables.
     is_invulnerable: bool,
-
-    /// Whether the node is a bootnode.
     is_bootnode: bool,
-
-    /// Node initial balance present in genesis.
     initial_balance: u128,
-
-    /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
     env: Vec<EnvVar>,
-
-    /// List of node's bootnodes addresses to use. Appended to default.
     bootnodes_addresses: Vec<Multiaddr>,
-
-    /// Default resources. Override the default.
     resources: Option<Resources>,
-
-    /// Websocket port to use. Default to 9944 + n where n is the node index in the network (starting from 0).
     ws_port: Option<Port>,
-
-    /// RPC port to use. Default to 9933 + n where n is the node index in the network (starting from 0).
-    // [TODO]: start at a different default to avoid overlap between ws_port and rpc_port when node count >= 12 ?
     rpc_port: Option<Port>,
-
-    /// Prometheus port to use. Default to 9615 + n where n is the node index in the network (starting from 0).
     prometheus_port: Option<Port>,
-
-    /// P2P port to use. Default to 30333 + n where n is the node index in the network (starting from 0)
     p2p_port: Option<Port>,
-
-    /// libp2p cert hash to use with `webrtc` transport.
     p2p_cert_hash: Option<String>,
-
-    /// Database snapshot. Override the default.
     db_snapshot: Option<AssetLocation>,
 }
 
 impl NodeConfig {
+    /// Node name (should be unique).
+    // TODO: handle unique in validation
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Image to run (only podman/k8s). Override the default.
+    // TODO: missing test of default overridding
     pub fn image(&self) -> Option<&Image> {
         self.image.as_ref()
     }
 
+    /// Command to run the node. Override the default.
+    // TODO: missing test of default overriding
     pub fn command(&self) -> Option<&Command> {
         self.command.as_ref()
     }
 
+    /// Arguments to use for node. Appended to default.
+    // TODO: missing test of default appending
     pub fn args(&self) -> Vec<&Arg> {
         self.args.iter().collect()
     }
 
+    /// Wether the node is a validator.
     pub fn is_validator(&self) -> bool {
         self.is_validator
     }
 
+    /// Whether the node keys must be added to invulnerables.
     pub fn is_invulnerable(&self) -> bool {
         self.is_invulnerable
     }
 
+    /// Whether the node is a bootnode.
     pub fn is_bootnode(&self) -> bool {
         self.is_bootnode
     }
 
+    /// Node initial balance present in genesis.
     pub fn initial_balance(&self) -> u128 {
         self.initial_balance
     }
 
+    /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
     pub fn env(&self) -> Vec<&EnvVar> {
         self.env.iter().collect()
     }
 
+    /// List of node's bootnodes addresses to use. Appended to default.
+    // TODO: missing test appending to default.
     pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect()
     }
 
+    /// Default resources. Override the default.
+    // TODO: missing test default override.
     pub fn resources(&self) -> Option<&Resources> {
         self.resources.as_ref()
     }
 
+    /// Websocket port to use. Default to 9944 + n where n is the node index in the network (starting from 0).
+    // TODO: needs to test the default + incrementation
     pub fn ws_port(&self) -> Option<u16> {
         self.ws_port
     }
 
+    /// RPC port to use. Default to 9933 + n where n is the node index in the network (starting from 0).
+    // [TODO]: start at a different default to avoid overlap between ws_port and rpc_port when node count >= 12 ? + testing
     pub fn rpc_port(&self) -> Option<u16> {
         self.rpc_port
     }
 
+    /// Prometheus port to use. Default to 9615 + n where n is the node index in the network (starting from 0).
+    // TODO: needs to tes the defualt + incrementation
     pub fn prometheus_port(&self) -> Option<u16> {
         self.prometheus_port
     }
 
+    /// P2P port to use. Default to 30333 + n where n is the node index in the network (starting from 0)
+    // TODO: needs to tes the defualt + incrementation
     pub fn p2p_port(&self) -> Option<u16> {
         self.p2p_port
     }
 
+    /// libp2p cert hash to use with `webrtc` transport.
     pub fn p2p_cert_hash(&self) -> Option<&str> {
         self.p2p_cert_hash.as_deref()
     }
 
+    /// Database snapshot. Override the default.
+    // TODO: missing override test 
     pub fn db_snapshot(&self) -> Option<&AssetLocation> {
         self.db_snapshot.as_ref()
     }
@@ -160,6 +174,8 @@ states! {
     Buildable
 }
 
+
+/// A node configuration builder, used to build a `NodeConfig` declaratively with fields validation.
 #[derive(Debug)]
 pub struct NodeConfigBuilder<S> {
     config: NodeConfig,
@@ -220,6 +236,7 @@ impl NodeConfigBuilder<Initial> {
         )
     }
 
+    /// Set the name of the node.
     pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
         Self::transition(
             NodeConfig {
@@ -232,6 +249,7 @@ impl NodeConfigBuilder<Initial> {
 }
 
 impl NodeConfigBuilder<Buildable> {
+    /// Set the command that will be executed to launch the node.
     pub fn with_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -252,6 +270,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
+    /// Set the image that will be used for the node (only podman/k8s).
     pub fn with_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -272,6 +291,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
+    /// Set the args that will be used when launching the node.
     pub fn with_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             NodeConfig {
@@ -282,6 +302,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set wether the node is a validator.
     pub fn validator(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
@@ -292,6 +313,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set wether the node is invulnerable.
     pub fn invulnerable(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
@@ -302,6 +324,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set wether the node is a bootnode.
     pub fn bootnode(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
@@ -312,6 +335,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the node initial balance.
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
         Self::transition(
             NodeConfig {
@@ -322,12 +346,14 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the node environment variables that will be used when launched.
     pub fn with_env(self, env: Vec<impl Into<EnvVar>>) -> Self {
         let env = env.into_iter().map(|var| var.into()).collect::<Vec<_>>();
 
         Self::transition(NodeConfig { env, ..self.config }, self.errors)
     }
 
+    /// Set the bootnodes addresses that the node will try to connect to.
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
@@ -354,6 +380,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the resources limits what will be used for the node (only podman/k8s).
     pub fn with_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(resources) => Self::transition(
@@ -376,6 +403,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
+    /// Set the websocket port that will be exposed.
     pub fn with_ws_port(self, ws_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -386,6 +414,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the RPC port that will be exposed.
     pub fn with_rpc_port(self, rpc_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -396,6 +425,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the prometheus port that will be exposed for metrics.
     pub fn with_prometheus_port(self, prometheus_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -406,6 +436,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the P2P port that will be exposed.
     pub fn with_p2p_port(self, p2p_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -416,6 +447,8 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the P2P cert hash that will be used
+    // TODO: for what it can be used ? 
     pub fn with_p2p_cert_hash(self, p2p_cert_hash: impl Into<String>) -> Self {
         Self::transition(
             NodeConfig {
@@ -426,6 +459,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the database snapshot that will be used to launch the node.
     pub fn with_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             NodeConfig {
@@ -436,6 +470,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Seal the builder and returns a `NodeConfig` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NodeConfig, (String, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
             return Err((self.config.name.clone(), self.errors));

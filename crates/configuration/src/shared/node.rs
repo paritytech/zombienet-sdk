@@ -22,7 +22,7 @@ use crate::shared::{
 /// ```
 /// # use configuration::shared::node::EnvVar;
 /// let simple_var: EnvVar = ("FOO", "BAR").into();
-/// 
+///
 /// assert_eq!(
 ///     simple_var,
 ///     EnvVar {
@@ -163,7 +163,7 @@ impl NodeConfig {
     }
 
     /// Database snapshot. Override the default.
-    // TODO: missing override test 
+    // TODO: missing override test
     pub fn db_snapshot(&self) -> Option<&AssetLocation> {
         self.db_snapshot.as_ref()
     }
@@ -173,7 +173,6 @@ states! {
     Initial,
     Buildable
 }
-
 
 /// A node configuration builder, used to build a `NodeConfig` declaratively with fields validation.
 #[derive(Debug)]
@@ -448,7 +447,7 @@ impl NodeConfigBuilder<Buildable> {
     }
 
     /// Set the P2P cert hash that will be used
-    // TODO: for what it can be used ? 
+    // TODO: for what it can be used ?
     pub fn with_p2p_cert_hash(self, p2p_cert_hash: impl Into<String>) -> Self {
         Self::transition(
             NodeConfig {

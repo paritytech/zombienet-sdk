@@ -11,16 +11,16 @@ use super::{
 /// A resource quantity used to define limits (k8s/podman only).
 /// It can be constructed from a `&str` or u64, if it fails, it returns a `ConversionError`.
 /// Possible optional prefixes are: m, K, M, G, T, P, E, Ki, Mi, Gi, Ti, Pi, Ei
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// # use configuration::shared::resources::ResourceQuantity;
 /// let quantity1: ResourceQuantity = "100000".try_into().unwrap();
 /// let quantity2: ResourceQuantity = "1000m".try_into().unwrap();
 /// let quantity3: ResourceQuantity = "1Gi".try_into().unwrap();
 /// let quantity4: ResourceQuantity = 10_000.into();
-/// 
+///
 /// assert_eq!(quantity1.as_str(), "100000");
 /// assert_eq!(quantity2.as_str(), "1000m");
 /// assert_eq!(quantity3.as_str(), "1Gi");
@@ -76,7 +76,7 @@ impl Resources {
         self.request_memory.as_ref()
     }
 
-    /// CPU limit applied to requests. 
+    /// CPU limit applied to requests.
     pub fn request_cpu(&self) -> Option<&ResourceQuantity> {
         self.request_cpu.as_ref()
     }

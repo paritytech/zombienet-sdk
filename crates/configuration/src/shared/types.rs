@@ -190,13 +190,13 @@ impl From<&str> for AssetLocation {
 
 /// A CLI argument passed to an executed command, can be an option with an assigned value or a simple flag to enable/disable a feature.
 /// A flag arg can be constructed from a `&str` and a option arg can be constructed from a `(&str, &str)`.
-/// 
+///
 /// # Examples:
 /// ```
 /// # use configuration::shared::types::Arg;
 /// let flag_arg: Arg = "myflag".into();
 /// let option_arg: Arg = ("name", "value").into();
-/// 
+///
 /// assert!(matches!(flag_arg, Arg::Flag(value) if value == "myflag"));
 /// assert!(matches!(option_arg, Arg::Option(name, value) if name == "name" && value == "value"));
 /// ```

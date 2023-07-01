@@ -6,12 +6,30 @@ use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
 
+/// An alias for a duration.
+// TODO: in milliseconds ?
 pub type Duration = u32;
 
+/// An alias for a port.
 pub type Port = u16;
 
+/// An alias for a parachain ID.
 pub type ParaId = u32;
 
+/// A chain name.
+/// It can be constructed for an `&str`, if it fails, it will returns a `ConversionError`.
+///
+/// # Examples:
+/// ```
+/// # use configuration::shared::types::Chain;
+/// let polkadot: Chain = "polkadot".try_into().unwrap();
+/// let kusama: Chain = "kusama".try_into().unwrap();
+/// let myparachain: Chain = "myparachain".try_into().unwrap();
+///
+/// assert_eq!(polkadot.as_str(), "polkadot");
+/// assert_eq!(kusama.as_str(), "kusama");
+/// assert_eq!(myparachain.as_str(), "myparachain");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chain(String);
 
@@ -37,6 +55,22 @@ impl Chain {
     }
 }
 
+/// A container image.
+/// It can be constructed from an `&str` including a combination of name, version, IPv4 or/and hostname, if it fails, it will returns a `ConversionError`.
+///
+/// # Examples:
+/// ```
+/// # use configuration::shared::types::Image;
+/// let image1: Image = "name".try_into().unwrap();
+/// let image2: Image = "name:version".try_into().unwrap();
+/// let image3: Image = "myrepo.com/name:version".try_into().unwrap();
+/// let image4: Image = "10.15.43.155/name:version".try_into().unwrap();
+///
+/// assert_eq!(image1.as_str(), "name");
+/// assert_eq!(image2.as_str(), "name:version");
+/// assert_eq!(image3.as_str(), "myrepo.com/name:version");
+/// assert_eq!(image4.as_str(), "10.15.43.155/name:version");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Image(String);
 
@@ -72,6 +106,19 @@ impl Image {
     }
 }
 
+/// A command that will be executed natively (native provider) or in a container (podman/k8s).
+/// It can be constructed from an `&str`, if it fails, it will returns a `ConversionError`.
+///
+/// # Examples:
+/// ```
+/// # use configuration::shared::types::Command;
+///
+/// let command1: Command = "mycommand".try_into().unwrap();
+/// let command2: Command = "myothercommand".try_into().unwrap();
+///
+/// assert_eq!(command1.as_str(), "mycommand");
+/// assert_eq!(command2.as_str(), "myothercommand");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Command(String);
 
@@ -93,6 +140,24 @@ impl Command {
     }
 }
 
+/// A location for a locally or remotely stored asset.
+/// It can be constructed from an `url::Url`, a `std::path::PathBuf` or an `&str`.
+///
+/// # Examples:
+/// ```
+/// # use url::Url;
+/// # use std::{path::PathBuf, str::FromStr};
+/// # use configuration::shared::types::AssetLocation;
+/// let url_location: AssetLocation = Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap().into();
+/// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
+/// let path_location: AssetLocation = PathBuf::from_str("/tmp/path/to/my/file").unwrap().into();
+/// let path_location2: AssetLocation = "/tmp/path/to/my/file".into();
+///        
+/// assert!(matches!(url_location, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
+/// assert!(matches!(url_location2, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
+/// assert!(matches!(path_location, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
+/// assert!(matches!(path_location2, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssetLocation {
     Url(Url),
@@ -123,8 +188,18 @@ impl From<&str> for AssetLocation {
     }
 }
 
-/// A CLI argument, can be an option with an assigned value or a simple
-/// flag to enable/disable a feature.
+/// A CLI argument passed to an executed command, can be an option with an assigned value or a simple flag to enable/disable a feature.
+/// A flag arg can be constructed from a `&str` and a option arg can be constructed from a `(&str, &str)`.
+/// 
+/// # Examples:
+/// ```
+/// # use configuration::shared::types::Arg;
+/// let flag_arg: Arg = "myflag".into();
+/// let option_arg: Arg = ("name", "value").into();
+/// 
+/// assert!(matches!(flag_arg, Arg::Flag(value) if value == "myflag"));
+/// assert!(matches!(option_arg, Arg::Option(name, value) if name == "name" && value == "value"));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Arg {
     Flag(String),

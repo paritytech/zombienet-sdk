@@ -8,6 +8,24 @@ use super::{
     helpers::merge_errors,
 };
 
+/// A resource quantity used to define limits (k8s/podman only).
+/// It can be constructed from a `&str` or u64, if it fails, it returns a `ConversionError`.
+/// Possible optional prefixes are: m, K, M, G, T, P, E, Ki, Mi, Gi, Ti, Pi, Ei
+/// 
+/// # Examples
+/// 
+/// ```
+/// # use configuration::shared::resources::ResourceQuantity;
+/// let quantity1: ResourceQuantity = "100000".try_into().unwrap();
+/// let quantity2: ResourceQuantity = "1000m".try_into().unwrap();
+/// let quantity3: ResourceQuantity = "1Gi".try_into().unwrap();
+/// let quantity4: ResourceQuantity = 10_000.into();
+/// 
+/// assert_eq!(quantity1.as_str(), "100000");
+/// assert_eq!(quantity2.as_str(), "1000m");
+/// assert_eq!(quantity3.as_str(), "1Gi");
+/// assert_eq!(quantity4.as_str(), "10000");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceQuantity(String);
 
@@ -43,6 +61,7 @@ impl From<u64> for ResourceQuantity {
     }
 }
 
+/// Resources limits used in the context of podman/k8s.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
@@ -52,23 +71,28 @@ pub struct Resources {
 }
 
 impl Resources {
+    /// Memory limit applied to requests.
     pub fn request_memory(&self) -> Option<&ResourceQuantity> {
         self.request_memory.as_ref()
     }
 
+    /// CPU limit applied to requests. 
     pub fn request_cpu(&self) -> Option<&ResourceQuantity> {
         self.request_cpu.as_ref()
     }
 
+    /// Overall memory limit applied.
     pub fn limit_memory(&self) -> Option<&ResourceQuantity> {
         self.limit_memory.as_ref()
     }
 
+    /// Overall CPU limit applied.
     pub fn limit_cpu(&self) -> Option<&ResourceQuantity> {
         self.limit_cpu.as_ref()
     }
 }
 
+/// A resources builder, used to build a `Resources` declaratively with fields validation.
 #[derive(Debug, Default)]
 pub struct ResourcesBuilder {
     config: Resources,
@@ -84,6 +108,7 @@ impl ResourcesBuilder {
         Self { config, errors }
     }
 
+    /// Set the memory limit for requests.
     pub fn with_request_memory<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -104,6 +129,7 @@ impl ResourcesBuilder {
         }
     }
 
+    /// Set the CPU limit for requests.
     pub fn with_request_cpu<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -124,6 +150,7 @@ impl ResourcesBuilder {
         }
     }
 
+    /// Set the overall memory limit.
     pub fn with_limit_memory<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -144,6 +171,7 @@ impl ResourcesBuilder {
         }
     }
 
+    /// Set the overall CPU limit.
     pub fn with_limit_cpu<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -164,6 +192,7 @@ impl ResourcesBuilder {
         }
     }
 
+    /// Seal the builder and returns a `Resources` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<Resources, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);

@@ -6,8 +6,7 @@ use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
 
-/// An alias for a duration.
-// TODO: in milliseconds ?
+/// An alias for a duration in seconds.
 pub type Duration = u32;
 
 /// An alias for a port.

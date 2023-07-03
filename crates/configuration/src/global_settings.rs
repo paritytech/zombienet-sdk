@@ -11,41 +11,38 @@ use crate::shared::{
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalSettings {
-    /// Whether we should spawn a dedicated bootnode for each chain.
-    /// TODO: commented now until we decide how we want to use this option
-    // spawn_bootnode: bool,
-
-    /// External bootnode address.
     bootnodes_addresses: Vec<Multiaddr>,
 
-    /// Global spawn timeout in seconds.
     network_spawn_timeout: Duration,
 
-    /// Individual node spawn timeout.
     node_spawn_timeout: Duration,
 
-    /// Local IP used to expose local services (including RPC, metrics and monitoring).
     local_ip: Option<IpAddr>,
 }
 
 impl GlobalSettings {
+    /// External bootnode address.
     pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect()
     }
 
+    /// Global spawn timeout in seconds.
     pub fn network_spawn_timeout(&self) -> Duration {
         self.network_spawn_timeout
     }
 
+    /// Individual node spawn timeout in seconds.
     pub fn node_spawn_timeout(&self) -> Duration {
         self.node_spawn_timeout
     }
 
+    /// Local IP used to expose local services (including RPC, metrics and monitoring).
     pub fn local_ip(&self) -> Option<&IpAddr> {
         self.local_ip.as_ref()
     }
 }
 
+/// A global settings builder, used to build `GlobalSettings` declaratively with fields validation.
 #[derive(Debug)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
@@ -75,6 +72,7 @@ impl GlobalSettingsBuilder {
         Self { config, errors }
     }
 
+    /// Set the external bootnode address.
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
@@ -101,6 +99,7 @@ impl GlobalSettingsBuilder {
         )
     }
 
+    /// Set global spawn timeout in seconds.
     pub fn with_network_spawn_timeout(self, timeout: Duration) -> Self {
         Self::transition(
             GlobalSettings {
@@ -111,6 +110,7 @@ impl GlobalSettingsBuilder {
         )
     }
 
+    /// Set individual node spawn timeout in seconds.
     pub fn with_node_spawn_timeout(self, timeout: Duration) -> Self {
         Self::transition(
             GlobalSettings {
@@ -121,6 +121,7 @@ impl GlobalSettingsBuilder {
         )
     }
 
+    /// Set local IP used to expose local services (including RPC, metrics and monitoring).
     pub fn with_local_ip(self, local_ip: &str) -> Self {
         match IpAddr::from_str(local_ip) {
             Ok(local_ip) => Self::transition(
@@ -137,6 +138,7 @@ impl GlobalSettingsBuilder {
         }
     }
 
+    /// Seal the builder and returns a `GlobalSettings` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<GlobalSettings, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

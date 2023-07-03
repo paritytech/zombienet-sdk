@@ -96,7 +96,7 @@ impl NodeConfig {
         self.args.iter().collect()
     }
 
-    /// Wether the node is a validator.
+    /// Whether the node is a validator.
     pub fn is_validator(&self) -> bool {
         self.is_validator
     }
@@ -290,7 +290,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the args that will be used when launching the node.
+    /// Set the arguments that will be used when launching the node.
     pub fn with_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             NodeConfig {
@@ -301,7 +301,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set wether the node is a validator.
+    /// Set whether the node is a validator.
     pub fn validator(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
@@ -312,7 +312,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set wether the node is invulnerable.
+    /// Set whether the node is invulnerable.
     pub fn invulnerable(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
@@ -323,7 +323,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set wether the node is a bootnode.
+    /// Set whether the node is a bootnode.
     pub fn bootnode(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
@@ -469,7 +469,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Seal the builder and returns a `NodeConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a `NodeConfig` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NodeConfig, (String, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
             return Err((self.config.name.clone(), self.errors));

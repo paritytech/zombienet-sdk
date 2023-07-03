@@ -108,7 +108,7 @@ impl ResourcesBuilder {
         Self { config, errors }
     }
 
-    /// Set the memory limit for requests.
+    /// Set the requested memory for a pod. This is the minimum memory allocated for a pod.
     pub fn with_request_memory<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -129,7 +129,7 @@ impl ResourcesBuilder {
         }
     }
 
-    /// Set the CPU limit for requests.
+    /// Set the requested CPU limit for a pod. This is the minimum CPU allocated for a pod.
     pub fn with_request_cpu<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -150,7 +150,7 @@ impl ResourcesBuilder {
         }
     }
 
-    /// Set the overall memory limit.
+    /// Set the overall memory limit for a pod. This is the maximum memory threshold for a pod.
     pub fn with_limit_memory<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -171,7 +171,7 @@ impl ResourcesBuilder {
         }
     }
 
-    /// Set the overall CPU limit.
+    /// Set the overall CPU limit for a pod. This is the maximum CPU threshold for a pod.
     pub fn with_limit_cpu<T>(self, quantity: T) -> Self
     where
         T: TryInto<ResourceQuantity>,
@@ -192,7 +192,7 @@ impl ResourcesBuilder {
         }
     }
 
-    /// Seal the builder and returns a `Resources` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a `Resources` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<Resources, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);

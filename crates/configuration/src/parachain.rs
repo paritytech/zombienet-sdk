@@ -80,7 +80,7 @@ impl ParachainConfig {
         self.default_db_snapshot.as_ref()
     }
 
-    /// The default args that will be used to execute the collator command.
+    /// The default arguments that will be used to execute the collator command.
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
@@ -105,12 +105,12 @@ impl ParachainConfig {
         self.genesis_state_generator.as_ref()
     }
 
-    /// The location of an pre-existing chain spec for the parachain.
+    /// The location of a pre-existing chain specification for the parachain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
     }
 
-    /// Wether the parachain is based on cumulus.
+    /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
     }
@@ -207,7 +207,7 @@ impl ParachainConfigBuilder<Initial> {
 impl ParachainConfigBuilder<WithId> {
     /// Set the chain name (e.g. rococo-local).
     /// Use ```None```, if you are running adder-collator or undying-collator).
-    // TODO: must be the same as in relaychain ?
+    // TODO: must be the same as in relay chain?
     pub fn with_chain<T>(self, chain: T) -> Self
     where
         T: TryInto<Chain>,
@@ -250,7 +250,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
-    /// Set the default command used for collators. Can be overrided.
+    /// Set the default command used for collators. Can be overridden.
     pub fn with_default_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -271,7 +271,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
-    /// Set the default container image used for collators. Can be overrided.
+    /// Set the default container image used for collators. Can be overridden.
     pub fn with_default_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -292,8 +292,8 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
-    /// Set the default resources limits used for collators. Can be overrided.
-    // TODO: adopt a strategy to merge this with the overrided value ?
+    /// Set the default resources limits used for collators. Can be overridden.
+    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -316,7 +316,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
-    /// Set the default database snapshot location that will be used for state. Can be overrided.
+    /// Set the default database snapshot location that will be used for state. Can be overridden.
     pub fn with_default_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -327,8 +327,8 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
-    /// Set the default args that will be used to execute the collator command. Can be overrided.
-    // TODO: adopt a strategy to merge this with the overrided value ?
+    /// Set the default arguments that will be used to execute the collator command. Can be overridden.
+    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -409,7 +409,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
-    /// Set the location of a pre-existing chain spec for the parachain.
+    /// Set the location of a pre-existing chain specification for the parachain.
     pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -420,7 +420,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
-    /// Set wether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
+    /// Set whether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
     pub fn cumulus_based(self, choice: bool) -> Self {
         Self::transition(
             ParachainConfig {
@@ -513,7 +513,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         }
     }
 
-    /// Seal the builder and returns a `ParachainConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a `ParachainConfig` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<ParachainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

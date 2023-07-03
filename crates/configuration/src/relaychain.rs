@@ -9,7 +9,7 @@ use crate::shared::{
     types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
 };
 
-/// A relaychain configuration, composed of nodes and fine-grained configuration options.
+/// A relay chainconfiguration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelaychainConfig {
     /// Chain to use (e.g. rococo-local).
@@ -69,17 +69,17 @@ impl RelaychainConfig {
         self.default_db_snapshot.as_ref()
     }
 
-    /// The default args that will be used to launch the node command.
+    /// The default arguments that will be used to launch the node command.
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
-    /// The location of an pre-existing chain spec for the relaychain.
+    /// The location of an pre-existing chain specification for the relay chain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
     }
 
-    // TODO: description?
+    /// The maximum number of nominations to create per nominator, as default we use `24` as is set in `kusama`.
     pub fn random_nominators_count(&self) -> Option<u32> {
         self.random_nominators_count
     }
@@ -89,7 +89,7 @@ impl RelaychainConfig {
         self.max_nominations
     }
 
-    /// The nodes of the relaychain.
+    /// The nodes of the relay chain.
     pub fn nodes(&self) -> Vec<&NodeConfig> {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
@@ -101,7 +101,7 @@ states! {
     WithAtLeastOneNode
 }
 
-/// A relaychain configuration builder, used to build a `RelaychainConfig` declaratively with fields validation.
+/// A relay chain configuration builder, used to build a `RelaychainConfig` declaratively with fields validation.
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
@@ -183,7 +183,7 @@ impl RelaychainConfigBuilder<Initial> {
 }
 
 impl RelaychainConfigBuilder<WithChain> {
-    /// Set the default command used for nodes. Can be overrided.
+    /// Set the default command used for nodes. Can be overridden.
     pub fn with_default_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -204,7 +204,7 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
-    /// Set the default container image used for nodes. Can be overrided.
+    /// Set the default container image used for nodes. Can be overridden.
     pub fn with_default_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -225,8 +225,8 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
-    /// Set the default resources limits used for nodes. Can be overrided.
-    // TODO: adopt a strategy to merge this with the overrided value ?
+    /// Set the default resources limits used for nodes. Can be overridden.
+    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -249,7 +249,7 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
-    /// Set the default database snapshot location that will be used for state. Can be overrided.
+    /// Set the default database snapshot location that will be used for state. Can be overridden.
     pub fn with_default_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -260,8 +260,8 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
-    /// Set the default args that will be used to execute the node command. Can be overrided.
-    // TODO: adopt a strategy to merge this with the overrided value ?
+    /// Set the default arguments that will be used to execute the node command. Can be overridden.
+    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -272,7 +272,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
-    /// Set the location of a pre-existing chain spec for the relaychain.
+    /// Set the location of a pre-existing chain specification for the relay chain.
     pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -359,7 +359,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         }
     }
 
-    /// Seal the builder and returns a `RelaychainConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a `RelaychainConfig` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<RelaychainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

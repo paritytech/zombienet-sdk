@@ -23,7 +23,7 @@ impl NetworkConfig {
         &self.global_settings
     }
 
-    /// The relaychain of the network.
+    /// The relay chain of the network.
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
@@ -156,7 +156,7 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
-    /// Set the relaychain using a nested ```RelaychainConfigBuilder```.
+    /// Set the relay chainusing a nested ```RelaychainConfigBuilder```.
     pub fn with_relaychain(
         self,
         f: fn(
@@ -213,7 +213,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         }
     }
 
-    /// Add a HRMP channel using a nested ```HrmpChannelConfigBuilder```.
+    /// Add an HRMP channel using a nested ```HrmpChannelConfigBuilder```.
     pub fn with_hrmp_channel(
         self,
         f: fn(
@@ -231,7 +231,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         )
     }
 
-    /// Seal the builder and returns a `NetworkConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a `NetworkConfig` if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);

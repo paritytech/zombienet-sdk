@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::shared::{macros::states, types::ParaId};
 
-/// A HRMP channel configuration, with fine-grained configuration options.
+/// HRMP channel configuration, with fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HrmpChannelConfig {
     sender: ParaId,
@@ -39,7 +39,7 @@ states! {
     WithRecipient
 }
 
-/// A HRMP channel configuration builder, used to build a `HrmpChannelConfig` declaratively with fields validation.
+/// HRMP channel configuration builder, used to build an `HrmpChannelConfig` declaratively with fields validation.
 #[derive(Debug)]
 pub struct HrmpChannelConfigBuilder<State> {
     config: HrmpChannelConfig,

@@ -430,7 +430,7 @@ impl ParachainConfigBuilder<WithId> {
             self.errors,
         )
     }
-    
+
     /// Set the bootnodes addresses the collators will connect to.
     // TODO: is it some kind of default that should be merged with the override in collators ?
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self

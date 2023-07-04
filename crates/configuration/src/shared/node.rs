@@ -20,7 +20,8 @@ use crate::shared::{
 /// # Examples:
 ///
 /// ```
-/// # use configuration::shared::node::EnvVar;
+/// use configuration::shared::node::EnvVar;
+/// 
 /// let simple_var: EnvVar = ("FOO", "BAR").into();
 ///
 /// assert_eq!(
@@ -157,7 +158,7 @@ impl NodeConfig {
         self.p2p_port
     }
 
-    /// libp2p cert hash to use with `webrtc` transport.
+    /// `libp2p` cert hash to use with `WebRTC` transport.
     pub fn p2p_cert_hash(&self) -> Option<&str> {
         self.p2p_cert_hash.as_deref()
     }
@@ -174,7 +175,7 @@ states! {
     Buildable
 }
 
-/// A node configuration builder, used to build a `NodeConfig` declaratively with fields validation.
+/// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct NodeConfigBuilder<S> {
     config: NodeConfig,
@@ -469,7 +470,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Seals the builder and returns a `NodeConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a [`NodeConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NodeConfig, (String, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
             return Err((self.config.name.clone(), self.errors));

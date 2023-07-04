@@ -9,13 +9,14 @@ use super::{
 };
 
 /// A resource quantity used to define limits (k8s/podman only).
-/// It can be constructed from a `&str` or u64, if it fails, it returns a `ConversionError`.
+/// It can be constructed from a `&str` or u64, if it fails, it returns a [`ConversionError`].
 /// Possible optional prefixes are: m, K, M, G, T, P, E, Ki, Mi, Gi, Ti, Pi, Ei
 ///
 /// # Examples
 ///
 /// ```
-/// # use configuration::shared::resources::ResourceQuantity;
+/// use configuration::shared::resources::ResourceQuantity;
+/// 
 /// let quantity1: ResourceQuantity = "100000".try_into().unwrap();
 /// let quantity2: ResourceQuantity = "1000m".try_into().unwrap();
 /// let quantity3: ResourceQuantity = "1Gi".try_into().unwrap();
@@ -92,7 +93,7 @@ impl Resources {
     }
 }
 
-/// A resources builder, used to build a `Resources` declaratively with fields validation.
+/// A resources builder, used to build a [`Resources`] declaratively with fields validation.
 #[derive(Debug, Default)]
 pub struct ResourcesBuilder {
     config: Resources,
@@ -192,7 +193,7 @@ impl ResourcesBuilder {
         }
     }
 
-    /// Seals the builder and returns a `Resources` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a [`Resources`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<Resources, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);

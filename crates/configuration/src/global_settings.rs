@@ -42,7 +42,7 @@ impl GlobalSettings {
     }
 }
 
-/// A global settings builder, used to build `GlobalSettings` declaratively with fields validation.
+/// A global settings builder, used to build [`GlobalSettings`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
@@ -138,7 +138,7 @@ impl GlobalSettingsBuilder {
         }
     }
 
-    /// Seals the builder and returns a `GlobalSettings` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a [`GlobalSettings`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<GlobalSettings, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

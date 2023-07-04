@@ -46,12 +46,13 @@ states! {
     WithRelaychain
 }
 
-/// A network configuration builder, used to build a `NetworkConfig` declaratively with fields validation.
+/// A network configuration builder, used to build a [`NetworkConfig`] declaratively with fields validation.
 ///
 /// # Example:
 ///
 /// ```
-/// # use configuration::NetworkConfigBuilder;
+/// use configuration::NetworkConfigBuilder;
+/// 
 /// let network_config = NetworkConfigBuilder::new()
 ///     .with_relaychain(|relaychain| {
 ///         relaychain
@@ -156,7 +157,7 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
-    /// Set the relay chainusing a nested ```RelaychainConfigBuilder```.
+    /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
     pub fn with_relaychain(
         self,
         f: fn(
@@ -177,7 +178,7 @@ impl NetworkConfigBuilder<Initial> {
 }
 
 impl NetworkConfigBuilder<WithRelaychain> {
-    /// Set the global settings using a nested ```GlobalSettingsBuilder```.
+    /// Set the global settings using a nested [`GlobalSettingsBuilder`].
     pub fn with_global_settings(
         self,
         f: fn(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
@@ -194,7 +195,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         }
     }
 
-    /// Add a parachain using a nested ```ParachainConfigBuilder```.
+    /// Add a parachain using a nested [`ParachainConfigBuilder`].
     pub fn with_parachain(
         self,
         f: fn(
@@ -213,7 +214,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         }
     }
 
-    /// Add an HRMP channel using a nested ```HrmpChannelConfigBuilder```.
+    /// Add an HRMP channel using a nested [`HrmpChannelConfigBuilder`].
     pub fn with_hrmp_channel(
         self,
         f: fn(
@@ -231,7 +232,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         )
     }
 
-    /// Seals the builder and returns a `NetworkConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a [`NetworkConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);

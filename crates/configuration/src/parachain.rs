@@ -133,7 +133,7 @@ states! {
     WithAtLeastOneCollator
 }
 
-/// A parachain configuration builder, used to build a `ParachainConfig` declaratively with fields validation.
+/// A parachain configuration builder, used to build a [`ParachainConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
@@ -206,7 +206,7 @@ impl ParachainConfigBuilder<Initial> {
 
 impl ParachainConfigBuilder<WithId> {
     /// Set the chain name (e.g. rococo-local).
-    /// Use ```None```, if you are running adder-collator or undying-collator).
+    /// Use [`None`], if you are running adder-collator or undying-collator).
     // TODO: must be the same as in relay chain?
     pub fn with_chain<T>(self, chain: T) -> Self
     where
@@ -459,7 +459,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
-    /// Add a new collator using a nested ```NodeConfigBuilder```.
+    /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -487,7 +487,7 @@ impl ParachainConfigBuilder<WithId> {
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
-    /// Add a new collator using a nested ```NodeConfigBuilder```.
+    /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -513,7 +513,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         }
     }
 
-    /// Seals the builder and returns a `ParachainConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a [`ParachainConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<ParachainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

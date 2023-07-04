@@ -101,7 +101,7 @@ states! {
     WithAtLeastOneNode
 }
 
-/// A relay chain configuration builder, used to build a `RelaychainConfig` declaratively with fields validation.
+/// A relay chain configuration builder, used to build a [`RelaychainConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
@@ -305,7 +305,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
-    /// Add a new node using a nested ```NodeConfigBuilder```.
+    /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -333,7 +333,7 @@ impl RelaychainConfigBuilder<WithChain> {
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
-    /// Add a new node using a nested ```NodeConfigBuilder```.
+    /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -359,7 +359,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         }
     }
 
-    /// Seals the builder and returns a `RelaychainConfig` if there are no validation errors, else returns errors.
+    /// Seals the builder and returns a [`RelaychainConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<RelaychainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

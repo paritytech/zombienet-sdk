@@ -16,11 +16,12 @@ pub type Port = u16;
 pub type ParaId = u32;
 
 /// A chain name.
-/// It can be constructed for an `&str`, if it fails, it will returns a `ConversionError`.
+/// It can be constructed for an `&str`, if it fails, it will returns a [`ConversionError`].
 ///
 /// # Examples:
 /// ```
-/// # use configuration::shared::types::Chain;
+/// use configuration::shared::types::Chain;
+/// 
 /// let polkadot: Chain = "polkadot".try_into().unwrap();
 /// let kusama: Chain = "kusama".try_into().unwrap();
 /// let myparachain: Chain = "myparachain".try_into().unwrap();
@@ -55,11 +56,12 @@ impl Chain {
 }
 
 /// A container image.
-/// It can be constructed from an `&str` including a combination of name, version, IPv4 or/and hostname, if it fails, it will returns a `ConversionError`.
+/// It can be constructed from an `&str` including a combination of name, version, IPv4 or/and hostname, if it fails, it will returns a [`ConversionError`].
 ///
 /// # Examples:
 /// ```
-/// # use configuration::shared::types::Image;
+/// use configuration::shared::types::Image;
+/// 
 /// let image1: Image = "name".try_into().unwrap();
 /// let image2: Image = "name:version".try_into().unwrap();
 /// let image3: Image = "myrepo.com/name:version".try_into().unwrap();
@@ -106,11 +108,11 @@ impl Image {
 }
 
 /// A command that will be executed natively (native provider) or in a container (podman/k8s).
-/// It can be constructed from an `&str`, if it fails, it will returns a `ConversionError`.
+/// It can be constructed from an `&str`, if it fails, it will returns a [`ConversionError`].
 ///
 /// # Examples:
 /// ```
-/// # use configuration::shared::types::Command;
+/// use configuration::shared::types::Command;
 ///
 /// let command1: Command = "mycommand".try_into().unwrap();
 /// let command2: Command = "myothercommand".try_into().unwrap();
@@ -140,13 +142,14 @@ impl Command {
 }
 
 /// A location for a locally or remotely stored asset.
-/// It can be constructed from an `url::Url`, a `std::path::PathBuf` or an `&str`.
+/// It can be constructed from an [`url::Url`], a [`std::path::PathBuf`] or an `&str`.
 ///
 /// # Examples:
 /// ```
-/// # use url::Url;
-/// # use std::{path::PathBuf, str::FromStr};
-/// # use configuration::shared::types::AssetLocation;
+/// use url::Url;
+/// use std::{path::PathBuf, str::FromStr};
+/// use configuration::shared::types::AssetLocation;
+/// 
 /// let url_location: AssetLocation = Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap().into();
 /// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
 /// let path_location: AssetLocation = PathBuf::from_str("/tmp/path/to/my/file").unwrap().into();
@@ -192,7 +195,8 @@ impl From<&str> for AssetLocation {
 ///
 /// # Examples:
 /// ```
-/// # use configuration::shared::types::Arg;
+/// use configuration::shared::types::Arg;
+/// 
 /// let flag_arg: Arg = "myflag".into();
 /// let option_arg: Arg = ("name", "value").into();
 ///

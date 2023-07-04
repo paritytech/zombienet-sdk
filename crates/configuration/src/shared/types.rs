@@ -21,7 +21,7 @@ pub type ParaId = u32;
 /// # Examples:
 /// ```
 /// use configuration::shared::types::Chain;
-/// 
+///
 /// let polkadot: Chain = "polkadot".try_into().unwrap();
 /// let kusama: Chain = "kusama".try_into().unwrap();
 /// let myparachain: Chain = "myparachain".try_into().unwrap();
@@ -61,7 +61,7 @@ impl Chain {
 /// # Examples:
 /// ```
 /// use configuration::shared::types::Image;
-/// 
+///
 /// let image1: Image = "name".try_into().unwrap();
 /// let image2: Image = "name:version".try_into().unwrap();
 /// let image3: Image = "myrepo.com/name:version".try_into().unwrap();
@@ -149,7 +149,7 @@ impl Command {
 /// use url::Url;
 /// use std::{path::PathBuf, str::FromStr};
 /// use configuration::shared::types::AssetLocation;
-/// 
+///
 /// let url_location: AssetLocation = Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap().into();
 /// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
 /// let path_location: AssetLocation = PathBuf::from_str("/tmp/path/to/my/file").unwrap().into();
@@ -196,7 +196,7 @@ impl From<&str> for AssetLocation {
 /// # Examples:
 /// ```
 /// use configuration::shared::types::Arg;
-/// 
+///
 /// let flag_arg: Arg = "myflag".into();
 /// let option_arg: Arg = ("name", "value").into();
 ///

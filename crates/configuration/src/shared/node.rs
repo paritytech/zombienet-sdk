@@ -21,7 +21,7 @@ use crate::shared::{
 ///
 /// ```
 /// use configuration::shared::node::EnvVar;
-/// 
+///
 /// let simple_var: EnvVar = ("FOO", "BAR").into();
 ///
 /// assert_eq!(

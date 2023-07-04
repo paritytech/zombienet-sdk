@@ -16,7 +16,7 @@ use super::{
 ///
 /// ```
 /// use configuration::shared::resources::ResourceQuantity;
-/// 
+///
 /// let quantity1: ResourceQuantity = "100000".try_into().unwrap();
 /// let quantity2: ResourceQuantity = "1000m".try_into().unwrap();
 /// let quantity3: ResourceQuantity = "1Gi".try_into().unwrap();

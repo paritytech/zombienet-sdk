@@ -52,7 +52,7 @@ states! {
 ///
 /// ```
 /// use configuration::NetworkConfigBuilder;
-/// 
+///
 /// let network_config = NetworkConfigBuilder::new()
 ///     .with_relaychain(|relaychain| {
 ///         relaychain

@@ -83,6 +83,8 @@ pub trait Provider {
     async fn setup_cleaner() -> Result<(), ProviderError> {
         Ok(())
     }
+
+    #[allow(clippy::diverging_sub_expression)]
     async fn upsert_cron_job() -> Result<(), ProviderError> {
         unimplemented!();
     }

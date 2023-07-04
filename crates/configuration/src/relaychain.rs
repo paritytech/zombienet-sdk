@@ -79,12 +79,12 @@ impl RelaychainConfig {
         self.chain_spec_path.as_ref()
     }
 
-    /// The maximum number of nominations to create per nominator, as default we use `24` as is set in `kusama`.
+    /// The number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn random_nominators_count(&self) -> Option<u32> {
         self.random_nominators_count
     }
 
-    // TODO: description?
+    /// The maximum number of nominations to create per nominator.
     pub fn max_nominations(&self) -> Option<u8> {
         self.max_nominations
     }
@@ -283,7 +283,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
-    // TODO: description ?
+    /// Set the number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -294,7 +294,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
-    // TODO: description ?
+    /// Set the maximum number of nominations to create per nominator.
     pub fn with_max_nominations(self, max_nominations: u8) -> Self {
         Self::transition(
             RelaychainConfig {

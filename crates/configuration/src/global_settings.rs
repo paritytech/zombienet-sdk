@@ -12,11 +12,8 @@ use crate::shared::{
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalSettings {
     bootnodes_addresses: Vec<Multiaddr>,
-
     network_spawn_timeout: Duration,
-
     node_spawn_timeout: Duration,
-
     local_ip: Option<IpAddr>,
 }
 

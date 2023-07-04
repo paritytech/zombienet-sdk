@@ -12,34 +12,15 @@ use crate::shared::{
 /// A relay chainconfiguration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelaychainConfig {
-    /// Chain to use (e.g. rococo-local).
     chain: Chain,
-
-    /// Default command to run the node. Can be overriden on each node.
     default_command: Option<Command>,
-
-    /// Default image to use (only podman/k8s). Can be overriden on each node.
     default_image: Option<Image>,
-
-    /// Default resources. Can be overriden on each node.
     default_resources: Option<Resources>,
-
-    /// Default database snapshot. Can be overriden on each node.
     default_db_snapshot: Option<AssetLocation>,
-
-    /// Default arguments to use in nodes. Can be overriden on each node.
     default_args: Vec<Arg>,
-
-    /// Chain specification JSON file to use.
     chain_spec_path: Option<AssetLocation>,
-
-    /// Set the count of nominators to generator (used with PoS networks).
     random_nominators_count: Option<u32>,
-
-    /// Set the max nominators value (used with PoS networks).
     max_nominations: Option<u8>,
-
-    /// Nodes to run.
     nodes: Vec<NodeConfig>,
 }
 

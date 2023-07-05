@@ -53,5 +53,5 @@ jobs:
         uses: Nef10/lcov-reporter-action@v0.4.0
         with:
           lcov-file: lcov.info
-          pr-number: ${{ env.pr_number }}
+          pr-number: ${{ github.event.pull_request.number }}
         if: github.event_name == 'pull_request'

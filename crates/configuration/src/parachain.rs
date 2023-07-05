@@ -480,7 +480,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         match f(NodeConfigBuilder::new(ChainDefaultContext::default())).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
-                    collators: vec![self.config.collators, vec![collator]].concat(),
+                    collators: [self.config.collators, vec![collator]].concat(),
                     ..self.config
                 },
                 self.errors,

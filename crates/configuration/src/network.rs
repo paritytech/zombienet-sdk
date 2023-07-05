@@ -133,7 +133,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         match f(ParachainConfigBuilder::new()).build() {
             Ok(parachain) => Self::transition(
                 NetworkConfig {
-                    parachains: vec![self.config.parachains, vec![parachain]].concat(),
+                    parachains: [self.config.parachains, vec![parachain]].concat(),
                     ..self.config
                 },
                 self.errors,
@@ -152,7 +152,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
         Self::transition(
             NetworkConfig {
-                hrmp_channels: vec![self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
+                hrmp_channels: [self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
                 ..self.config
             },
             self.errors,

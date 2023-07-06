@@ -40,6 +40,19 @@ jobs:
       - name: Tests
         run: cargo test
 
+  coverage:
+    name: Zombienet SDK - coverage
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    permissions:
+       issues: write
+       pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v3
+
       - name: Install latest nextest release
         uses: taiki-e/install-action@nextest
 
@@ -54,4 +67,3 @@ jobs:
         with:
           lcov-file: lcov.info
           pr-number: ${{ github.event.pull_request.number }}
-        if: github.event_name == 'pull_request'

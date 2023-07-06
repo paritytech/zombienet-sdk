@@ -317,7 +317,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         match f(NodeConfigBuilder::new(self.default_context())).build() {
             Ok(node) => Self::transition(
                 RelaychainConfig {
-                    nodes: vec![self.config.nodes, vec![node]].concat(),
+                    nodes: [self.config.nodes, vec![node]].concat(),
                     ..self.config
                 },
                 self.errors,

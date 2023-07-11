@@ -74,25 +74,21 @@ pub struct NodeConfig {
 
 impl NodeConfig {
     /// Node name (should be unique).
-    // TODO: handle unique in validation
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Image to run (only podman/k8s). Override the default.
-    // TODO: missing test of default overridding
+    /// Image to run (only podman/k8s).
     pub fn image(&self) -> Option<&Image> {
         self.image.as_ref()
     }
 
-    /// Command to run the node. Override the default.
-    // TODO: missing test of default overriding
+    /// Command to run the node.
     pub fn command(&self) -> Option<&Command> {
         self.command.as_ref()
     }
 
-    /// Arguments to use for node. Appended to default.
-    // TODO: missing test of default appending
+    /// Arguments to use for node.
     pub fn args(&self) -> Vec<&Arg> {
         self.args.iter().collect()
     }
@@ -122,38 +118,32 @@ impl NodeConfig {
         self.env.iter().collect()
     }
 
-    /// List of node's bootnodes addresses to use. Appended to default.
-    // TODO: missing test appending to default.
+    /// List of node's bootnodes addresses to use.
     pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect()
     }
 
-    /// Default resources. Override the default.
-    // TODO: missing test default override.
+    /// Default resources.
     pub fn resources(&self) -> Option<&Resources> {
         self.resources.as_ref()
     }
 
-    /// Websocket port to use. Default to 9944 + n where n is the node index in the network (starting from 0).
-    // TODO: needs to test the default + incrementation
+    /// Websocket port to use.
     pub fn ws_port(&self) -> Option<u16> {
         self.ws_port
     }
 
-    /// RPC port to use. Default to 9933 + n where n is the node index in the network (starting from 0).
-    // [TODO]: start at a different default to avoid overlap between ws_port and rpc_port when node count >= 12 ? + testing
+    /// RPC port to use.
     pub fn rpc_port(&self) -> Option<u16> {
         self.rpc_port
     }
 
-    /// Prometheus port to use. Default to 9615 + n where n is the node index in the network (starting from 0).
-    // TODO: needs to tes the defualt + incrementation
+    /// Prometheus port to use.
     pub fn prometheus_port(&self) -> Option<u16> {
         self.prometheus_port
     }
 
-    /// P2P port to use. Default to 30333 + n where n is the node index in the network (starting from 0)
-    // TODO: needs to tes the defualt + incrementation
+    /// P2P port to use.
     pub fn p2p_port(&self) -> Option<u16> {
         self.p2p_port
     }
@@ -163,8 +153,7 @@ impl NodeConfig {
         self.p2p_cert_hash.as_deref()
     }
 
-    /// Database snapshot. Override the default.
-    // TODO: missing override test
+    /// Database snapshot.
     pub fn db_snapshot(&self) -> Option<&AssetLocation> {
         self.db_snapshot.as_ref()
     }
@@ -249,7 +238,7 @@ impl NodeConfigBuilder<Initial> {
 }
 
 impl NodeConfigBuilder<Buildable> {
-    /// Set the command that will be executed to launch the node.
+    /// Set the command that will be executed to launch the node. Override the default.
     pub fn with_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -270,7 +259,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the image that will be used for the node (only podman/k8s).
+    /// Set the image that will be used for the node (only podman/k8s). Override the default.
     pub fn with_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -291,7 +280,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the arguments that will be used when launching the node.
+    /// Set the arguments that will be used when launching the node. OVerride the default.
     pub fn with_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             NodeConfig {
@@ -346,14 +335,14 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the node environment variables that will be used when launched.
+    /// Set the node environment variables that will be used when launched. Override the default.
     pub fn with_env(self, env: Vec<impl Into<EnvVar>>) -> Self {
         let env = env.into_iter().map(|var| var.into()).collect::<Vec<_>>();
 
         Self::transition(NodeConfig { env, ..self.config }, self.errors)
     }
 
-    /// Set the bootnodes addresses that the node will try to connect to.
+    /// Set the bootnodes addresses that the node will try to connect to. Override the default.
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
@@ -380,7 +369,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the resources limits what will be used for the node (only podman/k8s).
+    /// Set the resources limits what will be used for the node (only podman/k8s). Override the default.
     pub fn with_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(resources) => Self::transition(
@@ -403,7 +392,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the websocket port that will be exposed.
+    /// Set the websocket port that will be exposed. Uniqueness across config will be checked.
     pub fn with_ws_port(self, ws_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -414,7 +403,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the RPC port that will be exposed.
+    /// Set the RPC port that will be exposed. Uniqueness across config will be checked.
     pub fn with_rpc_port(self, rpc_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -425,7 +414,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the prometheus port that will be exposed for metrics.
+    /// Set the prometheus port that will be exposed for metrics. Uniqueness across config will be checked.
     pub fn with_prometheus_port(self, prometheus_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -436,7 +425,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the P2P port that will be exposed.
+    /// Set the P2P port that will be exposed. Uniqueness across will be checked.
     pub fn with_p2p_port(self, p2p_port: Port) -> Self {
         Self::transition(
             NodeConfig {
@@ -447,8 +436,8 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the P2P cert hash that will be used
-    // TODO: for what it can be used ?
+    /// Set the P2P cert hash that will be used as part of the multiaddress
+    /// if and only if the multiaddress is set to use `webrtc`.
     pub fn with_p2p_cert_hash(self, p2p_cert_hash: impl Into<String>) -> Self {
         Self::transition(
             NodeConfig {
@@ -459,7 +448,7 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
-    /// Set the database snapshot that will be used to launch the node.
+    /// Set the database snapshot that will be used to launch the node. Override the default.
     pub fn with_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             NodeConfig {

@@ -9,7 +9,7 @@ use crate::shared::{
     types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
 };
 
-/// A relay chainconfiguration, composed of nodes and fine-grained configuration options.
+/// A relay chain configuration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelaychainConfig {
     chain: Chain,
@@ -207,7 +207,6 @@ impl RelaychainConfigBuilder<WithChain> {
     }
 
     /// Set the default resources limits used for nodes. Can be overridden.
-    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -242,7 +241,6 @@ impl RelaychainConfigBuilder<WithChain> {
     }
 
     /// Set the default arguments that will be used to execute the node command. Can be overridden.
-    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             RelaychainConfig {

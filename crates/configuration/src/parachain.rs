@@ -116,7 +116,6 @@ impl ParachainConfig {
     }
 
     /// The bootnodes addresses the collators will connect to.
-    // TODO: is it some kind of default that should be merged with the override in collators ?
     pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect::<Vec<_>>()
     }
@@ -207,7 +206,6 @@ impl ParachainConfigBuilder<Initial> {
 impl ParachainConfigBuilder<WithId> {
     /// Set the chain name (e.g. rococo-local).
     /// Use [`None`], if you are running adder-collator or undying-collator).
-    // TODO: must be the same as in relay chain?
     pub fn with_chain<T>(self, chain: T) -> Self
     where
         T: TryInto<Chain>,
@@ -293,7 +291,6 @@ impl ParachainConfigBuilder<WithId> {
     }
 
     /// Set the default resources limits used for collators. Can be overridden.
-    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -328,7 +325,6 @@ impl ParachainConfigBuilder<WithId> {
     }
 
     /// Set the default arguments that will be used to execute the collator command. Can be overridden.
-    // TODO: adopt a strategy to merge this with the overridden value ?
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -432,7 +428,6 @@ impl ParachainConfigBuilder<WithId> {
     }
 
     /// Set the bootnodes addresses the collators will connect to.
-    // TODO: is it some kind of default that should be merged with the override in collators ?
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,

@@ -1,5 +1,6 @@
 use super::types::ParaId;
 
+/// An error at the configuration level.
 #[derive(thiserror::Error, Debug)]
 pub enum ConfigError {
     #[error("relaychain.{0}")]
@@ -18,6 +19,7 @@ pub enum ConfigError {
     Collator(String, anyhow::Error),
 }
 
+/// An error at the field level.
 #[derive(thiserror::Error, Debug)]
 pub enum FieldError {
     #[error("chain: {0}")]
@@ -66,6 +68,7 @@ pub enum FieldError {
     LimitCpu(anyhow::Error),
 }
 
+/// A conversion error for shared types across fields.
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum ConversionError {
     #[error("'{0}' shouldn't contains whitespace")]

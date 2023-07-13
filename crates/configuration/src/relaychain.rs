@@ -9,77 +9,68 @@ use crate::shared::{
     types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
 };
 
-/// A relaychain configuration, composed of nodes and fine-grained configuration options.
+/// A relay chain configuration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelaychainConfig {
-    /// Chain to use (e.g. rococo-local).
     chain: Chain,
-
-    /// Default command to run the node. Can be overriden on each node.
     default_command: Option<Command>,
-
-    /// Default image to use (only podman/k8s). Can be overriden on each node.
     default_image: Option<Image>,
-
-    /// Default resources. Can be overriden on each node.
     default_resources: Option<Resources>,
-
-    /// Default database snapshot. Can be overriden on each node.
     default_db_snapshot: Option<AssetLocation>,
-
-    /// Default arguments to use in nodes. Can be overriden on each node.
     default_args: Vec<Arg>,
-
-    /// Chain specification JSON file to use.
     chain_spec_path: Option<AssetLocation>,
-
-    /// Set the count of nominators to generator (used with PoS networks).
     random_nominators_count: Option<u32>,
-
-    /// Set the max nominators value (used with PoS networks).
     max_nominations: Option<u8>,
-
-    /// Nodes to run.
     nodes: Vec<NodeConfig>,
 }
 
 impl RelaychainConfig {
+    /// The chain name.
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
 
+    /// The default command used for nodes.
     pub fn default_command(&self) -> Option<&Command> {
         self.default_command.as_ref()
     }
 
+    /// The default container image used for nodes.
     pub fn default_image(&self) -> Option<&Image> {
         self.default_image.as_ref()
     }
 
+    /// The default resources limits used for nodes.
     pub fn default_resources(&self) -> Option<&Resources> {
         self.default_resources.as_ref()
     }
 
+    /// The default database snapshot location that will be used for state.
     pub fn default_db_snapshot(&self) -> Option<&AssetLocation> {
         self.default_db_snapshot.as_ref()
     }
 
+    /// The default arguments that will be used to launch the node command.
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
+    /// The location of an pre-existing chain specification for the relay chain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
     }
 
-    pub fn random_minators_count(&self) -> Option<u32> {
+    /// The number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
+    pub fn random_nominators_count(&self) -> Option<u32> {
         self.random_nominators_count
     }
 
+    /// The maximum number of nominations to create per nominator.
     pub fn max_nominations(&self) -> Option<u8> {
         self.max_nominations
     }
 
+    /// The nodes of the relay chain.
     pub fn nodes(&self) -> Vec<&NodeConfig> {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
@@ -91,6 +82,7 @@ states! {
     WithAtLeastOneNode
 }
 
+/// A relay chain configuration builder, used to build a [`RelaychainConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
@@ -149,6 +141,7 @@ impl RelaychainConfigBuilder<Initial> {
         Self::default()
     }
 
+    /// Set the chain name (e.g. rococo-local).
     pub fn with_chain<T>(self, chain: T) -> RelaychainConfigBuilder<WithChain>
     where
         T: TryInto<Chain>,
@@ -171,6 +164,7 @@ impl RelaychainConfigBuilder<Initial> {
 }
 
 impl RelaychainConfigBuilder<WithChain> {
+    /// Set the default command used for nodes. Can be overridden.
     pub fn with_default_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -191,6 +185,7 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
+    /// Set the default container image used for nodes. Can be overridden.
     pub fn with_default_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -211,6 +206,7 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
+    /// Set the default resources limits used for nodes. Can be overridden.
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -233,6 +229,7 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
+    /// Set the default database snapshot location that will be used for state. Can be overridden.
     pub fn with_default_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -243,6 +240,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the default arguments that will be used to execute the node command. Can be overridden.
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -253,6 +251,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the location of a pre-existing chain specification for the relay chain.
     pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -263,6 +262,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -273,6 +273,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the maximum number of nominations to create per nominator.
     pub fn with_max_nominations(self, max_nominations: u8) -> Self {
         Self::transition(
             RelaychainConfig {
@@ -283,6 +284,7 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -310,6 +312,7 @@ impl RelaychainConfigBuilder<WithChain> {
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
+    /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -335,6 +338,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         }
     }
 
+    /// Seals the builder and returns a [`RelaychainConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<RelaychainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self
@@ -413,7 +417,7 @@ mod tests {
             relaychain_config.default_args(),
             args.iter().collect::<Vec<_>>()
         );
-        assert_eq!(relaychain_config.random_minators_count().unwrap(), 42);
+        assert_eq!(relaychain_config.random_nominators_count().unwrap(), 42);
         assert_eq!(relaychain_config.max_nominations().unwrap(), 5);
     }
 

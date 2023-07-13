@@ -11,34 +11,31 @@ use crate::{
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetworkConfig {
-    // The global settings applied to the network.
     global_settings: GlobalSettings,
-
-    /// Relaychain configuration.
     relaychain: Option<RelaychainConfig>,
-
-    /// Parachains configurations.
     parachains: Vec<ParachainConfig>,
-
-    /// HRMP channels configurations.
     hrmp_channels: Vec<HrmpChannelConfig>,
 }
 
 impl NetworkConfig {
+    /// The global settings of the network.
     pub fn global_settings(&self) -> &GlobalSettings {
         &self.global_settings
     }
 
+    /// The relay chain of the network.
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
             .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues")
     }
 
+    /// The parachains of the network.
     pub fn parachains(&self) -> Vec<&ParachainConfig> {
         self.parachains.iter().collect::<Vec<_>>()
     }
 
+    /// The HRMP channels of the network.
     pub fn hrmp_channels(&self) -> Vec<&HrmpChannelConfig> {
         self.hrmp_channels.iter().collect::<Vec<_>>()
     }
@@ -49,6 +46,78 @@ states! {
     WithRelaychain
 }
 
+/// A network configuration builder, used to build a [`NetworkConfig`] declaratively with fields validation.
+///
+/// # Example:
+///
+/// ```
+/// use configuration::NetworkConfigBuilder;
+///
+/// let network_config = NetworkConfigBuilder::new()
+///     .with_relaychain(|relaychain| {
+///         relaychain
+///             .with_chain("polkadot")
+///             .with_random_nominators_count(10)
+///             .with_default_resources(|resources| {
+///                 resources
+///                     .with_limit_cpu("1000m")
+///                     .with_request_memory("1Gi")
+///                     .with_request_cpu(100_000)
+///             })
+///             .with_node(|node| {
+///                 node.with_name("node")
+///                     .with_command("command")
+///                     .validator(true)
+///             })
+///     })
+///     .with_parachain(|parachain| {
+///         parachain
+///             .with_id(1000)
+///             .with_chain("myparachain1")
+///             .with_initial_balance(100_000)
+///             .with_default_image("myimage:version")
+///             .with_collator(|collator| {
+///                 collator
+///                     .with_name("collator1")
+///                     .with_command("command1")
+///                     .validator(true)
+///             })
+///     })
+///     .with_parachain(|parachain| {
+///         parachain
+///             .with_id(2000)
+///             .with_chain("myparachain2")
+///             .with_initial_balance(50_0000)
+///             .with_collator(|collator| {
+///                 collator
+///                     .with_name("collator2")
+///                     .with_command("command2")
+///                     .validator(true)
+///             })
+///     })
+///     .with_hrmp_channel(|hrmp_channel1| {
+///         hrmp_channel1
+///             .with_sender(1)
+///             .with_recipient(2)
+///             .with_max_capacity(200)
+///             .with_max_message_size(500)
+///     })
+///     .with_hrmp_channel(|hrmp_channel2| {
+///         hrmp_channel2
+///             .with_sender(2)
+///             .with_recipient(1)
+///             .with_max_capacity(100)
+///             .with_max_message_size(250)
+///     })
+///     .with_global_settings(|global_settings| {
+///         global_settings
+///             .with_network_spawn_timeout(1200)
+///             .with_node_spawn_timeout(240)
+///     })
+///     .build();
+///
+/// assert!(network_config.is_ok())
+/// ```
 #[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
@@ -88,6 +157,7 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
+    /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
     pub fn with_relaychain(
         self,
         f: fn(
@@ -108,6 +178,7 @@ impl NetworkConfigBuilder<Initial> {
 }
 
 impl NetworkConfigBuilder<WithRelaychain> {
+    /// Set the global settings using a nested [`GlobalSettingsBuilder`].
     pub fn with_global_settings(
         self,
         f: fn(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
@@ -124,6 +195,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         }
     }
 
+    /// Add a parachain using a nested [`ParachainConfigBuilder`].
     pub fn with_parachain(
         self,
         f: fn(
@@ -142,6 +214,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         }
     }
 
+    /// Add an HRMP channel using a nested [`HrmpChannelConfigBuilder`].
     pub fn with_hrmp_channel(
         self,
         f: fn(
@@ -159,6 +232,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
         )
     }
 
+    /// Seals the builder and returns a [`NetworkConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);
@@ -239,7 +313,10 @@ mod tests {
         assert_eq!(node.command().unwrap().as_str(), "command");
         assert!(node.is_validator());
         assert_eq!(
-            network_config.relaychain().random_minators_count().unwrap(),
+            network_config
+                .relaychain()
+                .random_nominators_count()
+                .unwrap(),
             10
         );
 
@@ -385,8 +462,8 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
                     .with_chain("myparachain1")
                     .with_initial_balance(100_000)
@@ -397,8 +474,8 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain2| {
-                parachain2
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(2000)
                     .with_chain("myparachain2")
                     .with_initial_balance(100_000)

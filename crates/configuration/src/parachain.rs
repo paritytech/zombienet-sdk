@@ -20,118 +20,107 @@ pub enum RegistrationStrategy {
 /// A parachain configuration, composed of collators and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParachainConfig {
-    // Parachain ID to use.
     id: u32,
-
-    /// Chain to use (use None if you are running adder-collator or undying-collator).
     chain: Option<Chain>,
-
-    /// Registration strategy for the parachain.
     registration_strategy: Option<RegistrationStrategy>,
-
-    /// Parachain balance.
     initial_balance: u128,
-
     default_command: Option<Command>,
-
     default_image: Option<Image>,
-
     default_resources: Option<Resources>,
-
     default_db_snapshot: Option<AssetLocation>,
-
     default_args: Vec<Arg>,
-
-    /// Path to WASM runtime.
     genesis_wasm_path: Option<AssetLocation>,
-
-    /// Command to generate the WASM runtime.
     genesis_wasm_generator: Option<Command>,
-
-    /// Path to the gensis `state` file.
     genesis_state_path: Option<AssetLocation>,
-
-    /// Command to generate the genesis `state`.
     genesis_state_generator: Option<Command>,
-
-    /// Use a pre-generated chain specification.
     chain_spec_path: Option<AssetLocation>,
-
-    /// Wether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
     is_cumulus_based: bool,
-
-    /// List of parachain's bootnodes addresses to use.
     bootnodes_addresses: Vec<Multiaddr>,
-
-    /// List of parachain's collators to use.
     collators: Vec<NodeConfig>,
 }
 
 impl ParachainConfig {
+    /// The parachain ID.
     pub fn id(&self) -> u32 {
         self.id
     }
 
+    /// The chain name.
     pub fn chain(&self) -> Option<&Chain> {
         self.chain.as_ref()
     }
 
+    /// The registration strategy for the parachain.
     pub fn registration_strategy(&self) -> Option<&RegistrationStrategy> {
         self.registration_strategy.as_ref()
     }
 
+    /// The initial balance of the parachain account.
     pub fn initial_balance(&self) -> u128 {
         self.initial_balance
     }
 
+    /// The default command used for collators.
     pub fn default_command(&self) -> Option<&Command> {
         self.default_command.as_ref()
     }
 
+    /// The default container image used for collators.
     pub fn default_image(&self) -> Option<&Image> {
         self.default_image.as_ref()
     }
 
+    /// The default resources limits used for collators.
     pub fn default_resources(&self) -> Option<&Resources> {
         self.default_resources.as_ref()
     }
 
+    /// The default database snapshot location that will be used for state.
     pub fn default_db_snapshot(&self) -> Option<&AssetLocation> {
         self.default_db_snapshot.as_ref()
     }
 
+    /// The default arguments that will be used to execute the collator command.
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
+    /// The location of a pre-existing genesis WASM runtime blob of the parachain.
     pub fn genesis_wasm_path(&self) -> Option<&AssetLocation> {
         self.genesis_wasm_path.as_ref()
     }
 
+    /// The generator command used to create the genesis WASM runtime blob of the parachain.
     pub fn genesis_wasm_generator(&self) -> Option<&Command> {
         self.genesis_wasm_generator.as_ref()
     }
 
+    /// The location of a pre-existing genesis state of the parachain.
     pub fn genesis_state_path(&self) -> Option<&AssetLocation> {
         self.genesis_state_path.as_ref()
     }
 
+    /// The generator command used to create the genesis state of the parachain.
     pub fn genesis_state_generator(&self) -> Option<&Command> {
         self.genesis_state_generator.as_ref()
     }
 
+    /// The location of a pre-existing chain specification for the parachain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
     }
 
+    /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
     }
 
+    /// The bootnodes addresses the collators will connect to.
     pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect::<Vec<_>>()
     }
 
+    /// The collators of the parachain.
     pub fn collators(&self) -> Vec<&NodeConfig> {
         self.collators.iter().collect::<Vec<_>>()
     }
@@ -143,6 +132,7 @@ states! {
     WithAtLeastOneCollator
 }
 
+/// A parachain configuration builder, used to build a [`ParachainConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
@@ -206,12 +196,16 @@ impl ParachainConfigBuilder<Initial> {
         Self::default()
     }
 
+    /// Set the parachain ID (should be unique).
+    // TODO: handle unique validation
     pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId> {
         Self::transition(ParachainConfig { id, ..self.config }, self.errors)
     }
 }
 
 impl ParachainConfigBuilder<WithId> {
+    /// Set the chain name (e.g. rococo-local).
+    /// Use [`None`], if you are running adder-collator or undying-collator).
     pub fn with_chain<T>(self, chain: T) -> Self
     where
         T: TryInto<Chain>,
@@ -232,6 +226,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
+    /// Set the registration strategy for the parachain, could be without registration, using extrinsic or in genesis.
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         Self::transition(
             ParachainConfig {
@@ -242,6 +237,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the initial balance of the parachain account.
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
         Self::transition(
             ParachainConfig {
@@ -252,6 +248,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the default command used for collators. Can be overridden.
     pub fn with_default_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -272,6 +269,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
+    /// Set the default container image used for collators. Can be overridden.
     pub fn with_default_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -292,6 +290,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
+    /// Set the default resources limits used for collators. Can be overridden.
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -314,6 +313,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
+    /// Set the default database snapshot location that will be used for state. Can be overridden.
     pub fn with_default_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -324,6 +324,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the default arguments that will be used to execute the collator command. Can be overridden.
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -334,6 +335,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the location of a pre-existing genesis WASM runtime blob of the parachain.
     pub fn with_genesis_wasm_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -344,6 +346,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the generator command used to create the genesis WASM runtime blob of the parachain.
     pub fn with_genesis_wasm_generator<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -367,6 +370,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
+    /// Set the location of a pre-existing genesis state of the parachain.
     pub fn with_genesis_state_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -377,6 +381,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the generator command used to create the genesis state of the parachain.
     pub fn with_genesis_state_generator<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -400,6 +405,7 @@ impl ParachainConfigBuilder<WithId> {
         }
     }
 
+    /// Set the location of a pre-existing chain specification for the parachain.
     pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {
@@ -410,6 +416,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set whether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
     pub fn cumulus_based(self, choice: bool) -> Self {
         Self::transition(
             ParachainConfig {
@@ -420,6 +427,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the bootnodes addresses the collators will connect to.
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
@@ -446,6 +454,7 @@ impl ParachainConfigBuilder<WithId> {
         )
     }
 
+    /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -473,6 +482,7 @@ impl ParachainConfigBuilder<WithId> {
 }
 
 impl ParachainConfigBuilder<WithAtLeastOneCollator> {
+    /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
@@ -498,6 +508,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         }
     }
 
+    /// Seals the builder and returns a [`ParachainConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<ParachainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self

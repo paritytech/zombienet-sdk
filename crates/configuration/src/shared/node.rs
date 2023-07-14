@@ -4,7 +4,7 @@ use multiaddr::Multiaddr;
 
 use super::{
     errors::FieldError,
-    helpers::{merge_errors, merge_errors_vecs},
+    helpers::{ensure_port_unique, merge_errors, merge_errors_vecs},
     macros::states,
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext},
@@ -422,50 +422,78 @@ impl NodeConfigBuilder<Buildable> {
 
     /// Set the websocket port that will be exposed. Uniqueness across config will be checked.
     pub fn with_ws_port(self, ws_port: Port) -> Self {
-        Self::transition(
-            NodeConfig {
-                ws_port: Some(ws_port),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
+        match ensure_port_unique(ws_port, self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                NodeConfig {
+                    ws_port: Some(ws_port),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::WsPort(error).into()),
+            ),
+        }
     }
 
     /// Set the RPC port that will be exposed. Uniqueness across config will be checked.
     pub fn with_rpc_port(self, rpc_port: Port) -> Self {
-        Self::transition(
-            NodeConfig {
-                rpc_port: Some(rpc_port),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
+        match ensure_port_unique(rpc_port, self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                NodeConfig {
+                    rpc_port: Some(rpc_port),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::RpcPort(error).into()),
+            ),
+        }
     }
 
     /// Set the prometheus port that will be exposed for metrics. Uniqueness across config will be checked.
     pub fn with_prometheus_port(self, prometheus_port: Port) -> Self {
-        Self::transition(
-            NodeConfig {
-                prometheus_port: Some(prometheus_port),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
+        match ensure_port_unique(prometheus_port, self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                NodeConfig {
+                    prometheus_port: Some(prometheus_port),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::PrometheusPort(error).into()),
+            ),
+        }
     }
 
-    /// Set the P2P port that will be exposed. Uniqueness across will be checked.
+    /// Set the P2P port that will be exposed. Uniqueness across config will be checked.
     pub fn with_p2p_port(self, p2p_port: Port) -> Self {
-        Self::transition(
-            NodeConfig {
-                p2p_port: Some(p2p_port),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
+        match ensure_port_unique(p2p_port, self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                NodeConfig {
+                    p2p_port: Some(p2p_port),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::P2pPort(error).into()),
+            ),
+        }
     }
 
     /// Set the P2P cert hash that will be used as part of the multiaddress

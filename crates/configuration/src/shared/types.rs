@@ -221,6 +221,11 @@ impl From<(&str, &str)> for Arg {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct ValidationContext {
+    pub used_ports: Vec<Port>
+}
+
 #[derive(Default)]
 pub struct ChainDefaultContext {
     pub(crate) default_command: Option<Command>,

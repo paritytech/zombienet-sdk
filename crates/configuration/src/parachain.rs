@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, marker::PhantomData};
+use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
 
@@ -8,7 +8,7 @@ use crate::shared::{
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
+    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +136,7 @@ states! {
 #[derive(Debug)]
 pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
+    validation_context: Rc<RefCell<ValidationContext>>,
     errors: Vec<anyhow::Error>,
     _state: PhantomData<S>,
 }
@@ -162,6 +163,7 @@ impl Default for ParachainConfigBuilder<Initial> {
                 bootnodes_addresses: vec![],
                 collators: vec![],
             },
+            validation_context: Default::default(),
             errors: vec![],
             _state: PhantomData,
         }
@@ -171,16 +173,18 @@ impl Default for ParachainConfigBuilder<Initial> {
 impl<A> ParachainConfigBuilder<A> {
     fn transition<B>(
         config: ParachainConfig,
+        validation_context: Rc<RefCell<ValidationContext>>,
         errors: Vec<anyhow::Error>,
     ) -> ParachainConfigBuilder<B> {
         ParachainConfigBuilder {
             config,
+            validation_context,
             errors,
             _state: PhantomData,
         }
     }
 
-    fn default_context(&self) -> ChainDefaultContext {
+    fn default_chain_context(&self) -> ChainDefaultContext {
         ChainDefaultContext {
             default_command: self.config.default_command.clone(),
             default_image: self.config.default_image.clone(),
@@ -192,14 +196,23 @@ impl<A> ParachainConfigBuilder<A> {
 }
 
 impl ParachainConfigBuilder<Initial> {
-    pub fn new() -> ParachainConfigBuilder<Initial> {
-        Self::default()
+    pub fn new(
+        validation_context: Rc<RefCell<ValidationContext>>,
+    ) -> ParachainConfigBuilder<Initial> {
+        Self {
+            validation_context,
+            ..Self::default()
+        }
     }
 
     /// Set the parachain ID (should be unique).
     // TODO: handle unique validation
     pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId> {
-        Self::transition(ParachainConfig { id, ..self.config }, self.errors)
+        Self::transition(
+            ParachainConfig { id, ..self.config },
+            self.validation_context,
+            self.errors,
+        )
     }
 }
 
@@ -217,10 +230,12 @@ impl ParachainConfigBuilder<WithId> {
                     chain: Some(chain),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(self.errors, FieldError::Chain(error.into()).into()),
             ),
         }
@@ -233,6 +248,7 @@ impl ParachainConfigBuilder<WithId> {
                 registration_strategy: Some(strategy),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -244,6 +260,7 @@ impl ParachainConfigBuilder<WithId> {
                 initial_balance,
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -260,10 +277,12 @@ impl ParachainConfigBuilder<WithId> {
                     default_command: Some(command),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(self.errors, FieldError::DefaultCommand(error.into()).into()),
             ),
         }
@@ -281,10 +300,12 @@ impl ParachainConfigBuilder<WithId> {
                     default_image: Some(image),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(self.errors, FieldError::DefaultImage(error.into()).into()),
             ),
         }
@@ -298,10 +319,12 @@ impl ParachainConfigBuilder<WithId> {
                     default_resources: Some(default_resources),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(errors) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors_vecs(
                     self.errors,
                     errors
@@ -320,6 +343,7 @@ impl ParachainConfigBuilder<WithId> {
                 default_db_snapshot: Some(location.into()),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -331,6 +355,7 @@ impl ParachainConfigBuilder<WithId> {
                 default_args: args,
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -342,6 +367,7 @@ impl ParachainConfigBuilder<WithId> {
                 genesis_wasm_path: Some(location.into()),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -358,10 +384,12 @@ impl ParachainConfigBuilder<WithId> {
                     genesis_wasm_generator: Some(command),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(
                     self.errors,
                     FieldError::GenesisWasmGenerator(error.into()).into(),
@@ -377,6 +405,7 @@ impl ParachainConfigBuilder<WithId> {
                 genesis_state_path: Some(location.into()),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -393,10 +422,12 @@ impl ParachainConfigBuilder<WithId> {
                     genesis_state_generator: Some(command),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(
                     self.errors,
                     FieldError::GenesisStateGenerator(error.into()).into(),
@@ -412,6 +443,7 @@ impl ParachainConfigBuilder<WithId> {
                 chain_spec_path: Some(location.into()),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -423,6 +455,7 @@ impl ParachainConfigBuilder<WithId> {
                 is_cumulus_based: choice,
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -450,6 +483,7 @@ impl ParachainConfigBuilder<WithId> {
                 bootnodes_addresses: addrs,
                 ..self.config
             },
+            self.validation_context,
             merge_errors_vecs(self.errors, errors),
         )
     }
@@ -459,16 +493,23 @@ impl ParachainConfigBuilder<WithId> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
-        match f(NodeConfigBuilder::new(self.default_context())).build() {
+        match f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: vec![collator],
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err((name, errors)) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors_vecs(
                     self.errors,
                     errors
@@ -487,16 +528,23 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(ChainDefaultContext::default())).build() {
+        match f(NodeConfigBuilder::new(
+            ChainDefaultContext::default(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: [self.config.collators, vec![collator]].concat(),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err((name, errors)) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors_vecs(
                     self.errors,
                     errors
@@ -528,7 +576,7 @@ mod tests {
 
     #[test]
     fn parachain_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
-        let parachain_config = ParachainConfigBuilder::new()
+        let parachain_config = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("mychainname")
             .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
@@ -642,7 +690,7 @@ mod tests {
 
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_chain_is_invalid() {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("invalid chain")
             .with_collator(|collator| {
@@ -663,7 +711,7 @@ mod tests {
 
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_default_command_is_invalid() {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("chain")
             .with_default_command("invalid command")
@@ -685,7 +733,7 @@ mod tests {
 
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_default_image_is_invalid() {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("chain")
             .with_default_image("invalid image")
@@ -708,7 +756,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_default_resources_are_invalid()
     {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("chain")
             .with_default_resources(|default_resources| {
@@ -735,7 +783,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_genesis_wasm_generator_is_invalid(
     ) {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
             .with_genesis_wasm_generator("invalid command")
@@ -758,7 +806,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_genesis_state_generator_is_invalid(
     ) {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("myparachain")
             .with_genesis_state_generator("invalid command")
@@ -781,7 +829,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_bootnodes_addresses_are_invalid(
     ) {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
@@ -807,7 +855,7 @@ mod tests {
 
     #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_first_collator_is_invalid() {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
             .with_chain("myparachain")
             .with_collator(|collator| {
@@ -828,7 +876,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_with_at_least_one_collator_should_fails_and_returns_an_error_if_second_collator_is_invalid(
     ) {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
             .with_collator(|collator| {
@@ -857,7 +905,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_should_fails_and_returns_multiple_errors_if_multiple_fields_are_invalid(
     ) {
-        let errors = ParachainConfigBuilder::new()
+        let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
             .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])

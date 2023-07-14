@@ -760,4 +760,88 @@ mod tests {
             r"resources.request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
+
+    #[test]
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_ws_port_is_already_used(
+    ) {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            used_ports: vec![30333],
+        }));
+        let (node_name, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("node")
+                .with_ws_port(30333)
+                .build()
+                .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "ws_port: '30333' is already used across config"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_rpc_port_is_already_used(
+    ) {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            used_ports: vec![4444],
+        }));
+        let (node_name, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("node")
+                .with_rpc_port(4444)
+                .build()
+                .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "rpc_port: '4444' is already used across config"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_prometheus_port_is_already_used(
+    ) {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            used_ports: vec![9089],
+        }));
+        let (node_name, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("node")
+                .with_prometheus_port(9089)
+                .build()
+                .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "prometheus_port: '9089' is already used across config"
+        );
+    }
+
+    #[test]
+    fn node_config_builder_should_fails_and_returns_and_error_and_node_name_if_p2p_port_is_already_used(
+    ) {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            used_ports: vec![45093],
+        }));
+        let (node_name, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("node")
+                .with_p2p_port(45093)
+                .build()
+                .unwrap_err();
+
+        assert_eq!(node_name, "node");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "p2p_port: '45093' is already used across config"
+        );
+    }
 }

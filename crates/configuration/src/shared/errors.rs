@@ -96,6 +96,6 @@ pub enum ConversionError {
 /// A validation error for shared types across fields.
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum ValidationError {
-    #[error("'{0}' is already used")]
+    #[error("'{0}' is already used across config")]
     PortAlreadyUsed(Port),
 }

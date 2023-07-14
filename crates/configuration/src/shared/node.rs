@@ -4,7 +4,7 @@ use multiaddr::Multiaddr;
 
 use super::{
     errors::FieldError,
-    helpers::{ensure_port_unique, merge_errors, merge_errors_vecs},
+    helpers::{ensure_node_name_unique, ensure_port_unique, merge_errors, merge_errors_vecs},
     macros::states,
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext},
@@ -237,15 +237,26 @@ impl NodeConfigBuilder<Initial> {
     }
 
     /// Set the name of the node.
-    pub fn with_name(self, name: impl Into<String>) -> NodeConfigBuilder<Buildable> {
-        Self::transition(
-            NodeConfig {
-                name: name.into(),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
+    pub fn with_name<T: Into<String> + Copy>(self, name: T) -> NodeConfigBuilder<Buildable> {
+        match ensure_node_name_unique(name.into(), self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                NodeConfig {
+                    name: name.into(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                NodeConfig {
+                    // we still set the name in error case to display error path
+                    name: name.into(),
+                    ..self.config
+                },
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Name(error).into()),
+            ),
+        }
     }
 }
 
@@ -762,10 +773,32 @@ mod tests {
     }
 
     #[test]
+    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_node_name_is_already_used(
+    ) {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            used_nodes_names: vec!["mynode".into()],
+            ..Default::default()
+        }));
+        let (node_name, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("mynode")
+                .build()
+                .unwrap_err();
+
+        assert_eq!(node_name, "mynode");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.get(0).unwrap().to_string(),
+            "name: 'mynode' is already used across config"
+        );
+    }
+
+    #[test]
     fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_ws_port_is_already_used(
     ) {
         let validation_context = Rc::new(RefCell::new(ValidationContext {
             used_ports: vec![30333],
+            ..Default::default()
         }));
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
@@ -787,6 +820,7 @@ mod tests {
     ) {
         let validation_context = Rc::new(RefCell::new(ValidationContext {
             used_ports: vec![4444],
+            ..Default::default()
         }));
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
@@ -808,6 +842,7 @@ mod tests {
     ) {
         let validation_context = Rc::new(RefCell::new(ValidationContext {
             used_ports: vec![9089],
+            ..Default::default()
         }));
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
@@ -829,6 +864,7 @@ mod tests {
     ) {
         let validation_context = Rc::new(RefCell::new(ValidationContext {
             used_ports: vec![45093],
+            ..Default::default()
         }));
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)

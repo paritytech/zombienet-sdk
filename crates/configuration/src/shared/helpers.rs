@@ -25,6 +25,22 @@ pub fn merge_errors_vecs(
     errors
 }
 
+pub fn ensure_node_name_unique(
+    node_name: String,
+    validation_context: Rc<RefCell<ValidationContext>>,
+) -> Result<(), anyhow::Error> {
+    let mut context = validation_context
+        .try_borrow_mut()
+        .expect("must be borrowable as mutable, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+
+    if !context.used_nodes_names.contains(&node_name) {
+        context.used_nodes_names.push(node_name);
+        return Ok(());
+    }
+
+    Err(ValidationError::NodeNameAlreadyUsed(node_name).into())
+}
+
 pub fn ensure_port_unique(
     port: Port,
     validation_context: Rc<RefCell<ValidationContext>>,

@@ -492,7 +492,7 @@ mod tests {
                     .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
-                            .with_name("collator")
+                            .with_name("collator1")
                             .with_command("invalid command")
                             .validator(true)
                     })
@@ -504,7 +504,7 @@ mod tests {
                     .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
-                            .with_name("collator")
+                            .with_name("collator2")
                             .validator(true)
                             .with_resources(|resources| {
                                 resources
@@ -520,11 +520,11 @@ mod tests {
         assert_eq!(errors.len(), 2);
         assert_eq!(
             errors.get(0).unwrap().to_string(),
-            "parachain[1000].collators['collator'].command: 'invalid command' shouldn't contains whitespace"
+            "parachain[1000].collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(
             errors.get(1).unwrap().to_string(),
-            "parachain[2000].collators['collator'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+            "parachain[2000].collators['collator2'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 

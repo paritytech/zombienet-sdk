@@ -22,6 +22,9 @@ pub enum ConfigError {
 /// An error at the field level.
 #[derive(thiserror::Error, Debug)]
 pub enum FieldError {
+    #[error("name: {0}")]
+    Name(anyhow::Error),
+
     #[error("chain: {0}")]
     Chain(anyhow::Error),
 
@@ -98,4 +101,7 @@ pub enum ConversionError {
 pub enum ValidationError {
     #[error("'{0}' is already used across config")]
     PortAlreadyUsed(Port),
+
+    #[error("'{0}' is already used across config")]
+    NodeNameAlreadyUsed(String),
 }

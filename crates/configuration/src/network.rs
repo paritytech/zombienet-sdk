@@ -1,11 +1,11 @@
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::{helpers::merge_errors_vecs, macros::states},
+    shared::{helpers::merge_errors_vecs, macros::states, types::ValidationContext},
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
@@ -121,6 +121,7 @@ states! {
 #[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
+    validation_context: Rc<RefCell<ValidationContext>>,
     errors: Vec<anyhow::Error>,
     _state: PhantomData<State>,
 }
@@ -136,6 +137,7 @@ impl Default for NetworkConfigBuilder<Initial> {
                 parachains: vec![],
                 hrmp_channels: vec![],
             },
+            validation_context: Default::default(),
             errors: vec![],
             _state: PhantomData,
         }
@@ -143,10 +145,15 @@ impl Default for NetworkConfigBuilder<Initial> {
 }
 
 impl<A> NetworkConfigBuilder<A> {
-    fn transition<B>(config: NetworkConfig, errors: Vec<anyhow::Error>) -> NetworkConfigBuilder<B> {
+    fn transition<B>(
+        config: NetworkConfig,
+        validation_context: Rc<RefCell<ValidationContext>>,
+        errors: Vec<anyhow::Error>,
+    ) -> NetworkConfigBuilder<B> {
         NetworkConfigBuilder {
             config,
             errors,
+            validation_context,
             _state: PhantomData,
         }
     }
@@ -164,15 +171,20 @@ impl NetworkConfigBuilder<Initial> {
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
-        match f(RelaychainConfigBuilder::new()).build() {
+        match f(RelaychainConfigBuilder::new(
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
             Ok(relaychain) => Self::transition(
                 NetworkConfig {
                     relaychain: Some(relaychain),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
-            Err(errors) => Self::transition(self.config, errors),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
         }
     }
 }
@@ -189,9 +201,14 @@ impl NetworkConfigBuilder<WithRelaychain> {
                     global_settings,
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
-            Err(errors) => Self::transition(self.config, merge_errors_vecs(self.errors, errors)),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(self.errors, errors),
+            ),
         }
     }
 
@@ -202,15 +219,20 @@ impl NetworkConfigBuilder<WithRelaychain> {
             ParachainConfigBuilder<parachain::Initial>,
         ) -> ParachainConfigBuilder<parachain::WithAtLeastOneCollator>,
     ) -> Self {
-        match f(ParachainConfigBuilder::new()).build() {
+        match f(ParachainConfigBuilder::new(self.validation_context.clone())).build() {
             Ok(parachain) => Self::transition(
                 NetworkConfig {
                     parachains: [self.config.parachains, vec![parachain]].concat(),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
-            Err(errors) => Self::transition(self.config, merge_errors_vecs(self.errors, errors)),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(self.errors, errors),
+            ),
         }
     }
 
@@ -228,6 +250,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
                 hrmp_channels: [self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
@@ -469,7 +492,7 @@ mod tests {
                     .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
-                            .with_name("collator")
+                            .with_name("collator1")
                             .with_command("invalid command")
                             .validator(true)
                     })
@@ -481,7 +504,7 @@ mod tests {
                     .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
-                            .with_name("collator")
+                            .with_name("collator2")
                             .validator(true)
                             .with_resources(|resources| {
                                 resources
@@ -497,11 +520,11 @@ mod tests {
         assert_eq!(errors.len(), 2);
         assert_eq!(
             errors.get(0).unwrap().to_string(),
-            "parachain[1000].collators['collator'].command: 'invalid command' shouldn't contains whitespace"
+            "parachain[1000].collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(
             errors.get(1).unwrap().to_string(),
-            "parachain[2000].collators['collator'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+            "parachain[2000].collators['collator2'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 

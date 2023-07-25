@@ -1,5 +1,8 @@
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
+use regex::Regex;
+use serde::Serialize;
+
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
@@ -9,11 +12,14 @@ use crate::{
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NetworkConfig {
+    #[serde(rename = "settings")]
     global_settings: GlobalSettings,
     relaychain: Option<RelaychainConfig>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     parachains: Vec<ParachainConfig>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     hrmp_channels: Vec<HrmpChannelConfig>,
 }
 
@@ -38,6 +44,13 @@ impl NetworkConfig {
     /// The HRMP channels of the network.
     pub fn hrmp_channels(&self) -> Vec<&HrmpChannelConfig> {
         self.hrmp_channels.iter().collect::<Vec<_>>()
+    }
+
+    pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
+        let re = Regex::new(r#""U128%(?<u128_value>\d+)""#).expect("regex should be valid, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+        let toml_string = toml::to_string_pretty(&self)?;
+
+        Ok(re.replace_all(&toml_string, "$u128_value").to_string())
     }
 }
 

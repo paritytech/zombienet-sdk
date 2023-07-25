@@ -1,6 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
+use serde::Serialize;
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
@@ -8,26 +9,29 @@ use crate::shared::{
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext},
+    types::{
+        Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
+    },
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
 }
 
 /// A parachain configuration, composed of collators and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParachainConfig {
     id: u32,
     chain: Option<Chain>,
     registration_strategy: Option<RegistrationStrategy>,
-    initial_balance: u128,
+    initial_balance: U128,
     default_command: Option<Command>,
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     default_args: Vec<Arg>,
     genesis_wasm_path: Option<AssetLocation>,
     genesis_wasm_generator: Option<Command>,
@@ -35,7 +39,9 @@ pub struct ParachainConfig {
     genesis_state_generator: Option<Command>,
     chain_spec_path: Option<AssetLocation>,
     is_cumulus_based: bool,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     bootnodes_addresses: Vec<Multiaddr>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     collators: Vec<NodeConfig>,
 }
 
@@ -57,7 +63,7 @@ impl ParachainConfig {
 
     /// The initial balance of the parachain account.
     pub fn initial_balance(&self) -> u128 {
-        self.initial_balance
+        self.initial_balance.0
     }
 
     /// The default command used for collators.
@@ -148,7 +154,7 @@ impl Default for ParachainConfigBuilder<Initial> {
                 id: 100,
                 chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
-                initial_balance: 2_000_000_000_000,
+                initial_balance: 2_000_000_000_000.into(),
                 default_command: None,
                 default_image: None,
                 default_resources: None,
@@ -257,7 +263,7 @@ impl ParachainConfigBuilder<WithId> {
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
         Self::transition(
             ParachainConfig {
-                initial_balance,
+                initial_balance: initial_balance.into(),
                 ..self.config
             },
             self.validation_context,

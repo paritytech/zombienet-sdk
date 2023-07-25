@@ -1,13 +1,14 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
+use serde::{ser::SerializeStruct, Serialize};
 
 use super::{
     errors::FieldError,
     helpers::{ensure_node_name_unique, ensure_port_unique, merge_errors, merge_errors_vecs},
     macros::states,
     resources::ResourcesBuilder,
-    types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext},
+    types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext, U128},
 };
 use crate::shared::{
     resources::Resources,
@@ -32,7 +33,7 @@ use crate::shared::{
 ///     }
 /// )
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EnvVar {
     /// The name of the environment variable.
     pub name: String,
@@ -60,7 +61,7 @@ pub struct NodeConfig {
     is_validator: bool,
     is_invulnerable: bool,
     is_bootnode: bool,
-    initial_balance: u128,
+    initial_balance: U128,
     env: Vec<EnvVar>,
     bootnodes_addresses: Vec<Multiaddr>,
     resources: Option<Resources>,
@@ -70,6 +71,76 @@ pub struct NodeConfig {
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
     db_snapshot: Option<AssetLocation>,
+    // used to skip serialization of fields with defaults to avoid duplication
+    chain_context: ChainDefaultContext,
+}
+
+impl Serialize for NodeConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("NodeConfig", 18)?;
+        state.serialize_field("name", &self.name)?;
+
+        if self.image == self.chain_context.default_image {
+            state.skip_field("image")?;
+        } else {
+            state.serialize_field("image", &self.image)?;
+        }
+
+        if self.command == self.chain_context.default_command {
+            state.skip_field("command")?;
+        } else {
+            state.serialize_field("command", &self.command)?;
+        }
+
+        if self.args.is_empty() || self.args == self.chain_context.default_args {
+            state.skip_field("args")?;
+        } else {
+            state.serialize_field("args", &self.args)?;
+        }
+
+        state.serialize_field("is_validator", &self.is_invulnerable)?;
+        state.serialize_field("is_invulnerable", &self.is_invulnerable)?;
+        state.serialize_field("is_bootnode", &self.is_bootnode)?;
+        state.serialize_field("initial_balance", &self.initial_balance)?;
+
+        if self.env.is_empty() {
+            state.skip_field("env")?;
+        } else {
+            state.serialize_field("env", &self.env)?;
+        }
+
+        if self.bootnodes_addresses.is_empty() {
+            state.skip_field("bootnodes_addresses")?;
+        } else {
+            state.serialize_field("bootnodes_addresses", &self.bootnodes_addresses)?;
+        }
+
+        state.serialize_field("resources", &self.resources)?;
+
+        if self.resources == self.chain_context.default_resources {
+            state.skip_field("resources")?;
+        } else {
+            state.serialize_field("resources", &self.resources)?;
+        }
+
+        state.serialize_field("ws_port", &self.ws_port)?;
+        state.serialize_field("rpc_port", &self.rpc_port)?;
+        state.serialize_field("prometheus_port", &self.prometheus_port)?;
+        state.serialize_field("p2p_port", &self.p2p_port)?;
+        state.serialize_field("p2p_cert_hash", &self.p2p_cert_hash)?;
+
+        if self.db_snapshot == self.chain_context.default_db_snapshot {
+            state.skip_field("db_snapshot")?;
+        } else {
+            state.serialize_field("db_snapshot", &self.db_snapshot)?;
+        }
+
+        state.skip_field("chain_context")?;
+        state.end()
+    }
 }
 
 impl NodeConfig {
@@ -110,7 +181,7 @@ impl NodeConfig {
 
     /// Node initial balance present in genesis.
     pub fn initial_balance(&self) -> u128 {
-        self.initial_balance
+        self.initial_balance.0
     }
 
     /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
@@ -184,7 +255,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 is_validator: false,
                 is_invulnerable: false,
                 is_bootnode: false,
-                initial_balance: 2_000_000_000_000,
+                initial_balance: 2_000_000_000_000.into(),
                 env: vec![],
                 bootnodes_addresses: vec![],
                 resources: None,
@@ -194,6 +265,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 p2p_port: None,
                 p2p_cert_hash: None,
                 db_snapshot: None,
+                chain_context: Default::default(),
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -224,11 +296,12 @@ impl NodeConfigBuilder<Initial> {
     ) -> Self {
         Self::transition(
             NodeConfig {
-                command: chain_context.default_command,
-                image: chain_context.default_image,
-                resources: chain_context.default_resources,
-                db_snapshot: chain_context.default_db_snapshot,
-                args: chain_context.default_args,
+                command: chain_context.default_command.clone(),
+                image: chain_context.default_image.clone(),
+                resources: chain_context.default_resources.clone(),
+                db_snapshot: chain_context.default_db_snapshot.clone(),
+                args: chain_context.default_args.clone(),
+                chain_context,
                 ..Self::default().config
             },
             validation_context,
@@ -359,7 +432,7 @@ impl NodeConfigBuilder<Buildable> {
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
         Self::transition(
             NodeConfig {
-                initial_balance,
+                initial_balance: initial_balance.into(),
                 ..self.config
             },
             self.validation_context,

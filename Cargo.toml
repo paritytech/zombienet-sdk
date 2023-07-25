@@ -5,7 +5,7 @@ members = [
   "crates/configuration",
   "crates/orchestrator",
   "crates/provider",
-  "crates/test-runner"
+  "crates/test-runner",
 ]
 
 [workspace.dependencies]
@@ -13,11 +13,12 @@ thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
 futures = "0.3"
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.7"
 tokio = "1.28"
 reqwest = "0.11"
 regex = "1.8"
 lazy_static = "1.4"
-multiaddr = "0.17"
+multiaddr = "0.18"
 url = "2.3"

@@ -47,6 +47,7 @@ impl NetworkConfig {
     }
 
     pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
+        // This regex is used to replace the "" enclosed u128 value to a raw u128 because u128 is not supported for TOML serialization/deserialization.
         let re = Regex::new(r#""U128%(?<u128_value>\d+)""#).expect("regex should be valid, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
         let toml_string = toml::to_string_pretty(&self)?;
 
@@ -630,5 +631,86 @@ mod tests {
             errors.get(2).unwrap().to_string(),
             "global_settings.local_ip: invalid IP address syntax"
         );
+    }
+
+    #[test]
+    fn debug_dump() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_default_command("my_default_command")
+                    .with_default_image("mydefaultimage")
+                    .with_default_args(vec![("option", "value").into(), "flag".into()])
+                    .with_chain_spec_path("/path/to/chain_spec")
+                    .with_random_nominators_count(10)
+                    .with_max_nominations(4)
+                    .with_default_resources(|resources| resources
+                        .with_limit_cpu("1000")
+                        .with_limit_memory("1000")
+                        .with_request_cpu("1000")
+                        .with_request_memory("100K")
+                    )
+                    .with_node(|node|
+                        node.with_name("node1")
+                            .with_image("mycustomimage")
+                            .validator(true)
+                    )
+                    .with_node(|node|
+                        node.with_name("node2")
+                            .with_command("command")
+                            .validator(true)
+                            .invulnerable(true)
+                    )
+            })
+            // .with_parachain(|parachain| {
+            //     parachain
+            //         .with_id(1)
+            //         .with_chain("myparachain1")
+            //         .with_initial_balance(100_000)
+            //         .with_collator(|collator| {
+            //             collator
+            //                 .with_name("collator1")
+            //                 .with_command("command1")
+            //                 .validator(true)
+            //         })
+            // })
+            // .with_parachain(|parachain| {
+            //     parachain
+            //         .with_id(2)
+            //         .with_chain("myparachain2")
+            //         .with_initial_balance(0)
+            //         .with_collator(|collator| {
+            //             collator
+            //                 .with_name("collator2")
+            //                 .with_command("command2")
+            //                 .validator(true)
+            //         })
+            // })
+            // .with_hrmp_channel(|hrmp_channel1| {
+            //     hrmp_channel1
+            //         .with_sender(1)
+            //         .with_recipient(2)
+            //         .with_max_capacity(200)
+            //         .with_max_message_size(500)
+            // })
+            // .with_hrmp_channel(|hrmp_channel2| {
+            //     hrmp_channel2
+            //         .with_sender(2)
+            //         .with_recipient(1)
+            //         .with_max_capacity(100)
+            //         .with_max_message_size(250)
+            // })
+            // .with_global_settings(|global_settings| {
+            //     global_settings
+            //         .with_network_spawn_timeout(1200)
+            //         .with_node_spawn_timeout(240)
+            //         .with_local_ip("127.0.0.1")
+            // })
+            .build()
+            .unwrap();
+
+        let config = network_config.dump_to_toml().unwrap();
+        println!("{}", config);
     }
 }

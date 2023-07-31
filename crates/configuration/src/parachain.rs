@@ -26,6 +26,7 @@ pub struct ParachainConfig {
     id: u32,
     chain: Option<Chain>,
     registration_strategy: Option<RegistrationStrategy>,
+    #[serde(rename = "balance")]
     initial_balance: U128,
     default_command: Option<Command>,
     default_image: Option<Image>,
@@ -38,6 +39,7 @@ pub struct ParachainConfig {
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<Command>,
     chain_spec_path: Option<AssetLocation>,
+    #[serde(rename = "cumulus_based")]
     is_cumulus_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     bootnodes_addresses: Vec<Multiaddr>,

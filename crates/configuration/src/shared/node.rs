@@ -118,8 +118,6 @@ impl Serialize for NodeConfig {
             state.serialize_field("bootnodes_addresses", &self.bootnodes_addresses)?;
         }
 
-        state.serialize_field("resources", &self.resources)?;
-
         if self.resources == self.chain_context.default_resources {
             state.skip_field("resources")?;
         } else {

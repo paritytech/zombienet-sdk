@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::Serialize;
+use serde::{ser::SerializeStruct, Serialize};
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
@@ -14,10 +14,26 @@ use crate::shared::{
     },
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
+}
+
+impl Serialize for RegistrationStrategy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("RegistrationStrategy", 1)?;
+
+        match self {
+            Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
+            Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
+        }
+
+        state.end()
+    }
 }
 
 /// A parachain configuration, composed of collators and fine-grained configuration options.
@@ -25,6 +41,7 @@ pub enum RegistrationStrategy {
 pub struct ParachainConfig {
     id: u32,
     chain: Option<Chain>,
+    #[serde(flatten)]
     registration_strategy: Option<RegistrationStrategy>,
     #[serde(rename = "balance")]
     initial_balance: U128,

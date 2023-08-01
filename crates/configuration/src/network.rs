@@ -281,6 +281,8 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
@@ -634,83 +636,216 @@ mod tests {
     }
 
     #[test]
-    fn debug_dump() {
+    fn network_config_should_be_dumpable_to_a_toml_config_for_a_small_network() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_args(vec![("-lparachain", "debug").into()])
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .validator(true)
+                            .invulnerable(true)
+                            .validator(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_args(vec![("--database", "paritydb-experimental").into()])
+                    })
+            })
+            .build()
+            .unwrap();
+
+        let got = network_config.dump_to_toml().unwrap();
+        let expected = fs::read_to_string("./testing/snapshots/0000-small-network.toml").unwrap();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn network_config_should_be_dumpable_to_a_toml_config_for_a_big_network() {
         let network_config = NetworkConfigBuilder::new()
             .with_relaychain(|relaychain| {
                 relaychain
                     .with_chain("polkadot")
-                    .with_default_command("my_default_command")
-                    .with_default_image("mydefaultimage")
-                    .with_default_args(vec![("option", "value").into(), "flag".into()])
-                    .with_chain_spec_path("/path/to/chain_spec")
-                    .with_random_nominators_count(10)
-                    .with_max_nominations(4)
-                    .with_default_resources(|resources| resources
-                        .with_limit_cpu("1000")
-                        .with_limit_memory("1000")
-                        .with_request_cpu("1000")
-                        .with_request_memory("100K")
-                    )
-                    .with_node(|node|
-                        node.with_name("node1")
-                            .with_image("mycustomimage")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_resources(|resources| {
+                        resources
+                            .with_request_cpu(100000)
+                            .with_request_memory("500M")
+                            .with_limit_cpu("10Gi")
+                            .with_limit_memory("4000M")
+                    })
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .with_initial_balance(1_000_000_000)
                             .validator(true)
-                    )
-                    .with_node(|node|
-                        node.with_name("node2")
-                            .with_command("command")
+                            .bootnode(true)
+                            .invulnerable(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
                             .validator(true)
                             .invulnerable(true)
-                    )
+                            .bootnode(true)
+                    })
             })
-            // .with_parachain(|parachain| {
-            //     parachain
-            //         .with_id(1)
-            //         .with_chain("myparachain1")
-            //         .with_initial_balance(100_000)
-            //         .with_collator(|collator| {
-            //             collator
-            //                 .with_name("collator1")
-            //                 .with_command("command1")
-            //                 .validator(true)
-            //         })
-            // })
-            // .with_parachain(|parachain| {
-            //     parachain
-            //         .with_id(2)
-            //         .with_chain("myparachain2")
-            //         .with_initial_balance(0)
-            //         .with_collator(|collator| {
-            //             collator
-            //                 .with_name("collator2")
-            //                 .with_command("command2")
-            //                 .validator(true)
-            //         })
-            // })
-            // .with_hrmp_channel(|hrmp_channel1| {
-            //     hrmp_channel1
-            //         .with_sender(1)
-            //         .with_recipient(2)
-            //         .with_max_capacity(200)
-            //         .with_max_message_size(500)
-            // })
-            // .with_hrmp_channel(|hrmp_channel2| {
-            //     hrmp_channel2
-            //         .with_sender(2)
-            //         .with_recipient(1)
-            //         .with_max_capacity(100)
-            //         .with_max_message_size(250)
-            // })
-            // .with_global_settings(|global_settings| {
-            //     global_settings
-            //         .with_network_spawn_timeout(1200)
-            //         .with_node_spawn_timeout(240)
-            //         .with_local_ip("127.0.0.1")
-            // })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("john")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("charles")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("frank")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_initial_balance(1_000_000_000)
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(2000)
+                    .with_chain("myotherparachain")
+                    .with_chain_spec_path("/path/to/my/other/chain/spec.json")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("mike")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("georges")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("victor")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_initial_balance(1_000_000_000)
+                    })
+            })
+            .with_hrmp_channel(|hrmp_channel| {
+                hrmp_channel
+                    .with_sender(1000)
+                    .with_recipient(2000)
+                    .with_max_capacity(150)
+                    .with_max_message_size(5000)
+            })
+            .with_hrmp_channel(|hrmp_channel| {
+                hrmp_channel
+                    .with_sender(2000)
+                    .with_recipient(1000)
+                    .with_max_capacity(200)
+                    .with_max_message_size(8000)
+            })
             .build()
             .unwrap();
 
-        let config = network_config.dump_to_toml().unwrap();
-        println!("{}", config);
+        let got = network_config.dump_to_toml().unwrap();
+        let expected = fs::read_to_string("./testing/snapshots/0001-big-network.toml").unwrap();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn network_config_builder_should_be_dumplable_to_a_toml_config_a_overrides_default_correctly() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_args(vec![("-name", "value").into(), "--flag".into()])
+                    .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+                    .with_default_resources(|resources| {
+                        resources
+                            .with_request_cpu(100000)
+                            .with_request_memory("500M")
+                            .with_limit_cpu("10Gi")
+                            .with_limit_memory("4000M")
+                    })
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .with_initial_balance(1_000_000_000)
+                            .validator(true)
+                            .bootnode(true)
+                            .invulnerable(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .invulnerable(true)
+                            .bootnode(true)
+                            .with_image("mycustomimage:latest")
+                            .with_command("my-custom-command")
+                            .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
+                            .with_resources(|resources| {
+                                resources
+                                    .with_request_cpu(1000)
+                                    .with_request_memory("250Mi")
+                                    .with_limit_cpu("5Gi")
+                                    .with_limit_memory("2Gi")
+                            })
+                            .with_args(vec![("-myothername", "value").into()])
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
+                    .with_default_command("my-default-command")
+                    .with_default_image("mydefaultimage:latest")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("john")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                            .with_command("my-non-default-command")
+                            .with_image("anotherimage:latest")
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("charles")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+            })
+            .build()
+            .unwrap();
+
+        let got = network_config.dump_to_toml().unwrap();
+        let expected = fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
+        assert_eq!(got, expected);
     }
 }

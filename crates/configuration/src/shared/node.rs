@@ -101,9 +101,9 @@ impl Serialize for NodeConfig {
             state.serialize_field("args", &self.args)?;
         }
 
-        state.serialize_field("is_validator", &self.is_invulnerable)?;
-        state.serialize_field("is_invulnerable", &self.is_invulnerable)?;
-        state.serialize_field("is_bootnode", &self.is_bootnode)?;
+        state.serialize_field("validator", &self.is_validator)?;
+        state.serialize_field("invulnerable", &self.is_invulnerable)?;
+        state.serialize_field("bootnode", &self.is_bootnode)?;
         state.serialize_field("balance", &self.initial_balance)?;
 
         if self.env.is_empty() {

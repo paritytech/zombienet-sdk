@@ -845,7 +845,8 @@ mod tests {
             .unwrap();
 
         let got = network_config.dump_to_toml().unwrap();
-        let expected = fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
+        let expected =
+            fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
         assert_eq!(got, expected);
     }
 }

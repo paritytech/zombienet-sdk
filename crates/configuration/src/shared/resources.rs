@@ -2,6 +2,7 @@ use std::error::Error;
 
 use lazy_static::lazy_static;
 use regex::Regex;
+use serde::{ser::SerializeStruct, Serialize};
 
 use super::{
     errors::{ConversionError, FieldError},
@@ -27,7 +28,7 @@ use super::{
 /// assert_eq!(quantity3.as_str(), "1Gi");
 /// assert_eq!(quantity4.as_str(), "10000");
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ResourceQuantity(String);
 
 impl ResourceQuantity {
@@ -69,6 +70,47 @@ pub struct Resources {
     request_cpu: Option<ResourceQuantity>,
     limit_memory: Option<ResourceQuantity>,
     limit_cpu: Option<ResourceQuantity>,
+}
+
+impl Serialize for Resources {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Resources", 2)?;
+
+        #[derive(Serialize)]
+        struct ResourcesField {
+            memory: Option<ResourceQuantity>,
+            cpu: Option<ResourceQuantity>,
+        }
+
+        if self.request_memory.is_some() || self.request_memory.is_some() {
+            state.serialize_field(
+                "requests",
+                &ResourcesField {
+                    memory: self.request_memory.clone(),
+                    cpu: self.request_cpu.clone(),
+                },
+            )?;
+        } else {
+            state.skip_field("requests")?;
+        }
+
+        if self.limit_memory.is_some() || self.limit_memory.is_some() {
+            state.serialize_field(
+                "limits",
+                &ResourcesField {
+                    memory: self.limit_memory.clone(),
+                    cpu: self.limit_cpu.clone(),
+                },
+            )?;
+        } else {
+            state.skip_field("limits")?;
+        }
+
+        state.end()
+    }
 }
 
 impl Resources {

@@ -1,5 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
 
+use serde::Serialize;
+
 use crate::shared::{
     errors::{ConfigError, FieldError},
     helpers::{merge_errors, merge_errors_vecs},
@@ -10,17 +12,19 @@ use crate::shared::{
 };
 
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RelaychainConfig {
     chain: Chain,
     default_command: Option<Command>,
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     default_args: Vec<Arg>,
     chain_spec_path: Option<AssetLocation>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     nodes: Vec<NodeConfig>,
 }
 

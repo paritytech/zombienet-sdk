@@ -1,0 +1,24 @@
+[settings]
+timeout = 1000
+node_spawn_timeout = 300
+
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+default_image = "docker.io/parity/polkadot:latest"
+default_args = ["-lparachain=debug"]
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+invulnerable = true
+bootnode = false
+balance = 2000000000000
+
+[[relaychain.nodes]]
+name = "bob"
+args = ["--database=paritydb-experimental"]
+validator = true
+invulnerable = false
+bootnode = true
+balance = 2000000000000

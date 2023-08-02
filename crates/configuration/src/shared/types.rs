@@ -1,7 +1,8 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 use lazy_static::lazy_static;
 use regex::Regex;
+use serde::Serialize;
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
@@ -14,6 +15,28 @@ pub type Port = u16;
 
 /// An alias for a parachain ID.
 pub type ParaId = u32;
+
+/// Custom type wrapping u128 to add custom Serialization/Deserialization logic because it's not supported
+/// issue tracking the problem: <https://github.com/toml-rs/toml/issues/540>
+#[derive(Debug, Clone, PartialEq)]
+pub struct U128(pub(crate) u128);
+
+impl From<u128> for U128 {
+    fn from(value: u128) -> Self {
+        Self(value)
+    }
+}
+
+impl Serialize for U128 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // here we add a prefix to the string to be able to replace the wrapped
+        // value with "" to a value without "" in the TOML string
+        serializer.serialize_str(&format!("U128%{}", self.0))
+    }
+}
 
 /// A chain name.
 /// It can be constructed for an `&str`, if it fails, it will returns a [`ConversionError`].
@@ -30,7 +53,7 @@ pub type ParaId = u32;
 /// assert_eq!(kusama.as_str(), "kusama");
 /// assert_eq!(myparachain.as_str(), "myparachain");
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Chain(String);
 
 impl TryFrom<&str> for Chain {
@@ -72,7 +95,7 @@ impl Chain {
 /// assert_eq!(image3.as_str(), "myrepo.com/name:version");
 /// assert_eq!(image4.as_str(), "10.15.43.155/name:version");
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Image(String);
 
 impl TryFrom<&str> for Image {
@@ -120,7 +143,7 @@ impl Image {
 /// assert_eq!(command1.as_str(), "mycommand");
 /// assert_eq!(command2.as_str(), "myothercommand");
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Command(String);
 
 impl TryFrom<&str> for Command {
@@ -190,6 +213,24 @@ impl From<&str> for AssetLocation {
     }
 }
 
+impl Display for AssetLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AssetLocation::Url(value) => write!(f, "{}", value.as_str()),
+            AssetLocation::FilePath(value) => write!(f, "{}", value.display()),
+        }
+    }
+}
+
+impl Serialize for AssetLocation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 /// A CLI argument passed to an executed command, can be an option with an assigned value or a simple flag to enable/disable a feature.
 /// A flag arg can be constructed from a `&str` and a option arg can be constructed from a `(&str, &str)`.
 ///
@@ -221,13 +262,27 @@ impl From<(&str, &str)> for Arg {
     }
 }
 
+impl Serialize for Arg {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Arg::Flag(value) => serializer.serialize_str(value),
+            Arg::Option(option, value) => {
+                serializer.serialize_str(&format!("{}={}", option, value))
+            },
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ValidationContext {
     pub used_ports: Vec<Port>,
     pub used_nodes_names: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct ChainDefaultContext {
     pub(crate) default_command: Option<Command>,
     pub(crate) default_image: Option<Image>,

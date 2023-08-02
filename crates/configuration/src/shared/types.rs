@@ -17,7 +17,7 @@ pub type Port = u16;
 pub type ParaId = u32;
 
 /// Custom type wrapping u128 to add custom Serialization/Deserialization logic because it's not supported
-/// issue tracking the problem: https://github.com/toml-rs/toml/issues/540
+/// issue tracking the problem: <https://github.com/toml-rs/toml/issues/540>
 #[derive(Debug, Clone, PartialEq)]
 pub struct U128(pub(crate) u128);
 

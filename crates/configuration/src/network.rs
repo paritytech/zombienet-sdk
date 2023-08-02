@@ -283,6 +283,8 @@ impl NetworkConfigBuilder<WithRelaychain> {
 mod tests {
     use std::fs;
 
+    use crate::parachain::RegistrationStrategy;
+
     use super::*;
 
     #[test]
@@ -699,6 +701,8 @@ mod tests {
                     .with_id(1000)
                     .with_chain("myparachain")
                     .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+                    .onboard_as_parachain(false)
                     .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
                     .with_collator(|collator| {
                         collator

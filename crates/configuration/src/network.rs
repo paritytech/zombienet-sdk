@@ -283,9 +283,8 @@ impl NetworkConfigBuilder<WithRelaychain> {
 mod tests {
     use std::fs;
 
-    use crate::parachain::RegistrationStrategy;
-
     use super::*;
+    use crate::parachain::RegistrationStrategy;
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {

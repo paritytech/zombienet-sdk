@@ -13,22 +13,23 @@ use tokio::{
     process::{Child, Command},
     time::{sleep, Duration},
 };
+use configuration::types::Port;
 
 use super::Provider;
 use crate::{
     errors::ProviderError,
     shared::{
         constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
-        types::{FileMap, NativeRunCommandOptions, Node, Port, Process, RunCommandResponse},
+        types::{FileMap, NativeRunCommandOptions, Node, Process, RunCommandResponse},
     },
 };
-#[derive(Debug, Serialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NativeProvider<T: FileSystem + Send + Sync> {
     // Namespace of the client (isolation directory)
     namespace: String,
     // TODO: re-iterate, since we are creating the config with the sdk
     // Path where configuration relies, all the `files` are accessed relative to this.
-    config_path: String,
+    // config_path: String,
     // Command to use, e.g "bash"
     command: String,
     // Temporary directory, root directory for the network
@@ -48,7 +49,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
     ///   filesystem: Filesystem to use (std::fs::FileSystem, mock etc.)
     pub fn new(
         namespace: impl Into<String>,
-        config_path: impl Into<String>,
+        //config_path: impl Into<String>,
         tmp_dir: impl Into<String>,
         filesystem: T,
     ) -> Self {
@@ -57,7 +58,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
 
         Self {
             namespace: namespace.into(),
-            config_path: config_path.into(),
+            // config_path: config_path.into(),
             remote_dir: format!("{}{}", &tmp_dir, DEFAULT_REMOTE_DIR),
             data_dir:  format!("{}{}", &tmp_dir,DEFAULT_DATA_DIR),
             command: "bash".into(),
@@ -79,6 +80,10 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
 
 #[async_trait]
 impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
+    fn require_image() -> bool {
+        false
+    }
+
     async fn create_namespace(&mut self) -> Result<(), ProviderError> {
         // Native provider don't have the `namespace` isolation.
         // but we create the `remoteDir` to place files
@@ -129,6 +134,10 @@ impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
                 )
                 .await?;
         }
+        Ok(())
+    }
+
+    async fn static_setup(&mut self) -> Result<(), ProviderError> {
         Ok(())
     }
 
@@ -406,10 +415,9 @@ mod tests {
     #[test]
     fn new_native_provider() {
         let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+            NativeProvider::new("something", "/tmp", MockFilesystem::new());
 
         assert_eq!(native_provider.namespace, "something");
-        assert_eq!(native_provider.config_path, "./");
         assert_eq!(native_provider.tmp_dir, "/tmp");
         assert_eq!(native_provider.command, "bash");
         assert_eq!(native_provider.remote_dir, "/tmp/cfg");
@@ -419,7 +427,7 @@ mod tests {
     #[tokio::test]
     async fn test_fielsystem_usage() {
         let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+            NativeProvider::new("something", "/tmp", MockFilesystem::new());
 
         native_provider.create_namespace().await.unwrap();
 
@@ -438,7 +446,6 @@ mod tests {
     async fn test_fielsystem_usage_fails() {
         let mut native_provider: NativeProvider<MockFilesystem> = NativeProvider::new(
             "something",
-            "./",
             "/tmp",
             MockFilesystem::with_create_dir_error(MockError::OpError("create".into())),
         );
@@ -449,7 +456,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_node_ip() {
         let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+            NativeProvider::new("something", "/tmp", MockFilesystem::new());
 
         assert_eq!(
             native_provider.get_node_ip("some").await.unwrap(),
@@ -460,7 +467,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_when_bash_is_removed() {
         let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+            NativeProvider::new("something", "/tmp", MockFilesystem::new());
 
         let result: RunCommandResponse = native_provider
             .run_command(
@@ -482,7 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_command_when_dash_c_is_provided() {
-        let native_provider = NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+        let native_provider = NativeProvider::new("something", "/tmp", MockFilesystem::new());
 
         let result = native_provider.run_command(
             vec!["-c".into(), "ls".into()],
@@ -495,7 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_command_when_error_return_error() {
-        let native_provider = NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+        let native_provider = NativeProvider::new("something", "/tmp", MockFilesystem::new());
 
         let mut some = native_provider.run_command(
             vec!["ls".into(), "ls".into()],

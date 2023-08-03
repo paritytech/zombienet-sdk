@@ -3,10 +3,20 @@ use std::{
 };
 use serde::{Deserialize, Serialize};
 
-// TODO: The `Node` definition should `live` in the orchestrator.
-pub struct Node {}
+use configuration::types::{Port, Command, Arg, EnvVar, Image};
 
-pub type Port = u16;
+//  `Node` spec from the provider point of view, this are the fields
+//  that any `Provider` implementation must use to spawn nodes
+pub struct Node {
+    command: Command,
+    args: Vec<Arg>,
+    env: Vec<EnvVar>,
+    ports: HashMap<String, Port>,
+    image: Option<Image>
+    // resources
+    // imagePullPolicy
+    // dbSnapshot
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ZombieRole {
@@ -25,6 +35,7 @@ pub enum PortName {
     Rpc,
     RpcWs,
     P2P,
+    Other
 }
 
 // TODO: remove when we implement k8s/podman
@@ -100,7 +111,7 @@ pub struct PodMetadata {
     pub labels: PodLabels,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PodSpec {
     pub cfg_path: String,
     pub data_path: String,
@@ -109,37 +120,11 @@ pub struct PodSpec {
     pub env: ProcessEnvironment,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct PodDef {
     pub metadata: PodMetadata,
     pub spec: PodSpec,
 }
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EnvVar {
-    pub(crate) name: String,
-    pub(crate)value: String,
-}
-
-impl From<(&str, &str)> for EnvVar {
-    fn from(value: (&str, &str)) -> Self {
-        Self {
-            name: value.0.into(),
-            value: value.1.into(),
-        }
-    }
-}
-
-impl From<(String, String)> for EnvVar {
-    fn from(value: (String, String)) -> Self {
-        Self {
-            name: value.0,
-            value: value.1,
-        }
-    }
-}
-
-
 
 
 type ProcessEnvironment = Vec<EnvVar>;
@@ -189,7 +174,7 @@ pub struct Settings {
     local_ip: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Process {
     pub pid: u32,
     pub logs: String,

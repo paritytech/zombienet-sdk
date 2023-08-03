@@ -177,7 +177,7 @@ impl Command {
 /// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
 /// let path_location: AssetLocation = PathBuf::from_str("/tmp/path/to/my/file").unwrap().into();
 /// let path_location2: AssetLocation = "/tmp/path/to/my/file".into();
-///        
+///
 /// assert!(matches!(url_location, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
 /// assert!(matches!(url_location2, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
 /// assert!(matches!(path_location, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
@@ -280,6 +280,42 @@ impl Serialize for Arg {
 pub struct ValidationContext {
     pub used_ports: Vec<Port>,
     pub used_nodes_names: Vec<String>,
+}
+
+/// An environment variable with a name and a value.
+/// It can be constructed from a `(&str, &str)`.
+///
+/// # Examples:
+///
+/// ```
+/// use configuration::shared::types::EnvVar;
+///
+/// let simple_var: EnvVar = ("FOO", "BAR").into();
+///
+/// assert_eq!(
+///     simple_var,
+///     EnvVar {
+///         name: "FOO".into(),
+///         value: "BAR".into()
+///     }
+/// )
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EnvVar {
+    /// The name of the environment variable.
+    pub name: String,
+
+    /// The value of the environment variable.
+    pub value: String,
+}
+
+impl From<(&str, &str)> for EnvVar {
+    fn from((name, value): (&str, &str)) -> Self {
+        Self {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]

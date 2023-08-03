@@ -1,4 +1,4 @@
-mod errors;
+pub mod errors;
 mod native;
 mod shared;
 
@@ -6,10 +6,13 @@ use std::{net::IpAddr, path::PathBuf};
 
 use async_trait::async_trait;
 use errors::ProviderError;
-use shared::types::{FileMap, NativeRunCommandOptions, Node, Port, RunCommandResponse};
+use shared::types::{FileMap, NativeRunCommandOptions, Node, RunCommandResponse};
+use configuration::types::Port;
 
 #[async_trait]
 pub trait Provider {
+    /// Does the provider require an image (e.g k8s, podman)
+    fn require_image() -> bool;
     /// Create namespace
     async fn create_namespace(&mut self) -> Result<(), ProviderError>;
     /// Destroy namespace (and inner resources).
@@ -68,9 +71,7 @@ pub trait Provider {
     async fn get_node_info(&self, node_name: &str) -> Result<(IpAddr, Port), ProviderError>;
     async fn get_node_ip(&self, node_name: &str) -> Result<IpAddr, ProviderError>;
     async fn get_port_mapping(&self, port: Port, node_name: &str) -> Result<Port, ProviderError>;
-    async fn static_setup() -> Result<(), ProviderError> {
-        unimplemented!()
-    }
+    async fn static_setup(&mut self) -> Result<(), ProviderError>;
     async fn create_static_resource() -> Result<(), ProviderError> {
         Ok(())
     }

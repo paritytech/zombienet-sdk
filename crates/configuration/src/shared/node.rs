@@ -12,44 +12,9 @@ use super::{
 };
 use crate::shared::{
     resources::Resources,
-    types::{Arg, Port},
+    types::{Arg, Port, EnvVar},
 };
 
-/// An environment variable with a name and a value.
-/// It can be constructed from a `(&str, &str)`.
-///
-/// # Examples:
-///
-/// ```
-/// use configuration::shared::node::EnvVar;
-///
-/// let simple_var: EnvVar = ("FOO", "BAR").into();
-///
-/// assert_eq!(
-///     simple_var,
-///     EnvVar {
-///         name: "FOO".into(),
-///         value: "BAR".into()
-///     }
-/// )
-/// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct EnvVar {
-    /// The name of the environment variable.
-    pub name: String,
-
-    /// The value of the environment variable.
-    pub value: String,
-}
-
-impl From<(&str, &str)> for EnvVar {
-    fn from((name, value): (&str, &str)) -> Self {
-        Self {
-            name: name.to_owned(),
-            value: value.to_owned(),
-        }
-    }
-}
 
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq)]

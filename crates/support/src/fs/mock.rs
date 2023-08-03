@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use super::{local_file::LocalFile, FileSystem};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operation {
     Copy { from: PathBuf, to: PathBuf },
     ReadFile { path: PathBuf },
@@ -17,14 +17,14 @@ pub enum Operation {
     Write { path: PathBuf, content: String },
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum MockError {
     #[error("Operation error: {0}")]
     OpError(String),
-    #[error(transparent)]
-    Other(#[from] Box<dyn std::error::Error + Sync + Send + 'static>),
+    // #[error(transparent)]
+    // Other(#[from] Box<dyn std::error::Error + Sync + Send + 'static>),
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MockFilesystem {
     copy_error: Option<MockError>,
     create_dir_error: Option<MockError>,

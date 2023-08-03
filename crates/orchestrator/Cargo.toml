@@ -12,3 +12,9 @@ provider = { path = "../provider" }
 tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
 log = { workspace = true }
+multiaddr = { workspace = true }
+rand = "0.8"
+sha2 = { version = "0.10.2", default-features = false }
+hex = "0.4"
+libp2p-identity = { version = "0.1.2", features = ["peerid", "ed25519"]}
+array-bytes = "6.1"

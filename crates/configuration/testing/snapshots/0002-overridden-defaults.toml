@@ -50,7 +50,6 @@ cpu = "5Gi"
 id = 1000
 chain = "myparachain"
 add_to_genesis = true
-onboard_as_parachain = true
 balance = 2000000000000
 default_command = "my-default-command"
 default_image = "mydefaultimage:latest"

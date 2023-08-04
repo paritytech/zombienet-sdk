@@ -64,7 +64,6 @@ balance = 1000000000
 id = 2000
 chain = "myotherparachain"
 add_to_genesis = true
-onboard_as_parachain = true
 balance = 2000000000000
 chain_spec_path = "/path/to/my/other/chain/spec.json"
 cumulus_based = true

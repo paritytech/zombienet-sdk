@@ -43,6 +43,7 @@ pub struct ParachainConfig {
     chain: Option<Chain>,
     #[serde(flatten)]
     registration_strategy: Option<RegistrationStrategy>,
+    #[serde(skip_serializing_if = "super::utils::is_true")]
     onboard_as_parachain: bool,
     #[serde(rename = "balance")]
     initial_balance: U128,
@@ -998,5 +999,17 @@ mod tests {
             errors.get(4).unwrap().to_string(),
             "parachain[2000].collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
+
+    #[test]
+    fn onboard_as_parachain_should_default_to_true() {
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert!(config.onboard_as_parachain());
     }
 }

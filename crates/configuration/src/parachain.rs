@@ -43,6 +43,8 @@ pub struct ParachainConfig {
     chain: Option<Chain>,
     #[serde(flatten)]
     registration_strategy: Option<RegistrationStrategy>,
+    #[serde(skip_serializing_if = "super::utils::is_true")]
+    onboard_as_parachain: bool,
     #[serde(rename = "balance")]
     initial_balance: U128,
     default_command: Option<Command>,
@@ -78,6 +80,11 @@ impl ParachainConfig {
     /// The registration strategy for the parachain.
     pub fn registration_strategy(&self) -> Option<&RegistrationStrategy> {
         self.registration_strategy.as_ref()
+    }
+
+    /// Whether the parachain should be onboarded or stay a parathread
+    pub fn onboard_as_parachain(&self) -> bool {
+        self.onboard_as_parachain
     }
 
     /// The initial balance of the parachain account.
@@ -173,6 +180,7 @@ impl Default for ParachainConfigBuilder<Initial> {
                 id: 100,
                 chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
+                onboard_as_parachain: true,
                 initial_balance: 2_000_000_000_000.into(),
                 default_command: None,
                 default_image: None,
@@ -271,6 +279,18 @@ impl ParachainConfigBuilder<WithId> {
         Self::transition(
             ParachainConfig {
                 registration_strategy: Some(strategy),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set whether the parachain should be onboarded or stay a parathread. Default is ```true```.
+    pub fn onboard_as_parachain(self, choice: bool) -> Self {
+        Self::transition(
+            ParachainConfig {
+                onboard_as_parachain: choice,
                 ..self.config
             },
             self.validation_context,
@@ -605,6 +625,7 @@ mod tests {
             .with_id(1000)
             .with_chain("mychainname")
             .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+            .onboard_as_parachain(false)
             .with_initial_balance(100_000_042)
             .with_default_image("myrepo:myimage")
             .with_default_command("default_command")
@@ -656,6 +677,7 @@ mod tests {
             parachain_config.registration_strategy().unwrap(),
             &RegistrationStrategy::UsingExtrinsic
         );
+        assert!(!parachain_config.onboard_as_parachain());
         assert_eq!(parachain_config.initial_balance(), 100_000_042);
         assert_eq!(
             parachain_config.default_command().unwrap().as_str(),
@@ -977,5 +999,17 @@ mod tests {
             errors.get(4).unwrap().to_string(),
             "parachain[2000].collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
+
+    #[test]
+    fn onboard_as_parachain_should_default_to_true() {
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert!(config.onboard_as_parachain());
     }
 }

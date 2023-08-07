@@ -4,6 +4,7 @@ mod network;
 mod parachain;
 mod relaychain;
 pub mod shared;
+mod utils;
 
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};

@@ -32,7 +32,8 @@ balance = 2000000000000
 [[parachains]]
 id = 1000
 chain = "myparachain"
-add_to_genesis = true
+register_para = true
+onboard_as_parachain = false
 balance = 2000000000000
 default_db_snapshot = "https://storage.com/path/to/db_snapshot.tgz"
 chain_spec_path = "/path/to/my/chain/spec.json"

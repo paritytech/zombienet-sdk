@@ -1,0 +1,69 @@
+name: Cargo Create Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build:
+    name: Zombienet SDK - Docs
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - nightly
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Init nigthly install for fmt
+        run: rustup update nightly && rustup default nightly && rustup component add rustfmt
+
+      - name: Check format
+        run: cargo +nightly fmt --check --all
+
+      - name: Init install
+        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
+
+      - name: Clippy
+        run: cargo doc --no-deps
+
+      - name: Build
+        run: cargo build
+
+      - name: Tests
+        run: cargo test
+
+  coverage:
+    name: Zombienet SDK - coverage
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    permissions:
+       issues: write
+       pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install latest nextest release
+        uses: taiki-e/install-action@nextest
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Collect coverage data
+        run: cargo llvm-cov nextest --lcov --output-path lcov.info
+
+      - name: Report code coverage
+        uses: Nef10/lcov-reporter-action@v0.4.0
+        with:
+          lcov-file: lcov.info
+          pr-number: ${{ github.event.pull_request.number }}

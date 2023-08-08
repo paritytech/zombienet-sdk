@@ -2,9 +2,9 @@ name: Cargo Create Docs
 
 on:
   push:
-    branches: [nik-add-docs-in-CI]
+    branches: [main]
   pull_request:
-    branches: [nik-add-docs-in-CI]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always

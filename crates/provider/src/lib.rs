@@ -72,7 +72,18 @@ pub trait Provider {
         unimplemented!()
     }
     async fn create_static_resource() -> Result<(), ProviderError> {
-        unimplemented!()
+        Ok(())
+    }
+    async fn create_pod_monitor() -> Result<(), ProviderError> {
+        Ok(())
+    }
+    async fn setup_cleaner() -> Result<(), ProviderError> {
+        Ok(())
+    }
+
+    #[allow(clippy::diverging_sub_expression)]
+    async fn upsert_cron_job() -> Result<(), ProviderError> {
+        unimplemented!();
     }
 }
 

@@ -1,0 +1,74 @@
+[settings]
+timeout = 1000
+node_spawn_timeout = 300
+
+[relaychain]
+chain = "polkadot"
+default_command = "polkadot"
+default_image = "docker.io/parity/polkadot:latest"
+default_db_snapshot = "https://storage.com/path/to/db_snapshot.tgz"
+default_args = [
+    "-name=value",
+    "--flag",
+]
+
+[relaychain.default_resources.requests]
+memory = "500M"
+cpu = "100000"
+
+[relaychain.default_resources.limits]
+memory = "4000M"
+cpu = "10Gi"
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 1000000000
+
+[[relaychain.nodes]]
+name = "bob"
+image = "mycustomimage:latest"
+command = "my-custom-command"
+args = ["-myothername=value"]
+validator = true
+invulnerable = true
+bootnode = true
+balance = 2000000000000
+db_snapshot = "https://storage.com/path/to/other/db_snapshot.tgz"
+
+[relaychain.nodes.resources.requests]
+memory = "250Mi"
+cpu = "1000"
+
+[relaychain.nodes.resources.limits]
+memory = "2Gi"
+cpu = "5Gi"
+
+[[parachains]]
+id = 1000
+chain = "myparachain"
+add_to_genesis = true
+balance = 2000000000000
+default_command = "my-default-command"
+default_image = "mydefaultimage:latest"
+default_db_snapshot = "https://storage.com/path/to/other_snapshot.tgz"
+chain_spec_path = "/path/to/my/chain/spec.json"
+cumulus_based = true
+
+[[parachains.collators]]
+name = "john"
+image = "anotherimage:latest"
+command = "my-non-default-command"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 5000000000
+
+[[parachains.collators]]
+name = "charles"
+validator = false
+invulnerable = true
+bootnode = true
+balance = 0

@@ -10,3 +10,5 @@ multiaddr = { workspace = true }
 url = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }

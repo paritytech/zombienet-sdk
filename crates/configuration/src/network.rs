@@ -1,46 +1,57 @@
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+
+use regex::Regex;
+use serde::Serialize;
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::{errors::ConfigError, helpers::merge_errors_vecs, macros::states},
+    shared::{helpers::merge_errors_vecs, macros::states, types::ValidationContext},
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NetworkConfig {
-    // The global settings applied to the network.
+    #[serde(rename = "settings")]
     global_settings: GlobalSettings,
-
-    /// Relaychain configuration.
     relaychain: Option<RelaychainConfig>,
-
-    /// Parachains configurations.
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     parachains: Vec<ParachainConfig>,
-
-    /// HRMP channels configurations.
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     hrmp_channels: Vec<HrmpChannelConfig>,
 }
 
 impl NetworkConfig {
+    /// The global settings of the network.
     pub fn global_settings(&self) -> &GlobalSettings {
         &self.global_settings
     }
 
+    /// The relay chain of the network.
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
             .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues")
     }
 
+    /// The parachains of the network.
     pub fn parachains(&self) -> Vec<&ParachainConfig> {
         self.parachains.iter().collect::<Vec<_>>()
     }
 
+    /// The HRMP channels of the network.
     pub fn hrmp_channels(&self) -> Vec<&HrmpChannelConfig> {
         self.hrmp_channels.iter().collect::<Vec<_>>()
+    }
+
+    pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
+        // This regex is used to replace the "" enclosed u128 value to a raw u128 because u128 is not supported for TOML serialization/deserialization.
+        let re = Regex::new(r#""U128%(?<u128_value>\d+)""#).expect("regex should be valid, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+        let toml_string = toml::to_string_pretty(&self)?;
+
+        Ok(re.replace_all(&toml_string, "$u128_value").to_string())
     }
 }
 
@@ -49,9 +60,82 @@ states! {
     WithRelaychain
 }
 
+/// A network configuration builder, used to build a [`NetworkConfig`] declaratively with fields validation.
+///
+/// # Example:
+///
+/// ```
+/// use configuration::NetworkConfigBuilder;
+///
+/// let network_config = NetworkConfigBuilder::new()
+///     .with_relaychain(|relaychain| {
+///         relaychain
+///             .with_chain("polkadot")
+///             .with_random_nominators_count(10)
+///             .with_default_resources(|resources| {
+///                 resources
+///                     .with_limit_cpu("1000m")
+///                     .with_request_memory("1Gi")
+///                     .with_request_cpu(100_000)
+///             })
+///             .with_node(|node| {
+///                 node.with_name("node")
+///                     .with_command("command")
+///                     .validator(true)
+///             })
+///     })
+///     .with_parachain(|parachain| {
+///         parachain
+///             .with_id(1000)
+///             .with_chain("myparachain1")
+///             .with_initial_balance(100_000)
+///             .with_default_image("myimage:version")
+///             .with_collator(|collator| {
+///                 collator
+///                     .with_name("collator1")
+///                     .with_command("command1")
+///                     .validator(true)
+///             })
+///     })
+///     .with_parachain(|parachain| {
+///         parachain
+///             .with_id(2000)
+///             .with_chain("myparachain2")
+///             .with_initial_balance(50_0000)
+///             .with_collator(|collator| {
+///                 collator
+///                     .with_name("collator2")
+///                     .with_command("command2")
+///                     .validator(true)
+///             })
+///     })
+///     .with_hrmp_channel(|hrmp_channel1| {
+///         hrmp_channel1
+///             .with_sender(1)
+///             .with_recipient(2)
+///             .with_max_capacity(200)
+///             .with_max_message_size(500)
+///     })
+///     .with_hrmp_channel(|hrmp_channel2| {
+///         hrmp_channel2
+///             .with_sender(2)
+///             .with_recipient(1)
+///             .with_max_capacity(100)
+///             .with_max_message_size(250)
+///     })
+///     .with_global_settings(|global_settings| {
+///         global_settings
+///             .with_network_spawn_timeout(1200)
+///             .with_node_spawn_timeout(240)
+///     })
+///     .build();
+///
+/// assert!(network_config.is_ok())
+/// ```
 #[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
+    validation_context: Rc<RefCell<ValidationContext>>,
     errors: Vec<anyhow::Error>,
     _state: PhantomData<State>,
 }
@@ -67,6 +151,7 @@ impl Default for NetworkConfigBuilder<Initial> {
                 parachains: vec![],
                 hrmp_channels: vec![],
             },
+            validation_context: Default::default(),
             errors: vec![],
             _state: PhantomData,
         }
@@ -74,10 +159,15 @@ impl Default for NetworkConfigBuilder<Initial> {
 }
 
 impl<A> NetworkConfigBuilder<A> {
-    fn transition<B>(config: NetworkConfig, errors: Vec<anyhow::Error>) -> NetworkConfigBuilder<B> {
+    fn transition<B>(
+        config: NetworkConfig,
+        validation_context: Rc<RefCell<ValidationContext>>,
+        errors: Vec<anyhow::Error>,
+    ) -> NetworkConfigBuilder<B> {
         NetworkConfigBuilder {
             config,
             errors,
+            validation_context,
             _state: PhantomData,
         }
     }
@@ -88,26 +178,33 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
+    /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
     pub fn with_relaychain(
         self,
         f: fn(
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
-        match f(RelaychainConfigBuilder::new()).build() {
+        match f(RelaychainConfigBuilder::new(
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
             Ok(relaychain) => Self::transition(
                 NetworkConfig {
                     relaychain: Some(relaychain),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
-            Err(errors) => Self::transition(self.config, errors),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
         }
     }
 }
 
 impl NetworkConfigBuilder<WithRelaychain> {
+    /// Set the global settings using a nested [`GlobalSettingsBuilder`].
     pub fn with_global_settings(
         self,
         f: fn(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
@@ -118,39 +215,42 @@ impl NetworkConfigBuilder<WithRelaychain> {
                     global_settings,
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
-            Err(errors) => Self::transition(self.config, merge_errors_vecs(self.errors, errors)),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(self.errors, errors),
+            ),
         }
     }
 
+    /// Add a parachain using a nested [`ParachainConfigBuilder`].
     pub fn with_parachain(
         self,
         f: fn(
             ParachainConfigBuilder<parachain::Initial>,
         ) -> ParachainConfigBuilder<parachain::WithAtLeastOneCollator>,
     ) -> Self {
-        match f(ParachainConfigBuilder::new()).build() {
+        match f(ParachainConfigBuilder::new(self.validation_context.clone())).build() {
             Ok(parachain) => Self::transition(
                 NetworkConfig {
-                    parachains: vec![self.config.parachains, vec![parachain]].concat(),
+                    parachains: [self.config.parachains, vec![parachain]].concat(),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
-            Err((para_id, errors)) => Self::transition(
+            Err(errors) => Self::transition(
                 self.config,
-                merge_errors_vecs(
-                    self.errors,
-                    errors
-                        .into_iter()
-                        .map(|error| ConfigError::Parachain(para_id, error).into())
-                        .collect::<Vec<_>>(),
-                ),
+                self.validation_context,
+                merge_errors_vecs(self.errors, errors),
             ),
         }
     }
 
+    /// Add an HRMP channel using a nested [`HrmpChannelConfigBuilder`].
     pub fn with_hrmp_channel(
         self,
         f: fn(
@@ -161,13 +261,15 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
         Self::transition(
             NetworkConfig {
-                hrmp_channels: vec![self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
+                hrmp_channels: [self.config.hrmp_channels, vec![new_hrmp_channel]].concat(),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
 
+    /// Seals the builder and returns a [`NetworkConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self.errors);
@@ -179,7 +281,10 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+    use crate::parachain::RegistrationStrategy;
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -194,27 +299,29 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1)
+                    .with_chain("myparachain1")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
                             .with_command("command1")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
-            .with_parachain(|parachain2| {
-                parachain2
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(2)
+                    .with_chain("myparachain2")
+                    .with_initial_balance(0)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator2")
                             .with_command("command2")
                             .validator(true)
                     })
-                    .with_initial_balance(0)
             })
             .with_hrmp_channel(|hrmp_channel1| {
                 hrmp_channel1
@@ -246,7 +353,10 @@ mod tests {
         assert_eq!(node.command().unwrap().as_str(), "command");
         assert!(node.is_validator());
         assert_eq!(
-            network_config.relaychain().random_minators_count().unwrap(),
+            network_config
+                .relaychain()
+                .random_nominators_count()
+                .unwrap(),
             10
         );
 
@@ -312,16 +422,17 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
                             .with_command("command1")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .build()
             .unwrap_err();
@@ -350,9 +461,11 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator1")
@@ -360,7 +473,6 @@ mod tests {
                             .with_image("invalid.image")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .build()
             .unwrap_err();
@@ -390,23 +502,26 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain1")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
-                            .with_name("collator")
+                            .with_name("collator1")
                             .with_command("invalid command")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
-            .with_parachain(|parachain2| {
-                parachain2
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(2000)
+                    .with_chain("myparachain2")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
-                            .with_name("collator")
+                            .with_name("collator2")
                             .validator(true)
                             .with_resources(|resources| {
                                 resources
@@ -415,7 +530,6 @@ mod tests {
                                     .with_request_cpu("invalid")
                             })
                     })
-                    .with_initial_balance(100_000)
             })
             .build()
             .unwrap_err();
@@ -423,11 +537,11 @@ mod tests {
         assert_eq!(errors.len(), 2);
         assert_eq!(
             errors.get(0).unwrap().to_string(),
-            "parachain[1000].collators['collator'].command: 'invalid command' shouldn't contains whitespace"
+            "parachain[1000].collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(
             errors.get(1).unwrap().to_string(),
-            "parachain[2000].collators['collator'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
+            "parachain[2000].collators['collator2'].resources.request_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
 
@@ -445,16 +559,17 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator")
                             .with_command("command")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .with_global_settings(|global_settings| {
                 global_settings
@@ -489,9 +604,11 @@ mod tests {
                             .validator(true)
                     })
             })
-            .with_parachain(|parachain1| {
-                parachain1
+            .with_parachain(|parachain| {
+                parachain
                     .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_initial_balance(100_000)
                     .with_collator(|collator| {
                         collator
                             .with_name("collator")
@@ -499,7 +616,6 @@ mod tests {
                             .with_image("invalid.image")
                             .validator(true)
                     })
-                    .with_initial_balance(100_000)
             })
             .with_global_settings(|global_settings| global_settings.with_local_ip("127.0.0000.1"))
             .build()
@@ -518,5 +634,222 @@ mod tests {
             errors.get(2).unwrap().to_string(),
             "global_settings.local_ip: invalid IP address syntax"
         );
+    }
+
+    #[test]
+    fn network_config_should_be_dumpable_to_a_toml_config_for_a_small_network() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_args(vec![("-lparachain", "debug").into()])
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .validator(true)
+                            .invulnerable(true)
+                            .validator(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_args(vec![("--database", "paritydb-experimental").into()])
+                    })
+            })
+            .build()
+            .unwrap();
+
+        let got = network_config.dump_to_toml().unwrap();
+        let expected = fs::read_to_string("./testing/snapshots/0000-small-network.toml").unwrap();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn network_config_should_be_dumpable_to_a_toml_config_for_a_big_network() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_resources(|resources| {
+                        resources
+                            .with_request_cpu(100000)
+                            .with_request_memory("500M")
+                            .with_limit_cpu("10Gi")
+                            .with_limit_memory("4000M")
+                    })
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .with_initial_balance(1_000_000_000)
+                            .validator(true)
+                            .bootnode(true)
+                            .invulnerable(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .invulnerable(true)
+                            .bootnode(true)
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+                    .onboard_as_parachain(false)
+                    .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("john")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("charles")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("frank")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_initial_balance(1_000_000_000)
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(2000)
+                    .with_chain("myotherparachain")
+                    .with_chain_spec_path("/path/to/my/other/chain/spec.json")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("mike")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("georges")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("victor")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_initial_balance(1_000_000_000)
+                    })
+            })
+            .with_hrmp_channel(|hrmp_channel| {
+                hrmp_channel
+                    .with_sender(1000)
+                    .with_recipient(2000)
+                    .with_max_capacity(150)
+                    .with_max_message_size(5000)
+            })
+            .with_hrmp_channel(|hrmp_channel| {
+                hrmp_channel
+                    .with_sender(2000)
+                    .with_recipient(1000)
+                    .with_max_capacity(200)
+                    .with_max_message_size(8000)
+            })
+            .build()
+            .unwrap();
+
+        let got = network_config.dump_to_toml().unwrap();
+        let expected = fs::read_to_string("./testing/snapshots/0001-big-network.toml").unwrap();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn network_config_builder_should_be_dumplable_to_a_toml_config_a_overrides_default_correctly() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_args(vec![("-name", "value").into(), "--flag".into()])
+                    .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+                    .with_default_resources(|resources| {
+                        resources
+                            .with_request_cpu(100000)
+                            .with_request_memory("500M")
+                            .with_limit_cpu("10Gi")
+                            .with_limit_memory("4000M")
+                    })
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .with_initial_balance(1_000_000_000)
+                            .validator(true)
+                            .bootnode(true)
+                            .invulnerable(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .invulnerable(true)
+                            .bootnode(true)
+                            .with_image("mycustomimage:latest")
+                            .with_command("my-custom-command")
+                            .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
+                            .with_resources(|resources| {
+                                resources
+                                    .with_request_cpu(1000)
+                                    .with_request_memory("250Mi")
+                                    .with_limit_cpu("5Gi")
+                                    .with_limit_memory("2Gi")
+                            })
+                            .with_args(vec![("-myothername", "value").into()])
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
+                    .with_default_command("my-default-command")
+                    .with_default_image("mydefaultimage:latest")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("john")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                            .with_command("my-non-default-command")
+                            .with_image("anotherimage:latest")
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("charles")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+            })
+            .build()
+            .unwrap();
+
+        let got = network_config.dump_to_toml().unwrap();
+        let expected =
+            fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
+        assert_eq!(got, expected);
     }
 }

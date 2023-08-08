@@ -1,8 +1,11 @@
 use std::marker::PhantomData;
 
+use serde::Serialize;
+
 use crate::shared::{macros::states, types::ParaId};
 
-#[derive(Debug, Clone, PartialEq)]
+/// HRMP channel configuration, with fine-grained configuration options.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HrmpChannelConfig {
     sender: ParaId,
     recipient: ParaId,
@@ -11,18 +14,22 @@ pub struct HrmpChannelConfig {
 }
 
 impl HrmpChannelConfig {
+    /// The sending parachain ID.
     pub fn sender(&self) -> ParaId {
         self.sender
     }
 
+    /// The receiving parachain ID.
     pub fn recipient(&self) -> ParaId {
         self.recipient
     }
 
+    /// The maximum capacity of messages in the channel.
     pub fn max_capacity(&self) -> u32 {
         self.max_capacity
     }
 
+    /// The maximum size of a message in the channel.
     pub fn max_message_size(&self) -> u32 {
         self.max_message_size
     }
@@ -34,6 +41,7 @@ states! {
     WithRecipient
 }
 
+/// HRMP channel configuration builder, used to build an [`HrmpChannelConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct HrmpChannelConfigBuilder<State> {
     config: HrmpChannelConfig,
@@ -68,6 +76,7 @@ impl HrmpChannelConfigBuilder<Initial> {
         Self::default()
     }
 
+    /// Set the sending parachain ID.
     pub fn with_sender(self, sender: ParaId) -> HrmpChannelConfigBuilder<WithSender> {
         self.transition(HrmpChannelConfig {
             sender,
@@ -77,6 +86,7 @@ impl HrmpChannelConfigBuilder<Initial> {
 }
 
 impl HrmpChannelConfigBuilder<WithSender> {
+    /// Set the receiving parachain ID.
     pub fn with_recipient(self, recipient: ParaId) -> HrmpChannelConfigBuilder<WithRecipient> {
         self.transition(HrmpChannelConfig {
             recipient,
@@ -86,6 +96,7 @@ impl HrmpChannelConfigBuilder<WithSender> {
 }
 
 impl HrmpChannelConfigBuilder<WithRecipient> {
+    /// Set the max capacity of messages in the channel.
     pub fn with_max_capacity(self, max_capacity: u32) -> Self {
         self.transition(HrmpChannelConfig {
             max_capacity,
@@ -93,6 +104,7 @@ impl HrmpChannelConfigBuilder<WithRecipient> {
         })
     }
 
+    /// Set the maximum size of a message in the channel.
     pub fn with_max_message_size(self, max_message_size: u32) -> Self {
         self.transition(HrmpChannelConfig {
             max_message_size,

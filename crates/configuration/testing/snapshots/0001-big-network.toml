@@ -1,0 +1,102 @@
+[settings]
+timeout = 1000
+node_spawn_timeout = 300
+
+[relaychain]
+chain = "polkadot"
+default_command = "polkadot"
+default_image = "docker.io/parity/polkadot:latest"
+
+[relaychain.default_resources.requests]
+memory = "500M"
+cpu = "100000"
+
+[relaychain.default_resources.limits]
+memory = "4000M"
+cpu = "10Gi"
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 1000000000
+
+[[relaychain.nodes]]
+name = "bob"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 2000000000000
+
+[[parachains]]
+id = 1000
+chain = "myparachain"
+register_para = true
+onboard_as_parachain = false
+balance = 2000000000000
+default_db_snapshot = "https://storage.com/path/to/db_snapshot.tgz"
+chain_spec_path = "/path/to/my/chain/spec.json"
+cumulus_based = true
+
+[[parachains.collators]]
+name = "john"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 5000000000
+
+[[parachains.collators]]
+name = "charles"
+validator = false
+invulnerable = true
+bootnode = true
+balance = 0
+
+[[parachains.collators]]
+name = "frank"
+validator = true
+invulnerable = false
+bootnode = true
+balance = 1000000000
+
+[[parachains]]
+id = 2000
+chain = "myotherparachain"
+add_to_genesis = true
+balance = 2000000000000
+chain_spec_path = "/path/to/my/other/chain/spec.json"
+cumulus_based = true
+
+[[parachains.collators]]
+name = "mike"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 5000000000
+
+[[parachains.collators]]
+name = "georges"
+validator = false
+invulnerable = true
+bootnode = true
+balance = 0
+
+[[parachains.collators]]
+name = "victor"
+validator = true
+invulnerable = false
+bootnode = true
+balance = 1000000000
+
+[[hrmp_channels]]
+sender = 1000
+recipient = 2000
+max_capacity = 150
+max_message_size = 5000
+
+[[hrmp_channels]]
+sender = 2000
+recipient = 1000
+max_capacity = 200
+max_message_size = 8000

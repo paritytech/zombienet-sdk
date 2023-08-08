@@ -1,4 +1,6 @@
-use std::{error::Error, fmt::Debug, marker::PhantomData};
+use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
+
+use serde::Serialize;
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
@@ -6,80 +8,73 @@ use crate::shared::{
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image},
+    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext},
 };
 
-/// A relaychain configuration, composed of nodes and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq)]
+/// A relay chain configuration, composed of nodes and fine-grained configuration options.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RelaychainConfig {
-    /// Chain to use (e.g. rococo-local).
     chain: Chain,
-
-    /// Default command to run the node. Can be overriden on each node.
     default_command: Option<Command>,
-
-    /// Default image to use (only podman/k8s). Can be overriden on each node.
     default_image: Option<Image>,
-
-    /// Default resources. Can be overriden on each node.
     default_resources: Option<Resources>,
-
-    /// Default database snapshot. Can be overriden on each node.
     default_db_snapshot: Option<AssetLocation>,
-
-    /// Default arguments to use in nodes. Can be overriden on each node.
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     default_args: Vec<Arg>,
-
-    /// Chain specification JSON file to use.
     chain_spec_path: Option<AssetLocation>,
-
-    /// Set the count of nominators to generator (used with PoS networks).
     random_nominators_count: Option<u32>,
-
-    /// Set the max nominators value (used with PoS networks).
     max_nominations: Option<u8>,
-
-    /// Nodes to run.
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
     nodes: Vec<NodeConfig>,
 }
 
 impl RelaychainConfig {
+    /// The chain name.
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
 
+    /// The default command used for nodes.
     pub fn default_command(&self) -> Option<&Command> {
         self.default_command.as_ref()
     }
 
+    /// The default container image used for nodes.
     pub fn default_image(&self) -> Option<&Image> {
         self.default_image.as_ref()
     }
 
+    /// The default resources limits used for nodes.
     pub fn default_resources(&self) -> Option<&Resources> {
         self.default_resources.as_ref()
     }
 
+    /// The default database snapshot location that will be used for state.
     pub fn default_db_snapshot(&self) -> Option<&AssetLocation> {
         self.default_db_snapshot.as_ref()
     }
 
-    pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
-        self.chain_spec_path.as_ref()
-    }
-
+    /// The default arguments that will be used to launch the node command.
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
-    pub fn random_minators_count(&self) -> Option<u32> {
+    /// The location of an pre-existing chain specification for the relay chain.
+    pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
+        self.chain_spec_path.as_ref()
+    }
+
+    /// The number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
+    pub fn random_nominators_count(&self) -> Option<u32> {
         self.random_nominators_count
     }
 
+    /// The maximum number of nominations to create per nominator.
     pub fn max_nominations(&self) -> Option<u8> {
         self.max_nominations
     }
 
+    /// The nodes of the relay chain.
     pub fn nodes(&self) -> Vec<&NodeConfig> {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
@@ -91,9 +86,11 @@ states! {
     WithAtLeastOneNode
 }
 
+/// A relay chain configuration builder, used to build a [`RelaychainConfig`] declaratively with fields validation.
 #[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
+    validation_context: Rc<RefCell<ValidationContext>>,
     errors: Vec<anyhow::Error>,
     _state: PhantomData<State>,
 }
@@ -102,19 +99,20 @@ impl Default for RelaychainConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: RelaychainConfig {
-                chain: ""
+                chain: "default"
                     .try_into()
-                    .expect("empty string should be valid. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
+                    .expect("'default' overriding should be ensured by typestate. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
                 default_command: None,
                 default_image: None,
                 default_resources: None,
                 default_db_snapshot: None,
-                chain_spec_path: None,
                 default_args: vec![],
+                chain_spec_path: None,
                 random_nominators_count: None,
                 max_nominations: None,
                 nodes: vec![],
             },
+            validation_context: Default::default(),
             errors: vec![],
             _state: PhantomData,
         }
@@ -124,16 +122,18 @@ impl Default for RelaychainConfigBuilder<Initial> {
 impl<A> RelaychainConfigBuilder<A> {
     fn transition<B>(
         config: RelaychainConfig,
+        validation_context: Rc<RefCell<ValidationContext>>,
         errors: Vec<anyhow::Error>,
     ) -> RelaychainConfigBuilder<B> {
         RelaychainConfigBuilder {
             config,
+            validation_context,
             errors,
             _state: PhantomData,
         }
     }
 
-    fn default_context(&self) -> ChainDefaultContext {
+    fn default_chain_context(&self) -> ChainDefaultContext {
         ChainDefaultContext {
             default_command: self.config.default_command.clone(),
             default_image: self.config.default_image.clone(),
@@ -145,10 +145,16 @@ impl<A> RelaychainConfigBuilder<A> {
 }
 
 impl RelaychainConfigBuilder<Initial> {
-    pub fn new() -> RelaychainConfigBuilder<Initial> {
-        Self::default()
+    pub fn new(
+        validation_context: Rc<RefCell<ValidationContext>>,
+    ) -> RelaychainConfigBuilder<Initial> {
+        Self {
+            validation_context,
+            ..Self::default()
+        }
     }
 
+    /// Set the chain name (e.g. rococo-local).
     pub fn with_chain<T>(self, chain: T) -> RelaychainConfigBuilder<WithChain>
     where
         T: TryInto<Chain>,
@@ -160,10 +166,12 @@ impl RelaychainConfigBuilder<Initial> {
                     chain,
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(self.errors, FieldError::Chain(error.into()).into()),
             ),
         }
@@ -171,6 +179,7 @@ impl RelaychainConfigBuilder<Initial> {
 }
 
 impl RelaychainConfigBuilder<WithChain> {
+    /// Set the default command used for nodes. Can be overridden.
     pub fn with_default_command<T>(self, command: T) -> Self
     where
         T: TryInto<Command>,
@@ -182,15 +191,18 @@ impl RelaychainConfigBuilder<WithChain> {
                     default_command: Some(command),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(self.errors, FieldError::DefaultCommand(error.into()).into()),
             ),
         }
     }
 
+    /// Set the default container image used for nodes. Can be overridden.
     pub fn with_default_image<T>(self, image: T) -> Self
     where
         T: TryInto<Image>,
@@ -202,15 +214,18 @@ impl RelaychainConfigBuilder<WithChain> {
                     default_image: Some(image),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(error) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors(self.errors, FieldError::DefaultImage(error.into()).into()),
             ),
         }
     }
 
+    /// Set the default resources limits used for nodes. Can be overridden.
     pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
@@ -218,10 +233,12 @@ impl RelaychainConfigBuilder<WithChain> {
                     default_resources: Some(default_resources),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err(errors) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors_vecs(
                     self.errors,
                     errors
@@ -233,70 +250,88 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
+    /// Set the default database snapshot location that will be used for state. Can be overridden.
     pub fn with_default_db_snapshot(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             RelaychainConfig {
                 default_db_snapshot: Some(location.into()),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
 
+    /// Set the default arguments that will be used to execute the node command. Can be overridden.
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             RelaychainConfig {
                 default_args: args,
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
 
+    /// Set the location of a pre-existing chain specification for the relay chain.
     pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             RelaychainConfig {
                 chain_spec_path: Some(location.into()),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
 
+    /// Set the number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
         Self::transition(
             RelaychainConfig {
                 random_nominators_count: Some(random_nominators_count),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
 
+    /// Set the maximum number of nominations to create per nominator.
     pub fn with_max_nominations(self, max_nominations: u8) -> Self {
         Self::transition(
             RelaychainConfig {
                 max_nominations: Some(max_nominations),
                 ..self.config
             },
+            self.validation_context,
             self.errors,
         )
     }
 
+    /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
-        match f(NodeConfigBuilder::new(self.default_context())).build() {
+        match f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
             Ok(node) => Self::transition(
                 RelaychainConfig {
                     nodes: vec![node],
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err((name, errors)) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors_vecs(
                     self.errors,
                     errors
@@ -310,20 +345,28 @@ impl RelaychainConfigBuilder<WithChain> {
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
+    /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(self.default_context())).build() {
+        match f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
             Ok(node) => Self::transition(
                 RelaychainConfig {
-                    nodes: vec![self.config.nodes, vec![node]].concat(),
+                    nodes: [self.config.nodes, vec![node]].concat(),
                     ..self.config
                 },
+                self.validation_context,
                 self.errors,
             ),
             Err((name, errors)) => Self::transition(
                 self.config,
+                self.validation_context,
                 merge_errors_vecs(
                     self.errors,
                     errors
@@ -335,6 +378,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         }
     }
 
+    /// Seals the builder and returns a [`RelaychainConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<RelaychainConfig, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
             return Err(self
@@ -354,7 +398,7 @@ mod tests {
 
     #[test]
     fn relaychain_config_builder_should_succeeds_and_returns_a_relaychain_config() {
-        let relaychain_config = RelaychainConfigBuilder::new()
+        let relaychain_config = RelaychainConfigBuilder::new(Default::default())
             .with_chain("polkadot")
             .with_default_image("myrepo:myimage")
             .with_default_command("default_command")
@@ -369,10 +413,9 @@ mod tests {
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
-            .with_node(|node1| node1.with_name("node1").bootnode(true))
-            .with_node(|node2| {
-                node2
-                    .with_name("node2")
+            .with_node(|node| node.with_name("node1").bootnode(true))
+            .with_node(|node| {
+                node.with_name("node2")
                     .with_command("command2")
                     .validator(true)
             })
@@ -414,13 +457,13 @@ mod tests {
             relaychain_config.default_args(),
             args.iter().collect::<Vec<_>>()
         );
-        assert_eq!(relaychain_config.random_minators_count().unwrap(), 42);
+        assert_eq!(relaychain_config.random_nominators_count().unwrap(), 42);
         assert_eq!(relaychain_config.max_nominations().unwrap(), 5);
     }
 
     #[test]
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_chain_is_invalid() {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("invalid chain")
             .with_node(|node| {
                 node.with_name("node")
@@ -439,7 +482,7 @@ mod tests {
 
     #[test]
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_default_command_is_invalid() {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_command("invalid command")
             .with_node(|node| {
@@ -459,7 +502,7 @@ mod tests {
 
     #[test]
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_default_image_is_invalid() {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_image("invalid image")
             .with_node(|node| {
@@ -480,7 +523,7 @@ mod tests {
     #[test]
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_default_resources_are_invalid(
     ) {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_resources(|default_resources| {
                 default_resources
@@ -504,77 +547,8 @@ mod tests {
 
     #[test]
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_first_node_is_invalid() {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("invalid command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            "relaychain.nodes['node'].command: 'invalid command' shouldn't contains whitespace"
-        );
-    }
-
-    #[test]
-    fn relaychain_config_builder_with_default_command_should_fails_and_returns_an_error_if_default_image_is_invalid(
-    ) {
-        let errors = RelaychainConfigBuilder::new()
-            .with_chain("chain")
-            .with_default_command("command")
-            .with_default_image("invalid image")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            r"relaychain.default_image: 'invalid image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
-        );
-    }
-
-    #[test]
-    fn relaychain_config_builder_with_default_command_should_fails_and_returns_an_error_if_default_resources_are_invalid(
-    ) {
-        let errors = RelaychainConfigBuilder::new()
-            .with_chain("chain")
-            .with_default_command("command")
-            .with_default_resources(|default_resources| {
-                default_resources
-                    .with_limit_memory("100m")
-                    .with_request_cpu("invalid")
-            })
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.get(0).unwrap().to_string(),
-            r"relaychain.default_resources.request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
-        );
-    }
-
-    #[test]
-    fn relaychain_config_builder_with_default_command_should_fails_and_returns_an_error_if_first_node_is_invalid(
-    ) {
-        let errors = RelaychainConfigBuilder::new()
-            .with_chain("chain")
-            .with_default_command("command")
             .with_node(|node| {
                 node.with_name("node")
                     .with_command("invalid command")
@@ -593,7 +567,7 @@ mod tests {
     #[test]
     fn relaychain_config_builder_with_at_least_one_node_should_fails_and_returns_an_error_if_second_node_is_invalid(
     ) {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_node(|node| {
                 node.with_name("node1")
@@ -618,7 +592,7 @@ mod tests {
     #[test]
     fn relaychain_config_builder_should_fails_returns_multiple_errors_if_a_node_and_default_resources_are_invalid(
     ) {
-        let errors = RelaychainConfigBuilder::new()
+        let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_resources(|resources| {
                 resources

@@ -7,12 +7,12 @@ use std::{
 };
 
 use async_trait::async_trait;
+use configuration::types::Port;
 use support::fs::FileSystem;
 use tokio::{
     process::{Child, Command},
     time::{sleep, Duration},
 };
-use configuration::types::Port;
 
 use super::Provider;
 use crate::{
@@ -48,7 +48,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
     ///   filesystem: Filesystem to use (std::fs::FileSystem, mock etc.)
     pub fn new(
         namespace: impl Into<String>,
-        //config_path: impl Into<String>,
+        // config_path: impl Into<String>,
         tmp_dir: impl Into<String>,
         filesystem: T,
     ) -> Self {
@@ -59,7 +59,7 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
             namespace: namespace.into(),
             // config_path: config_path.into(),
             remote_dir: format!("{}{}", &tmp_dir, DEFAULT_REMOTE_DIR),
-            data_dir:  format!("{}{}", &tmp_dir,DEFAULT_DATA_DIR),
+            data_dir: format!("{}{}", &tmp_dir, DEFAULT_DATA_DIR),
             command: "bash".into(),
             tmp_dir,
             process_map,
@@ -80,7 +80,10 @@ impl<T: FileSystem + Send + Sync> NativeProvider<T> {
 pub struct Node {}
 
 #[async_trait]
-impl<T> Provider for NativeProvider<T> where T: FileSystem + Send + Sync {
+impl<T> Provider for NativeProvider<T>
+where
+    T: FileSystem + Send + Sync,
+{
     type Node = Node;
 
     fn require_image() -> bool {
@@ -176,7 +179,7 @@ impl<T> Provider for NativeProvider<T> where T: FileSystem + Send + Sync {
         pod_file_path: PathBuf,
         local_file_path: PathBuf,
     ) -> Result<(), ProviderError> {
-        //log::debug!("cp {} {}", pod_file_path.to_string_lossy(), local_file_path.to_string_lossy());
+        // log::debug!("cp {} {}", pod_file_path.to_string_lossy(), local_file_path.to_string_lossy());
 
         self.filesystem
             .copy(&pod_file_path, &local_file_path)
@@ -341,15 +344,16 @@ impl<T> Provider for NativeProvider<T> where T: FileSystem + Send + Sync {
     ) -> Result<bool, ProviderError> {
         let process = self.get_process_by_node_name(node_name)?;
 
-        let _resp = self.run_command(
-            vec![format!("kill -9 {:?}", process.pid)],
-            NativeRunCommandOptions {
-                is_failure_allowed: true,
-            },
-        )
-        .await?;
+        let _resp = self
+            .run_command(
+                vec![format!("kill -9 {:?}", process.pid)],
+                NativeRunCommandOptions {
+                    is_failure_allowed: true,
+                },
+            )
+            .await?;
 
-        //log::debug!("{:?}", &resp);
+        // log::debug!("{:?}", &resp);
 
         if let Some(secs) = after_secs {
             sleep(Duration::from_secs(secs.into())).await;
@@ -363,9 +367,11 @@ impl<T> Provider for NativeProvider<T> where T: FileSystem + Send + Sync {
                     "process".into(),
                 ))?;
 
-        let mapped_env: HashMap<&str, &str> = process.env.iter().map(|env_var| {
-            (env_var.name.as_str(), env_var.value.as_str())
-        }).collect();
+        let mapped_env: HashMap<&str, &str> = process
+            .env
+            .iter()
+            .map(|env_var| (env_var.name.as_str(), env_var.value.as_str()))
+            .collect();
 
         let child_process: Child = Command::new(self.command.clone())
             .arg("-c")

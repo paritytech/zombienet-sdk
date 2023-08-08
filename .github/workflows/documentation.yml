@@ -32,3 +32,6 @@ jobs:
 
       - name: Create Docs
         run: cargo doc --no-deps
+
+      - name: Run script for copying docs
+        run: ./doc_preparation.sh

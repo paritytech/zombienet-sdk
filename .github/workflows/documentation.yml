@@ -2,9 +2,9 @@ name: Cargo Create Docs
 
 on:
   push:
-    branches: [nik-add-docs-in-CI]
+    branches: [main]
   pull_request:
-    branches: [nik-add-docs-in-CI]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -52,4 +52,4 @@ jobs:
           git commit -m "Documentation"
         shell: bash       # Necessary for `shopt` to work
       - run: git push -f origin gh-pages:gh-pages
-        # if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

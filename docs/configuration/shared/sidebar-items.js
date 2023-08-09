@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["errors","helpers","macros","node","resources","types"]};

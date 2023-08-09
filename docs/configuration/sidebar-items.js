@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["shared"],"struct":["GlobalSettings","GlobalSettingsBuilder","HrmpChannelConfig","HrmpChannelConfigBuilder","NetworkConfig","NetworkConfigBuilder","ParachainConfig","ParachainConfigBuilder","RelaychainConfig","RelaychainConfigBuilder"]};

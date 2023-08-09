@@ -1,5 +1,8 @@
 # 🚧⚠️ [WIP] ZombieNet SDK  ⚠️🚧
 
+
+[Rust Docs](https://paritytech.github.io/zombienet-sdk)
+
 # The Vision
 
 This issue will track the progress of the new ZombieNet SDK.

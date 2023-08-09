@@ -11,8 +11,8 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  build:
-    name: Zombienet SDK - Docs
+  build-rust-doc:
+    name: Zombienet SDK - Rust Docs
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,9 +30,26 @@ jobs:
       - name: Init install
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
 
-      - name: Create Docs
-        run: cargo doc --no-deps
+      - name: Create docs
+        run: |
+          cargo doc --no-deps
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=configuration\">" > target/doc/index.html
 
-      - name: Run script for copying docs
-        run: ./doc_preparation.sh
-        
+      - name: Move docs
+        run: |
+          mkdir -p ./doc
+          mv ./target/doc/* ./doc
+          git config user.email "github-action@users.noreply.github.com"
+          git config user.name "GitHub Action"
+          git config user.password ${{ secrets.GITHUB_TOKEN }}
+          git checkout --orphan gh-pages
+          mkdir to_delete
+          shopt -s extglob
+          mv !(to_delete) ./to_delete
+          mv ./to_delete/doc/* .
+          rm -rf ./to_delete
+          git add --all
+          git commit -m "Documentation"
+        shell: bash       # Necessary for `shopt` to work
+      - run: git push -f origin gh-pages:gh-pages
+        # if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

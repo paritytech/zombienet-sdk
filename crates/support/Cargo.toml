@@ -11,3 +11,5 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }

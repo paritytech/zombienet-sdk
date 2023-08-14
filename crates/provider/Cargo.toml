@@ -8,11 +8,18 @@ edition = "2021"
 [dependencies]
 support = { path = "../support" }
 configuration = { path = "../configuration" }
-async-trait = {workspace = true }
-futures = {workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
 #napi = { version="2.12.7", features=["async"]}
 #napi-derive = "2.12.5"
 serde = { workspace = true, features = ["derive"] }
-serde_json = {workspace = true}
-tokio = { workspace = true, features = ["process", "macros", "fs", "time", "rt"] }
-thiserror = {workspace = true}
+serde_json = { workspace = true }
+tokio = { workspace = true, features = [
+    "process",
+    "macros",
+    "fs",
+    "time",
+    "rt",
+] }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }

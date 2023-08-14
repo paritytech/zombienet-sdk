@@ -13,6 +13,9 @@ macro_rules! from_error {
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum ProviderError {
+    #[error("Namespace ID already exists: {0}")]
+    ConflictingNamespaceId(String),
+
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
     #[error("Can recover node: {0} info, field: {1}")]

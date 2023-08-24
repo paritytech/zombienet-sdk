@@ -284,7 +284,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::parachain::RegistrationStrategy;
+    use crate::shared::types::RegistrationStrategy;
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {

@@ -2,7 +2,7 @@ use std::{fmt::Display, path::PathBuf, str::FromStr};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::Serialize;
+use serde::{ser::SerializeStruct, Serialize};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
@@ -177,7 +177,7 @@ impl Command {
 /// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
 /// let path_location: AssetLocation = PathBuf::from_str("/tmp/path/to/my/file").unwrap().into();
 /// let path_location2: AssetLocation = "/tmp/path/to/my/file".into();
-///        
+///
 /// assert!(matches!(url_location, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
 /// assert!(matches!(url_location2, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
 /// assert!(matches!(path_location, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
@@ -284,11 +284,33 @@ pub struct ValidationContext {
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct ChainDefaultContext {
-    pub(crate) default_command: Option<Command>,
-    pub(crate) default_image: Option<Image>,
-    pub(crate) default_resources: Option<Resources>,
-    pub(crate) default_db_snapshot: Option<AssetLocation>,
-    pub(crate) default_args: Vec<Arg>,
+    pub default_command: Option<Command>,
+    pub default_image: Option<Image>,
+    pub default_resources: Option<Resources>,
+    pub default_db_snapshot: Option<AssetLocation>,
+    pub default_args: Vec<Arg>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RegistrationStrategy {
+    InGenesis,
+    UsingExtrinsic,
+}
+
+impl Serialize for RegistrationStrategy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("RegistrationStrategy", 1)?;
+
+        match self {
+            Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
+            Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
+        }
+
+        state.end()
+    }
 }
 
 #[cfg(test)]

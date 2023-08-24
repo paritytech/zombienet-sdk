@@ -10,31 +10,10 @@ use crate::shared::{
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
     types::{
-        Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
+        Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, RegistrationStrategy,
+        ValidationContext, U128,
     },
 };
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum RegistrationStrategy {
-    InGenesis,
-    UsingExtrinsic,
-}
-
-impl Serialize for RegistrationStrategy {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RegistrationStrategy", 1)?;
-
-        match self {
-            Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
-            Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
-        }
-
-        state.end()
-    }
-}
 
 /// A parachain configuration, composed of collators and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq, Serialize)]

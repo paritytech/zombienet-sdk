@@ -2,7 +2,6 @@ use std::{ffi::OsString, path::Path};
 
 use async_trait::async_trait;
 
-#[cfg(test)]
 pub mod in_memory;
 
 #[derive(Debug, thiserror::Error)]
@@ -27,12 +26,6 @@ pub type FileSystemResult<T> = Result<T, FileSystemError>;
 
 #[async_trait]
 pub trait FileSystem {
-    async fn copy(
-        &self,
-        from: impl AsRef<Path> + Send,
-        to: impl AsRef<Path> + Send,
-    ) -> FileSystemResult<()>;
-
     async fn create_dir(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()>;
 
     async fn create_dir_all(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()>;
@@ -44,6 +37,18 @@ pub trait FileSystem {
     async fn write(
         &self,
         path: impl AsRef<Path> + Send,
-        content: impl AsRef<[u8]> + Send,
+        contents: impl AsRef<[u8]> + Send,
+    ) -> FileSystemResult<()>;
+
+    async fn append(
+        &self,
+        path: impl AsRef<Path> + Send,
+        contents: impl AsRef<[u8]> + Send,
+    ) -> FileSystemResult<()>;
+
+    async fn copy(
+        &self,
+        from: impl AsRef<Path> + Send,
+        to: impl AsRef<Path> + Send,
     ) -> FileSystemResult<()>;
 }

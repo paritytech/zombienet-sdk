@@ -1,24 +1,24 @@
-use std::{collections::HashMap, ffi::OsString, path::Path, str::FromStr};
+use std::{collections::HashMap, ffi::OsString, path::Path, str::FromStr, sync::Arc};
 
 use super::{FileSystem, FileSystemError, FileSystemResult};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-#[derive(Debug)]
-enum InMemoryFile {
+#[derive(Debug, Clone)]
+pub enum InMemoryFile {
     File(Vec<u8>),
     Directory,
 }
 
-#[derive(Default, Debug)]
-struct InMemoryFileSystem {
-    files: RwLock<HashMap<OsString, InMemoryFile>>,
+#[derive(Default, Debug, Clone)]
+pub struct InMemoryFileSystem {
+    files: Arc<RwLock<HashMap<OsString, InMemoryFile>>>,
 }
 
 impl InMemoryFileSystem {
-    fn new(files: HashMap<OsString, InMemoryFile>) -> Self {
+    pub fn new(files: HashMap<OsString, InMemoryFile>) -> Self {
         Self {
-            files: RwLock::new(files),
+            files: Arc::new(RwLock::new(files)),
         }
     }
 }
@@ -136,6 +136,22 @@ impl FileSystem for InMemoryFileSystem {
         Ok(())
     }
 
+    async fn append(
+        &self,
+        path: impl AsRef<Path> + Send,
+        contents: impl AsRef<[u8]> + Send,
+    ) -> FileSystemResult<()> {
+        let path = path.as_ref();
+        let mut existing_contents = match self.read(path).await {
+            Ok(existing_contents) => existing_contents,
+            Err(FileSystemError::FileNotFound(_)) => vec![],
+            Err(err) => Err(err)?,
+        };
+        existing_contents.append(&mut contents.as_ref().to_vec());
+
+        self.write(path, existing_contents).await
+    }
+
     async fn copy(
         &self,
         from: impl AsRef<Path> + Send,
@@ -151,7 +167,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn create_dir_should_creates_a_directory_at_root() {
+    async fn create_dir_should_create_a_directory_at_root() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/").unwrap(),
             InMemoryFile::Directory,
@@ -171,7 +187,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_should_returns_an_error_if_directory_already_exists() {
+    async fn create_dir_should_return_an_error_if_directory_already_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (OsString::from_str("/dir").unwrap(), InMemoryFile::Directory),
@@ -187,7 +203,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_should_returns_an_error_if_file_already_exists() {
+    async fn create_dir_should_return_an_error_if_file_already_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -206,7 +222,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_should_creates_a_directory_if_all_ancestors_exist() {
+    async fn create_dir_should_create_a_directory_if_all_ancestors_exist() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -237,7 +253,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_should_returns_an_error_if_some_directory_ancestor_doesnt_exists() {
+    async fn create_dir_should_return_an_error_if_some_directory_ancestor_doesnt_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -260,7 +276,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_should_returns_an_error_if_some_ancestor_is_not_a_directory() {
+    async fn create_dir_should_return_an_error_if_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -287,7 +303,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_all_should_creates_a_directory_and_all_its_ancestors_if_they_dont_exist() {
+    async fn create_dir_all_should_create_a_directory_and_all_its_ancestors_if_they_dont_exist() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/").unwrap(),
             InMemoryFile::Directory,
@@ -331,8 +347,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_all_should_creates_a_directory_and_some_of_its_ancestors_if_they_dont_exist(
-    ) {
+    async fn create_dir_all_should_create_a_directory_and_some_of_its_ancestors_if_they_dont_exist()
+    {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -367,7 +383,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_dir_all_should_returns_an_error_if_some_ancestor_is_not_a_directory() {
+    async fn create_dir_all_should_return_an_error_if_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -390,7 +406,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_should_returns_the_file_content() {
+    async fn read_should_return_the_file_content() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
             InMemoryFile::File("content".as_bytes().to_vec()),
@@ -402,7 +418,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_should_returns_an_error_if_file_doesnt_exists() {
+    async fn read_should_return_an_error_if_file_doesnt_exists() {
         let fs = InMemoryFileSystem::new(HashMap::new());
 
         let err = fs.read("/myfile").await.unwrap_err();
@@ -414,7 +430,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_should_returns_an_error_if_file_is_a_directory() {
+    async fn read_should_return_an_error_if_file_is_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
             InMemoryFile::Directory,
@@ -429,7 +445,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_to_string_should_returns_the_file_content_as_a_string() {
+    async fn read_to_string_should_return_the_file_content_as_a_string() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
             InMemoryFile::File("content".as_bytes().to_vec()),
@@ -441,7 +457,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_to_string_should_returns_an_error_if_file_doesnt_exists() {
+    async fn read_to_string_should_return_an_error_if_file_doesnt_exists() {
         let fs = InMemoryFileSystem::new(HashMap::new());
 
         let err = fs.read_to_string("/myfile").await.unwrap_err();
@@ -453,7 +469,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_to_string_should_returns_an_error_if_file_is_a_directory() {
+    async fn read_to_string_should_return_an_error_if_file_is_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
             InMemoryFile::Directory,
@@ -468,7 +484,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_to_string_should_returns_an_error_if_file_isnt_utf8_encoded() {
+    async fn read_to_string_should_return_an_error_if_file_isnt_utf8_encoded() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
             InMemoryFile::File(vec![0xC3, 0x28]),
@@ -483,7 +499,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_should_creates_file_with_content_if_file_doesnt_exists() {
+    async fn write_should_create_file_with_content_if_file_doesnt_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/").unwrap(),
             InMemoryFile::Directory,
@@ -498,11 +514,11 @@ mod tests {
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
             Some(InMemoryFile::File(content)) if content == "my file content".as_bytes()
-        ))
+        ));
     }
 
     #[tokio::test]
-    async fn write_should_updates_file_content_if_file_exists() {
+    async fn write_should_overwrite_file_content_if_file_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -520,11 +536,11 @@ mod tests {
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
             Some(InMemoryFile::File(content)) if content == "my new file content".as_bytes()
-        ))
+        ));
     }
 
     #[tokio::test]
-    async fn write_should_returns_an_error_if_file_is_a_directory() {
+    async fn write_should_return_an_error_if_file_is_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -540,7 +556,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_should_returns_an_error_if_file_is_new_and_some_ancestor_doesnt_exists() {
+    async fn write_should_return_an_error_if_file_is_new_and_some_ancestor_doesnt_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -559,7 +575,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_should_returns_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
+    async fn write_should_return_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
             (
@@ -574,6 +590,106 @@ mod tests {
 
         let err = fs
             .write("/path/to/myfile", "my file content")
+            .await
+            .unwrap_err();
+
+        assert_eq!(fs.files.read().await.len(), 3);
+        assert!(matches!(err, FileSystemError::AncestorNotDirectory(path) if path == "/path"));
+    }
+
+    #[tokio::test]
+    async fn append_should_update_file_content_if_file_exists() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
+            (
+                OsString::from_str("/myfile").unwrap(),
+                InMemoryFile::File("my file content".as_bytes().to_vec()),
+            ),
+        ]));
+
+        fs.append("/myfile", " has been updated with new things")
+            .await
+            .unwrap();
+
+        assert_eq!(fs.files.read().await.len(), 2);
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(&OsString::from_str("/myfile").unwrap()),
+            Some(InMemoryFile::File(content)) if content == "my file content has been updated with new things".as_bytes()
+        ));
+    }
+
+    #[tokio::test]
+    async fn append_should_create_file_with_content_if_file_doesnt_exists() {
+        let fs = InMemoryFileSystem::new(HashMap::from([(
+            OsString::from_str("/").unwrap(),
+            InMemoryFile::Directory,
+        )]));
+
+        fs.append("/myfile", "my file content").await.unwrap();
+
+        assert_eq!(fs.files.read().await.len(), 2);
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(&OsString::from_str("/myfile").unwrap()),
+            Some(InMemoryFile::File(content)) if content == "my file content".as_bytes()
+        ));
+    }
+
+    #[tokio::test]
+    async fn append_should_return_an_error_if_file_is_a_directory() {
+        let fs = InMemoryFileSystem::new(HashMap::from([(
+            OsString::from_str("/myfile").unwrap(),
+            InMemoryFile::Directory,
+        )]));
+
+        let err = fs.append("/myfile", "my file content").await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            FileSystemError::FileIsDirectory(path) if path == "/myfile"
+        ));
+    }
+
+    #[tokio::test]
+    async fn append_should_return_an_error_if_file_is_new_and_some_ancestor_doesnt_exists() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
+            (
+                OsString::from_str("/path/to").unwrap(),
+                InMemoryFile::Directory,
+            ),
+        ]));
+
+        let err = fs
+            .append("/path/to/myfile", "my file content")
+            .await
+            .unwrap_err();
+
+        assert_eq!(fs.files.read().await.len(), 2);
+        assert!(matches!(err, FileSystemError::AncestorDoesntExists(path) if path == "/path"));
+    }
+
+    #[tokio::test]
+    async fn append_should_return_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::Directory),
+            (
+                OsString::from_str("/path").unwrap(),
+                InMemoryFile::File(vec![]),
+            ),
+            (
+                OsString::from_str("/path/to").unwrap(),
+                InMemoryFile::Directory,
+            ),
+        ]));
+
+        let err = fs
+            .append("/path/to/myfile", "my file content")
             .await
             .unwrap_err();
 

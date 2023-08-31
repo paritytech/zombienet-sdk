@@ -1,6 +1,7 @@
-use std::{collections::HashMap, ffi::OsString, path::Path, str::FromStr, sync::Arc};
+use std::{collections::HashMap, ffi::OsString, path::Path, sync::Arc};
 
-use super::{FileSystem, FileSystemError, FileSystemResult};
+use super::{FileSystem, FileSystemResult};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
@@ -31,10 +32,10 @@ impl FileSystem for InMemoryFileSystem {
 
         match self.files.read().await.get(os_path) {
             Some(InMemoryFile::File(_)) => {
-                Err(FileSystemError::FileAlreadyExists(os_path.to_owned()))?
+                Err(anyhow!("file {:?} already exists", os_path.to_owned(),))?
             },
             Some(InMemoryFile::Directory) => {
-                Err(FileSystemError::DirectoryAlreadyExists(os_path.to_owned()))?
+                Err(anyhow!("directory {:?} already exists", os_path.to_owned(),))?
             },
             None => {},
         };
@@ -43,12 +44,11 @@ impl FileSystem for InMemoryFileSystem {
         while let Some(path) = ancestors.next() {
             match self.files.read().await.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory) => continue,
-                Some(InMemoryFile::File(_)) => Err(FileSystemError::AncestorNotDirectory(
-                    path.as_os_str().to_owned(),
+                Some(InMemoryFile::File(_)) => Err(anyhow!(
+                    "ancestor {:?} is not a directory",
+                    path.as_os_str(),
                 ))?,
-                None => Err(FileSystemError::AncestorDoesntExists(
-                    path.as_os_str().to_owned(),
-                ))?,
+                None => Err(anyhow!("ancestor {:?} doesn't exists", path.as_os_str(),))?,
             };
         }
 
@@ -73,7 +73,8 @@ impl FileSystem for InMemoryFileSystem {
         while let Some(path) = ancestors.next() {
             match files.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory) => continue,
-                Some(InMemoryFile::File(_)) => Err(FileSystemError::AncestorNotDirectory(
+                Some(InMemoryFile::File(_)) => Err(anyhow!(
+                    "ancestor {:?} is not a directory",
                     path.as_os_str().to_owned(),
                 ))?,
                 None => files.insert(path.as_os_str().to_owned(), InMemoryFile::Directory),
@@ -89,9 +90,9 @@ impl FileSystem for InMemoryFileSystem {
         match self.files.read().await.get(os_path) {
             Some(InMemoryFile::File(content)) => Ok(content.clone()),
             Some(InMemoryFile::Directory) => {
-                Err(FileSystemError::FileIsDirectory(os_path.to_owned()))
+                Err(anyhow!("file {:?} is a directory", os_path).into())
             },
-            None => Err(FileSystemError::FileNotFound(os_path.to_owned())),
+            None => Err(anyhow!("file {:?} not found", os_path).into()),
         }
     }
 
@@ -99,7 +100,8 @@ impl FileSystem for InMemoryFileSystem {
         let os_path = path.as_ref().as_os_str().to_owned();
         let content = self.read(path).await?;
 
-        String::from_utf8(content).map_err(|_| FileSystemError::InvalidUtf8FileEncoding(os_path))
+        String::from_utf8(content)
+            .map_err(|_| anyhow!("invalid utf-8 encoding for file {:?}", os_path).into())
     }
 
     async fn write(
@@ -115,17 +117,16 @@ impl FileSystem for InMemoryFileSystem {
         while let Some(path) = ancestors.next() {
             match files.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory) => continue,
-                Some(InMemoryFile::File(_)) => Err(FileSystemError::AncestorNotDirectory(
-                    path.as_os_str().to_owned(),
+                Some(InMemoryFile::File(_)) => Err(anyhow!(
+                    "ancestor {:?} is not a directory",
+                    path.as_os_str()
                 ))?,
-                None => Err(FileSystemError::AncestorDoesntExists(
-                    path.as_os_str().to_owned(),
-                ))?,
+                None => Err(anyhow!("ancestor {:?} doesn't exists", path.as_os_str()))?,
             };
         }
 
         if let Some(InMemoryFile::Directory) = files.get(os_path) {
-            return Err(FileSystemError::FileIsDirectory(os_path.to_owned()));
+            return Err(anyhow!("file {:?} is a directory", os_path).into());
         }
 
         files.insert(
@@ -144,7 +145,9 @@ impl FileSystem for InMemoryFileSystem {
         let path = path.as_ref();
         let mut existing_contents = match self.read(path).await {
             Ok(existing_contents) => existing_contents,
-            Err(FileSystemError::FileNotFound(_)) => vec![],
+            Err(err) if err.to_string() == format!("file {:?} not found", path.as_os_str()) => {
+                vec![]
+            },
             Err(err) => Err(err)?,
         };
         existing_contents.append(&mut contents.as_ref().to_vec());
@@ -165,6 +168,7 @@ impl FileSystem for InMemoryFileSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[tokio::test]
     async fn create_dir_should_create_a_directory_at_root() {
@@ -196,10 +200,7 @@ mod tests {
         let err = fs.create_dir("/dir").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 2);
-        assert!(matches!(
-            err,
-            FileSystemError::DirectoryAlreadyExists(path) if path == "/dir"
-        ));
+        assert_eq!(err.to_string(), "directory \"/dir\" already exists");
     }
 
     #[tokio::test]
@@ -215,10 +216,7 @@ mod tests {
         let err = fs.create_dir("/dir").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 2);
-        assert!(matches!(
-            err,
-            FileSystemError::FileAlreadyExists(path) if path == "/dir"
-        ));
+        assert_eq!(err.to_string(), "file \"/dir\" already exists");
     }
 
     #[tokio::test]
@@ -269,10 +267,7 @@ mod tests {
         let err = fs.create_dir("/path/to/my/dir").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 3);
-        assert!(matches!(
-            err,
-            FileSystemError::AncestorDoesntExists(path) if path == "/path/to/my"
-        ));
+        assert_eq!(err.to_string(), "ancestor \"/path/to/my\" doesn't exists");
     }
 
     #[tokio::test]
@@ -296,10 +291,7 @@ mod tests {
         let err = fs.create_dir("/path/to/my/dir").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 4);
-        assert!(matches!(
-            err,
-            FileSystemError::AncestorNotDirectory(path) if path == "/path"
-        ));
+        assert_eq!(err.to_string(), "ancestor \"/path\" is not a directory");
     }
 
     #[tokio::test]
@@ -399,10 +391,7 @@ mod tests {
         let err = fs.create_dir_all("/path/to/my/dir").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 3);
-        assert!(matches!(
-            err,
-            FileSystemError::AncestorNotDirectory(path) if path == "/path"
-        ));
+        assert_eq!(err.to_string(), "ancestor \"/path\" is not a directory");
     }
 
     #[tokio::test]
@@ -423,10 +412,7 @@ mod tests {
 
         let err = fs.read("/myfile").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileNotFound(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" not found");
     }
 
     #[tokio::test]
@@ -438,10 +424,7 @@ mod tests {
 
         let err = fs.read("/myfile").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileIsDirectory(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" is a directory");
     }
 
     #[tokio::test]
@@ -462,10 +445,7 @@ mod tests {
 
         let err = fs.read_to_string("/myfile").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileNotFound(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" not found");
     }
 
     #[tokio::test]
@@ -477,10 +457,7 @@ mod tests {
 
         let err = fs.read_to_string("/myfile").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileIsDirectory(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" is a directory");
     }
 
     #[tokio::test]
@@ -492,10 +469,10 @@ mod tests {
 
         let err = fs.read_to_string("/myfile").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::InvalidUtf8FileEncoding(path) if path == "/myfile"
-        ));
+        assert_eq!(
+            err.to_string(),
+            "invalid utf-8 encoding for file \"/myfile\""
+        );
     }
 
     #[tokio::test]
@@ -552,7 +529,7 @@ mod tests {
         let err = fs.write("/myfile", "my file content").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 2);
-        assert!(matches!(err, FileSystemError::FileIsDirectory(path) if path == "/myfile"));
+        assert_eq!(err.to_string(), "file \"/myfile\" is a directory");
     }
 
     #[tokio::test]
@@ -571,7 +548,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 2);
-        assert!(matches!(err, FileSystemError::AncestorDoesntExists(path) if path == "/path"));
+        assert_eq!(err.to_string(), "ancestor \"/path\" doesn't exists");
     }
 
     #[tokio::test]
@@ -594,7 +571,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 3);
-        assert!(matches!(err, FileSystemError::AncestorNotDirectory(path) if path == "/path"));
+        assert_eq!(err.to_string(), "ancestor \"/path\" is not a directory");
     }
 
     #[tokio::test]
@@ -649,10 +626,7 @@ mod tests {
 
         let err = fs.append("/myfile", "my file content").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileIsDirectory(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" is a directory");
     }
 
     #[tokio::test]
@@ -671,7 +645,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 2);
-        assert!(matches!(err, FileSystemError::AncestorDoesntExists(path) if path == "/path"));
+        assert_eq!(err.to_string(), "ancestor \"/path\" doesn't exists");
     }
 
     #[tokio::test]
@@ -694,7 +668,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 3);
-        assert!(matches!(err, FileSystemError::AncestorNotDirectory(path) if path == "/path"));
+        assert_eq!(err.to_string(), "ancestor \"/path\" is not a directory");
     }
 
     #[tokio::test]
@@ -746,10 +720,7 @@ mod tests {
 
         let err = fs.copy("/myfile", "/mfilecopy").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileNotFound(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" not found");
     }
 
     #[tokio::test]
@@ -764,10 +735,7 @@ mod tests {
 
         let err = fs.copy("/myfile", "/mfilecopy").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileIsDirectory(path) if path == "/myfile"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfile\" is a directory");
     }
 
     #[tokio::test]
@@ -786,10 +754,7 @@ mod tests {
 
         let err = fs.copy("/myfile", "/myfilecopy").await.unwrap_err();
 
-        assert!(matches!(
-            err,
-            FileSystemError::FileIsDirectory(path) if path == "/myfilecopy"
-        ));
+        assert_eq!(err.to_string(), "file \"/myfilecopy\" is a directory");
     }
 
     #[tokio::test]
@@ -806,7 +771,7 @@ mod tests {
         let err = fs.copy("/myfile", "/somedir/myfilecopy").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 2);
-        assert!(matches!(err, FileSystemError::AncestorDoesntExists(path) if path == "/somedir"));
+        assert_eq!(err.to_string(), "ancestor \"/somedir\" doesn't exists");
     }
 
     #[tokio::test]
@@ -827,6 +792,6 @@ mod tests {
         let err = fs.copy("/myfile", "/mypath/myfilecopy").await.unwrap_err();
 
         assert_eq!(fs.files.read().await.len(), 3);
-        assert!(matches!(err, FileSystemError::AncestorNotDirectory(path) if path == "/mypath"));
+        assert_eq!(err.to_string(), "ancestor \"/mypath\" is not a directory");
     }
 }

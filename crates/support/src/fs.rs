@@ -1,26 +1,13 @@
-use std::{ffi::OsString, path::Path};
+use std::path::Path;
 
 use async_trait::async_trait;
 
 pub mod in_memory;
+pub mod local;
 
 #[derive(Debug, thiserror::Error)]
-pub enum FileSystemError {
-    #[error("File {0:?} already exists")]
-    FileAlreadyExists(OsString),
-    #[error("Directory {0:?} already exists")]
-    DirectoryAlreadyExists(OsString),
-    #[error("Ancestor {0:?} doesn't exists")]
-    AncestorDoesntExists(OsString),
-    #[error("Ancestor {0:?} is not a directory")]
-    AncestorNotDirectory(OsString),
-    #[error("File {0:?} not found")]
-    FileNotFound(OsString),
-    #[error("File {0:?} is a directory")]
-    FileIsDirectory(OsString),
-    #[error("Invalid UTF-8 encoding for file {0:?}")]
-    InvalidUtf8FileEncoding(OsString),
-}
+#[error(transparent)]
+pub struct FileSystemError(#[from] anyhow::Error);
 
 pub type FileSystemResult<T> = Result<T, FileSystemError>;
 

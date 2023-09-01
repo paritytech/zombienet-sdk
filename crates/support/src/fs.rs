@@ -9,6 +9,12 @@ pub mod local;
 #[error(transparent)]
 pub struct FileSystemError(#[from] anyhow::Error);
 
+impl From<std::io::Error> for FileSystemError {
+    fn from(error: std::io::Error) -> Self {
+        Self(error.into())
+    }
+}
+
 pub type FileSystemResult<T> = Result<T, FileSystemError>;
 
 #[async_trait]

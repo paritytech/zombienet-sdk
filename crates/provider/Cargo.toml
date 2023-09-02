@@ -23,3 +23,4 @@ tokio = { workspace = true, features = [
 ] }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
+nix = { workspace = true, features = ["signal"] }

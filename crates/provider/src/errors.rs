@@ -1,5 +1,7 @@
 //! Zombienet Provider error definitions.
 
+use support::fs::FileSystemError;
+
 macro_rules! from_error {
     ($type:ty, $target:ident, $targetvar:expr) => {
         impl From<$type> for $target {
@@ -13,8 +15,8 @@ macro_rules! from_error {
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum ProviderError {
-    #[error("Namespace ID already exists: {0}")]
-    ConflictingNamespaceId(String),
+    #[error("Failed to spawn node '{0}': {1}")]
+    NodeSpawningFailed(String, anyhow::Error),
 
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
@@ -30,7 +32,7 @@ pub enum ProviderError {
     NodeNotReady(String),
     // FSErrors are implemented in the associated type
     #[error(transparent)]
-    FSError(Box<dyn std::error::Error + Sync + Send + 'static>),
+    FSError(#[from] FileSystemError),
     // From serde errors
     #[error("Serialization error")]
     SerializationError(serde_json::Error),

@@ -7,7 +7,11 @@ edition = "2021"
 
 [dependencies]
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 
+[dev-dependencies]
+uuid = { workspace = true, features = ["v4"] }

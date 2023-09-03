@@ -2,7 +2,7 @@ mod errors;
 mod native;
 mod shared;
 
-use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc};
+use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
@@ -12,7 +12,7 @@ use crate::{
     shared::types::{FileMap, Port},
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ProviderCapabilities {
     pub requires_image: bool,
 }
@@ -33,42 +33,20 @@ impl Default for CreateNamespaceOptions {
     }
 }
 
-impl CreateNamespaceOptions {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn root_dir(mut self, root_dir: &str) -> Self {
-        self.root_dir = root_dir.to_string();
-        self
-    }
-
-    pub fn config_dir(mut self, config_dir: &str) -> Self {
-        self.config_dir = config_dir.to_string();
-        self
-    }
-
-    pub fn data_dir(mut self, data_dir: &str) -> Self {
-        self.data_dir = data_dir.to_string();
-        self
-    }
-}
-
 #[async_trait]
 pub trait Provider {
-    fn capabilities(&self) -> &ProviderCapabilities;
-    async fn create_namespace(
-        &self,
-        options: Option<CreateNamespaceOptions>,
-    ) -> Result<DynNamespace, ProviderError>;
+    async fn capabilities(&self) -> ProviderCapabilities;
+    async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
     // TODO(team): Do we need at this point to handle cleanner/pod-monitor?
 }
 
-pub type DynProvider = Arc<RwLock<dyn Provider>>;
+pub type DynProvider = Arc<dyn Provider>;
 
 pub struct SpawnNodeOptions {
     pub name: String,
-    pub node: (),
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
     // Files to inject, `before` we run the provider command.
     pub files_inject: Vec<FileMap>,
     // TODO: keystore logic should live in the orchestrator
@@ -86,9 +64,9 @@ pub struct SpawnTempOptions {
 
 #[async_trait]
 pub trait ProviderNamespace {
-    fn id(&self) -> &str;
+    async fn id(&self) -> String;
     /// Spawn a long live node/process.
-    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<(), ProviderError>;
+    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
     /// Spawn a temporary node, will be shutdown after `get` the desired files or output.
     async fn spawn_temp(&self, options: SpawnTempOptions) -> Result<(), ProviderError>;
     /// Destroy namespace (and inner resources).
@@ -96,7 +74,7 @@ pub trait ProviderNamespace {
     async fn static_setup(&self) -> Result<(), ProviderError>;
 }
 
-pub type DynNamespace = Arc<RwLock<dyn ProviderNamespace>>;
+pub type DynNamespace = Arc<dyn ProviderNamespace>;
 
 pub struct RunCommandOptions {
     pub args: Vec<String>,
@@ -113,7 +91,7 @@ type ExecutionResult = Result<String, (ExitStatus, Option<String>)>;
 
 #[async_trait]
 pub trait ProviderNode {
-    fn name(&self) -> &str;
+    async fn name(&self) -> String;
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
 
@@ -137,17 +115,13 @@ pub trait ProviderNode {
         local_dest: PathBuf,
     ) -> Result<(), ProviderError>;
 
-    async fn pause(&self, node_name: &str) -> Result<(), ProviderError>;
+    async fn pause(&self) -> Result<(), ProviderError>;
 
-    async fn resume(&self, node_name: &str) -> Result<(), ProviderError>;
+    async fn resume(&self) -> Result<(), ProviderError>;
 
-    async fn restart(
-        &mut self,
-        node_name: &str,
-        after_sec: Option<u16>,
-    ) -> Result<bool, ProviderError>;
+    async fn restart(&mut self, after: Option<Duration>) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
 }
 
-pub type DynNode = Arc<RwLock<dyn ProviderNode>>;
+pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;

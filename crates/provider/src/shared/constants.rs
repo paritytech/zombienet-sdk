@@ -1,13 +1,15 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-/// Default dir for configuration inside pods
-pub const DEFAULT_REMOTE_DIR: &str = "/cfg";
-/// Default dir for node /data
-pub const DEFAULT_DATA_DIR: &str = "/data";
+/// Default temporary directory
+pub const DEFAULT_TMP_DIR: &str = "/tmp";
+/// Directory for node configuration
+pub const NODE_CONFIG_DIR: &str = "/cfg";
+/// Directory for node configuration
+pub const NODE_DATA_DIR: &str = "/data";
 /// Localhost ip
-pub const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+pub const _LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 /// The port substrate listens for p2p connections on
-pub const P2P_PORT: u16 = 30333;
+pub const _P2P_PORT: u16 = 30333;
 /// The remote port prometheus can be accessed with
 pub const _PROMETHEUS_PORT: u16 = 9615;
 /// The remote port websocket to access the RPC

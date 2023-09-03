@@ -2,30 +2,37 @@ use std::{
     self,
     collections::HashMap,
     fmt::Debug,
+    io::Error,
     net::IpAddr,
-    path::{Path, PathBuf},
+    path::PathBuf,
+    process::Stdio,
     sync::{Arc, Weak},
 };
 
 use async_trait::async_trait;
 use configuration::types::Port;
+use nix::{
+    sys::signal::{kill, Signal},
+    unistd::Pid,
+};
 use support::fs::FileSystem;
 use tokio::{
+    io::{AsyncRead, AsyncReadExt, BufReader},
     process::{Child, Command},
-    sync::RwLock,
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        RwLock,
+    },
+    task::JoinHandle,
     time::{sleep, Duration},
 };
 use uuid::Uuid;
 
 use crate::{
     errors::ProviderError,
-    shared::{
-        constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
-        types::{FileMap, NativeRunCommandOptions, Process, RunCommandResponse},
-    },
-    CreateNamespaceOptions, DynNamespace, ExecutionResult, Provider, ProviderCapabilities,
-    ProviderNamespace, ProviderNode, RunCommandOptions, RunScriptOptions, SpawnNodeOptions,
-    SpawnTempOptions,
+    shared::constants::{DEFAULT_TMP_DIR, NODE_CONFIG_DIR, NODE_DATA_DIR},
+    DynNamespace, DynNode, ExecutionResult, Provider, ProviderCapabilities, ProviderNamespace,
+    ProviderNode, RunCommandOptions, RunScriptOptions, SpawnNodeOptions, SpawnTempOptions,
 };
 
 pub struct NativeProviderOptions<FS>
@@ -33,220 +40,405 @@ where
     FS: FileSystem + Send + Sync,
 {
     filesystem: FS,
+    tmp_dir: Option<String>,
 }
 
-#[derive(Clone)]
-pub struct NativeProvider<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
+#[derive(Debug)]
+struct NativeProviderInner<FS: FileSystem + Send + Sync + Clone> {
     capabilities: ProviderCapabilities,
-    namespaces: Arc<RwLock<HashMap<String, Arc<RwLock<NativeNamespace<FS>>>>>>,
+    tmp_dir: String,
+    namespaces: HashMap<String, NativeNamespace<FS>>,
     filesystem: FS,
-    weak: Weak<Self>,
-}
-
-impl<FS> NativeProvider<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
-    pub fn new(options: NativeProviderOptions<FS>) -> Arc<Self> {
-        Arc::new_cyclic(|weak| Self {
-            capabilities: ProviderCapabilities {
-                requires_image: false,
-            },
-            filesystem: options.filesystem,
-            namespaces: Default::default(),
-            weak: weak.clone(),
-        })
-    }
-}
-
-#[async_trait]
-impl<FS> Provider for Arc<NativeProvider<FS>>
-where
-    FS: FileSystem + Send + Sync + Clone + 'static,
-{
-    fn capabilities(&self) -> &ProviderCapabilities {
-        &self.capabilities
-    }
-
-    async fn create_namespace(
-        &self,
-        options: Option<CreateNamespaceOptions>,
-    ) -> Result<DynNamespace, ProviderError> {
-        let options = options.unwrap_or(CreateNamespaceOptions::new());
-        let id = format!("zombie_{}", Uuid::new_v4());
-        let mut namespaces = self.namespaces.write().await;
-
-        if namespaces.contains_key(&id) {
-            return Err(ProviderError::ConflictingNamespaceId(id));
-        }
-
-        let base_dir = format!("{}/{}", &options.root_dir, &id);
-        let config_dir = format!("{}/{}", &base_dir, &options.config_dir);
-        let data_dir = format!("{}/{}", &base_dir, &options.data_dir);
-
-        // self.filesystem.create_dir(&config_dir).await.unwrap();
-        // self.filesystem.create_dir(&data_dir).await.unwrap();
-
-        let namespace = Arc::new_cyclic(|weak| {
-            RwLock::new(NativeNamespace {
-                id: id.clone(),
-                config_dir,
-                data_dir,
-                nodes: Default::default(),
-                filesystem: self.filesystem.clone(),
-                provider: self.weak.clone(),
-                weak: weak.clone(),
-            })
-        });
-
-        namespaces.insert(id, namespace.clone());
-
-        Ok(namespace)
-    }
 }
 
 #[derive(Debug, Clone)]
-pub struct NativeNamespace<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
-    id: String,
-    config_dir: String,
-    data_dir: String,
-    nodes: HashMap<String, Arc<RwLock<NativeNode<FS>>>>,
-    filesystem: FS,
-    provider: Weak<NativeProvider<FS>>,
-    weak: Weak<RwLock<Self>>,
+pub struct NativeProvider<FS: FileSystem + Send + Sync + Clone> {
+    inner: Arc<RwLock<NativeProviderInner<FS>>>,
+}
+
+#[derive(Debug, Clone)]
+struct WeakNativeProvider<FS: FileSystem + Send + Sync + Clone> {
+    inner: Weak<RwLock<NativeProviderInner<FS>>>,
+}
+
+impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
+    pub fn new(options: NativeProviderOptions<FS>) -> Self {
+        NativeProvider {
+            inner: Arc::new(RwLock::new(NativeProviderInner {
+                capabilities: ProviderCapabilities {
+                    requires_image: false,
+                },
+                tmp_dir: options.tmp_dir.unwrap_or(DEFAULT_TMP_DIR.to_string()),
+                namespaces: Default::default(),
+                filesystem: options.filesystem,
+            })),
+        }
+    }
 }
 
 #[async_trait]
-impl<FS> ProviderNamespace for NativeNamespace<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
-    fn id(&self) -> &str {
-        &self.id
+impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider<FS> {
+    async fn capabilities(&self) -> ProviderCapabilities {
+        self.inner.read().await.capabilities.clone()
     }
 
-    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<(), ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+    async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
+        let id = format!("zombie_{}", Uuid::new_v4());
+        let mut inner = self.inner.write().await;
+
+        let base_dir = format!("{}/{}", inner.tmp_dir, &id);
+        inner.filesystem.create_dir(&base_dir).await.unwrap();
+
+        let namespace = NativeNamespace {
+            inner: Arc::new(RwLock::new(NativeNamespaceInner {
+                id: id.clone(),
+                base_dir,
+                nodes: Default::default(),
+                filesystem: inner.filesystem.clone(),
+                provider: WeakNativeProvider {
+                    inner: Arc::downgrade(&self.inner),
+                },
+            })),
+        };
+
+        inner.namespaces.insert(id, namespace.clone());
+
+        Ok(Arc::new(namespace))
+    }
+}
+
+#[derive(Debug)]
+struct NativeNamespaceInner<FS: FileSystem + Send + Sync + Clone> {
+    id: String,
+    base_dir: String,
+    nodes: HashMap<String, NativeNode<FS>>,
+    filesystem: FS,
+    provider: WeakNativeProvider<FS>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NativeNamespace<FS: FileSystem + Send + Sync + Clone> {
+    inner: Arc<RwLock<NativeNamespaceInner<FS>>>,
+}
+
+#[derive(Debug, Clone)]
+struct WeakNativeNamespace<FS: FileSystem + Send + Sync + Clone> {
+    inner: Weak<RwLock<NativeNamespaceInner<FS>>>,
+}
+
+#[async_trait]
+impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for NativeNamespace<FS> {
+    async fn id(&self) -> String {
+        self.inner.read().await.id.clone()
     }
 
-    async fn spawn_temp(&self, options: SpawnTempOptions) -> Result<(), ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
+        let mut inner = self.inner.write().await;
+
+        // create node directories and filepaths
+        let base_dir = format!("{}/{}", &inner.base_dir, &options.name);
+        let log_path = format!("{}/{}.log", &base_dir, &options.name);
+        let config_dir = format!("{}{}", &base_dir, NODE_CONFIG_DIR);
+        let data_dir = format!("{}{}", &base_dir, NODE_DATA_DIR);
+        inner.filesystem.create_dir(&base_dir).await.unwrap();
+        inner.filesystem.create_dir(&config_dir).await.unwrap();
+        inner.filesystem.create_dir(&data_dir).await.unwrap();
+
+        let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
+            create_process_with_log_tasks(
+                &options.name,
+                &options.command,
+                &options.args,
+                &options.env,
+                &log_path,
+                inner.filesystem.clone(),
+            )?;
+
+        // create node structure holding state
+        let node = NativeNode {
+            inner: Arc::new(RwLock::new(NativeNodeInner {
+                name: options.name.clone(),
+                command: options.command,
+                args: options.args,
+                env: options.env,
+                log_path,
+                process,
+                stdout_reading_handle,
+                stderr_reading_handle,
+                log_writing_handle,
+                filesystem: inner.filesystem.clone(),
+                namespace: WeakNativeNamespace {
+                    inner: Arc::downgrade(&self.inner),
+                },
+            })),
+        };
+
+        // store node inside namespace
+        inner.nodes.insert(options.name, node.clone());
+
+        Ok(Arc::new(node))
+    }
+
+    async fn spawn_temp(&self, _options: SpawnTempOptions) -> Result<(), ProviderError> {
+        todo!()
     }
 
     async fn static_setup(&self) -> Result<(), ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        todo!()
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
+        // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
+        // method acquiring a lock the namespace to remove the node from the nodes hashmap.
         let nodes = self
+            .inner
+            .write()
+            .await
             .nodes
             .iter()
             .map(|(_, node)| node.clone())
-            .collect::<Vec<Arc<RwLock<NativeNode<FS>>>>>();
+            .collect::<Vec<NativeNode<FS>>>();
 
-        for node in nodes {
-            node.read().await.destroy();
+        for node in nodes.iter() {
+            node.destroy().await?;
         }
 
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        // remove namespace from provider
+        let inner = self.inner.write().await;
+        if let Some(provider) = inner.provider.inner.upgrade() {
+            provider.write().await.namespaces.remove(&inner.id);
+        }
+
+        Ok(())
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct NativeNode<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
+#[derive(Debug)]
+struct NativeNodeInner<FS: FileSystem + Send + Sync + Clone> {
     name: String,
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    log_path: String,
+    process: Child,
+    stdout_reading_handle: JoinHandle<()>,
+    stderr_reading_handle: JoinHandle<()>,
+    log_writing_handle: JoinHandle<()>,
     filesystem: FS,
-    namespace: Weak<RwLock<NativeNamespace<FS>>>,
+    namespace: WeakNativeNamespace<FS>,
+}
+
+impl<FS: FileSystem + Send + Sync + Clone> NativeNodeInner<FS> {}
+
+#[derive(Debug, Clone)]
+struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
+    inner: Arc<RwLock<NativeNodeInner<FS>>>,
 }
 
 #[async_trait]
-impl<T> ProviderNode for NativeNode<T>
-where
-    T: FileSystem + Send + Sync,
-{
-    fn name(&self) -> &str {
-        ""
+impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
+    async fn name(&self) -> String {
+        self.inner.read().await.name.clone()
     }
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        todo!();
     }
 
-    async fn mapped_port(&self, port: Port) -> Result<Port, ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+    async fn mapped_port(&self, _port: Port) -> Result<Port, ProviderError> {
+        todo!()
     }
 
     async fn logs(&self) -> Result<String, ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        let inner = self.inner.read().await;
+        Ok(inner.filesystem.read_to_string(&inner.log_path).await?)
     }
 
     async fn dump_logs(&self, dest: PathBuf) -> Result<(), ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        let logs = self.logs().await?;
+        Ok(self
+            .inner
+            .write()
+            .await
+            .filesystem
+            .write(dest, logs.as_bytes())
+            .await?)
     }
 
     async fn run_command(
         &self,
-        options: RunCommandOptions,
+        _options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        todo!()
     }
 
     async fn run_script(
         &self,
-        options: RunScriptOptions,
+        _options: RunScriptOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        Err(ProviderError::DuplicatedNodeName("test".to_string()))
+        todo!()
     }
 
     async fn copy_file_from_node(
         &self,
-        remote_src: PathBuf,
-        local_dest: PathBuf,
+        _remote_src: PathBuf,
+        _local_dest: PathBuf,
     ) -> Result<(), ProviderError> {
+        todo!()
+    }
+
+    async fn pause(&self) -> Result<(), ProviderError> {
+        let inner = self.inner.write().await;
+        let raw_pid = inner.process.id().unwrap();
+        let pid = Pid::from_raw(raw_pid.try_into().unwrap());
+
+        kill(pid, Signal::SIGSTOP).unwrap();
+
         Ok(())
     }
 
-    async fn pause(&self, node_name: &str) -> Result<(), ProviderError> {
+    async fn resume(&self) -> Result<(), ProviderError> {
+        let inner = self.inner.write().await;
+        let raw_pid = inner.process.id().unwrap();
+        let pid = Pid::from_raw(raw_pid.try_into().unwrap());
+
+        kill(pid, Signal::SIGCONT).unwrap();
+
         Ok(())
     }
 
-    async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
-        Ok(())
-    }
+    async fn restart(&mut self, after: Option<Duration>) -> Result<(), ProviderError> {
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
 
-    async fn restart(
-        &mut self,
-        node_name: &str,
-        after_sec: Option<u16>,
-    ) -> Result<bool, ProviderError> {
-        Ok(false)
+        let mut inner = self.inner.write().await;
+
+        // abort all task handlers and kill process
+        inner.log_writing_handle.abort();
+        inner.stdout_reading_handle.abort();
+        inner.stderr_reading_handle.abort();
+        inner.process.kill().await.unwrap();
+
+        // re-spawn process with tasks for logs
+        let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
+            create_process_with_log_tasks(
+                &inner.name,
+                &inner.command,
+                &inner.args,
+                &inner.env,
+                &inner.log_path,
+                inner.filesystem.clone(),
+            )?;
+
+        // update node process and handlers
+        inner.process = process;
+        inner.stderr_reading_handle = stdout_reading_handle;
+        inner.stderr_reading_handle = stderr_reading_handle;
+        inner.log_writing_handle = log_writing_handle;
+
+        Ok(())
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        self.namespace
-            .upgrade()
-            .expect("node should be destroyed if namespace is dropped")
-            .write()
-            .await
-            .nodes
-            .remove(&self.name);
+        let mut inner = self.inner.write().await;
+
+        inner.log_writing_handle.abort();
+        inner.stdout_reading_handle.abort();
+        inner.stderr_reading_handle.abort();
+        inner.process.kill().await.unwrap();
+
+        if let Some(namespace) = inner.namespace.inner.upgrade() {
+            namespace.write().await.nodes.remove(&inner.name);
+        }
+
         Ok(())
     }
 }
 
+fn create_stream_polling_task(
+    stream: impl AsyncRead + Unpin + Send + 'static,
+    tx: Sender<Result<Vec<u8>, Error>>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stream);
+        let mut buffer = vec![0u8; 1024];
+
+        loop {
+            match reader.read(&mut buffer).await {
+                Ok(0) => {
+                    let _ = tx.send(Ok(Vec::new())).await;
+                    break;
+                },
+                Ok(n) => {
+                    let _ = tx.send(Ok(buffer[..n].to_vec())).await;
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    break;
+                },
+            }
+        }
+    })
+}
+
+fn create_log_writing_task(
+    mut rx: Receiver<Result<Vec<u8>, Error>>,
+    filesystem: impl FileSystem + Send + Sync + 'static,
+    log_path: String,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_millis(250)).await;
+            while let Some(Ok(data)) = rx.recv().await {
+                filesystem.append(&log_path, data).await.unwrap();
+            }
+        }
+    })
+}
+
+fn create_process_with_log_tasks(
+    name: &str,
+    command: &str,
+    args: &[String],
+    env: &[(String, String)],
+    log_path: &str,
+    filesystem: impl FileSystem + Send + Sync + 'static,
+) -> Result<(Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>), ProviderError> {
+    // create process
+    let mut process = Command::new(command)
+        .args(args)
+        .envs(env.to_owned())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|err| ProviderError::NodeSpawningFailed(name.to_string(), err.into()))?;
+    let stdout = process.stdout.take().expect("infaillible, stdout is piped");
+    let stderr = process.stderr.take().expect("Infaillible, stderr is piped");
+
+    // create additonnal long-running tasks for logs
+    let (stdout_tx, rx) = mpsc::channel(10);
+    let stderr_tx = stdout_tx.clone();
+    let stdout_reading_handle = create_stream_polling_task(stdout, stdout_tx);
+    let stderr_reading_handle = create_stream_polling_task(stderr, stderr_tx);
+    let log_writing_handle = create_log_writing_task(rx, filesystem, log_path.to_owned());
+
+    Ok((
+        process,
+        stdout_reading_handle,
+        stderr_reading_handle,
+        log_writing_handle,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    #[tokio::test]
-    async fn it_should_works() {}
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn it_should_works() {
+        todo!();
+    }
 }
 
 // #[derive(Debug, Clone, PartialEq)]
@@ -531,36 +723,6 @@ mod tests {
 
 //     async fn get_logs_command(&self, name: &str) -> Result<String, ProviderError> {
 //         Ok(format!("tail -f {}/{}.log", self.tmp_dir, name))
-//     }
-
-//     // TODO: Add test
-//     async fn pause(&self, node_name: &str) -> Result<(), ProviderError> {
-//         let process = self.get_process_by_node_name(node_name)?;
-
-//         let _ = self
-//             .run_command(
-//                 vec![format!("kill -STOP {}", process.pid)],
-//                 NativeRunCommandOptions {
-//                     is_failure_allowed: true,
-//                 },
-//             )
-//             .await?;
-//         Ok(())
-//     }
-
-//     // TODO: Add test
-//     async fn resume(&self, node_name: &str) -> Result<(), ProviderError> {
-//         let process = self.get_process_by_node_name(node_name)?;
-
-//         let _ = self
-//             .run_command(
-//                 vec![format!("kill -CONT {}", process.pid)],
-//                 NativeRunCommandOptions {
-//                     is_failure_allowed: true,
-//                 },
-//             )
-//             .await?;
-//         Ok(())
 //     }
 
 //     // TODO: Add test

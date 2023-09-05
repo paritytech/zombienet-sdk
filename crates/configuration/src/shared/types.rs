@@ -9,9 +9,8 @@ use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
-use crate::shared;
-
 use super::{errors::ConversionError, resources::Resources};
+use crate::shared;
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;

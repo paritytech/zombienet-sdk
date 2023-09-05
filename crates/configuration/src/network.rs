@@ -180,11 +180,37 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
-    pub fn toml_to_network(self, path: &str) -> Result<NetworkConfig, toml::ser::Error> {
+    pub fn toml_to_network(path: &str) -> Result<NetworkConfig, toml::ser::Error> {
         let file_str = fs::read_to_string(path).unwrap();
-        let toml: NetworkConfig = toml::from_str(&file_str).unwrap();
+        let mut network_config: NetworkConfig = toml::from_str(&file_str).unwrap();
+
+        if network_config.relaychain.is_some() {
+            for node in network_config.relaychain.as_mut().unwrap().nodes.iter() {
+                node.command = Some(
+                    network_config
+                        .relaychain
+                        .unwrap()
+                        .default_command()
+                        .clone()
+                        .unwrap()
+                        .clone(),
+                );
+                println!("{:?}", node);
+            }
+        }
+
+        //     if toml.relaychain.default_command.is_some() {
+        //           for node in toml.relaychain.nodes.iter_mut() {
+        //                  node.command = toml.relaychain.default_command.clone();
+        //           }
+        //     }
+
+        //     /// repeat for all defaults
+
+        //     /// do the same for parachain but with a for to iterate over the vec of parachains
+
         // TODO: (nikos) Add error
-        Ok(toml)
+        Ok(network_config)
     }
 
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
@@ -864,9 +890,9 @@ mod tests {
 
     #[test]
     fn the_toml_config_should_be_imported_and_match_a_network() {
-        let toml_to_network = NetworkConfigBuilder::new()
-            .toml_to_network("./testing/snapshots/0000-small-network.toml")
-            .unwrap();
+        let toml_to_network =
+            NetworkConfigBuilder::toml_to_network("./testing/snapshots/0000-small-network.toml")
+                .unwrap();
 
         let expected = NetworkConfigBuilder::new()
             .with_relaychain(|relaychain| {

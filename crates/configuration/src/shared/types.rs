@@ -23,18 +23,12 @@ pub type ParaId = u32;
 
 /// Custom type wrapping u128 to add custom Serialization/Deserialization logic because it's not supported
 /// issue tracking the problem: <https://github.com/toml-rs/toml/issues/540>
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct U128(pub(crate) u128);
 
 impl From<u128> for U128 {
     fn from(value: u128) -> Self {
         Self(value)
-    }
-}
-
-impl Default for U128 {
-    fn default() -> Self {
-        U128(30)
     }
 }
 
@@ -67,11 +61,12 @@ impl<'de> Deserialize<'de> for U128 {
             where
                 E: de::Error,
             {
+                println!("------------ > visit_u128: {}", value);
                 Ok(shared::types::U128(value))
             }
         }
 
-        deserializer.deserialize_any(U128Visitor)
+        deserializer.deserialize_u128(U128Visitor)
     }
 }
 
@@ -327,19 +322,18 @@ impl<'de> Deserialize<'de> for Arg {
                 formatter.write_str("a string")
             }
 
-            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
                 // TODO: (nikos) This needs to be beautified somehow
-                if v.contains("=") {
-                    let split: Vec<&str> = v.split("=").collect::<Vec<&str>>();
-                    Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
-                } else if v.starts_with("--") || v.starts_with("-") {
-                    let split: Vec<&str> = v.split(" ").collect::<Vec<&str>>();
+                println!("------------ > visit_str: {}", v);
+
+                if v.contains('=') || v.starts_with("--") || v.starts_with('-') {
+                    let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();
                     Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
                 } else {
-                    Ok(Arg::Flag(v))
+                    Ok(Arg::Flag(v.to_string()))
                 }
             }
         }
@@ -356,13 +350,9 @@ pub struct ValidationContext {
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize)]
 pub struct ChainDefaultContext {
-    #[serde(default)]
     pub(crate) default_command: Option<Command>,
-    #[serde(default)]
     pub(crate) default_image: Option<Image>,
-    #[serde(default)]
     pub(crate) default_resources: Option<Resources>,
-    #[serde(default)]
     pub(crate) default_db_snapshot: Option<AssetLocation>,
     #[serde(default)]
     pub(crate) default_args: Vec<Arg>,

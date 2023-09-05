@@ -25,7 +25,7 @@ pub struct RelaychainConfig {
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
-    nodes: Vec<NodeConfig>,
+    pub(crate) nodes: Vec<NodeConfig>,
 }
 
 impl RelaychainConfig {

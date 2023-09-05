@@ -56,7 +56,7 @@ impl From<(&str, &str)> for EnvVar {
 pub struct NodeConfig {
     name: String,
     image: Option<Image>,
-    command: Option<Command>,
+    pub(crate) command: Option<Command>,
     #[serde(default)]
     args: Vec<Arg>,
     #[serde(default)]

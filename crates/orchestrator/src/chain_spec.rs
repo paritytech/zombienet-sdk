@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
-// use provider::Provider;
+use provider::Provider;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ChainSpec {
@@ -38,16 +38,19 @@ impl ChainSpec {
         }
     }
 
-    // pub async fn build(&mut self, provider: &impl Provider) -> Result<(), ()> {
-    //     // create a temp node
+    pub async fn build(&mut self, _provider: &impl Provider) -> Result<(), ()> {
+        // create a temp node
+        todo!()
+    }
 
-    //     // spawn
-    //     Ok(())
-    // }
+    pub fn is_raw(&self) -> bool {
+        todo!()
+    }
 
-    // pub async fn is_raw(&self, provider: &impl Provider) -> bool {
-    //     return false
-    // }
+    pub fn raw_path(&self) -> Option<&Path> {
+        self.raw_path.as_deref()
+    }
+
 }
 
 #[cfg(test)]

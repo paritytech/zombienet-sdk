@@ -1,6 +1,6 @@
 use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
@@ -12,7 +12,7 @@ use crate::shared::{
 };
 
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelaychainConfig {
     chain: Chain,
     default_command: Option<Command>,

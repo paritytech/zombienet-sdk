@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::FieldError,
@@ -33,7 +33,7 @@ use crate::shared::{
 ///     }
 /// )
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnvVar {
     /// The name of the environment variable.
     pub name: String,
@@ -52,17 +52,24 @@ impl From<(&str, &str)> for EnvVar {
 }
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct NodeConfig {
     name: String,
     image: Option<Image>,
     command: Option<Command>,
+    #[serde(default)]
     args: Vec<Arg>,
+    #[serde(default)]
     is_validator: bool,
+    #[serde(default)]
     is_invulnerable: bool,
+    #[serde(default)]
     is_bootnode: bool,
+    #[serde(default)]
     initial_balance: U128,
+    #[serde(default)]
     env: Vec<EnvVar>,
+    #[serde(default)]
     bootnodes_addresses: Vec<Multiaddr>,
     resources: Option<Resources>,
     ws_port: Option<Port>,
@@ -71,6 +78,7 @@ pub struct NodeConfig {
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
     db_snapshot: Option<AssetLocation>,
+    #[serde(default)]
     // used to skip serialization of fields with defaults to avoid duplication
     chain_context: ChainDefaultContext,
 }

@@ -1,9 +1,15 @@
-use std::{fmt::Display, path::PathBuf, str::FromStr};
+use std::{
+    fmt::{self, Display},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::Serialize;
+use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
+
+use crate::shared;
 
 use super::{errors::ConversionError, resources::Resources};
 
@@ -27,6 +33,12 @@ impl From<u128> for U128 {
     }
 }
 
+impl Default for U128 {
+    fn default() -> Self {
+        U128(30)
+    }
+}
+
 impl Serialize for U128 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -35,6 +47,32 @@ impl Serialize for U128 {
         // here we add a prefix to the string to be able to replace the wrapped
         // value with "" to a value without "" in the TOML string
         serializer.serialize_str(&format!("U128%{}", self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for U128 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct U128Visitor;
+
+        impl<'de> de::Visitor<'de> for U128Visitor {
+            type Value = U128;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("an integer between -2^128 and 2^128.")
+            }
+
+            fn visit_u128<E>(self, value: u128) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(shared::types::U128(value))
+            }
+        }
+
+        deserializer.deserialize_any(U128Visitor)
     }
 }
 
@@ -53,7 +91,7 @@ impl Serialize for U128 {
 /// assert_eq!(kusama.as_str(), "kusama");
 /// assert_eq!(myparachain.as_str(), "myparachain");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain(String);
 
 impl TryFrom<&str> for Chain {
@@ -95,7 +133,7 @@ impl Chain {
 /// assert_eq!(image3.as_str(), "myrepo.com/name:version");
 /// assert_eq!(image4.as_str(), "10.15.43.155/name:version");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Image(String);
 
 impl TryFrom<&str> for Image {
@@ -143,7 +181,7 @@ impl Image {
 /// assert_eq!(command1.as_str(), "mycommand");
 /// assert_eq!(command2.as_str(), "myothercommand");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Command(String);
 
 impl TryFrom<&str> for Command {
@@ -183,7 +221,7 @@ impl Command {
 /// assert!(matches!(path_location, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
 /// assert!(matches!(path_location2, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub enum AssetLocation {
     Url(Url),
     FilePath(PathBuf),
@@ -276,18 +314,58 @@ impl Serialize for Arg {
     }
 }
 
+impl<'de> Deserialize<'de> for Arg {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ArgVisitor;
+
+        impl<'de> de::Visitor<'de> for ArgVisitor {
+            type Value = Arg;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // TODO: This needs to be beautified somehow
+                if v.contains("=") {
+                    let split: Vec<&str> = v.split("=").collect::<Vec<&str>>();
+                    Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+                } else if v.starts_with("--") || v.starts_with("-") {
+                    let split: Vec<&str> = v.split(" ").collect::<Vec<&str>>();
+                    Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+                } else {
+                    Ok(Arg::Flag(v))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(ArgVisitor)
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ValidationContext {
     pub used_ports: Vec<Port>,
     pub used_nodes_names: Vec<String>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
 pub struct ChainDefaultContext {
+    #[serde(default)]
     pub(crate) default_command: Option<Command>,
+    #[serde(default)]
     pub(crate) default_image: Option<Image>,
+    #[serde(default)]
     pub(crate) default_resources: Option<Resources>,
+    #[serde(default)]
     pub(crate) default_db_snapshot: Option<AssetLocation>,
+    #[serde(default)]
     pub(crate) default_args: Vec<Arg>,
 }
 

@@ -1,7 +1,7 @@
 use std::{error::Error, fmt::Display, net::IpAddr, str::FromStr};
 
 use multiaddr::Multiaddr;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
@@ -10,9 +10,10 @@ use crate::shared::{
 };
 
 /// Global settings applied to an entire network.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalSettings {
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(default)]
     bootnodes_addresses: Vec<Multiaddr>,
     // TODO: parse both case in zombienet node version to avoid renamed ?
     #[serde(rename = "timeout")]

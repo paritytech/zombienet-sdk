@@ -1,7 +1,7 @@
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, fs, marker::PhantomData, rc::Rc};
 
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
@@ -12,14 +12,16 @@ use crate::{
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkConfig {
     #[serde(rename = "settings")]
     global_settings: GlobalSettings,
     relaychain: Option<RelaychainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(default)]
     parachains: Vec<ParachainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(default)]
     hrmp_channels: Vec<HrmpChannelConfig>,
 }
 
@@ -176,6 +178,61 @@ impl<A> NetworkConfigBuilder<A> {
 impl NetworkConfigBuilder<Initial> {
     pub fn new() -> NetworkConfigBuilder<Initial> {
         Self::default()
+    }
+
+    pub fn toml_to_network(self, path: &str) -> Result<String, toml::ser::Error> {
+        let file_str = fs::read_to_string(path).unwrap();
+        let toml: NetworkConfig = toml::from_str(&file_str).unwrap();
+        if toml.relaychain.is_some() {
+            NetworkConfigBuilder::new().with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain(toml.relaychain.unwrap().chain().as_str())
+                    .with_default_command("polkadot")
+            });
+
+            // .with_relaychain(|relaychain| {
+            //     relaychain
+            //         .with_chain("polkadot")
+            //         .with_random_nominators_count(10)
+            //         .with_node(|node| {
+            //             node.with_name("node")
+            //                 .with_command("command")
+            //                 .validator(true)
+            //         })
+            // });
+
+            // |relaychain| {
+            //     relaychain
+            //         .with_chain(toml.relaychain.unwrap().chain().as_str())
+            //         .with_default_command("polkadot")
+            //         .with_default_image("docker.io/parity/polkadot:latest")
+            //         .with_default_args(vec![("-name", "value").into(), "--flag".into()])
+            //         .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+            //         .with_default_resources(|resources| {
+            //             resources
+            //                 .with_request_cpu(100000)
+            //                 .with_request_memory("500M")
+            //                 .with_limit_cpu("10Gi")
+            //                 .with_limit_memory("4000M")
+            //         })
+            //         .with_node(|node| {
+            //             node.with_name("alice")
+            //                 .with_initial_balance(1_000_000_000)
+            //                 .validator(true)
+            //                 .bootnode(true)
+            //                 .invulnerable(true)
+            //         })
+            // });
+            println!("- relaychain ------- : {:?}", toml.relaychain);
+        }
+        if !toml.parachains.is_empty() {
+            println!("- parachains ------- : {:?}", toml.parachains);
+        }
+
+        if !toml.hrmp_channels.is_empty() {
+            println!("- hrmp_channels ------- : {:?}", toml.hrmp_channels);
+        }
+        Ok("done".to_string())
     }
 
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
@@ -851,5 +908,16 @@ mod tests {
         let expected =
             fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
         assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn dumb_test() {
+        // let file_str = fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
+        // let converted_toml = toml::from_str::<toml::Value>(file_str.as_str()).unwrap();
+
+        let config = NetworkConfigBuilder::new()
+            .toml_to_network("./testing/snapshots/0000-small-network.toml")
+            .unwrap();
+        println!("{:?}", config);
     }
 }

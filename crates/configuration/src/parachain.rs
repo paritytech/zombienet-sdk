@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
@@ -14,7 +14,7 @@ use crate::shared::{
     },
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
@@ -37,7 +37,7 @@ impl Serialize for RegistrationStrategy {
 }
 
 /// A parachain configuration, composed of collators and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParachainConfig {
     id: u32,
     chain: Option<Chain>,

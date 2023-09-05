@@ -2,7 +2,7 @@ use std::error::Error;
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::{ConversionError, FieldError},
@@ -28,7 +28,7 @@ use super::{
 /// assert_eq!(quantity3.as_str(), "1Gi");
 /// assert_eq!(quantity4.as_str(), "10000");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResourceQuantity(String);
 
 impl ResourceQuantity {
@@ -64,7 +64,7 @@ impl From<u64> for ResourceQuantity {
 }
 
 /// Resources limits used in the context of podman/k8s.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
     request_cpu: Option<ResourceQuantity>,

@@ -180,59 +180,11 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
-    pub fn toml_to_network(self, path: &str) -> Result<String, toml::ser::Error> {
+    pub fn toml_to_network(self, path: &str) -> Result<NetworkConfig, toml::ser::Error> {
         let file_str = fs::read_to_string(path).unwrap();
         let toml: NetworkConfig = toml::from_str(&file_str).unwrap();
-        if toml.relaychain.is_some() {
-            NetworkConfigBuilder::new().with_relaychain(|relaychain| {
-                relaychain
-                    .with_chain(toml.relaychain.unwrap().chain().as_str())
-                    .with_default_command("polkadot")
-            });
-
-            // .with_relaychain(|relaychain| {
-            //     relaychain
-            //         .with_chain("polkadot")
-            //         .with_random_nominators_count(10)
-            //         .with_node(|node| {
-            //             node.with_name("node")
-            //                 .with_command("command")
-            //                 .validator(true)
-            //         })
-            // });
-
-            // |relaychain| {
-            //     relaychain
-            //         .with_chain(toml.relaychain.unwrap().chain().as_str())
-            //         .with_default_command("polkadot")
-            //         .with_default_image("docker.io/parity/polkadot:latest")
-            //         .with_default_args(vec![("-name", "value").into(), "--flag".into()])
-            //         .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
-            //         .with_default_resources(|resources| {
-            //             resources
-            //                 .with_request_cpu(100000)
-            //                 .with_request_memory("500M")
-            //                 .with_limit_cpu("10Gi")
-            //                 .with_limit_memory("4000M")
-            //         })
-            //         .with_node(|node| {
-            //             node.with_name("alice")
-            //                 .with_initial_balance(1_000_000_000)
-            //                 .validator(true)
-            //                 .bootnode(true)
-            //                 .invulnerable(true)
-            //         })
-            // });
-            println!("- relaychain ------- : {:?}", toml.relaychain);
-        }
-        if !toml.parachains.is_empty() {
-            println!("- parachains ------- : {:?}", toml.parachains);
-        }
-
-        if !toml.hrmp_channels.is_empty() {
-            println!("- hrmp_channels ------- : {:?}", toml.hrmp_channels);
-        }
-        Ok("done".to_string())
+        // TODO: (nikos) Add error
+        Ok(toml)
     }
 
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
@@ -908,6 +860,41 @@ mod tests {
         let expected =
             fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
         assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn the_toml_config_should_be_imported_and_match_a_network() {
+        let toml_to_network = NetworkConfigBuilder::new()
+            .toml_to_network("./testing/snapshots/0000-small-network.toml")
+            .unwrap();
+
+        let expected = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_args(vec![("-lparachain", "debug").into()])
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .validator(true)
+                            .invulnerable(true)
+                            .validator(true)
+                            .bootnode(false)
+                            .with_initial_balance(2000000000000)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .with_args(vec![("--database", "paritydb-experimental").into()])
+                            .validator(true)
+                            .invulnerable(true)
+                            .bootnode(true)
+                            .with_initial_balance(2000000000000)
+                    })
+            })
+            .build()
+            .unwrap();
+        assert_eq!(toml_to_network, expected);
     }
 
     #[test]

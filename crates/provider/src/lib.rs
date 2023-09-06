@@ -1,16 +1,38 @@
-mod errors;
 mod native;
 mod shared;
 
 use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use tokio::sync::RwLock;
 
-use crate::{
-    errors::ProviderError,
-    shared::types::{FileMap, Port},
-};
+use crate::shared::types::{FileMap, Port};
+
+use support::fs::FileSystemError;
+
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum ProviderError {
+    #[error("Failed to spawn node '{0}': {1}")]
+    NodeSpawningFailed(String, anyhow::Error),
+
+    #[error("Error running command: {0}")]
+    RunCommandError(anyhow::Error),
+
+    #[error("Invalid network configuration field {0}")]
+    InvalidConfig(String),
+
+    #[error("Can recover node: {0} info, field: {1}")]
+    MissingNodeInfo(String, String),
+
+    #[error("Duplicated node name: {0}")]
+    DuplicatedNodeName(String),
+
+    #[error(transparent)]
+    FSError(#[from] FileSystemError),
+
+    #[error("Invalid script path for {0}")]
+    InvalidScriptPath(String),
+}
 
 #[derive(Debug, Clone)]
 pub struct ProviderCapabilities {
@@ -42,18 +64,38 @@ pub trait Provider {
 
 pub type DynProvider = Arc<dyn Provider>;
 
+macro_rules! common_options {
+    () => {
+        fn args(mut self, args: Vec<String>) -> Self {
+            self.args = args;
+            self
+        }
+
+        fn env(mut self, env: Vec<(String, String)>) -> Self {
+            self.env = env;
+            self
+        }
+    };
+}
+
 pub struct SpawnNodeOptions {
-    pub name: String,
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Vec<(String, String)>,
-    // Files to inject, `before` we run the provider command.
-    pub files_inject: Vec<FileMap>,
-    // TODO: keystore logic should live in the orchestrator
-    pub keystore: String,
-    // chain_spec_id: String,
-    // TODO: abstract logic for download and uncompress
-    pub db_snapshot: String,
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+}
+
+impl SpawnNodeOptions {
+    fn new(name: String, command: String) -> Self {
+        Self {
+            name,
+            command,
+            args: vec![],
+            env: vec![],
+        }
+    }
+
+    common_options!();
 }
 
 pub struct SpawnTempOptions {
@@ -65,11 +107,8 @@ pub struct SpawnTempOptions {
 #[async_trait]
 pub trait ProviderNamespace {
     async fn id(&self) -> String;
-    /// Spawn a long live node/process.
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
-    /// Spawn a temporary node, will be shutdown after `get` the desired files or output.
     async fn spawn_temp(&self, options: SpawnTempOptions) -> Result<(), ProviderError>;
-    /// Destroy namespace (and inner resources).
     async fn destroy(&self) -> Result<(), ProviderError>;
     async fn static_setup(&self) -> Result<(), ProviderError>;
 }
@@ -77,17 +116,42 @@ pub trait ProviderNamespace {
 pub type DynNamespace = Arc<dyn ProviderNamespace>;
 
 pub struct RunCommandOptions {
-    pub args: Vec<String>,
-    pub is_failure_allowed: bool,
+    pub(crate) command: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
+}
+
+impl RunCommandOptions {
+    fn new(command: String) -> Self {
+        Self {
+            command,
+            args: vec![],
+            env: vec![],
+        }
+    }
+
+    common_options!();
 }
 
 pub struct RunScriptOptions {
-    pub identifier: String,
-    pub script_path: String,
-    pub args: Vec<String>,
+    pub(crate) local_script_path: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
 }
 
-type ExecutionResult = Result<String, (ExitStatus, Option<String>)>;
+impl RunScriptOptions {
+    fn new(local_script_path: String) -> Self {
+        Self {
+            local_script_path,
+            args: vec![],
+            env: vec![],
+        }
+    }
+
+    common_options!();
+}
+
+type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[async_trait]
 pub trait ProviderNode {
@@ -99,7 +163,7 @@ pub trait ProviderNode {
 
     async fn logs(&self) -> Result<String, ProviderError>;
 
-    async fn dump_logs(&self, dest: PathBuf) -> Result<(), ProviderError>;
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
 
     async fn run_command(
         &self,
@@ -119,7 +183,7 @@ pub trait ProviderNode {
 
     async fn resume(&self) -> Result<(), ProviderError>;
 
-    async fn restart(&mut self, after: Option<Duration>) -> Result<(), ProviderError>;
+    async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
 }

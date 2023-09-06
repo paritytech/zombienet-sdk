@@ -1,7 +1,8 @@
-use std::path::Path;
+use std::{os::unix::fs::PermissionsExt, path::Path};
 use tokio::io::AsyncWriteExt;
 
 use async_trait::async_trait;
+use uuid::Uuid;
 
 use super::{FileSystem, FileSystemError, FileSystemResult};
 
@@ -64,12 +65,37 @@ impl FileSystem for LocalFileSystem {
             .and(Ok(()))
             .map_err(Into::into)
     }
+
+    async fn set_mode(&self, path: impl AsRef<Path> + Send, mode: u32) -> FileSystemResult<()> {
+        // because we can't create a Permissions struct directly, we create a temporary empty file and retrieve the
+        // Permissions from it, we then modify its mode and apply it to our file
+        let temp_file_path = format!(
+            "{}/{}",
+            std::env::temp_dir().to_string_lossy(),
+            Uuid::new_v4()
+        );
+        let temp_file =
+            std::fs::File::create(temp_file_path).map_err(Into::<FileSystemError>::into)?;
+
+        let mut permissions = temp_file
+            .metadata()
+            .map_err(Into::<FileSystemError>::into)?
+            .permissions();
+        permissions.set_mode(mode);
+
+        tokio::fs::set_permissions(path, permissions)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    const FILE_BITS: u32 = 0o100000;
+    const DIR_BITS: u32 = 0o40000;
 
     fn setup() -> String {
         let test_dir = format!("/tmp/unit_test_{}", Uuid::new_v4());
@@ -304,6 +330,59 @@ mod tests {
         let from_path = format!("{test_dir}/nonexistentfile");
         let to_path = format!("{test_dir}/mycopy");
         let err = fs.copy(&from_path, &to_path).await.unwrap_err();
+
+        assert_eq!(err.to_string(), "No such file or directory (os error 2)");
+        teardown(test_dir);
+    }
+
+    #[tokio::test]
+    async fn set_mode_should_update_the_file_mode_at_path() {
+        let test_dir = setup();
+        let fs = LocalFileSystem::default();
+        let path = format!("{test_dir}/myfile");
+        std::fs::write(&path, "Test").unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode(),
+            FILE_BITS + 0o664
+        );
+
+        fs.set_mode(&path, 0o400).await.unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode(),
+            FILE_BITS + 0o400
+        );
+        teardown(test_dir);
+    }
+
+    #[tokio::test]
+    async fn set_mode_should_update_the_directory_mode_at_path() {
+        let test_dir = setup();
+        let fs = LocalFileSystem::default();
+        let path = format!("{test_dir}/mydir");
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode(),
+            DIR_BITS + 0o775
+        );
+
+        fs.set_mode(&path, 0o700).await.unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode(),
+            DIR_BITS + 0o700
+        );
+        teardown(test_dir);
+    }
+
+    #[tokio::test]
+    async fn set_mode_should_bubble_up_error_if_some_happens() {
+        let test_dir = setup();
+        let fs = LocalFileSystem::default();
+        let path = format!("{test_dir}/somemissingfile");
+        // intentionnally don't create file
+
+        let err = fs.set_mode(&path, 0o400).await.unwrap_err();
 
         assert_eq!(err.to_string(), "No such file or directory (os error 2)");
         teardown(test_dir);

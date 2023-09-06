@@ -6,6 +6,8 @@ pub const DEFAULT_TMP_DIR: &str = "/tmp";
 pub const NODE_CONFIG_DIR: &str = "/cfg";
 /// Directory for node configuration
 pub const NODE_DATA_DIR: &str = "/data";
+/// Directory for node scripts
+pub const NODE_SCRIPTS_DIR: &str = "/scripts";
 /// Localhost ip
 pub const _LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 /// The port substrate listens for p2p connections on

@@ -44,4 +44,6 @@ pub trait FileSystem {
         from: impl AsRef<Path> + Send,
         to: impl AsRef<Path> + Send,
     ) -> FileSystemResult<()>;
+
+    async fn set_mode(&self, path: impl AsRef<Path> + Send, perm: u32) -> FileSystemResult<()>;
 }

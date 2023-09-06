@@ -20,7 +20,7 @@ pub struct RelaychainConfig {
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
-    default_args: Vec<Arg>,
+    pub(crate) default_args: Vec<Arg>,
     chain_spec_path: Option<AssetLocation>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,

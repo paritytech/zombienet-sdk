@@ -10,7 +10,6 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
-use crate::shared;
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;
@@ -31,6 +30,14 @@ impl From<u128> for U128 {
         Self(value)
     }
 }
+
+// impl TryFrom<&str> for U128 {
+//     type Error = ConversionError;
+
+//     fn try_from(value: &str) -> Result<Self, Self::Error> {
+//         Ok(Self(value.to_string().parse::<u128>().unwrap()))
+//     }
+// }
 
 impl Serialize for U128 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -54,19 +61,20 @@ impl<'de> Deserialize<'de> for U128 {
             type Value = U128;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an integer between -2^128 and 2^128.")
+                formatter.write_str("an integer between 0 and 2^128 − 1.")
             }
 
-            fn visit_u128<E>(self, value: u128) -> Result<Self::Value, E>
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                println!("------------ > visit_u128: {}", value);
-                Ok(shared::types::U128(value))
+                // TODO: (nikos) This needs to be beautified somehow
+                println!("------------ > U128Visitor: {}", v);
+                Ok(U128(v.to_string().parse::<u128>().unwrap()))
             }
         }
 
-        deserializer.deserialize_u128(U128Visitor)
+        deserializer.deserialize_str(U128Visitor)
     }
 }
 

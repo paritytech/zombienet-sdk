@@ -30,7 +30,7 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    shared::constants::{DEFAULT_TMP_DIR, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
+    shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     DynNamespace, DynNode, ExecutionResult, Provider, ProviderCapabilities, ProviderError,
     ProviderNamespace, ProviderNode, RunCommandOptions, RunScriptOptions, SpawnNodeOptions,
     SpawnTempOptions,
@@ -41,19 +41,19 @@ where
     FS: FileSystem + Send + Sync,
 {
     filesystem: FS,
-    tmp_dir: Option<String>,
+    tmp_dir: Option<PathBuf>,
 }
 
 #[derive(Debug)]
 struct NativeProviderInner<FS: FileSystem + Send + Sync + Clone> {
-    capabilities: ProviderCapabilities,
-    tmp_dir: String,
     namespaces: HashMap<String, NativeNamespace<FS>>,
-    filesystem: FS,
 }
 
 #[derive(Debug, Clone)]
 pub struct NativeProvider<FS: FileSystem + Send + Sync + Clone> {
+    capabilities: ProviderCapabilities,
+    tmp_dir: PathBuf,
+    filesystem: FS,
     inner: Arc<RwLock<NativeProviderInner<FS>>>,
 }
 
@@ -65,13 +65,13 @@ struct WeakNativeProvider<FS: FileSystem + Send + Sync + Clone> {
 impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
     pub fn new(options: NativeProviderOptions<FS>) -> Self {
         NativeProvider {
+            capabilities: ProviderCapabilities {
+                requires_image: false,
+            },
+            tmp_dir: options.tmp_dir.unwrap_or(std::env::temp_dir()),
+            filesystem: options.filesystem,
             inner: Arc::new(RwLock::new(NativeProviderInner {
-                capabilities: ProviderCapabilities {
-                    requires_image: false,
-                },
-                tmp_dir: options.tmp_dir.unwrap_or(DEFAULT_TMP_DIR.to_string()),
                 namespaces: Default::default(),
-                filesystem: options.filesystem,
             })),
         }
     }
@@ -79,23 +79,23 @@ impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider<FS> {
-    async fn capabilities(&self) -> ProviderCapabilities {
-        self.inner.read().await.capabilities.clone()
+    fn capabilities(&self) -> ProviderCapabilities {
+        self.capabilities.clone()
     }
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
         let id = format!("zombie_{}", Uuid::new_v4());
         let mut inner = self.inner.write().await;
 
-        let base_dir = format!("{}/{}", inner.tmp_dir, &id);
-        inner.filesystem.create_dir(&base_dir).await.unwrap();
+        let base_dir = format!("{}/{}", self.tmp_dir.to_string_lossy(), &id);
+        self.filesystem.create_dir(&base_dir).await.unwrap();
 
         let namespace = NativeNamespace {
             inner: Arc::new(RwLock::new(NativeNamespaceInner {
                 id: id.clone(),
                 base_dir,
                 nodes: Default::default(),
-                filesystem: inner.filesystem.clone(),
+                filesystem: self.filesystem.clone(),
                 provider: WeakNativeProvider {
                     inner: Arc::downgrade(&self.inner),
                 },
@@ -486,6 +486,9 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
 
     use super::*;
+
+    // #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    // async fn
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn it_should_works() {

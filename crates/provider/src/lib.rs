@@ -57,7 +57,7 @@ impl Default for CreateNamespaceOptions {
 
 #[async_trait]
 pub trait Provider {
-    async fn capabilities(&self) -> ProviderCapabilities;
+    fn capabilities(&self) -> ProviderCapabilities;
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
     // TODO(team): Do we need at this point to handle cleanner/pod-monitor?
 }

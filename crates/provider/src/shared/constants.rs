@@ -1,7 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-/// Default temporary directory
-pub const DEFAULT_TMP_DIR: &str = "/tmp";
 /// Directory for node configuration
 pub const NODE_CONFIG_DIR: &str = "/cfg";
 /// Directory for node configuration

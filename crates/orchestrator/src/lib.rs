@@ -1,3 +1,6 @@
+// TODO(Javier): Remove when we implement the logic in the orchestrator to spawn with the provider.
+#![allow(dead_code)]
+
 mod errors;
 mod generators;
 mod network_spec;
@@ -37,7 +40,7 @@ where
     pub async fn spawn(&self, network_config: NetworkConfig) -> Result<(), OrchestratorError> {
         let global_timeout = network_config.global_settings().network_spawn_timeout();
         let network_spec = NetworkSpec::from_config(&network_config).await?;
-        
+
         timeout(
             Duration::from_secs(global_timeout.into()),
             self.spawn_inner(network_spec),

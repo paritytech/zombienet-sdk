@@ -33,11 +33,6 @@ pub struct RelaychainSpec {
     /// Default arguments to use in nodes. Can be overriden on each node.
     pub(crate) default_args: Vec<Arg>,
 
-    // /// Command to build the plain chain spec
-    // chain_spec_command: Option<String>,
-
-    // /// Chain specification JSON file to use. If is provider we will `not` create the spec
-    // /// with `chain_spec_command`
     // chain_spec_path: Option<AssetLocation>,
     pub(crate) chain_spec: ChainSpec,
 

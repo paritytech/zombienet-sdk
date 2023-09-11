@@ -30,7 +30,6 @@ impl NetworkSpec {
     ) -> Result<NetworkSpec, OrchestratorError> {
         let mut errs = vec![];
         let relaychain = RelaychainSpec::from_config(network_config.relaychain())?;
-        // let mut paras: Vec<ParachainSpec> = vec![];
         let mut parachains = vec![];
 
         for para_config in network_config.parachains() {

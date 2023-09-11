@@ -6,8 +6,8 @@ use configuration::{
     RelaychainConfig,
 };
 
-use super::node::{ChainDefaultContext, NodeSpec};
-use crate::{chain_spec::ChainSpec, errors::OrchestratorError};
+use super::node::NodeSpec;
+use crate::{chain_spec::ChainSpec, errors::OrchestratorError, shared::types::ChainDefaultContext};
 
 /// A relaychain configuration spec
 #[derive(Debug, Clone)]
@@ -15,20 +15,20 @@ pub struct RelaychainSpec {
     /// Chain to use (e.g. rococo-local).
     chain: Chain,
 
-    // /// Default command to run the node. Can be overriden on each node.
-    // default_command: Command,
+    /// Default command to run the node. Can be overriden on each node.
+    default_command: Option<Command>,
 
-    // /// Default image to use (only podman/k8s). Can be overriden on each node.
-    // default_image: Option<Image>,
+    /// Default image to use (only podman/k8s). Can be overriden on each node.
+    default_image: Option<Image>,
 
-    // /// Default resources. Can be overriden on each node.
-    // default_resources: Option<Resources>,
+    /// Default resources. Can be overriden on each node.
+    default_resources: Option<Resources>,
 
-    // /// Default database snapshot. Can be overriden on each node.
-    // default_db_snapshot: Option<AssetLocation>,
+    /// Default database snapshot. Can be overriden on each node.
+    default_db_snapshot: Option<AssetLocation>,
 
-    // /// Default arguments to use in nodes. Can be overriden on each node.
-    // default_args: Vec<Arg>,
+    /// Default arguments to use in nodes. Can be overriden on each node.
+    default_args: Vec<Arg>,
 
     // /// Command to build the plain chain spec
     // chain_spec_command: Option<String>,
@@ -105,11 +105,11 @@ impl RelaychainSpec {
 
         Ok(RelaychainSpec {
             chain: config.chain().clone(),
-            // default_command: todo!(),
-            // default_image: todo!(),
-            // default_resources: todo!(),
-            // default_db_snapshot: todo!(),
-            // default_args: todo!(),
+            default_command: config.default_command().cloned(),
+            default_image: config.default_image().cloned(),
+            default_resources: config.default_resources().cloned(),
+            default_db_snapshot: config.default_db_snapshot().cloned(),
+            default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec,
             random_nominators_count: config.random_nominators_count().unwrap_or(0),
             max_nominations: config.max_nominations().unwrap_or(24),

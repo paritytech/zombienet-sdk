@@ -1,7 +1,10 @@
 use std::{collections::HashMap, net::TcpListener, sync::Arc};
 
-use configuration::shared::types::Port;
 pub type Accounts = HashMap<String, NodeAccount>;
+use configuration::shared::{
+    resources::Resources,
+    types::{Arg, AssetLocation, Command, Image, Port},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
@@ -38,4 +41,13 @@ impl ParkedPort {
     pub(crate) fn new(port: u16, listener: Arc<TcpListener>) -> ParkedPort {
         ParkedPort(port, listener)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChainDefaultContext<'a> {
+    pub default_command: Option<&'a Command>,
+    pub default_image: Option<&'a Image>,
+    pub default_resources: Option<&'a Resources>,
+    pub default_db_snapshot: Option<&'a AssetLocation>,
+    pub default_args: Vec<&'a Arg>,
 }

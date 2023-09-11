@@ -10,17 +10,8 @@ use sha2::digest::Digest;
 use crate::{
     errors::OrchestratorError,
     generators,
-    shared::types::{NodeAccounts, ParkedPort},
+    shared::types::{NodeAccounts, ParkedPort, ChainDefaultContext},
 };
-
-#[derive(Default, Debug, Clone)]
-pub struct ChainDefaultContext<'a> {
-    pub default_command: Option<&'a Command>,
-    pub default_image: Option<&'a Image>,
-    pub default_resources: Option<&'a Resources>,
-    pub default_db_snapshot: Option<&'a AssetLocation>,
-    pub default_args: Vec<&'a Arg>,
-}
 
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone)]

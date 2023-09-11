@@ -3,8 +3,8 @@ use configuration::{
     ParachainConfig,
 };
 
-use super::node::{ChainDefaultContext, NodeSpec};
-use crate::{chain_spec::ChainSpec, errors::OrchestratorError, generators::para_artifact::*};
+use super::node::NodeSpec;
+use crate::{chain_spec::ChainSpec, errors::OrchestratorError, generators::para_artifact::*, shared::types::ChainDefaultContext};
 
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)

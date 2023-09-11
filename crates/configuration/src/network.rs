@@ -12,6 +12,7 @@ use crate::{
         constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALID_REGEX},
         helpers::merge_errors_vecs,
         macros::states,
+        node::NodeConfig,
         types::{Arg, ValidationContext},
     },
 };
@@ -111,8 +112,15 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
+        let mut nodes: Vec<NodeConfig> = network_config
+            .relaychain()
+            .nodes()
+            .into_iter()
+            .cloned()
+            .collect();
+
         // SAFETY: is ok to use `unwrap` here since we ensure that is some at the begging of this fn
-        for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+        for node in nodes.iter_mut() {
             if relaychain_default_command.is_some() {
                 // we modify only nodes which don't already have a command
                 if node.command.is_none() {

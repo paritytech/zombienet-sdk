@@ -58,7 +58,6 @@ impl RelaychainConfig {
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
-
     /// The location of an pre-existing chain specification for the relay chain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()

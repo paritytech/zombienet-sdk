@@ -1,13 +1,7 @@
-use std::{
-    cell::RefCell,
-    error::Error,
-    fmt::{self, Display},
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::{de, ser::SerializeStruct, Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::FieldError,

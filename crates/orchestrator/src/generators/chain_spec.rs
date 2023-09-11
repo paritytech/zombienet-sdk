@@ -3,7 +3,7 @@ use std::path::{PathBuf, Path};
 use provider::Provider;
 
 #[derive(Debug, Clone)]
-pub(crate) struct ChainSpec {
+pub struct ChainSpec {
     maybe_plain_path: Option<PathBuf>,
     chain_name: Option<String>,
     raw_path: Option<PathBuf>,
@@ -11,7 +11,7 @@ pub(crate) struct ChainSpec {
 }
 
 impl ChainSpec {
-    pub fn new(chain_name: impl Into<String>, command: impl Into<String>) -> Self {
+    pub(crate) fn new(chain_name: impl Into<String>, command: impl Into<String>) -> Self {
         let chain_name = chain_name.into();
         let build_command = format!(
             "{} build-spec --chain {} --disable-default-bootnode",
@@ -38,7 +38,7 @@ impl ChainSpec {
         }
     }
 
-    pub async fn build(&mut self, _provider: &impl Provider) -> Result<(), ()> {
+    pub async fn build(&mut self, provider: &impl Provider) -> Result<(), ()> {
         // create a temp node
         todo!()
     }

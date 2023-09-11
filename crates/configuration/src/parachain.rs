@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::Serialize;
 
 use crate::shared::{
     errors::{ConfigError, FieldError},

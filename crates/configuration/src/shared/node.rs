@@ -58,7 +58,7 @@ pub struct NodeConfig {
     pub(crate) image: Option<Image>,
     pub(crate) command: Option<Command>,
     #[serde(default)]
-    pub(crate) args: Vec<Arg>,
+    args: Vec<Arg>,
     #[serde(alias = "validator")]
     pub(crate) is_validator: bool,
     #[serde(alias = "invulnerable")]
@@ -104,7 +104,7 @@ impl Serialize for NodeConfig {
             state.serialize_field("command", &self.command)?;
         }
 
-        if self.args.is_empty() || self.args == self.chain_context.default_args {
+        if self.args.is_empty() || self.args() == self.chain_context.default_args() {
             state.skip_field("args")?;
         } else {
             state.serialize_field("args", &self.args)?;
@@ -150,6 +150,31 @@ impl Serialize for NodeConfig {
     }
 }
 
+// impl<'de> Deserialize<'de> for NodeConfig {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: de::Deserializer<'de>,
+//     {
+//         struct NodeConfigVisitor;
+
+//         impl<'de> de::Visitor<'de> for NodeConfigVisitor {
+//             type Value = NodeConfig;
+
+//             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+//                 formatter.write_str("a string")
+//             }
+
+//             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+//             where
+//                 E: de::Error,
+//             {
+//             }
+//         }
+
+//         deserializer.deserialize_any(NodeConfigVisitor)
+//     }
+// }
+
 impl NodeConfig {
     /// Node name (should be unique).
     pub fn name(&self) -> &str {
@@ -169,6 +194,11 @@ impl NodeConfig {
     /// Arguments to use for node.
     pub fn args(&self) -> Vec<&Arg> {
         self.args.iter().collect()
+    }
+
+    /// Arguments to use for node.
+    pub(crate) fn set_args(&mut self, args: Vec<Arg>) {
+        self.args = args;
     }
 
     /// Whether the node is a validator.
@@ -307,7 +337,7 @@ impl NodeConfigBuilder<Initial> {
                 image: chain_context.default_image.clone(),
                 resources: chain_context.default_resources.clone(),
                 db_snapshot: chain_context.default_db_snapshot.clone(),
-                args: chain_context.default_args.clone(),
+                args: chain_context.default_args().into_iter().cloned().collect(),
                 chain_context,
                 ..Self::default().config
             },
@@ -665,7 +695,7 @@ mod tests {
         assert_eq!(node_config.command().unwrap().as_str(), "mycommand");
         assert_eq!(node_config.image().unwrap().as_str(), "myrepo:myimage");
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
-        assert_eq!(node_config.args(), args.iter().collect::<Vec<_>>());
+        assert_eq!(node_config.args(), args);
         assert!(node_config.is_validator());
         assert!(node_config.is_invulnerable());
         assert!(node_config.is_bootnode());

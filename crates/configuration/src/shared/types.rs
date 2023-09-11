@@ -373,6 +373,17 @@ pub struct ChainDefaultContext {
     pub(crate) default_args: Vec<Arg>,
 }
 
+impl ChainDefaultContext {
+    /// The default arguments that will be used from the ChainDefaultContext
+    pub(crate) fn default_args(&self) -> Vec<&Arg> {
+        self.default_args.iter().collect::<Vec<&Arg>>()
+    }
+    /// Set the default arguments
+    pub(crate) fn set_default_args(&mut self, args: Vec<Arg>) {
+        self.default_args = args;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

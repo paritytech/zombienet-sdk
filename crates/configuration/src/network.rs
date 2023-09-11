@@ -12,7 +12,7 @@ use crate::{
         constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALID_REGEX},
         helpers::merge_errors_vecs,
         macros::states,
-        types::ValidationContext,
+        types::{Arg, ValidationContext},
     },
 };
 
@@ -105,7 +105,17 @@ impl NetworkConfig {
             .default_db_snapshot()
             .cloned();
 
-        let default_args = network_config.relaychain().default_args.clone();
+        let args: Vec<Arg> = network_config
+            .relaychain()
+            .default_args()
+            .into_iter()
+            .cloned()
+            .collect();
+
+        network_config
+            .relaychain()
+            .clone()
+            .set_default_args(args.clone());
 
         // if there is some existing defaults and
         if relaychain_default_command.is_some() {
@@ -151,13 +161,19 @@ impl NetworkConfig {
             }
         }
 
-        if !default_args.is_empty() {
+        if !network_config.relaychain().default_args().is_empty() {
+            let args: Vec<Arg> = network_config
+                .relaychain()
+                .default_args()
+                .into_iter()
+                .cloned()
+                .collect();
+
             for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                if node.args.is_empty() {
-                    node.args.clone_from(&default_args.clone());
-                    node.chain_context
-                        .default_args
-                        .clone_from(&default_args.clone());
+                if node.args().is_empty() {
+                    node.set_args(args.clone());
+
+                    node.chain_context.set_default_args(args.clone())
                 }
             }
         }
@@ -998,6 +1014,85 @@ mod tests {
             .unwrap();
         assert_eq!(load_from_toml, expected);
     }
+
+    // #[test]
+    // fn the_toml_config_should_be_imported_and_match_a_network_with_parachains() {
+    //     let load_from_toml = NetworkConfigBuilder::load_from_toml(
+    //         "./testing/snapshots/0002-overridden-defaults.toml",
+    //     )
+    //     .unwrap();
+
+    //     let expected = NetworkConfigBuilder::new()
+    //         .with_relaychain(|relaychain| {
+    //             relaychain
+    //                 .with_chain("polkadot")
+    //                 .with_default_command("polkadot")
+    //                 .with_default_image("docker.io/parity/polkadot:latest")
+    //                 .with_default_args(vec![("-name", "value").into(), "--flag".into()])
+    //                 .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+    //                 .with_default_resources(|resources| {
+    //                     resources
+    //                         .with_request_cpu(100000)
+    //                         .with_request_memory("500M")
+    //                         .with_limit_cpu("10Gi")
+    //                         .with_limit_memory("4000M")
+    //                 })
+    //                 .with_node(|node| {
+    //                     node.with_name("alice")
+    //                         .with_initial_balance(1_000_000_000)
+    //                         .validator(true)
+    //                         .bootnode(true)
+    //                         .invulnerable(true)
+    //                 })
+    //                 .with_node(|node| {
+    //                     node.with_name("bob")
+    //                         .validator(true)
+    //                         .invulnerable(true)
+    //                         .bootnode(true)
+    //                         .with_image("mycustomimage:latest")
+    //                         .with_command("my-custom-command")
+    //                         .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
+    //                         .with_resources(|resources| {
+    //                             resources
+    //                                 .with_request_cpu(1000)
+    //                                 .with_request_memory("250Mi")
+    //                                 .with_limit_cpu("5Gi")
+    //                                 .with_limit_memory("2Gi")
+    //                         })
+    //                         .with_args(vec![("-myothername", "value").into()])
+    //                 })
+    //         })
+    //         .with_parachain(|parachain| {
+    //             parachain
+    //                 .with_id(1000)
+    //                 .with_chain("myparachain")
+    //                 .with_chain_spec_path("/path/to/my/chain/spec.json")
+    //                 .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
+    //                 .with_default_command("my-default-command")
+    //                 .with_default_image("mydefaultimage:latest")
+    //                 .with_collator(|collator| {
+    //                     collator
+    //                         .with_name("john")
+    //                         .bootnode(true)
+    //                         .validator(true)
+    //                         .invulnerable(true)
+    //                         .with_initial_balance(5_000_000_000)
+    //                         .with_command("my-non-default-command")
+    //                         .with_image("anotherimage:latest")
+    //                 })
+    //                 .with_collator(|collator| {
+    //                     collator
+    //                         .with_name("charles")
+    //                         .bootnode(true)
+    //                         .invulnerable(true)
+    //                         .with_initial_balance(0)
+    //                 })
+    //         })
+    //         .build()
+    //         .unwrap();
+
+    //     assert_eq!(load_from_toml, expected);
+    // }
 
     #[test]
     fn dumb_test() {

@@ -1,94 +1,191 @@
-mod errors;
 mod native;
 mod shared;
 
-use std::{net::IpAddr, path::PathBuf};
+use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use errors::ProviderError;
-use shared::types::{FileMap, NativeRunCommandOptions, PodDef, Port, RunCommandResponse};
 
-#[async_trait]
-pub trait Provider {
-    async fn create_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_node_ip(&self) -> Result<IpAddr, ProviderError>;
-    async fn get_port_mapping(
-        &mut self,
-        port: Port,
-        pod_name: String,
-    ) -> Result<Port, ProviderError>;
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(IpAddr, Port), ProviderError>;
-    async fn run_command(
-        &self,
-        args: Vec<String>,
-        opts: NativeRunCommandOptions,
-    ) -> Result<RunCommandResponse, ProviderError>;
-    async fn run_script(
-        &mut self,
-        identifier: String,
-        script_path: String,
-        args: Vec<String>,
-    ) -> Result<RunCommandResponse, ProviderError>;
-    async fn spawn_from_def(
-        &mut self,
-        pod_def: PodDef,
-        files_to_copy: Vec<FileMap>,
-        keystore: String,
-        chain_spec_id: String,
-        db_snapshot: String,
-    ) -> Result<(), ProviderError>;
-    async fn copy_file_from_pod(
-        &mut self,
-        pod_file_path: PathBuf,
-        local_file_path: PathBuf,
-    ) -> Result<(), ProviderError>;
-    async fn create_resource(
-        &mut self,
-        resource_def: PodDef,
-        scoped: bool,
-        wait_ready: bool,
-    ) -> Result<(), ProviderError>;
-    async fn wait_node_ready(&mut self, node_name: String) -> Result<(), ProviderError>;
-    async fn get_node_logs(&mut self, node_name: String) -> Result<String, ProviderError>;
-    async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), ProviderError>;
-    fn get_pause_args(&mut self, name: String) -> Vec<String>;
-    fn get_resume_args(&mut self, name: String) -> Vec<String>;
-    async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError>;
-    async fn get_help_info(&mut self) -> Result<(), ProviderError>;
-    async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
-    async fn put_local_magic_file(
-        &self,
-        _name: String,
-        _container: Option<String>,
-    ) -> Result<(), ProviderError> {
-        Ok(())
-    }
-    fn is_pod_monitor_available() -> Result<bool, ProviderError> {
-        Ok(false)
-    }
-    async fn spawn_introspector() -> Result<(), ProviderError> {
-        Ok(())
-    }
+use crate::shared::types::{FileMap, Port};
 
-    async fn static_setup() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn create_static_resource() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn create_pod_monitor() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn setup_cleaner() -> Result<(), ProviderError> {
-        Ok(())
-    }
+use support::fs::FileSystemError;
 
-    #[allow(clippy::diverging_sub_expression)]
-    async fn upsert_cron_job() -> Result<(), ProviderError> {
-        unimplemented!();
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum ProviderError {
+    #[error("Failed to spawn node '{0}': {1}")]
+    NodeSpawningFailed(String, anyhow::Error),
+
+    #[error("Error running command: {0}")]
+    RunCommandError(anyhow::Error),
+
+    #[error("Invalid network configuration field {0}")]
+    InvalidConfig(String),
+
+    #[error("Can recover node: {0} info, field: {1}")]
+    MissingNodeInfo(String, String),
+
+    #[error("Duplicated node name: {0}")]
+    DuplicatedNodeName(String),
+
+    #[error(transparent)]
+    FSError(#[from] FileSystemError),
+
+    #[error("Invalid script path for {0}")]
+    InvalidScriptPath(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderCapabilities {
+    pub requires_image: bool,
+}
+
+pub struct CreateNamespaceOptions {
+    pub root_dir: String,
+    pub config_dir: String,
+    pub data_dir: String,
+}
+
+impl Default for CreateNamespaceOptions {
+    fn default() -> Self {
+        Self {
+            root_dir: "/tmp".to_string(),
+            config_dir: "/cfg".to_string(),
+            data_dir: "/data".to_string(),
+        }
     }
 }
 
-// re-exports
-pub use native::NativeProvider;
+#[async_trait]
+pub trait Provider {
+    fn capabilities(&self) -> ProviderCapabilities;
+    async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
+    // TODO(team): Do we need at this point to handle cleanner/pod-monitor?
+}
+
+pub type DynProvider = Arc<dyn Provider>;
+
+macro_rules! common_options {
+    () => {
+        fn args(mut self, args: Vec<String>) -> Self {
+            self.args = args;
+            self
+        }
+
+        fn env(mut self, env: Vec<(String, String)>) -> Self {
+            self.env = env;
+            self
+        }
+    };
+}
+
+pub struct SpawnNodeOptions {
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+}
+
+impl SpawnNodeOptions {
+    fn new(name: String, command: String) -> Self {
+        Self {
+            name,
+            command,
+            args: vec![],
+            env: vec![],
+        }
+    }
+
+    common_options!();
+}
+
+pub struct SpawnTempOptions {
+    pub node: (),
+    pub injected_files: Vec<FileMap>,
+    pub files_to_retrieve: Vec<FileMap>,
+}
+
+#[async_trait]
+pub trait ProviderNamespace {
+    async fn id(&self) -> String;
+    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
+    async fn spawn_temp(&self, options: SpawnTempOptions) -> Result<(), ProviderError>;
+    async fn destroy(&self) -> Result<(), ProviderError>;
+    async fn static_setup(&self) -> Result<(), ProviderError>;
+}
+
+pub type DynNamespace = Arc<dyn ProviderNamespace>;
+
+pub struct RunCommandOptions {
+    pub(crate) command: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
+}
+
+impl RunCommandOptions {
+    fn new(command: String) -> Self {
+        Self {
+            command,
+            args: vec![],
+            env: vec![],
+        }
+    }
+
+    common_options!();
+}
+
+pub struct RunScriptOptions {
+    pub(crate) local_script_path: String,
+    pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
+}
+
+impl RunScriptOptions {
+    fn new(local_script_path: String) -> Self {
+        Self {
+            local_script_path,
+            args: vec![],
+            env: vec![],
+        }
+    }
+
+    common_options!();
+}
+
+type ExecutionResult = Result<String, (ExitStatus, String)>;
+
+#[async_trait]
+pub trait ProviderNode {
+    async fn name(&self) -> String;
+
+    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
+
+    async fn mapped_port(&self, port: Port) -> Result<Port, ProviderError>;
+
+    async fn logs(&self) -> Result<String, ProviderError>;
+
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
+
+    async fn run_command(
+        &self,
+        options: RunCommandOptions,
+    ) -> Result<ExecutionResult, ProviderError>;
+
+    async fn run_script(&self, options: RunScriptOptions)
+        -> Result<ExecutionResult, ProviderError>;
+
+    async fn copy_file_from_node(
+        &self,
+        remote_src: PathBuf,
+        local_dest: PathBuf,
+    ) -> Result<(), ProviderError>;
+
+    async fn pause(&self) -> Result<(), ProviderError>;
+
+    async fn resume(&self) -> Result<(), ProviderError>;
+
+    async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError>;
+
+    async fn destroy(&self) -> Result<(), ProviderError>;
+}
+
+pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;

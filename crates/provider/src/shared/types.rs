@@ -115,8 +115,8 @@ pub struct PodDef {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnvVar {
-    name: String,
-    value: String,
+    pub(crate) name: String,
+    pub(crate) value: String,
 }
 
 impl From<(&str, &str)> for EnvVar {
@@ -181,4 +181,5 @@ pub struct Process {
     pub logs: String,
     pub port_mapping: HashMap<u16, u16>,
     pub command: String,
+    pub env: ProcessEnvironment,
 }

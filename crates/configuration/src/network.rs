@@ -55,6 +55,109 @@ impl NetworkConfig {
 
         Ok(re.replace_all(&toml_string, "$u128_value").to_string())
     }
+
+    pub fn load_from_toml(path: &str) -> Result<NetworkConfig, toml::ser::Error> {
+        let file_str = fs::read_to_string(path).unwrap();
+        let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
+            .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
+        let mut network_config: NetworkConfig = toml::from_str(
+            re.replace_all(&file_str, "$field_name = \"$u128_value\"")
+                .as_ref(),
+        )
+        .unwrap();
+
+        if network_config.relaychain.is_none() {
+            // TODO: (nikos) handle case where relaychain is None which is not valid
+        }
+
+        // retrieve the defaults relaychain for assigning to nodes if needed
+        let relaychain_default_command = network_config
+            .relaychain
+            .as_ref()
+            .unwrap()
+            .default_command()
+            .cloned();
+
+        let relaychain_default_image = network_config
+            .relaychain
+            .as_ref()
+            .unwrap()
+            .default_image()
+            .cloned();
+
+        let relaychain_default_resources = network_config
+            .relaychain
+            .as_ref()
+            .unwrap()
+            .default_resources()
+            .cloned();
+
+        let relaychain_default_db_snapshot = network_config
+            .relaychain
+            .as_ref()
+            .unwrap()
+            .default_db_snapshot()
+            .cloned();
+
+        let default_args = network_config.relaychain().default_args.clone();
+
+        // if there is some existing defaults and
+        if relaychain_default_command.is_some() {
+            // here we've got our own clone of Option<Command> so we just unwrap it because we asserted above it exists
+            let default_command: Option<crate::shared::types::Command> = relaychain_default_command;
+            // we take all nodes as mutables
+            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+                // we modify only nodes which don't arleady have a command
+                if node.command.is_none() {
+                    node.command = default_command.clone();
+                    node.chain_context.default_command = default_command.clone();
+                }
+            }
+        }
+
+        if relaychain_default_image.is_some() {
+            let default_image = relaychain_default_image;
+            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+                if node.image.is_none() {
+                    node.image = default_image.clone();
+                    node.chain_context.default_image = default_image.clone();
+                }
+            }
+        }
+
+        if relaychain_default_resources.is_some() {
+            let default_resources = relaychain_default_resources;
+            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+                if node.resources.is_none() {
+                    node.resources = default_resources.clone();
+                    node.chain_context.default_resources = default_resources.clone();
+                }
+            }
+        }
+
+        if relaychain_default_db_snapshot.is_some() {
+            let default_db_snapshot = relaychain_default_db_snapshot;
+            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+                if node.db_snapshot.is_none() {
+                    node.db_snapshot = default_db_snapshot.clone();
+                    node.chain_context.default_db_snapshot = default_db_snapshot.clone();
+                }
+            }
+        }
+
+        if !default_args.is_empty() {
+            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+                if node.args.is_empty() {
+                    node.args.clone_from(&default_args.clone());
+                    node.chain_context
+                        .default_args
+                        .clone_from(&default_args.clone());
+                }
+            }
+        }
+
+        Ok(network_config)
+    }
 }
 
 states! {
@@ -178,97 +281,6 @@ impl<A> NetworkConfigBuilder<A> {
 impl NetworkConfigBuilder<Initial> {
     pub fn new() -> NetworkConfigBuilder<Initial> {
         Self::default()
-    }
-
-    pub fn toml_to_network(path: &str) -> Result<NetworkConfig, toml::ser::Error> {
-        let file_str = fs::read_to_string(path).unwrap();
-
-        let mut network_config: NetworkConfig = toml::from_str(&file_str).unwrap();
-
-        if network_config.relaychain.is_none() {
-            // TODO: (nikos) handle case where relaychain is None which is not valid
-        }
-
-        // retrieve the defaults relaychain for assigning to nodes if needed
-        let relaychain_default_command = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
-            .default_command()
-            .cloned();
-
-        let relaychain_default_image = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
-            .default_image()
-            .cloned();
-
-        let relaychain_default_resources = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
-            .default_resources()
-            .cloned();
-
-        let relaychain_default_db_snapshot = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
-            .default_db_snapshot()
-            .cloned();
-
-        let default_args = network_config.relaychain().default_args.clone();
-
-        // if there is some existing defaults and
-        if relaychain_default_command.is_some() {
-            // here we've got our own clone of Option<Command> so we just unwrap it because we asserted above it exists
-            let default_command: Option<crate::shared::types::Command> = relaychain_default_command;
-            // we take all nodes as mutables
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                // we modify only nodes which don't arleady have a command
-                if node.command.is_none() {
-                    node.command = default_command.clone();
-                }
-            }
-        }
-
-        if relaychain_default_image.is_some() {
-            let default_image = relaychain_default_image;
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                if node.image.is_none() {
-                    node.image = default_image.clone();
-                }
-            }
-        }
-
-        if relaychain_default_resources.is_some() {
-            let default_resources = relaychain_default_resources;
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                if node.resources.is_none() {
-                    node.resources = default_resources.clone();
-                }
-            }
-        }
-
-        if relaychain_default_db_snapshot.is_some() {
-            let default_db_snapshot = relaychain_default_db_snapshot;
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                if node.db_snapshot.is_none() {
-                    node.db_snapshot = default_db_snapshot.clone();
-                }
-            }
-        }
-
-        if !default_args.is_empty() {
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                if node.args.is_empty() {
-                    node.args.clone_from(&default_args.clone());
-                }
-            }
-        }
-
-        Ok(network_config)
     }
 
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
@@ -948,8 +960,8 @@ mod tests {
 
     #[test]
     fn the_toml_config_should_be_imported_and_match_a_network() {
-        let toml_to_network =
-            NetworkConfigBuilder::toml_to_network("./testing/snapshots/0000-small-network.toml")
+        let load_from_toml =
+            NetworkConfigBuilder::load_from_toml("./testing/snapshots/0000-small-network.toml")
                 .unwrap();
 
         let expected = NetworkConfigBuilder::new()
@@ -978,7 +990,7 @@ mod tests {
             })
             .build()
             .unwrap();
-        assert_eq!(toml_to_network, expected);
+        assert_eq!(load_from_toml, expected);
     }
 
     #[test]
@@ -987,8 +999,7 @@ mod tests {
         // let converted_toml = toml::from_str::<toml::Value>(file_str.as_str()).unwrap();
 
         let config =
-            NetworkConfigBuilder::toml_to_network("./testing/snapshots/0000-small-network.toml")
-                .unwrap();
+            NetworkConfig::load_from_toml("./testing/snapshots/0000-small-network.toml").unwrap();
         println!("{:?}", config);
     }
 }

@@ -4,6 +4,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
+use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
+
 use super::{
     errors::{ConversionError, FieldError},
     helpers::merge_errors,
@@ -43,7 +45,7 @@ impl TryFrom<&str> for ResourceQuantity {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$")
-                .expect("should compile with success. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues");
+                .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         }
 
         if !RE.is_match(value) {

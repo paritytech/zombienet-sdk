@@ -10,6 +10,9 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
+use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
+
+use super::{constants::INFAILABLE, errors::ConversionError, resources::Resources};
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;
@@ -151,6 +154,7 @@ impl TryFrom<&str> for Image {
                 "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
             ))
             .expect("should compile with success. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues");
+            .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         };
 
         if !RE.is_match(value) {
@@ -249,6 +253,7 @@ impl From<&str> for AssetLocation {
 
         Self::FilePath(
             PathBuf::from_str(value).expect("infaillible. this is a bug, please report it"),
+            PathBuf::from_str(value).expect(&format!("{}, {}", INFAILABLE, THIS_IS_A_BUG)),
         )
     }
 }

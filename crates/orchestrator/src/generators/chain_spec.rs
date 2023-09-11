@@ -1,4 +1,4 @@
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
 use provider::Provider;
 
@@ -50,7 +50,6 @@ impl ChainSpec {
     pub fn raw_path(&self) -> Option<&Path> {
         self.raw_path.as_deref()
     }
-
 }
 
 #[cfg(test)]

@@ -4,7 +4,11 @@ use configuration::{
 };
 
 use super::node::NodeSpec;
-use crate::{errors::OrchestratorError, generators::{para_artifact::*, chain_spec::ChainSpec}, shared::types::ChainDefaultContext};
+use crate::{
+    errors::OrchestratorError,
+    generators::{chain_spec::ChainSpec, para_artifact::*},
+    shared::types::ChainDefaultContext,
+};
 
 #[derive(Debug)]
 pub struct ParachainSpec {

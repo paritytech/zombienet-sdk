@@ -1,4 +1,4 @@
-use configuration::{HrmpChannelConfig, NetworkConfig, GlobalSettings};
+use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 
 use crate::errors::OrchestratorError;
 
@@ -46,7 +46,7 @@ impl NetworkSpec {
                 .into_iter()
                 .cloned()
                 .collect(),
-            global_settings: network_config.global_settings().clone()
+            global_settings: network_config.global_settings().clone(),
         })
     }
 }
@@ -56,33 +56,32 @@ mod tests {
 
     #[tokio::test]
     async fn small_network_config_get_spec() {
-        use super::*;
         use configuration::NetworkConfigBuilder;
 
+        use super::*;
+
         let config = NetworkConfigBuilder::new()
-        .with_relaychain(|r| {
-            r.with_chain("rococo-local")
-                .with_default_command("polkadot")
-                .with_node(|node| node.with_name("alice"))
-                .with_node(|node| {
-                    node
-                        .with_name("bob")
-                        .with_command("polkadot1")
-                        .validator(false)
-                })
-        })
-        .with_parachain(|p| {
-            p.with_id(100)
-            .with_default_command("adder-collator")
-            .with_collator(|c| {
-                c.with_name("collator1")
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_node(|node| node.with_name("alice"))
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .with_command("polkadot1")
+                            .validator(false)
+                    })
             })
-        })
-        .build().unwrap();
+            .with_parachain(|p| {
+                p.with_id(100)
+                    .with_default_command("adder-collator")
+                    .with_collator(|c| c.with_name("collator1"))
+            })
+            .build()
+            .unwrap();
 
         let network_spec = NetworkSpec::from_config(&config).await.unwrap();
-        let alice =network_spec.relaychain.nodes.get(0).unwrap();
-        let bob =network_spec.relaychain.nodes.get(1).unwrap();
+        let alice = network_spec.relaychain.nodes.get(0).unwrap();
+        let bob = network_spec.relaychain.nodes.get(1).unwrap();
         assert_eq!(alice.command.as_str(), "polkadot");
         assert_eq!(bob.command.as_str(), "polkadot1");
         assert!(alice.is_validator);
@@ -94,6 +93,5 @@ mod tests {
         assert_eq!(para_100.id, 100);
 
         println!("{:#?}", network_spec);
-
     }
 }

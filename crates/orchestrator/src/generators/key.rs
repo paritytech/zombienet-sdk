@@ -47,15 +47,21 @@ mod tests {
         let seed = format!("//{}", s);
 
         let pair = generate::<sr25519::Pair>(&seed).unwrap();
-        assert_eq!("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", pair.public().to_ss58check());
+        assert_eq!(
+            "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+            pair.public().to_ss58check()
+        );
 
         let pair = generate::<ecdsa::Pair>(&seed).unwrap();
-        assert_eq!("0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1", format!("0x{}",hex::encode(pair.public())));
+        assert_eq!(
+            "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1",
+            format!("0x{}", hex::encode(pair.public()))
+        );
 
         let pair = generate::<ed25519::Pair>(&seed).unwrap();
-        assert_eq!("5FA9nQDVg267DEd8m1ZypXLBnvN7SFxYwV7ndqSYGiN9TTpu", pair.public().to_ss58check());
-
-
-
+        assert_eq!(
+            "5FA9nQDVg267DEd8m1ZypXLBnvN7SFxYwV7ndqSYGiN9TTpu",
+            pair.public().to_ss58check()
+        );
     }
 }

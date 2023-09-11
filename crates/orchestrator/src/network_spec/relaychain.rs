@@ -7,7 +7,10 @@ use configuration::{
 };
 
 use super::node::NodeSpec;
-use crate::{errors::OrchestratorError, shared::types::ChainDefaultContext, generators::chain_spec::ChainSpec};
+use crate::{
+    errors::OrchestratorError, generators::chain_spec::ChainSpec,
+    shared::types::ChainDefaultContext,
+};
 
 /// A relaychain configuration spec
 #[derive(Debug, Clone)]

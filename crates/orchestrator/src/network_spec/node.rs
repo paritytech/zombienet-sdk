@@ -10,7 +10,7 @@ use sha2::digest::Digest;
 use crate::{
     errors::OrchestratorError,
     generators,
-    shared::types::{NodeAccounts, ParkedPort, ChainDefaultContext},
+    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
 };
 
 /// A node configuration, with fine-grained configuration options.

@@ -69,8 +69,7 @@ impl NetworkConfig {
         let mut network_config: NetworkConfig = toml::from_str(
             re.replace_all(&file_str, "$field_name = \"$u128_value\"")
                 .as_ref(),
-        )
-        .unwrap();
+        )?;
 
         if network_config.relaychain.is_none() {
             // TODO: (nikos) handle case where relaychain is None which is not valid
@@ -105,77 +104,50 @@ impl NetworkConfig {
             .default_db_snapshot()
             .cloned();
 
-        let args: Vec<Arg> = network_config
+        let default_args: Vec<Arg> = network_config
             .relaychain()
             .default_args()
             .into_iter()
             .cloned()
             .collect();
 
-        network_config
-            .relaychain()
-            .clone()
-            .set_default_args(args.clone());
 
-        // if there is some existing defaults and
-        if relaychain_default_command.is_some() {
-            // here we've got our own clone of Option<Command> so we just unwrap it because we asserted above it exists
-            let default_command: Option<crate::shared::types::Command> = relaychain_default_command;
-            // we take all nodes as mutables
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                // we modify only nodes which don't arleady have a command
+        // SAFETY: is ok to use `unwrap` here since we ensure that is some at the begging of this fn
+        for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+            if relaychain_default_command.is_some() {
+                 // we modify only nodes which don't already have a command
                 if node.command.is_none() {
-                    node.command = default_command.clone();
-                    node.chain_context.default_command = default_command.clone();
+                    node.command = relaychain_default_command.clone();
+                    node.chain_context.default_command = relaychain_default_command.clone();
                 }
             }
-        }
 
-        if relaychain_default_image.is_some() {
-            let default_image = relaychain_default_image;
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+            if relaychain_default_image.is_some() {
                 if node.image.is_none() {
-                    node.image = default_image.clone();
-                    node.chain_context.default_image = default_image.clone();
+                    node.image = relaychain_default_image.clone();
+                    node.chain_context.default_image = relaychain_default_image.clone();
                 }
             }
-        }
 
-        if relaychain_default_resources.is_some() {
-            let default_resources = relaychain_default_resources;
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+            if relaychain_default_resources.is_some() {
                 if node.resources.is_none() {
-                    node.resources = default_resources.clone();
-                    node.chain_context.default_resources = default_resources.clone();
+                    node.resources = relaychain_default_resources.clone();
+                    node.chain_context.default_resources = relaychain_default_resources.clone();
                 }
             }
-        }
 
-        if relaychain_default_db_snapshot.is_some() {
-            let default_db_snapshot = relaychain_default_db_snapshot;
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
+            if relaychain_default_db_snapshot.is_some() {
                 if node.db_snapshot.is_none() {
-                    node.db_snapshot = default_db_snapshot.clone();
-                    node.chain_context.default_db_snapshot = default_db_snapshot.clone();
+                    node.db_snapshot = relaychain_default_db_snapshot.clone();
+                    node.chain_context.default_db_snapshot = relaychain_default_db_snapshot.clone();
                 }
             }
-        }
 
-        if !network_config.relaychain().default_args().is_empty() {
-            let args: Vec<Arg> = network_config
-                .relaychain()
-                .default_args()
-                .into_iter()
-                .cloned()
-                .collect();
-
-            for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
-                if node.args().is_empty() {
-                    node.set_args(args.clone());
-
-                    node.chain_context.set_default_args(args.clone())
-                }
+            if node.args().is_empty() {
+                node.set_args(default_args.clone());
+                node.chain_context.set_default_args(default_args.clone())
             }
+
         }
 
         Ok(network_config)

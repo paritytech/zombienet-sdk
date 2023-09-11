@@ -1,5 +1,4 @@
 use configuration::NetworkConfigBuilder;
-use orchestrator::Orchestrator;
 
 fn main() {
     let config = NetworkConfigBuilder::new()

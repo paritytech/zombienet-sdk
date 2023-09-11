@@ -12,7 +12,6 @@ fn generate<T: Pair>(seed: &str) -> Result<T::Pair, ()> {
 pub fn generate_for_node(seed: &str) -> Result<Accounts, GeneratorError> {
     let mut accounts: Accounts = Default::default();
     for key in KEY_TYPES {
-        // let public =  match key {
         let (address, public_key) = match key {
             "sr" => {
                 let pair = generate::<sr25519::Pair>(seed)

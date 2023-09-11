@@ -14,7 +14,7 @@ pub(crate) enum ParaArtifactBuildOption {
 
 /// Parachain artifact (could be either the genesis state or genesis wasm)
 #[derive(Debug, Clone)]
-pub(crate) struct ParaArtifact {
+pub struct ParaArtifact {
     artifact_type: ParaArtifactType,
     build_option: ParaArtifactBuildOption,
     artifact_path: Option<PathBuf>,
@@ -33,6 +33,6 @@ impl ParaArtifact {
     }
 
     pub(crate) async fn build(&mut self) -> Result<(), ()> {
-        Ok(())
+        todo!()
     }
 }

@@ -7,28 +7,28 @@ use configuration::{
 };
 
 use super::node::NodeSpec;
-use crate::{chain_spec::ChainSpec, errors::OrchestratorError, shared::types::ChainDefaultContext};
+use crate::{errors::OrchestratorError, shared::types::ChainDefaultContext, generators::chain_spec::ChainSpec};
 
 /// A relaychain configuration spec
 #[derive(Debug, Clone)]
 pub struct RelaychainSpec {
     /// Chain to use (e.g. rococo-local).
-    chain: Chain,
+    pub(crate) chain: Chain,
 
     /// Default command to run the node. Can be overriden on each node.
-    default_command: Option<Command>,
+    pub(crate) default_command: Option<Command>,
 
     /// Default image to use (only podman/k8s). Can be overriden on each node.
-    default_image: Option<Image>,
+    pub(crate) default_image: Option<Image>,
 
     /// Default resources. Can be overriden on each node.
-    default_resources: Option<Resources>,
+    pub(crate) default_resources: Option<Resources>,
 
     /// Default database snapshot. Can be overriden on each node.
-    default_db_snapshot: Option<AssetLocation>,
+    pub(crate) default_db_snapshot: Option<AssetLocation>,
 
     /// Default arguments to use in nodes. Can be overriden on each node.
-    default_args: Vec<Arg>,
+    pub(crate) default_args: Vec<Arg>,
 
     // /// Command to build the plain chain spec
     // chain_spec_command: Option<String>,
@@ -36,16 +36,16 @@ pub struct RelaychainSpec {
     // /// Chain specification JSON file to use. If is provider we will `not` create the spec
     // /// with `chain_spec_command`
     // chain_spec_path: Option<AssetLocation>,
-    chain_spec: ChainSpec,
+    pub(crate) chain_spec: ChainSpec,
 
     /// Set the count of nominators to generator (used with PoS networks).
-    random_nominators_count: u32,
+    pub(crate) random_nominators_count: u32,
 
     /// Set the max nominators value (used with PoS networks).
-    max_nominations: u8,
+    pub(crate) max_nominations: u8,
 
     /// Nodes to run.
-    nodes: Vec<NodeSpec>,
+    pub(crate) nodes: Vec<NodeSpec>,
 }
 
 impl RelaychainSpec {

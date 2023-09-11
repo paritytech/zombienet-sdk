@@ -1,4 +1,3 @@
-mod chain_spec;
 mod errors;
 mod generators;
 mod network_spec;

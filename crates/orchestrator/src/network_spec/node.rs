@@ -17,61 +17,61 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct NodeSpec {
     /// Node name (should be unique or an index will be appended).
-    name: String,
+    pub(crate) name: String,
 
     /// Node key, used for compute the p2p identity.
-    key: String,
+    pub(crate) key: String,
 
     /// Accounts to be injected in the keystore.
-    accounts: NodeAccounts,
+    pub(crate) accounts: NodeAccounts,
 
     /// Image to run (only podman/k8s). Override the default.
-    image: Option<Image>,
+    pub(crate) image: Option<Image>,
 
     /// Command to run the node. Override the default.
-    command: Command,
+    pub(crate) command: Command,
 
     /// Arguments to use for node. Appended to default.
-    args: Vec<Arg>,
+    pub(crate) args: Vec<Arg>,
 
     /// Wether the node is a validator.
-    is_validator: bool,
+    pub(crate) is_validator: bool,
 
     /// Whether the node keys must be added to invulnerables.
-    is_invulnerable: bool,
+    pub(crate) is_invulnerable: bool,
 
     /// Whether the node is a bootnode.
-    is_bootnode: bool,
+    pub(crate) is_bootnode: bool,
 
     /// Node initial balance present in genesis.
-    initial_balance: u128,
+    pub(crate) initial_balance: u128,
 
     /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
-    env: Vec<EnvVar>,
+    pub(crate) env: Vec<EnvVar>,
 
     /// List of node's bootnodes addresses to use. Appended to default.
-    bootnodes_addresses: Vec<Multiaddr>,
+    pub(crate) bootnodes_addresses: Vec<Multiaddr>,
 
     /// Default resources. Override the default.
-    resources: Option<Resources>,
+    pub(crate) resources: Option<Resources>,
 
     /// Websocket port to use.
-    ws_port: ParkedPort,
+    pub(crate) ws_port: ParkedPort,
 
     /// RPC port to use.
-    rpc_port: ParkedPort,
+    pub(crate) rpc_port: ParkedPort,
 
     /// Prometheus port to use.
-    prometheus_port: ParkedPort,
+    pub(crate) prometheus_port: ParkedPort,
 
     /// P2P port to use.
-    p2p_port: ParkedPort,
+    pub(crate) p2p_port: ParkedPort,
 
     /// libp2p cert hash to use with `webrtc` transport.
-    p2p_cert_hash: Option<String>,
+    pub(crate) p2p_cert_hash: Option<String>,
 
     /// Database snapshot. Override the default.
-    db_snapshot: Option<AssetLocation>,
+    pub(crate) db_snapshot: Option<AssetLocation>,
 }
 
 impl NodeSpec {

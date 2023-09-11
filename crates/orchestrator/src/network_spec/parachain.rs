@@ -4,20 +4,21 @@ use configuration::{
 };
 
 use super::node::NodeSpec;
-use crate::{chain_spec::ChainSpec, errors::OrchestratorError, generators::para_artifact::*, shared::types::ChainDefaultContext};
+use crate::{errors::OrchestratorError, generators::{para_artifact::*, chain_spec::ChainSpec}, shared::types::ChainDefaultContext};
 
+#[derive(Debug)]
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)
     // name: Option<Chain>,
-    id: u32,
-    chain_spec: Option<ChainSpec>, // non-cumulus based not need chain-spec
-    registration_strategy: RegistrationStrategy,
-    onboard_as_parachain: bool,
-    is_cumulus_based: bool,
-    initial_balance: u128,
-    genesis_state: ParaArtifact, // should live in generators
-    genesis_wasm: ParaArtifact,  // should live in generators
-    collators: Vec<NodeSpec>,
+    pub(crate) id: u32,
+    pub(crate) chain_spec: Option<ChainSpec>, // Only needed by cumulus based paras
+    pub(crate) registration_strategy: RegistrationStrategy,
+    pub(crate) onboard_as_parachain: bool,
+    pub(crate) is_cumulus_based: bool,
+    pub(crate) initial_balance: u128,
+    pub(crate) genesis_state: ParaArtifact,
+    pub(crate) genesis_wasm: ParaArtifact,
+    pub(crate) collators: Vec<NodeSpec>,
 }
 
 impl ParachainSpec {

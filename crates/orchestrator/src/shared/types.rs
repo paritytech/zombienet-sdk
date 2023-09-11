@@ -19,20 +19,12 @@ impl NodeAccount {
             public_key: pk.into(),
         }
     }
-
-    pub fn address(&self) -> &str {
-        self.address.as_str()
-    }
-
-    pub fn public_key(&self) -> &str {
-        self.public_key.as_str()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccounts {
-    pub seed: String,
-    pub accounts: Accounts,
+    pub(crate) seed: String,
+    pub(crate) accounts: Accounts,
 }
 
 #[derive(Clone, Debug)]

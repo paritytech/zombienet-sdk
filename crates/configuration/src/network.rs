@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs, marker::PhantomData, rc::Rc};
+use std::{any, cell::RefCell, fs, marker::PhantomData, rc::Rc};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,6 @@ use crate::{
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
-    shared::{helpers::merge_errors_vecs, macros::states, types::ValidationContext},
     shared::{
         constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALID_REGEX},
         helpers::merge_errors_vecs,
@@ -41,7 +40,6 @@ impl NetworkConfig {
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
-            .expect("typestate should ensure the relaychain isn't None at this point, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues")
             .expect(&format!("{}, {}", RELAY_NOT_NONE, THIS_IS_A_BUG))
     }
 
@@ -57,7 +55,6 @@ impl NetworkConfig {
 
     pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
         // This regex is used to replace the "" enclosed u128 value to a raw u128 because u128 is not supported for TOML serialization/deserialization.
-        let re = Regex::new(r#""U128%(?<u128_value>\d+)""#).expect("regex should be valid, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
         let re = Regex::new(r#""U128%(?<u128_value>\d+)""#)
             .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
         let toml_string = toml::to_string_pretty(&self)?;
@@ -65,8 +62,6 @@ impl NetworkConfig {
         Ok(re.replace_all(&toml_string, "$u128_value").to_string())
     }
 
-    pub fn load_from_toml(path: &str) -> Result<NetworkConfig, toml::ser::Error> {
-        let file_str = fs::read_to_string(path).unwrap();
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
         let file_str = fs::read_to_string(path).expect(&format!("{} {}", RW_FAILED, THIS_IS_A_BUG));
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
@@ -260,9 +255,6 @@ impl Default for NetworkConfigBuilder<Initial> {
     fn default() -> Self {
         Self {
             config: NetworkConfig {
-                global_settings: GlobalSettingsBuilder::new().build().expect(
-                    "should have no errors for default builder. this is a bug, please report it",
-                ),
                 global_settings: GlobalSettingsBuilder::new()
                     .build()
                     .expect(&format!("{}, {}", NO_ERR_DEF_BUILDER, THIS_IS_A_BUG)),

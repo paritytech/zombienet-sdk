@@ -1,4 +1,3 @@
-use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 use std::{
     cell::RefCell,
     error::Error,
@@ -8,7 +7,7 @@ use std::{
 };
 
 use multiaddr::Multiaddr;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{de, ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::FieldError,
@@ -62,17 +61,9 @@ impl From<(&str, &str)> for EnvVar {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct NodeConfig {
     name: String,
-    image: Option<Image>,
     pub(crate) image: Option<Image>,
     pub(crate) command: Option<Command>,
     #[serde(default)]
-    args: Vec<Arg>,
-    #[serde(default)]
-    is_validator: bool,
-    #[serde(default)]
-    is_invulnerable: bool,
-    #[serde(default)]
-    is_bootnode: bool,
     pub(crate) args: Vec<Arg>,
     #[serde(alias = "validator")]
     pub(crate) is_validator: bool,
@@ -87,18 +78,15 @@ pub struct NodeConfig {
     env: Vec<EnvVar>,
     #[serde(default)]
     bootnodes_addresses: Vec<Multiaddr>,
-    resources: Option<Resources>,
     pub(crate) resources: Option<Resources>,
     ws_port: Option<Port>,
     rpc_port: Option<Port>,
     prometheus_port: Option<Port>,
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
-    db_snapshot: Option<AssetLocation>,
     pub(crate) db_snapshot: Option<AssetLocation>,
     #[serde(default)]
     // used to skip serialization of fields with defaults to avoid duplication
-    chain_context: ChainDefaultContext,
     pub(crate) chain_context: ChainDefaultContext,
 }
 

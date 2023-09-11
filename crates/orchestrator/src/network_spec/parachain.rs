@@ -1,7 +1,4 @@
-use configuration::{
-    shared::types::{RegistrationStrategy},
-    ParachainConfig,
-};
+use configuration::{shared::types::RegistrationStrategy, ParachainConfig};
 
 use super::node::NodeSpec;
 use crate::{

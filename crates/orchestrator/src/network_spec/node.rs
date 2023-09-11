@@ -3,7 +3,6 @@ use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
 };
-
 use multiaddr::Multiaddr;
 use sha2::digest::Digest;
 

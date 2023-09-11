@@ -1,6 +1,6 @@
 use std::{net::TcpListener, sync::Arc};
 
-use configuration::shared::{node::NodeConfig, types::Port};
+use configuration::shared::types::Port;
 
 use super::errors::GeneratorError;
 use crate::shared::types::ParkedPort;
@@ -22,15 +22,3 @@ pub fn generate(port: Option<Port>) -> Result<ParkedPort, GeneratorError> {
         .port();
     Ok(ParkedPort::new(port, Arc::new(listener)))
 }
-
-// pub fn generate_for_node(config: NodeConfig) -> Result<, GeneratorError> {
-//     for p in PortTypes {
-//         match p {
-//             PortTypes::Rpc => {
-
-//             },
-
-//         }
-//     }
-
-// }

@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(network_spec.parachains.len(), 1);
         let para_100 = network_spec.parachains.get(0).unwrap();
         assert_eq!(para_100.id, 100);
-        
+
         println!("{:#?}", network_spec);
 
     }

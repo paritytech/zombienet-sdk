@@ -9,9 +9,8 @@ use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
-use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
-
 use super::{constants::INFAILABLE, errors::ConversionError, resources::Resources};
+use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;
@@ -414,6 +413,7 @@ impl ChainDefaultContext {
     pub(crate) fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
+
     /// Set the default arguments
     pub(crate) fn set_default_args(&mut self, args: Vec<Arg>) {
         self.default_args = args;

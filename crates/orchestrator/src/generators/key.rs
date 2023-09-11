@@ -5,7 +5,7 @@ use crate::shared::types::{Accounts, NodeAccount};
 const KEY_TYPES: [&str; 3] = ["sr", "ed", "ec"];
 
 fn generate<T: Pair>(seed: &str) -> Result<T::Pair, ()> {
-    let pair = T::Pair::from_string(&seed, None).map_err(|_| ())?;
+    let pair = T::Pair::from_string(seed, None).map_err(|_| ())?;
     Ok(pair)
 }
 
@@ -15,17 +15,17 @@ pub fn generate_for_node(seed: &str) -> Result<Accounts, GeneratorError> {
         // let public =  match key {
         let (address, public_key) = match key {
             "sr" => {
-                let pair = generate::<sr25519::Pair>(&seed)
+                let pair = generate::<sr25519::Pair>(seed)
                     .map_err(|_| GeneratorError::KeyGeneration(key.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             "ed" => {
-                let pair = generate::<ed25519::Pair>(&seed)
+                let pair = generate::<ed25519::Pair>(seed)
                     .map_err(|_| GeneratorError::KeyGeneration(key.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             "ec" => {
-                let pair = generate::<ecdsa::Pair>(&seed)
+                let pair = generate::<ecdsa::Pair>(seed)
                     .map_err(|_| GeneratorError::KeyGeneration(key.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },

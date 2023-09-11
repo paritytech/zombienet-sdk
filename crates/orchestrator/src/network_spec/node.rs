@@ -1,9 +1,9 @@
 use configuration::shared::{
     node::{EnvVar, NodeConfig},
     resources::Resources,
-    types::{Arg, AssetLocation, Command, Image, Port},
+    types::{Arg, AssetLocation, Command, Image},
 };
-use hex;
+
 use multiaddr::Multiaddr;
 use sha2::digest::Digest;
 
@@ -83,25 +83,19 @@ impl NodeSpec {
         let image = if let Some(img) = node_config.image() {
             Some(img.clone())
         } else {
-            if let Some(img) = chain_context.default_image {
-                Some(img.clone())
-            } else {
-                None
-            }
+            chain_context.default_image.cloned()
         };
 
         // Check first if the command is set at node level, then try with the default
         let command = if let Some(cmd) = node_config.command() {
             cmd.clone()
+        } else if let Some(cmd) = chain_context.default_command {
+            cmd.clone()
         } else {
-            if let Some(cmd) = chain_context.default_command {
-                cmd.clone()
-            } else {
-                return Err(OrchestratorError::InvalidNodeConfig(
-                    node_config.name().into(),
-                    "command".to_string(),
-                ));
-            }
+            return Err(OrchestratorError::InvalidNodeConfig(
+                node_config.name().into(),
+                "command".to_string(),
+            ));
         };
 
         // If `args` is set at `node` level use them

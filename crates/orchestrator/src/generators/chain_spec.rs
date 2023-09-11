@@ -21,7 +21,7 @@ impl ChainSpec {
 
         Self {
             build_command: Some(build_command),
-            chain_name: Some(chain_name.into()),
+            chain_name: Some(chain_name),
             maybe_plain_path: None,
             raw_path: None,
         }
@@ -32,13 +32,13 @@ impl ChainSpec {
 
         Self {
             build_command: None,
-            chain_name: Some(chain_name.into()),
+            chain_name: Some(chain_name),
             maybe_plain_path: Some(path.into()),
             raw_path: None,
         }
     }
 
-    pub async fn build(&mut self, provider: &impl Provider) -> Result<(), ()> {
+    pub async fn build(&mut self, _provider: &impl Provider) -> Result<(), ()> {
         // create a temp node
         todo!()
     }

@@ -1,5 +1,5 @@
 use configuration::{
-    shared::types::{Chain, RegistrationStrategy},
+    shared::types::{RegistrationStrategy},
     ParachainConfig,
 };
 
@@ -29,18 +29,16 @@ impl ParachainSpec {
     pub fn from_config(config: &ParachainConfig) -> Result<ParachainSpec, OrchestratorError> {
         let main_cmd = if let Some(cmd) = config.default_command() {
             cmd
-        } else {
-            if let Some(first_node) = config.collators().first() {
-                let Some(cmd) = first_node.command() else {
-                    return Err(OrchestratorError::InvalidConfig("Parachain, either default_command or command in the first node needs to be set.".to_string()));
-                };
+        } else if let Some(first_node) = config.collators().first() {
+            let Some(cmd) = first_node.command() else {
+                return Err(OrchestratorError::InvalidConfig("Parachain, either default_command or command in the first node needs to be set.".to_string()));
+            };
 
-                cmd
-            } else {
-                return Err(OrchestratorError::InvalidConfig(
-                    "Parachain without nodes and default_command isn't set.".to_string(),
-                ));
-            }
+            cmd
+        } else {
+            return Err(OrchestratorError::InvalidConfig(
+                "Parachain without nodes and default_command isn't set.".to_string(),
+            ));
         };
 
         let chain_spec = if config.is_cumulus_based() {
@@ -78,7 +76,7 @@ impl ParachainSpec {
         let mut errs: Vec<OrchestratorError> = Default::default();
         let mut collators: Vec<NodeSpec> = Default::default();
         config.collators().iter().for_each(|node_config| {
-            match NodeSpec::from_config(&node_config, &chain_context) {
+            match NodeSpec::from_config(node_config, &chain_context) {
                 Ok(node) => collators.push(node),
                 Err(err) => errs.push(err),
             }

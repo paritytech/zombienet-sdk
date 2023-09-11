@@ -37,16 +37,16 @@ where
     pub async fn spawn(&self, network_config: NetworkConfig) -> Result<(), OrchestratorError> {
         let global_timeout = network_config.global_settings().network_spawn_timeout();
         let network_spec = NetworkSpec::from_config(&network_config).await?;
-        let r = timeout(
+        
+        timeout(
             Duration::from_secs(global_timeout.into()),
             self.spawn_inner(network_spec),
         )
         .await
-        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout))?;
-        r
+        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout))?
     }
 
-    async fn spawn_inner(&self, network_spec: NetworkSpec) -> Result<(), OrchestratorError> {
+    async fn spawn_inner(&self, _network_spec: NetworkSpec) -> Result<(), OrchestratorError> {
         // main dirver for spawn the network
 
         // init provider & create namespace

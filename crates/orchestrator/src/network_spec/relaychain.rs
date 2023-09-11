@@ -59,18 +59,16 @@ impl RelaychainSpec {
         // If non of those is set, return an error.
         let main_cmd = if let Some(cmd) = config.default_command() {
             cmd
-        } else {
-            if let Some(first_node) = config.nodes().first() {
-                let Some(cmd) = first_node.command() else {
-                    return Err(OrchestratorError::InvalidConfig("Relaychain, either default_command or command in the first node needs to be set.".to_string()));
-                };
+        } else if let Some(first_node) = config.nodes().first() {
+            let Some(cmd) = first_node.command() else {
+                return Err(OrchestratorError::InvalidConfig("Relaychain, either default_command or command in the first node needs to be set.".to_string()));
+            };
 
-                cmd
-            } else {
-                return Err(OrchestratorError::InvalidConfig(
-                    "Relaychain without nodes and default_command isn't set.".to_string(),
-                ));
-            }
+            cmd
+        } else {
+            return Err(OrchestratorError::InvalidConfig(
+                "Relaychain without nodes and default_command isn't set.".to_string(),
+            ));
         };
 
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
@@ -95,7 +93,7 @@ impl RelaychainSpec {
 
         let mut nodes: Vec<NodeSpec> = Default::default();
         config.nodes().iter().for_each(|node_config| {
-            match NodeSpec::from_config(&node_config, &chain_context) {
+            match NodeSpec::from_config(node_config, &chain_context) {
                 Ok(node) => nodes.push(node),
                 Err(err) => errs.push(err),
             }

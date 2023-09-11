@@ -9,7 +9,6 @@ use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
-use super::{errors::ConversionError, resources::Resources};
 use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 use super::{constants::INFAILABLE, errors::ConversionError, resources::Resources};
@@ -71,8 +70,6 @@ impl<'de> Deserialize<'de> for U128 {
             where
                 E: de::Error,
             {
-                // TODO: (nikos) This needs to be beautified somehow
-                println!("------------ > U128Visitor: {}", v);
                 Ok(U128(v.to_string().parse::<u128>().unwrap()))
             }
         }
@@ -153,7 +150,6 @@ impl TryFrom<&str> for Image {
             static ref RE: Regex = Regex::new(&format!(
                 "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
             ))
-            .expect("should compile with success. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues");
             .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         };
 
@@ -252,7 +248,6 @@ impl From<&str> for AssetLocation {
         }
 
         Self::FilePath(
-            PathBuf::from_str(value).expect("infaillible. this is a bug, please report it"),
             PathBuf::from_str(value).expect(&format!("{}, {}", INFAILABLE, THIS_IS_A_BUG)),
         )
     }
@@ -340,11 +335,18 @@ impl<'de> Deserialize<'de> for Arg {
                 E: de::Error,
             {
                 // TODO: (nikos) This needs to be beautified somehow
-                println!("------------ > visit_str: {}", v);
-
                 if v.contains('=') || v.starts_with("--") || v.starts_with('-') {
-                    let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();
-                    Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+                    if v.contains('=') {
+                        let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();
+                        Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+                    } else {
+                        let split: Vec<&str> = v.split(' ').collect::<Vec<&str>>();
+                        if split.len() == 1 {
+                            Ok(Arg::Flag(v.to_string()))
+                        } else {
+                            Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+                        }
+                    }
                 } else {
                     Ok(Arg::Flag(v.to_string()))
                 }

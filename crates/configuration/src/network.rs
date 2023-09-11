@@ -111,43 +111,31 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
-
         // SAFETY: is ok to use `unwrap` here since we ensure that is some at the begging of this fn
         for node in network_config.relaychain.as_mut().unwrap().nodes.iter_mut() {
             if relaychain_default_command.is_some() {
-                 // we modify only nodes which don't already have a command
+                // we modify only nodes which don't already have a command
                 if node.command.is_none() {
                     node.command = relaychain_default_command.clone();
-                    node.chain_context.default_command = relaychain_default_command.clone();
                 }
             }
 
-            if relaychain_default_image.is_some() {
-                if node.image.is_none() {
-                    node.image = relaychain_default_image.clone();
-                    node.chain_context.default_image = relaychain_default_image.clone();
-                }
+            if relaychain_default_image.is_some() && node.image.is_none() {
+                node.image = relaychain_default_image.clone();
             }
 
-            if relaychain_default_resources.is_some() {
-                if node.resources.is_none() {
-                    node.resources = relaychain_default_resources.clone();
-                    node.chain_context.default_resources = relaychain_default_resources.clone();
-                }
+            if relaychain_default_resources.is_some() && node.resources.is_none() {
+                node.resources = relaychain_default_resources.clone();
             }
 
-            if relaychain_default_db_snapshot.is_some() {
-                if node.db_snapshot.is_none() {
-                    node.db_snapshot = relaychain_default_db_snapshot.clone();
-                    node.chain_context.default_db_snapshot = relaychain_default_db_snapshot.clone();
-                }
+            if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
+                node.db_snapshot = relaychain_default_db_snapshot.clone();
             }
 
             if node.args().is_empty() {
                 node.set_args(default_args.clone());
                 node.chain_context.set_default_args(default_args.clone())
             }
-
         }
 
         Ok(network_config)

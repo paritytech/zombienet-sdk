@@ -92,13 +92,13 @@ impl Serialize for NodeConfig {
         let mut state = serializer.serialize_struct("NodeConfig", 18)?;
         state.serialize_field("name", &self.name)?;
 
-        if self.image == self.chain_context.default_image {
+        if self.image == self.chain_context.default_image().cloned() {
             state.skip_field("image")?;
         } else {
             state.serialize_field("image", &self.image)?;
         }
 
-        if self.command == self.chain_context.default_command {
+        if self.command == self.chain_context.default_command().cloned() {
             state.skip_field("command")?;
         } else {
             state.serialize_field("command", &self.command)?;
@@ -127,7 +127,7 @@ impl Serialize for NodeConfig {
             state.serialize_field("bootnodes_addresses", &self.bootnodes_addresses)?;
         }
 
-        if self.resources == self.chain_context.default_resources {
+        if self.resources == self.chain_context.default_resources().cloned() {
             state.skip_field("resources")?;
         } else {
             state.serialize_field("resources", &self.resources)?;
@@ -139,7 +139,7 @@ impl Serialize for NodeConfig {
         state.serialize_field("p2p_port", &self.p2p_port)?;
         state.serialize_field("p2p_cert_hash", &self.p2p_cert_hash)?;
 
-        if self.db_snapshot == self.chain_context.default_db_snapshot {
+        if self.db_snapshot == self.chain_context.default_db_snapshot().cloned() {
             state.skip_field("db_snapshot")?;
         } else {
             state.serialize_field("db_snapshot", &self.db_snapshot)?;
@@ -186,9 +186,18 @@ impl NodeConfig {
         self.image.as_ref()
     }
 
+    /// The default container image used for nodes.
+    pub fn set_image(&mut self, image: Image) {
+        self.image = Some(image);
+    }
+
     /// Command to run the node.
     pub fn command(&self) -> Option<&Command> {
         self.command.as_ref()
+    }
+
+    pub fn set_command(&mut self, command: Command) {
+        self.command = Some(command);
     }
 
     /// Arguments to use for node.
@@ -333,10 +342,10 @@ impl NodeConfigBuilder<Initial> {
     ) -> Self {
         Self::transition(
             NodeConfig {
-                command: chain_context.default_command.clone(),
-                image: chain_context.default_image.clone(),
-                resources: chain_context.default_resources.clone(),
-                db_snapshot: chain_context.default_db_snapshot.clone(),
+                command: chain_context.default_command().cloned(),
+                image: chain_context.default_image().cloned(),
+                resources: chain_context.default_resources().cloned(),
+                db_snapshot: chain_context.default_db_snapshot().cloned(),
                 args: chain_context.default_args().into_iter().cloned().collect(),
                 chain_context,
                 ..Self::default().config

@@ -12,21 +12,21 @@ pub enum InMemoryFile {
 }
 
 impl InMemoryFile {
-    fn file(contents: Vec<u8>) -> Self {
+    pub fn file(contents: Vec<u8>) -> Self {
         Self::File {
             mode: 0o664,
             contents,
         }
     }
 
-    fn dir() -> Self {
+    pub fn dir() -> Self {
         Self::Directory { mode: 0o775 }
     }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct InMemoryFileSystem {
-    files: Arc<RwLock<HashMap<OsString, InMemoryFile>>>,
+    pub files: Arc<RwLock<HashMap<OsString, InMemoryFile>>>,
 }
 
 impl InMemoryFileSystem {

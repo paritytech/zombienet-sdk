@@ -1,4 +1,4 @@
-use configuration::{NetworkConfigBuilder, ParachainConfigBuilder};
+use configuration::NetworkConfigBuilder;
 
 fn main() {
     let config = NetworkConfigBuilder::new()
@@ -8,10 +8,5 @@ fn main() {
         })
         .build();
 
-    println!("{:?}", config.unwrap().parachains() );
-
-    for parachain in config.unwrap().parachains() {
-        let builder = ParachainConfigBuilder::new(Default::default());
-        println!("{:?}", parachain.chain_context().name() );
-    }
+    println!("{:?}", config.unwrap());
 }

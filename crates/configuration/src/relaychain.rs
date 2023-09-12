@@ -59,10 +59,10 @@ impl RelaychainConfig {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
-    // /// Set the default arguments that will be used to launch the node command.
-    // pub(crate) fn set_default_args(&mut self, args: Vec<Arg>) {
-    //     self.default_args = args;
-    // }
+    /// Set the default arguments that will be used to launch the node command.
+    pub(crate) fn set_default_args(&mut self, args: Vec<Arg>) {
+        self.default_args = args;
+    }
 
     /// The location of an pre-existing chain specification for the relay chain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
@@ -84,10 +84,10 @@ impl RelaychainConfig {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
 
-    // /// The nodes of the relay chain.
-    // pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
-    //     self.nodes = nodes;
-    // }
+    /// The nodes of the relay chain.
+    pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
+        self.nodes = nodes;
+    }
 }
 
 states! {
@@ -145,31 +145,11 @@ impl<A> RelaychainConfigBuilder<A> {
 
     fn default_chain_context(&self) -> ChainDefaultContext {
         let mut chain_default = ChainDefaultContext::default();
-        chain_default.set_default_command(
-            self.config
-                .default_command()
-                .cloned()
-                .expect("default command should be set"),
-        );
-        chain_default.set_default_image(
-            self.config
-                .default_image()
-                .cloned()
-                .expect("default image should be set"),
-        );
-        chain_default.set_default_resouces(
-            self.config
-                .default_resources
-                .clone()
-                .expect("default resources should be set"),
-        );
-        chain_default.set_default_db_snapshot(
-            self.config
-                .default_db_snapshot
-                .clone()
-                .expect("default db snapshot should be set"),
-        );
-        chain_default.set_default_args(self.config.default_args().into_iter().cloned().collect());
+        chain_default.default_command =  self.config.default_command().cloned();
+        chain_default.default_image = self.config.default_image().cloned();
+        chain_default.default_resources = self.config.default_resources.clone();
+        chain_default.default_db_snapshot = self.config.default_db_snapshot.clone();
+        chain_default.default_args = self.config.default_args().into_iter().cloned().collect();
         chain_default
     }
 }

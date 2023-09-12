@@ -67,7 +67,7 @@ impl NetworkConfig {
         let file_str = fs::read_to_string(path).expect(&format!("{} {}", RW_FAILED, THIS_IS_A_BUG));
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
-        let mut network_config: NetworkConfig = toml::from_str(
+        let network_config: NetworkConfig = toml::from_str(
             re.replace_all(&file_str, "$field_name = \"$u128_value\"")
                 .as_ref(),
         )?;
@@ -142,7 +142,7 @@ impl NetworkConfig {
 
             if node.args().is_empty() {
                 node.set_args(default_args.clone());
-                node.chain_context.set_default_args(default_args.clone())
+                node.chain_context.default_args = default_args.clone()
             }
         }
 

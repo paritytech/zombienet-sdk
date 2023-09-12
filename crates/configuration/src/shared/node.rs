@@ -92,19 +92,19 @@ impl Serialize for NodeConfig {
         let mut state = serializer.serialize_struct("NodeConfig", 18)?;
         state.serialize_field("name", &self.name)?;
 
-        if self.image == self.chain_context.default_image().cloned() {
+        if self.image == self.chain_context.default_image {
             state.skip_field("image")?;
         } else {
             state.serialize_field("image", &self.image)?;
         }
 
-        if self.command == self.chain_context.default_command().cloned() {
+        if self.command == self.chain_context.default_command {
             state.skip_field("command")?;
         } else {
             state.serialize_field("command", &self.command)?;
         }
 
-        if self.args.is_empty() || self.args() == self.chain_context.default_args() {
+        if self.args.is_empty() || self.args() == self.chain_context.default_args.iter().collect::<Vec<&Arg>>() {
             state.skip_field("args")?;
         } else {
             state.serialize_field("args", &self.args)?;
@@ -127,7 +127,7 @@ impl Serialize for NodeConfig {
             state.serialize_field("bootnodes_addresses", &self.bootnodes_addresses)?;
         }
 
-        if self.resources == self.chain_context.default_resources().cloned() {
+        if self.resources == self.chain_context.default_resources {
             state.skip_field("resources")?;
         } else {
             state.serialize_field("resources", &self.resources)?;
@@ -139,7 +139,7 @@ impl Serialize for NodeConfig {
         state.serialize_field("p2p_port", &self.p2p_port)?;
         state.serialize_field("p2p_cert_hash", &self.p2p_cert_hash)?;
 
-        if self.db_snapshot == self.chain_context.default_db_snapshot().cloned() {
+        if self.db_snapshot == self.chain_context.default_db_snapshot {
             state.skip_field("db_snapshot")?;
         } else {
             state.serialize_field("db_snapshot", &self.db_snapshot)?;
@@ -342,11 +342,11 @@ impl NodeConfigBuilder<Initial> {
     ) -> Self {
         Self::transition(
             NodeConfig {
-                command: chain_context.default_command().cloned(),
-                image: chain_context.default_image().cloned(),
-                resources: chain_context.default_resources().cloned(),
-                db_snapshot: chain_context.default_db_snapshot().cloned(),
-                args: chain_context.default_args().into_iter().cloned().collect(),
+                command: chain_context.default_command.clone(),
+                image: chain_context.default_image.clone(),
+                resources: chain_context.default_resources.clone(),
+                db_snapshot: chain_context.default_db_snapshot.clone(),
+                args: chain_context.default_args.clone(),
                 chain_context,
                 ..Self::default().config
             },

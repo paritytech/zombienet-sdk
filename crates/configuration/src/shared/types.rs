@@ -364,60 +364,12 @@ pub struct ValidationContext {
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize)]
 pub struct ChainDefaultContext {
-    default_command: Option<Command>,
-    default_image: Option<Image>,
-    default_resources: Option<Resources>,
-    default_db_snapshot: Option<AssetLocation>,
+    pub(crate) default_command: Option<Command>,
+    pub(crate) default_image: Option<Image>,
+    pub(crate) default_resources: Option<Resources>,
+    pub(crate) default_db_snapshot: Option<AssetLocation>,
     #[serde(default)]
-    default_args: Vec<Arg>,
-}
-
-impl ChainDefaultContext {
-    /// The default command used for nodes.
-    pub(crate) fn default_command(&self) -> Option<&Command> {
-        self.default_command.as_ref()
-    }
-
-    pub(crate) fn set_default_command(&mut self, command: Command) {
-        self.default_command = Some(command);
-    }
-
-    /// The default container image used for nodes.
-    pub(crate) fn default_image(&self) -> Option<&Image> {
-        self.default_image.as_ref()
-    }
-
-    pub(crate) fn set_default_image(&mut self, image: Image) {
-        self.default_image = Some(image);
-    }
-
-    /// The default resources limits used for nodes.
-    pub(crate) fn default_resources(&self) -> Option<&Resources> {
-        self.default_resources.as_ref()
-    }
-
-    pub(crate) fn set_default_resouces(&mut self, resources: Resources) {
-        self.default_resources = Some(resources);
-    }
-
-    /// The default database snapshot location that will be used for state.
-    pub(crate) fn default_db_snapshot(&self) -> Option<&AssetLocation> {
-        self.default_db_snapshot.as_ref()
-    }
-
-    pub(crate) fn set_default_db_snapshot(&mut self, db_snapshot: AssetLocation) {
-        self.default_db_snapshot = Some(db_snapshot);
-    }
-
-    /// The default arguments that will be used from the ChainDefaultContext
-    pub(crate) fn default_args(&self) -> Vec<&Arg> {
-        self.default_args.iter().collect::<Vec<&Arg>>()
-    }
-
-    /// Set the default arguments
-    pub(crate) fn set_default_args(&mut self, args: Vec<Arg>) {
-        self.default_args = args;
-    }
+    pub(crate) default_args: Vec<Arg>,
 }
 
 #[cfg(test)]

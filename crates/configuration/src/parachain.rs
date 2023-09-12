@@ -218,33 +218,13 @@ impl<A> ParachainConfigBuilder<A> {
     }
 
     fn default_chain_context(&self) -> ChainDefaultContext {
-        let mut chain_default = ChainDefaultContext::default();
-        chain_default.set_default_command(
-            self.config
-                .default_command()
-                .cloned()
-                .expect("default command should be set"),
-        );
-        chain_default.set_default_image(
-            self.config
-                .default_image()
-                .cloned()
-                .expect("default image should be set"),
-        );
-        chain_default.set_default_resouces(
-            self.config
-                .default_resources
-                .clone()
-                .expect("default resources should be set"),
-        );
-        chain_default.set_default_db_snapshot(
-            self.config
-                .default_db_snapshot
-                .clone()
-                .expect("default db snapshot should be set"),
-        );
-        chain_default.set_default_args(self.config.default_args().into_iter().cloned().collect());
-        chain_default
+        ChainDefaultContext {
+            default_command: self.config.default_command.clone(),
+            default_image: self.config.default_image.clone(),
+            default_resources: self.config.default_resources.clone(),
+            default_db_snapshot: self.config.default_db_snapshot.clone(),
+            default_args: self.config.default_args().into_iter().cloned().collect(),
+        }
     }
 }
 

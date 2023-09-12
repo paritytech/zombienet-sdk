@@ -475,10 +475,9 @@ fn create_process_with_log_tasks(
     filesystem: impl FileSystem + Send + Sync + 'static,
 ) -> Result<(Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>), ProviderError> {
     // create process
-    println!("{:?} {:?}", args, env);
     let mut process = Command::new(command)
-        // .args(args)
-        // .envs(env.to_owned())
+        .args(args)
+        .envs(env.to_owned())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

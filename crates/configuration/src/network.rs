@@ -950,8 +950,7 @@ mod tests {
 
     #[test]
     fn the_toml_config_should_be_imported_and_match_a_network() {
-        let load_from_toml =
-            NetworkConfigBuilder::load_from_toml("./testing/snapshots/0000-small-network.toml")
+        let load_from_toml = NetworkConfig::load_from_toml("./testing/snapshots/0000-small-network.toml")
                 .unwrap();
 
         let expected = NetworkConfigBuilder::new()

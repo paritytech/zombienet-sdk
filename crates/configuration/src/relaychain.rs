@@ -145,7 +145,7 @@ impl<A> RelaychainConfigBuilder<A> {
 
     fn default_chain_context(&self) -> ChainDefaultContext {
         let mut chain_default = ChainDefaultContext::default();
-        chain_default.default_command =  self.config.default_command().cloned();
+        chain_default.default_command = self.config.default_command().cloned();
         chain_default.default_image = self.config.default_image().cloned();
         chain_default.default_resources = self.config.default_resources.clone();
         chain_default.default_db_snapshot = self.config.default_db_snapshot.clone();

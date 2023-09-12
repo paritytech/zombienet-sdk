@@ -104,7 +104,14 @@ impl Serialize for NodeConfig {
             state.serialize_field("command", &self.command)?;
         }
 
-        if self.args.is_empty() || self.args() == self.chain_context.default_args.iter().collect::<Vec<&Arg>>() {
+        if self.args.is_empty()
+            || self.args()
+                == self
+                    .chain_context
+                    .default_args
+                    .iter()
+                    .collect::<Vec<&Arg>>()
+        {
             state.skip_field("args")?;
         } else {
             state.serialize_field("args", &self.args)?;
@@ -704,7 +711,7 @@ mod tests {
         assert_eq!(node_config.command().unwrap().as_str(), "mycommand");
         assert_eq!(node_config.image().unwrap().as_str(), "myrepo:myimage");
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
-        assert_eq!(node_config.args(), args);
+        assert_eq!(node_config.args(), args.iter().collect::<Vec<_>>());
         assert!(node_config.is_validator());
         assert!(node_config.is_invulnerable());
         assert!(node_config.is_bootnode());

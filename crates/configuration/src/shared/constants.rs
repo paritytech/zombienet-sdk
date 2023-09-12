@@ -5,7 +5,6 @@ pub const SHOULD_COMPILE: &str = "Should compile with success";
 pub const INFAILABLE: &str = "Infaillible";
 pub const NO_ERR_DEF_BUILDER: &str = "Should have no errors for default builder";
 pub const RW_FAILED: &str = "Should be able to read/write - failed";
-pub const OPT_UNWRAP_ERR: &str = "Option unwrap error";
 
 pub const THIS_IS_A_BUG: &str =
     "this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues";

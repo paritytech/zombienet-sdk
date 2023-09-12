@@ -4,7 +4,10 @@ mod shared;
 use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use shared::types::TransferedFile;
+use shared::types::{
+    GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+    RunScriptOptions, SpawnNodeOptions,
+};
 
 use crate::shared::types::Port;
 
@@ -38,55 +41,14 @@ pub enum ProviderError {
     FileGenerationFailed(anyhow::Error),
 }
 
-#[derive(Debug, Clone)]
-pub struct ProviderCapabilities {
-    pub requires_image: bool,
-}
-
-pub struct CreateNamespaceOptions {
-    pub root_dir: String,
-    pub config_dir: String,
-    pub data_dir: String,
-}
-
-impl Default for CreateNamespaceOptions {
-    fn default() -> Self {
-        Self {
-            root_dir: "/tmp".to_string(),
-            config_dir: "/cfg".to_string(),
-            data_dir: "/data".to_string(),
-        }
-    }
-}
-
 #[async_trait]
 pub trait Provider {
     fn capabilities(&self) -> ProviderCapabilities;
+
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
-    // TODO(team): Do we need at this point to handle cleanner/pod-monitor?
 }
 
 pub type DynProvider = Arc<dyn Provider>;
-
-pub struct SpawnNodeOptions {
-    pub name: String,
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Vec<(String, String)>,
-    pub injected_files: Vec<TransferedFile>,
-}
-
-pub struct GenerateFileCommand {
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Vec<(String, String)>,
-    pub local_output_path: String,
-}
-
-pub struct GenerateFilesOptions {
-    pub commands: Vec<GenerateFileCommand>,
-    pub injected_files: Vec<TransferedFile>,
-}
 
 #[async_trait]
 pub trait ProviderNamespace {
@@ -102,18 +64,6 @@ pub trait ProviderNamespace {
 }
 
 pub type DynNamespace = Arc<dyn ProviderNamespace>;
-
-pub struct RunCommandOptions {
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: Vec<(String, String)>,
-}
-
-pub struct RunScriptOptions {
-    pub local_script_path: String,
-    pub args: Vec<String>,
-    pub env: Vec<(String, String)>,
-}
 
 type ExecutionResult = Result<String, (ExitStatus, String)>;
 

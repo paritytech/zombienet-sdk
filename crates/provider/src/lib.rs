@@ -22,23 +22,32 @@ pub enum ProviderError {
     #[error("Error running command: {0}")]
     RunCommandError(anyhow::Error),
 
-    #[error("Invalid network configuration field {0}")]
-    InvalidConfig(String),
-
-    #[error("Can recover node: {0} info, field: {1}")]
-    MissingNodeInfo(String, String),
-
     #[error("Duplicated node name: {0}")]
     DuplicatedNodeName(String),
 
     #[error(transparent)]
-    FSError(#[from] FileSystemError),
+    FileSystemError(#[from] FileSystemError),
 
     #[error("Invalid script path for {0}")]
-    InvalidScriptPath(PathBuf),
+    InvalidScriptPath(anyhow::Error),
+
+    #[error("Script with path {0} not found")]
+    ScriptNotFound(PathBuf),
 
     #[error("File generation failed: {0}")]
     FileGenerationFailed(anyhow::Error),
+
+    #[error("Failed to retrieve process ID for node '{0}'")]
+    ProcessIdRetrievalFailed(String),
+
+    #[error("Failed to pause node '{0}'")]
+    PauseNodeFailed(String),
+
+    #[error("Failed to resume node '{0}'")]
+    ResumeNodeFaied(String),
+
+    #[error("Failed to kill node '{0}'")]
+    KillNodeFailed(String),
 }
 
 #[async_trait]

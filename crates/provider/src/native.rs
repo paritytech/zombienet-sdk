@@ -13,6 +13,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::Port;
 use nix::{
+    libc::pid_t,
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
@@ -85,7 +86,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
         let mut inner = self.inner.write().await;
 
         let base_dir = PathBuf::from(format!("{}/{}", self.tmp_dir.to_string_lossy(), &id));
-        self.filesystem.create_dir(&base_dir).await.unwrap();
+        self.filesystem.create_dir(&base_dir).await?;
 
         let namespace = NativeNamespace {
             id: id.clone(),
@@ -133,6 +134,10 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         let mut inner = self.inner.write().await;
 
+        if inner.nodes.contains_key(&options.name) {
+            return Err(ProviderError::DuplicatedNodeName(options.name));
+        }
+
         // create node directories and filepaths
         let base_dir_raw = format!("{}/{}", &self.base_dir.to_string_lossy(), &options.name);
         let base_dir = PathBuf::from(&base_dir_raw);
@@ -140,9 +145,9 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let config_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_CONFIG_DIR));
         let data_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_SCRIPTS_DIR));
-        self.filesystem.create_dir(&base_dir).await.unwrap();
-        self.filesystem.create_dir(&config_dir).await.unwrap();
-        self.filesystem.create_dir(&data_dir).await.unwrap();
+        self.filesystem.create_dir(&base_dir).await?;
+        self.filesystem.create_dir(&config_dir).await?;
+        self.filesystem.create_dir(&data_dir).await?;
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(
@@ -324,15 +329,21 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     ) -> Result<ExecutionResult, ProviderError> {
         let local_script_path = PathBuf::from(&options.local_script_path);
 
-        if !local_script_path.try_exists().unwrap() {
-            return Err(ProviderError::RunCommandError(anyhow!("Test")));
+        if !local_script_path
+            .try_exists()
+            .map_err(|err| ProviderError::InvalidScriptPath(err.into()))?
+        {
+            return Err(ProviderError::ScriptNotFound(local_script_path));
         }
 
         // extract file name and build remote file path
         let script_file_name = local_script_path
             .file_name()
             .map(|file_name| file_name.to_string_lossy().to_string())
-            .ok_or(ProviderError::InvalidScriptPath(options.local_script_path))?;
+            .ok_or(ProviderError::InvalidScriptPath(anyhow!(
+                "Can't retrieve filename from script with path: {:?}",
+                options.local_script_path
+            )))?;
         let remote_script_path = format!(
             "{}/{}",
             self.scripts_dir.to_string_lossy(),
@@ -371,20 +382,20 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
     async fn pause(&self) -> Result<(), ProviderError> {
         let inner = self.inner.write().await;
-        let raw_pid = inner.process.id().unwrap();
-        let pid = Pid::from_raw(raw_pid.try_into().unwrap());
+        let pid = retrieve_pid_from_process(&inner.process, &self.name)?;
 
-        kill(pid, Signal::SIGSTOP).unwrap();
+        kill(pid, Signal::SIGSTOP)
+            .map_err(|_| ProviderError::PauseNodeFailed(self.name.clone()))?;
 
         Ok(())
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
         let inner = self.inner.write().await;
-        let raw_pid = inner.process.id().unwrap();
-        let pid = Pid::from_raw(raw_pid.try_into().unwrap());
+        let pid = retrieve_pid_from_process(&inner.process, &self.name)?;
 
-        kill(pid, Signal::SIGCONT).unwrap();
+        kill(pid, Signal::SIGCONT)
+            .map_err(|_| ProviderError::ResumeNodeFaied(self.name.clone()))?;
 
         Ok(())
     }
@@ -400,7 +411,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         inner.log_writing_handle.abort();
         inner.stdout_reading_handle.abort();
         inner.stderr_reading_handle.abort();
-        inner.process.kill().await.unwrap();
+        inner
+            .process
+            .kill()
+            .await
+            .map_err(|_| ProviderError::KillNodeFailed(self.name.clone()))?;
 
         // re-spawn process with tasks for logs
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
@@ -428,7 +443,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         inner.log_writing_handle.abort();
         inner.stdout_reading_handle.abort();
         inner.stderr_reading_handle.abort();
-        inner.process.kill().await.unwrap();
+        inner
+            .process
+            .kill()
+            .await
+            .map_err(|_| ProviderError::KillNodeFailed(self.name.clone()))?;
 
         if let Some(namespace) = self.namespace.inner.upgrade() {
             namespace.write().await.nodes.remove(&self.name);
@@ -436,6 +455,18 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
         Ok(())
     }
+}
+
+fn retrieve_pid_from_process(process: &Child, node_name: &str) -> Result<Pid, ProviderError> {
+    Ok(Pid::from_raw(
+        process
+            .id()
+            .ok_or(ProviderError::ProcessIdRetrievalFailed(
+                node_name.to_string(),
+            ))?
+            .try_into()
+            .map_err(|_| ProviderError::ProcessIdRetrievalFailed(node_name.to_string()))?,
+    ))
 }
 
 fn create_stream_polling_task(
@@ -473,7 +504,8 @@ fn create_log_writing_task(
         loop {
             sleep(Duration::from_millis(250)).await;
             while let Some(Ok(data)) = rx.recv().await {
-                filesystem.append(&log_path, data).await.unwrap();
+                // TODO: find a better way instead of ignoring error ?
+                let _ = filesystem.append(&log_path, data).await;
             }
         }
     })

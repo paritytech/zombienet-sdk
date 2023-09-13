@@ -13,7 +13,6 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::Port;
 use nix::{
-    libc::pid_t,
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
@@ -31,10 +30,7 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    shared::{
-        constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-        types::TransferedFile,
-    },
+    shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     DynNamespace, DynNode, ExecutionResult, GenerateFileCommand, GenerateFilesOptions, Provider,
     ProviderCapabilities, ProviderError, ProviderNamespace, ProviderNode, RunCommandOptions,
     RunScriptOptions, SpawnNodeOptions,
@@ -253,15 +249,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
     async fn destroy(&self) -> Result<(), ProviderError> {
         // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
         // method acquiring a lock the namespace to remove the node from the nodes hashmap.
-        let nodes = self
-            .inner
-            .write()
-            .await
-            .nodes
-            .iter()
-            .map(|(_, node)| node.clone())
-            .collect::<Vec<NativeNode<FS>>>();
-
+        let nodes: Vec<NativeNode<FS>> = self.inner.write().await.nodes.values().cloned().collect();
         for node in nodes.iter() {
             node.destroy().await?;
         }
@@ -528,6 +516,8 @@ fn create_log_writing_task(
     })
 }
 
+type CreateProcessOutput = (Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>);
+
 fn create_process_with_log_tasks(
     name: &str,
     command: &str,
@@ -535,7 +525,7 @@ fn create_process_with_log_tasks(
     env: &Vec<(String, String)>,
     log_path: &PathBuf,
     filesystem: impl FileSystem + Send + Sync + 'static,
-) -> Result<(Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>), ProviderError> {
+) -> Result<CreateProcessOutput, ProviderError> {
     // create process
     let mut process = Command::new(command)
         .args(args)

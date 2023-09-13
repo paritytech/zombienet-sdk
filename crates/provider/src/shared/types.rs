@@ -116,7 +116,7 @@ impl GenerateFilesOptions {
         I: IntoIterator<Item = GenerateFileCommand>,
     {
         Self {
-            commands: vec![],
+            commands: commands.into_iter().collect(),
             injected_files: vec![],
         }
     }

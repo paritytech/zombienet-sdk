@@ -54,8 +54,7 @@ impl FileSystem for InMemoryFileSystem {
             None => {},
         };
 
-        let mut ancestors = path.ancestors().skip(1);
-        while let Some(path) = ancestors.next() {
+        for path in path.ancestors().skip(1) {
             match self.files.read().await.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,
                 Some(InMemoryFile::File { .. }) => Err(anyhow!(
@@ -77,14 +76,14 @@ impl FileSystem for InMemoryFileSystem {
     async fn create_dir_all(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()> {
         let path = path.as_ref();
         let mut files = self.files.write().await;
-        let mut ancestors = path
+        let ancestors = path
             .ancestors()
             .collect::<Vec<&Path>>()
             .into_iter()
             .rev()
             .skip(1);
 
-        while let Some(path) = ancestors.next() {
+        for path in ancestors {
             match files.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,
                 Some(InMemoryFile::File { .. }) => Err(anyhow!(
@@ -127,8 +126,7 @@ impl FileSystem for InMemoryFileSystem {
         let os_path = path.as_os_str();
         let mut files = self.files.write().await;
 
-        let mut ancestors = path.ancestors().skip(1);
-        while let Some(path) = ancestors.next() {
+        for path in path.ancestors().skip(1) {
             match files.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,
                 Some(InMemoryFile::File { .. }) => Err(anyhow!(

@@ -31,7 +31,10 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
+    shared::{
+        constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
+        types::TransferedFile,
+    },
     DynNamespace, DynNode, ExecutionResult, GenerateFileCommand, GenerateFilesOptions, Provider,
     ProviderCapabilities, ProviderError, ProviderNamespace, ProviderNode, RunCommandOptions,
     RunScriptOptions, SpawnNodeOptions,
@@ -148,6 +151,20 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         self.filesystem.create_dir(&base_dir).await?;
         self.filesystem.create_dir(&config_dir).await?;
         self.filesystem.create_dir(&data_dir).await?;
+
+        // copy injected files
+        for file in options.injected_files {
+            self.filesystem
+                .copy(
+                    file.local_path,
+                    format!(
+                        "{}/{}",
+                        self.base_dir.to_string_lossy(),
+                        file.remote_path.to_string_lossy()
+                    ),
+                )
+                .await?;
+        }
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(

@@ -84,7 +84,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
         let id = format!("zombie_{}", Uuid::new_v4());
         let mut inner = self.inner.write().await;
 
-        let base_dir = format!("{}/{}", self.tmp_dir.to_string_lossy(), &id);
+        let base_dir = PathBuf::from(format!("{}/{}", self.tmp_dir.to_string_lossy(), &id));
         self.filesystem.create_dir(&base_dir).await.unwrap();
 
         let namespace = NativeNamespace {
@@ -108,7 +108,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
 #[derive(Debug, Clone)]
 pub struct NativeNamespace<FS: FileSystem + Send + Sync + Clone> {
     id: String,
-    base_dir: String,
+    base_dir: PathBuf,
     inner: Arc<RwLock<NativeNamespaceInner<FS>>>,
     filesystem: FS,
     provider: WeakNativeProvider<FS>,
@@ -134,11 +134,12 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let mut inner = self.inner.write().await;
 
         // create node directories and filepaths
-        let base_dir = format!("{}/{}", &self.base_dir, &options.name);
-        let log_path = format!("{}/{}.log", &base_dir, &options.name);
-        let config_dir = format!("{}{}", &base_dir, NODE_CONFIG_DIR);
-        let data_dir = format!("{}{}", &base_dir, NODE_DATA_DIR);
-        let scripts_dir = format!("{}{}", &base_dir, NODE_SCRIPTS_DIR);
+        let base_dir_raw = format!("{}/{}", &self.base_dir.to_string_lossy(), &options.name);
+        let base_dir = PathBuf::from(&base_dir_raw);
+        let log_path = PathBuf::from(format!("{}/{}.log", base_dir_raw, &options.name));
+        let config_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_CONFIG_DIR));
+        let data_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_DATA_DIR));
+        let scripts_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_SCRIPTS_DIR));
         self.filesystem.create_dir(&base_dir).await.unwrap();
         self.filesystem.create_dir(&config_dir).await.unwrap();
         self.filesystem.create_dir(&data_dir).await.unwrap();
@@ -207,7 +208,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
                 Ok(contents) => self
                     .filesystem
                     .write(
-                        format!("{}/{}", self.base_dir, local_output_path),
+                        format!(
+                            "{}/{}",
+                            self.base_dir.to_string_lossy(),
+                            local_output_path.to_string_lossy()
+                        ),
                         contents,
                     )
                     .await
@@ -254,9 +259,9 @@ struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
     command: String,
     args: Vec<String>,
     env: Vec<(String, String)>,
-    base_dir: String,
-    scripts_dir: String,
-    log_path: String,
+    base_dir: PathBuf,
+    scripts_dir: PathBuf,
+    log_path: PathBuf,
     inner: Arc<RwLock<NativeNodeInner>>,
     filesystem: FS,
     namespace: WeakNativeNamespace<FS>,
@@ -328,7 +333,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
             .file_name()
             .map(|file_name| file_name.to_string_lossy().to_string())
             .ok_or(ProviderError::InvalidScriptPath(options.local_script_path))?;
-        let remote_script_path = format!("{}/{}", self.scripts_dir, script_file_name);
+        let remote_script_path = format!(
+            "{}/{}",
+            self.scripts_dir.to_string_lossy(),
+            script_file_name
+        );
 
         // copy and set script's execute permission
         self.filesystem
@@ -350,7 +359,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         remote_src: PathBuf,
         local_dest: PathBuf,
     ) -> Result<(), ProviderError> {
-        let remote_file_path = format!("{}{}", self.base_dir, remote_src.to_str().unwrap());
+        let remote_file_path = format!(
+            "{}/{}",
+            self.base_dir.to_string_lossy(),
+            remote_src.to_string_lossy()
+        );
         self.filesystem.copy(remote_file_path, local_dest).await?;
 
         Ok(())
@@ -454,7 +467,7 @@ fn create_stream_polling_task(
 fn create_log_writing_task(
     mut rx: Receiver<Result<Vec<u8>, Error>>,
     filesystem: impl FileSystem + Send + Sync + 'static,
-    log_path: String,
+    log_path: PathBuf,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -471,7 +484,7 @@ fn create_process_with_log_tasks(
     command: &str,
     args: &Vec<String>,
     env: &Vec<(String, String)>,
-    log_path: &str,
+    log_path: &PathBuf,
     filesystem: impl FileSystem + Send + Sync + 'static,
 ) -> Result<(Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>), ProviderError> {
     // create process

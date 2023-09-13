@@ -35,7 +35,7 @@ pub enum ProviderError {
     FSError(#[from] FileSystemError),
 
     #[error("Invalid script path for {0}")]
-    InvalidScriptPath(String),
+    InvalidScriptPath(PathBuf),
 
     #[error("File generation failed: {0}")]
     FileGenerationFailed(anyhow::Error),

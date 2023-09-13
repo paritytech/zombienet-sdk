@@ -31,23 +31,10 @@ use uuid::Uuid;
 
 use crate::{
     shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-    DynNamespace, DynNode, ExecutionResult, Provider, ProviderCapabilities, ProviderError,
-    ProviderNamespace, ProviderNode, RunCommandOptions, RunScriptOptions, SpawnNodeOptions,
-    SpawnTempOptions,
+    DynNamespace, DynNode, ExecutionResult, GenerateFileCommand, GenerateFilesOptions, Provider,
+    ProviderCapabilities, ProviderError, ProviderNamespace, ProviderNode, RunCommandOptions,
+    RunScriptOptions, SpawnNodeOptions,
 };
-
-pub struct NativeProviderOptions<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
-    filesystem: FS,
-    tmp_dir: Option<PathBuf>,
-}
-
-#[derive(Debug)]
-struct NativeProviderInner<FS: FileSystem + Send + Sync + Clone> {
-    namespaces: HashMap<String, NativeNamespace<FS>>,
-}
 
 #[derive(Debug, Clone)]
 pub struct NativeProvider<FS: FileSystem + Send + Sync + Clone> {
@@ -57,23 +44,33 @@ pub struct NativeProvider<FS: FileSystem + Send + Sync + Clone> {
     inner: Arc<RwLock<NativeProviderInner<FS>>>,
 }
 
+#[derive(Debug)]
+struct NativeProviderInner<FS: FileSystem + Send + Sync + Clone> {
+    namespaces: HashMap<String, NativeNamespace<FS>>,
+}
+
 #[derive(Debug, Clone)]
 struct WeakNativeProvider<FS: FileSystem + Send + Sync + Clone> {
     inner: Weak<RwLock<NativeProviderInner<FS>>>,
 }
 
 impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
-    pub fn new(options: NativeProviderOptions<FS>) -> Self {
+    pub fn new(filesystem: FS) -> Self {
         NativeProvider {
             capabilities: ProviderCapabilities {
                 requires_image: false,
             },
-            tmp_dir: options.tmp_dir.unwrap_or(std::env::temp_dir()),
-            filesystem: options.filesystem,
+            tmp_dir: std::env::temp_dir(),
+            filesystem,
             inner: Arc::new(RwLock::new(NativeProviderInner {
                 namespaces: Default::default(),
             })),
         }
+    }
+
+    pub fn tmp_dir(mut self, tmp_dir: impl Into<PathBuf>) -> Self {
+        self.tmp_dir = tmp_dir.into();
+        self
     }
 }
 
@@ -91,14 +88,14 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
         self.filesystem.create_dir(&base_dir).await.unwrap();
 
         let namespace = NativeNamespace {
+            id: id.clone(),
+            base_dir,
+            filesystem: self.filesystem.clone(),
+            provider: WeakNativeProvider {
+                inner: Arc::downgrade(&self.inner),
+            },
             inner: Arc::new(RwLock::new(NativeNamespaceInner {
-                id: id.clone(),
-                base_dir,
                 nodes: Default::default(),
-                filesystem: self.filesystem.clone(),
-                provider: WeakNativeProvider {
-                    inner: Arc::downgrade(&self.inner),
-                },
             })),
         };
 
@@ -108,18 +105,18 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
     }
 }
 
-#[derive(Debug)]
-struct NativeNamespaceInner<FS: FileSystem + Send + Sync + Clone> {
+#[derive(Debug, Clone)]
+pub struct NativeNamespace<FS: FileSystem + Send + Sync + Clone> {
     id: String,
     base_dir: String,
-    nodes: HashMap<String, NativeNode<FS>>,
+    inner: Arc<RwLock<NativeNamespaceInner<FS>>>,
     filesystem: FS,
     provider: WeakNativeProvider<FS>,
 }
 
-#[derive(Debug, Clone)]
-pub struct NativeNamespace<FS: FileSystem + Send + Sync + Clone> {
-    inner: Arc<RwLock<NativeNamespaceInner<FS>>>,
+#[derive(Debug)]
+struct NativeNamespaceInner<FS: FileSystem + Send + Sync + Clone> {
+    nodes: HashMap<String, NativeNode<FS>>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,22 +126,22 @@ struct WeakNativeNamespace<FS: FileSystem + Send + Sync + Clone> {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for NativeNamespace<FS> {
-    async fn id(&self) -> String {
-        self.inner.read().await.id.clone()
+    fn id(&self) -> String {
+        self.id.clone()
     }
 
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         let mut inner = self.inner.write().await;
 
         // create node directories and filepaths
-        let base_dir = format!("{}/{}", &inner.base_dir, &options.name);
+        let base_dir = format!("{}/{}", &self.base_dir, &options.name);
         let log_path = format!("{}/{}.log", &base_dir, &options.name);
         let config_dir = format!("{}{}", &base_dir, NODE_CONFIG_DIR);
         let data_dir = format!("{}{}", &base_dir, NODE_DATA_DIR);
         let scripts_dir = format!("{}{}", &base_dir, NODE_SCRIPTS_DIR);
-        inner.filesystem.create_dir(&base_dir).await.unwrap();
-        inner.filesystem.create_dir(&config_dir).await.unwrap();
-        inner.filesystem.create_dir(&data_dir).await.unwrap();
+        self.filesystem.create_dir(&base_dir).await.unwrap();
+        self.filesystem.create_dir(&config_dir).await.unwrap();
+        self.filesystem.create_dir(&data_dir).await.unwrap();
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(
@@ -153,27 +150,27 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
                 &options.args,
                 &options.env,
                 &log_path,
-                inner.filesystem.clone(),
+                self.filesystem.clone(),
             )?;
 
         // create node structure holding state
         let node = NativeNode {
+            name: options.name.clone(),
+            command: options.command,
+            args: options.args,
+            env: options.env,
+            base_dir,
+            scripts_dir,
+            log_path,
+            filesystem: self.filesystem.clone(),
+            namespace: WeakNativeNamespace {
+                inner: Arc::downgrade(&self.inner),
+            },
             inner: Arc::new(RwLock::new(NativeNodeInner {
-                name: options.name.clone(),
-                command: options.command,
-                args: options.args,
-                env: options.env,
-                base_dir,
-                scripts_dir,
-                log_path,
                 process,
                 stdout_reading_handle,
                 stderr_reading_handle,
                 log_writing_handle,
-                filesystem: inner.filesystem.clone(),
-                namespace: WeakNativeNamespace {
-                    inner: Arc::downgrade(&self.inner),
-                },
             })),
         };
 
@@ -183,8 +180,43 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         Ok(Arc::new(node))
     }
 
-    async fn spawn_temp(&self, _options: SpawnTempOptions) -> Result<(), ProviderError> {
-        todo!()
+    async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
+        // we spawn a node doing nothing but looping so we can execute our commands
+        let temp_node = self
+            .spawn_node(SpawnNodeOptions {
+                name: format!("temp_{}", Uuid::new_v4()),
+                command: "bash".to_string(),
+                args: vec!["-c".to_string(), "while :; do sleep 1; done".to_string()],
+                env: vec![],
+                injected_files: options.injected_files,
+            })
+            .await?;
+
+        for GenerateFileCommand {
+            command,
+            args,
+            env,
+            local_output_path,
+        } in options.commands
+        {
+            match temp_node
+                .run_command(RunCommandOptions { command, args, env })
+                .await
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
+            {
+                Ok(contents) => self
+                    .filesystem
+                    .write(
+                        format!("{}/{}", self.base_dir, local_output_path),
+                        contents,
+                    )
+                    .await
+                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
+            };
+        }
+
+        temp_node.destroy().await
     }
 
     async fn static_setup(&self) -> Result<(), ProviderError> {
@@ -208,17 +240,16 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         }
 
         // remove namespace from provider
-        let inner = self.inner.write().await;
-        if let Some(provider) = inner.provider.inner.upgrade() {
-            provider.write().await.namespaces.remove(&inner.id);
+        if let Some(provider) = self.provider.inner.upgrade() {
+            provider.write().await.namespaces.remove(&self.id);
         }
 
         Ok(())
     }
 }
 
-#[derive(Debug)]
-struct NativeNodeInner<FS: FileSystem + Send + Sync + Clone> {
+#[derive(Debug, Clone)]
+struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
     name: String,
     command: String,
     args: Vec<String>,
@@ -226,23 +257,23 @@ struct NativeNodeInner<FS: FileSystem + Send + Sync + Clone> {
     base_dir: String,
     scripts_dir: String,
     log_path: String,
-    process: Child,
-    stdout_reading_handle: JoinHandle<()>,
-    stderr_reading_handle: JoinHandle<()>,
-    log_writing_handle: JoinHandle<()>,
+    inner: Arc<RwLock<NativeNodeInner>>,
     filesystem: FS,
     namespace: WeakNativeNamespace<FS>,
 }
 
-#[derive(Debug, Clone)]
-struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
-    inner: Arc<RwLock<NativeNodeInner<FS>>>,
+#[derive(Debug)]
+struct NativeNodeInner {
+    process: Child,
+    stdout_reading_handle: JoinHandle<()>,
+    stderr_reading_handle: JoinHandle<()>,
+    log_writing_handle: JoinHandle<()>,
 }
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
-    async fn name(&self) -> String {
-        self.inner.read().await.name.clone()
+    fn name(&self) -> String {
+        self.name.clone()
     }
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError> {
@@ -254,19 +285,12 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     }
 
     async fn logs(&self) -> Result<String, ProviderError> {
-        let inner = self.inner.read().await;
-        Ok(inner.filesystem.read_to_string(&inner.log_path).await?)
+        Ok(self.filesystem.read_to_string(&self.log_path).await?)
     }
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
         let logs = self.logs().await?;
-        Ok(self
-            .inner
-            .write()
-            .await
-            .filesystem
-            .write(local_dest, logs.as_bytes())
-            .await?)
+        Ok(self.filesystem.write(local_dest, logs.as_bytes()).await?)
     }
 
     async fn run_command(
@@ -293,7 +317,6 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         &self,
         options: RunScriptOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        let inner = self.inner.read().await;
         let local_script_path = PathBuf::from(&options.local_script_path);
 
         if !local_script_path.try_exists().unwrap() {
@@ -305,21 +328,21 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
             .file_name()
             .map(|file_name| file_name.to_string_lossy().to_string())
             .ok_or(ProviderError::InvalidScriptPath(options.local_script_path))?;
-        let remote_script_path = format!("{}/{}", inner.scripts_dir, script_file_name);
+        let remote_script_path = format!("{}/{}", self.scripts_dir, script_file_name);
 
         // copy and set script's execute permission
-        inner
-            .filesystem
+        self.filesystem
             .copy(local_script_path, &remote_script_path)
             .await?;
-        inner
-            .filesystem
-            .set_mode(&remote_script_path, 0o744)
-            .await?;
+        self.filesystem.set_mode(&remote_script_path, 0o744).await?;
 
         // execute script
-        self.run_command(RunCommandOptions::new(remote_script_path).args(options.args))
-            .await
+        self.run_command(RunCommandOptions {
+            command: remote_script_path,
+            args: options.args,
+            env: options.env,
+        })
+        .await
     }
 
     async fn copy_file_from_node(
@@ -327,10 +350,8 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         remote_src: PathBuf,
         local_dest: PathBuf,
     ) -> Result<(), ProviderError> {
-        let inner = self.inner.read().await;
-
-        let remote_file_path = format!("{}{}", inner.base_dir, remote_src.to_str().unwrap());
-        inner.filesystem.copy(remote_file_path, local_dest).await?;
+        let remote_file_path = format!("{}{}", self.base_dir, remote_src.to_str().unwrap());
+        self.filesystem.copy(remote_file_path, local_dest).await?;
 
         Ok(())
     }
@@ -371,12 +392,12 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         // re-spawn process with tasks for logs
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(
-                &inner.name,
-                &inner.command,
-                &inner.args,
-                &inner.env,
-                &inner.log_path,
-                inner.filesystem.clone(),
+                &self.name,
+                &self.command,
+                &self.args,
+                &self.env,
+                &self.log_path,
+                self.filesystem.clone(),
             )?;
 
         // update node process and handlers
@@ -396,8 +417,8 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         inner.stderr_reading_handle.abort();
         inner.process.kill().await.unwrap();
 
-        if let Some(namespace) = inner.namespace.inner.upgrade() {
-            namespace.write().await.nodes.remove(&inner.name);
+        if let Some(namespace) = self.namespace.inner.upgrade() {
+            namespace.write().await.nodes.remove(&self.name);
         }
 
         Ok(())
@@ -448,8 +469,8 @@ fn create_log_writing_task(
 fn create_process_with_log_tasks(
     name: &str,
     command: &str,
-    args: &[String],
-    env: &[(String, String)],
+    args: &Vec<String>,
+    env: &Vec<(String, String)>,
     log_path: &str,
     filesystem: impl FileSystem + Send + Sync + 'static,
 ) -> Result<(Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>), ProviderError> {
@@ -483,34 +504,84 @@ fn create_process_with_log_tasks(
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::prelude::PermissionsExt;
+    use std::{ffi::OsString, str::FromStr};
+
+    use support::fs::{
+        in_memory::{InMemoryFile, InMemoryFileSystem},
+        local::LocalFileSystem,
+    };
 
     use super::*;
 
-    // #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-    // async fn
+    #[test]
+    fn it_should_possible_to_retrieve_capabilities() {
+        let fs = InMemoryFileSystem::default();
+        let provider = NativeProvider::new(fs);
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-    async fn it_should_works() {
-        let file = std::fs::File::create(format!(
-            "{}/{}",
-            std::env::temp_dir().to_string_lossy(),
-            Uuid::new_v4()
-        ))
-        .unwrap();
+        let capabilities = provider.capabilities();
 
-        let metadata = file.metadata().unwrap();
+        assert_eq!(capabilities.requires_image, false);
+    }
 
-        let mut permissions = metadata.permissions();
-        permissions.set_mode(0o744);
+    #[tokio::test]
+    async fn it_should_be_possible_to_create_a_new_namespace() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
 
-        tokio::fs::set_permissions("/tmp/myscript.sh", permissions)
+        let namespace = provider.create_namespace().await.unwrap();
+
+        println!("{:?}", fs.files.read().await);
+    }
+
+    #[tokio::test]
+    async fn it_works() {
+        let fs = LocalFileSystem::default();
+        let provider = NativeProvider::new(fs);
+
+        let namespace = provider.create_namespace().await.unwrap();
+
+        namespace
+            .generate_files(GenerateFilesOptions {
+                commands: vec![GenerateFileCommand {
+                    command: "/home/user/.bin/polkadot".to_string(),
+                    args: vec![
+                        "build-spec".to_string(),
+                        "--chain=rococo-local".to_string(),
+                        "--disable-default-bootnode".to_string(),
+                    ],
+                    env: vec![],
+                    local_output_path: "rococo-local-plain.json".into(),
+                }],
+                injected_files: vec![],
+            })
             .await
             .unwrap();
 
-        // let result = Command::new("/tmp/myscript.sh").output().await.unwrap();
+        // let node = namespace
+        //     .spawn_node(SpawnNodeOptions {
+        //         name: "node1".to_string(),
+        //         command: "/home/user/.bin/polkadot".to_string(),
+        //         args: vec![],
+        //         env: vec![],
+        //         injected_files: vec![],
+        //     })
+        //     .await
+        //     .unwrap();
 
-        // println!("{:?}", result);
+        // sleep(Duration::from_secs(10)).await;
+
+        // node.pause().await.unwrap();
+
+        // sleep(Duration::from_secs(10)).await;
+
+        // node.resume().await.unwrap();
+
+        // node.restart(Some(Duration::from_secs(10))).await.unwrap();
+
+        // sleep(Duration::from_secs(10)).await;
     }
 }
 

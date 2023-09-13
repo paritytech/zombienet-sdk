@@ -4,8 +4,12 @@ mod shared;
 use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use shared::types::{
+    GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+    RunScriptOptions, SpawnNodeOptions,
+};
 
-use crate::shared::types::{FileMap, Port};
+use crate::shared::types::Port;
 
 use support::fs::FileSystemError;
 
@@ -32,130 +36,40 @@ pub enum ProviderError {
 
     #[error("Invalid script path for {0}")]
     InvalidScriptPath(String),
-}
 
-#[derive(Debug, Clone)]
-pub struct ProviderCapabilities {
-    pub requires_image: bool,
-}
-
-pub struct CreateNamespaceOptions {
-    pub root_dir: String,
-    pub config_dir: String,
-    pub data_dir: String,
-}
-
-impl Default for CreateNamespaceOptions {
-    fn default() -> Self {
-        Self {
-            root_dir: "/tmp".to_string(),
-            config_dir: "/cfg".to_string(),
-            data_dir: "/data".to_string(),
-        }
-    }
+    #[error("File generation failed: {0}")]
+    FileGenerationFailed(anyhow::Error),
 }
 
 #[async_trait]
 pub trait Provider {
     fn capabilities(&self) -> ProviderCapabilities;
+
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
-    // TODO(team): Do we need at this point to handle cleanner/pod-monitor?
 }
 
 pub type DynProvider = Arc<dyn Provider>;
 
-macro_rules! common_options {
-    () => {
-        fn args(mut self, args: Vec<String>) -> Self {
-            self.args = args;
-            self
-        }
-
-        fn env(mut self, env: Vec<(String, String)>) -> Self {
-            self.env = env;
-            self
-        }
-    };
-}
-
-pub struct SpawnNodeOptions {
-    name: String,
-    command: String,
-    args: Vec<String>,
-    env: Vec<(String, String)>,
-}
-
-impl SpawnNodeOptions {
-    fn new(name: String, command: String) -> Self {
-        Self {
-            name,
-            command,
-            args: vec![],
-            env: vec![],
-        }
-    }
-
-    common_options!();
-}
-
-pub struct SpawnTempOptions {
-    pub node: (),
-    pub injected_files: Vec<FileMap>,
-    pub files_to_retrieve: Vec<FileMap>,
-}
-
 #[async_trait]
 pub trait ProviderNamespace {
-    async fn id(&self) -> String;
+    fn id(&self) -> String;
+
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
-    async fn spawn_temp(&self, options: SpawnTempOptions) -> Result<(), ProviderError>;
+
+    async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
+
     async fn destroy(&self) -> Result<(), ProviderError>;
+
     async fn static_setup(&self) -> Result<(), ProviderError>;
 }
 
 pub type DynNamespace = Arc<dyn ProviderNamespace>;
 
-pub struct RunCommandOptions {
-    pub(crate) command: String,
-    pub(crate) args: Vec<String>,
-    pub(crate) env: Vec<(String, String)>,
-}
-
-impl RunCommandOptions {
-    fn new(command: String) -> Self {
-        Self {
-            command,
-            args: vec![],
-            env: vec![],
-        }
-    }
-
-    common_options!();
-}
-
-pub struct RunScriptOptions {
-    pub(crate) local_script_path: String,
-    pub(crate) args: Vec<String>,
-    pub(crate) env: Vec<(String, String)>,
-}
-
-impl RunScriptOptions {
-    fn new(local_script_path: String) -> Self {
-        Self {
-            local_script_path,
-            args: vec![],
-            env: vec![],
-        }
-    }
-
-    common_options!();
-}
-
 type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[async_trait]
 pub trait ProviderNode {
-    async fn name(&self) -> String;
+    fn name(&self) -> String;
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
 

@@ -1,7 +1,7 @@
 use std::{os::unix::fs::PermissionsExt, path::Path};
-use tokio::io::AsyncWriteExt;
 
 use async_trait::async_trait;
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 use super::{FileSystem, FileSystemError, FileSystemResult};
@@ -91,8 +91,9 @@ impl FileSystem for LocalFileSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use uuid::Uuid;
+
+    use super::*;
 
     const FILE_BITS: u32 = 0o100000;
     const DIR_BITS: u32 = 0o40000;

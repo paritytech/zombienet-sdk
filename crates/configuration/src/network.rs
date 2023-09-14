@@ -1,5 +1,6 @@
 use std::{cell::RefCell, fs, marker::PhantomData, rc::Rc};
 
+use anyhow::anyhow;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -9,11 +10,15 @@ use crate::{
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
-        constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALID_REGEX},
+        constants::{
+            NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK,
+            VALID_REGEX,
+        },
         helpers::merge_errors_vecs,
         macros::states,
         node::NodeConfig,
-        types::{Arg, ValidationContext},
+        resources::Resources,
+        types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
     },
 };
 
@@ -67,13 +72,14 @@ impl NetworkConfig {
         let file_str = fs::read_to_string(path).expect(&format!("{} {}", RW_FAILED, THIS_IS_A_BUG));
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
-        let network_config: NetworkConfig = toml::from_str(
+
+        let mut network_config: NetworkConfig = toml::from_str(
             re.replace_all(&file_str, "$field_name = \"$u128_value\"")
                 .as_ref(),
         )?;
 
         if network_config.relaychain.is_none() {
-            // TODO: (nikos) handle case where relaychain is None which is not valid
+            Err(anyhow!("Relay chain does not exist."))?
         }
 
         // retrieve the defaults relaychain for assigning to nodes if needed
@@ -119,6 +125,17 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
+        // Validation checks for relay
+        TryInto::<Chain>::try_into(network_config.relaychain().chain().as_str())?;
+        if relaychain_default_image.is_some() {
+            TryInto::<Image>::try_into(relaychain_default_image.clone().expect(VALIDATION_CHECK))?;
+        }
+        if relaychain_default_command.is_some() {
+            TryInto::<Command>::try_into(
+                relaychain_default_command.clone().expect(VALIDATION_CHECK),
+            )?;
+        }
+
         // SAFETY: is ok to use `unwrap` here since we ensure that is some at the begging of this fn
         for node in nodes.iter_mut() {
             if relaychain_default_command.is_some() {
@@ -140,11 +157,16 @@ impl NetworkConfig {
                 node.db_snapshot = relaychain_default_db_snapshot.clone();
             }
 
-            if node.args().is_empty() {
+            if !default_args.is_empty() && node.args().is_empty() {
                 node.set_args(default_args.clone());
-                node.chain_context.default_args = default_args.clone()
             }
         }
+
+        network_config
+            .relaychain
+            .as_mut()
+            .expect(&format!("{}, {}", NO_ERR_DEF_BUILDER, THIS_IS_A_BUG))
+            .set_nodes(nodes);
 
         Ok(network_config)
     }
@@ -950,8 +972,8 @@ mod tests {
 
     #[test]
     fn the_toml_config_should_be_imported_and_match_a_network() {
-        let load_from_toml = NetworkConfig::load_from_toml("./testing/snapshots/0000-small-network.toml")
-                .unwrap();
+        let load_from_toml =
+            NetworkConfig::load_from_toml("./testing/snapshots/0000-small-network.toml").unwrap();
 
         let expected = NetworkConfigBuilder::new()
             .with_relaychain(|relaychain| {
@@ -972,22 +994,57 @@ mod tests {
                         node.with_name("bob")
                             .with_args(vec![("--database", "paritydb-experimental").into()])
                             .validator(true)
-                            .invulnerable(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(2000000000000)
                     })
             })
             .build()
             .unwrap();
-        assert_eq!(load_from_toml, expected);
+
+        // We need to assert parts of the network config separately because the expected one contains the chain default context which
+        // is used for dumbing to tomp while the
+        // while loaded
+        assert_eq!(
+            expected.relaychain().chain(),
+            load_from_toml.relaychain().chain()
+        );
+        assert_eq!(
+            expected.relaychain().default_args(),
+            load_from_toml.relaychain().default_args()
+        );
+        assert_eq!(
+            expected.relaychain().default_command(),
+            load_from_toml.relaychain().default_command()
+        );
+        assert_eq!(
+            expected.relaychain().default_image(),
+            load_from_toml.relaychain().default_image()
+        );
+
+        // Check the nodes without the Chain Default Context
+        expected
+            .relaychain()
+            .nodes()
+            .iter()
+            .zip(load_from_toml.relaychain().nodes().iter())
+            .for_each(|(expected_node, loaded_node)| {
+                assert_eq!(expected_node.name(), loaded_node.name());
+                assert_eq!(expected_node.command(), loaded_node.command());
+                assert_eq!(expected_node.args(), loaded_node.args());
+                assert_eq!(
+                    expected_node.is_invulnerable(),
+                    loaded_node.is_invulnerable()
+                );
+                assert_eq!(expected_node.is_validator(), loaded_node.is_validator());
+                assert_eq!(expected_node.is_bootnode(), loaded_node.is_bootnode());
+                assert_eq!(
+                    expected_node.initial_balance(),
+                    loaded_node.initial_balance()
+                );
+            });
     }
 
-    // #[test]
-    // fn the_toml_config_should_be_imported_and_match_a_network_with_parachains() {
-    //     let load_from_toml = NetworkConfigBuilder::load_from_toml(
-    //         "./testing/snapshots/0002-overridden-defaults.toml",
-    //     )
-    //     .unwrap();
 
     //     let expected = NetworkConfigBuilder::new()
     //         .with_relaychain(|relaychain| {

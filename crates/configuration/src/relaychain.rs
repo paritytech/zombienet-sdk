@@ -3,6 +3,7 @@ use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
 use serde::{Deserialize, Serialize};
 
 use crate::shared::{
+    constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG},
     errors::{ConfigError, FieldError},
     helpers::{merge_errors, merge_errors_vecs},
     macros::states,
@@ -19,7 +20,7 @@ pub struct RelaychainConfig {
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     chain_spec_path: Option<AssetLocation>,
     random_nominators_count: Option<u32>,
@@ -111,7 +112,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
             config: RelaychainConfig {
                 chain: "default"
                     .try_into()
-                    .expect("'default' overriding should be ensured by typestate. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
+                    .expect(&format!("{} {}", DEFAULT_TYPESTATE, THIS_IS_A_BUG)),
                 default_command: None,
                 default_image: None,
                 default_resources: None,

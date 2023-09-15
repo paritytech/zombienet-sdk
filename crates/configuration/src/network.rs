@@ -163,7 +163,16 @@ impl NetworkConfig {
             .set_nodes(nodes);
 
         // Validation checks for parachains
-        // TryInto::<Chain>::try_into(network_config.parachains().first().unwrap().chain().as_str())?;
+        network_config.parachains().iter().for_each(|parachain| {
+            let _ = TryInto::<Chain>::try_into(parachain.chain().unwrap().as_str());
+
+            if parachain.default_image().is_some() {
+                let _ = TryInto::<Image>::try_into(parachain.default_image().unwrap().as_str());
+            }
+            if parachain.default_command().is_some() {
+                let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
+            }
+        });
 
         Ok(network_config)
     }

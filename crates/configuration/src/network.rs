@@ -1263,80 +1263,80 @@ mod tests {
 
     #[test]
     fn the_toml_config_should_be_imported_and_match_a_network_with_overriden_defaults() {
-
         let load_from_toml =
-        NetworkConfig::load_from_toml("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
+            NetworkConfig::load_from_toml("./testing/snapshots/0002-overridden-defaults.toml")
+                .unwrap();
 
-    let expected = NetworkConfigBuilder::new()
-    .with_relaychain(|relaychain| {
-        relaychain
-            .with_chain("polkadot")
-            .with_default_command("polkadot")
-            .with_default_image("docker.io/parity/polkadot:latest")
-            .with_default_args(vec![("-name", "value").into(), "--flag".into()])
-            .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
-            .with_default_resources(|resources| {
-                resources
-                    .with_request_cpu(100000)
-                    .with_request_memory("500M")
-                    .with_limit_cpu("10Gi")
-                    .with_limit_memory("4000M")
-            })
-            .with_node(|node| {
-                node.with_name("alice")
-                    .with_initial_balance(1_000_000_000)
-                    .validator(true)
-                    .bootnode(true)
-                    .invulnerable(true)
-            })
-            .with_node(|node| {
-                node.with_name("bob")
-                    .validator(true)
-                    .invulnerable(true)
-                    .bootnode(true)
-                    .with_image("mycustomimage:latest")
-                    .with_command("my-custom-command")
-                    .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
-                    .with_resources(|resources| {
+        let expected = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_args(vec![("-name", "value").into(), "--flag".into()])
+                    .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+                    .with_default_resources(|resources| {
                         resources
-                            .with_request_cpu(1000)
-                            .with_request_memory("250Mi")
-                            .with_limit_cpu("5Gi")
-                            .with_limit_memory("2Gi")
+                            .with_request_cpu(100000)
+                            .with_request_memory("500M")
+                            .with_limit_cpu("10Gi")
+                            .with_limit_memory("4000M")
                     })
-                    .with_args(vec![("-myothername", "value").into()])
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .with_initial_balance(1_000_000_000)
+                            .validator(true)
+                            .bootnode(true)
+                            .invulnerable(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .invulnerable(true)
+                            .bootnode(true)
+                            .with_image("mycustomimage:latest")
+                            .with_command("my-custom-command")
+                            .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
+                            .with_resources(|resources| {
+                                resources
+                                    .with_request_cpu(1000)
+                                    .with_request_memory("250Mi")
+                                    .with_limit_cpu("5Gi")
+                                    .with_limit_memory("2Gi")
+                            })
+                            .with_args(vec![("-myothername", "value").into()])
+                    })
             })
-    })
-    .with_parachain(|parachain| {
-        parachain
-            .with_id(1000)
-            .with_chain("myparachain")
-            .with_chain_spec_path("/path/to/my/chain/spec.json")
-            .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
-            .with_default_command("my-default-command")
-            .with_default_image("mydefaultimage:latest")
-            .with_collator(|collator| {
-                collator
-                    .with_name("john")
-                    .bootnode(true)
-                    .validator(true)
-                    .invulnerable(true)
-                    .with_initial_balance(5_000_000_000)
-                    .with_command("my-non-default-command")
-                    .with_image("anotherimage:latest")
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
+                    .with_default_command("my-default-command")
+                    .with_default_image("mydefaultimage:latest")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("john")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                            .with_command("my-non-default-command")
+                            .with_image("anotherimage:latest")
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("charles")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
             })
-            .with_collator(|collator| {
-                collator
-                    .with_name("charles")
-                    .bootnode(true)
-                    .invulnerable(true)
-                    .with_initial_balance(0)
-            })
-    })
-    .build()
-    .unwrap();
+            .build()
+            .unwrap();
 
-    expected
+        expected
             .parachains()
             .iter()
             .zip(load_from_toml.parachains().iter())

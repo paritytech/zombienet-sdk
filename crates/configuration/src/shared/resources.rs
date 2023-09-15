@@ -77,18 +77,18 @@ pub struct Resources {
     limit_cpu: Option<ResourceQuantity>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ResourcesField {
+    memory: Option<ResourceQuantity>,
+    cpu: Option<ResourceQuantity>,
+}
+
 impl Serialize for Resources {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut state = serializer.serialize_struct("Resources", 2)?;
-
-        #[derive(Serialize)]
-        struct ResourcesField {
-            memory: Option<ResourceQuantity>,
-            cpu: Option<ResourceQuantity>,
-        }
 
         if self.request_memory.is_some() || self.request_memory.is_some() {
             state.serialize_field(
@@ -118,54 +118,48 @@ impl Serialize for Resources {
     }
 }
 
+struct ResourcesVisitor;
+
+impl<'de> de::Visitor<'de> for ResourcesVisitor {
+    type Value = Resources;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a resources object")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::MapAccess<'de>,
+    {
+        let mut resources: Resources = Resources::default();
+
+        while let Some((key, value)) = map.next_entry::<String, ResourcesField>()? {
+            match key.as_str() {
+                "requests" => {
+                    resources.request_memory = value.memory;
+                    resources.request_cpu = value.cpu;
+                },
+                "limits" => {
+                    resources.limit_memory = value.memory;
+                    resources.limit_cpu = value.cpu;
+                },
+                _ => {
+                    return Err(de::Error::unknown_field(
+                        &key,
+                        &["requests", "limits", "cpu", "memory"],
+                    ))
+                },
+            }
+        }
+        Ok(resources)
+    }
+}
+
 impl<'de> Deserialize<'de> for Resources {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        struct ResourcesVisitor;
-
-        #[derive(Deserialize)]
-        struct ResourcesField {
-            memory: Option<ResourceQuantity>,
-            cpu: Option<ResourceQuantity>,
-        }
-
-        impl<'de> de::Visitor<'de> for ResourcesVisitor {
-            type Value = Resources;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a resources object")
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::MapAccess<'de>,
-            {
-                let mut resources: Resources = Resources::default();
-
-                while let Some((key, value)) = map.next_entry::<String, ResourcesField>()? {
-                    match key.as_str() {
-                        "requests" => {
-                            resources.request_memory = value.memory;
-                            resources.request_cpu = value.cpu;
-                        },
-                        "limits" => {
-                            resources.limit_memory = value.memory;
-                            resources.limit_cpu = value.cpu;
-                        },
-                        _ => {
-                            return Err(de::Error::unknown_field(
-                                &key,
-                                &["requests", "limits", "cpu", "memory"],
-                            ))
-                        },
-                    }
-                }
-                Ok(resources)
-            }
-        }
-
         deserializer.deserialize_any(ResourcesVisitor)
     }
 }

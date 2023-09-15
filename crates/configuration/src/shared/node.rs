@@ -104,14 +104,7 @@ impl Serialize for NodeConfig {
             state.serialize_field("command", &self.command)?;
         }
 
-        if self.args.is_empty()
-            || self.args()
-                == self
-                    .chain_context
-                    .default_args
-                    .iter()
-                    .collect::<Vec<&Arg>>()
-        {
+        if self.args.is_empty() || self.args == self.chain_context.default_args {
             state.skip_field("args")?;
         } else {
             state.serialize_field("args", &self.args)?;
@@ -168,18 +161,9 @@ impl NodeConfig {
         self.image.as_ref()
     }
 
-    /// The default container image used for nodes.
-    pub fn set_image(&mut self, image: Image) {
-        self.image = Some(image);
-    }
-
     /// Command to run the node.
     pub fn command(&self) -> Option<&Command> {
         self.command.as_ref()
-    }
-
-    pub fn set_command(&mut self, command: Command) {
-        self.command = Some(command);
     }
 
     /// Arguments to use for node.

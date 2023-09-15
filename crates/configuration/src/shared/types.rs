@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     fmt::{self, Display},
     path::PathBuf,
     str::FromStr,
@@ -32,13 +33,13 @@ impl From<u128> for U128 {
     }
 }
 
-// impl TryFrom<&str> for U128 {
-//     type Error = ConversionError;
+impl TryFrom<&str> for U128 {
+    type Error = Box<dyn Error>;
 
-//     fn try_from(value: &str) -> Result<Self, Self::Error> {
-//         Ok(Self(value.to_string().parse::<u128>().unwrap()))
-//     }
-// }
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self(value.to_string().parse::<u128>()?))
+    }
+}
 
 impl Serialize for U128 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -51,28 +52,28 @@ impl Serialize for U128 {
     }
 }
 
+struct U128Visitor;
+
+impl<'de> de::Visitor<'de> for U128Visitor {
+    type Value = U128;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an integer between 0 and 2^128 − 1.")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        v.try_into().map_err(de::Error::custom)
+    }
+}
+
 impl<'de> Deserialize<'de> for U128 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct U128Visitor;
-
-        impl<'de> de::Visitor<'de> for U128Visitor {
-            type Value = U128;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an integer between 0 and 2^128 − 1.")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(U128(v.to_string().parse::<u128>().unwrap()))
-            }
-        }
-
         deserializer.deserialize_str(U128Visitor)
     }
 }
@@ -271,28 +272,28 @@ impl Serialize for AssetLocation {
     }
 }
 
+struct AssetLocationVisitor;
+
+impl<'de> de::Visitor<'de> for AssetLocationVisitor {
+    type Value = AssetLocation;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AssetLocation::from(v))
+    }
+}
+
 impl<'de> Deserialize<'de> for AssetLocation {
     fn deserialize<D>(deserializer: D) -> Result<AssetLocation, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct AssetLocationVisitor;
-
-        impl<'de> de::Visitor<'de> for AssetLocationVisitor {
-            type Value = AssetLocation;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(AssetLocation::from(v))
-            }
-        }
-
         deserializer.deserialize_any(AssetLocationVisitor)
     }
 }

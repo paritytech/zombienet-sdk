@@ -229,7 +229,7 @@ impl<A> ParachainConfigBuilder<A> {
             default_image: self.config.default_image.clone(),
             default_resources: self.config.default_resources.clone(),
             default_db_snapshot: self.config.default_db_snapshot.clone(),
-            default_args: self.config.default_args().into_iter().cloned().collect(),
+            default_args: self.config.default_args.clone(),
         }
     }
 }

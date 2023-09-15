@@ -80,7 +80,6 @@ impl RelaychainConfig {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
 
-    /// The nodes of the relay chain.
     pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
         self.nodes = nodes;
     }
@@ -141,11 +140,11 @@ impl<A> RelaychainConfigBuilder<A> {
 
     fn default_chain_context(&self) -> ChainDefaultContext {
         ChainDefaultContext {
-            default_command: self.config.default_command().cloned(),
-            default_image: self.config.default_image().cloned(),
+            default_command: self.config.default_command.clone(),
+            default_image: self.config.default_image.clone(),
             default_resources: self.config.default_resources.clone(),
             default_db_snapshot: self.config.default_db_snapshot.clone(),
-            default_args: self.config.default_args().into_iter().cloned().collect(),
+            default_args: self.config.default_args.clone(),
         }
     }
 }

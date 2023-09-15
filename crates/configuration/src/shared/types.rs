@@ -342,42 +342,42 @@ impl Serialize for Arg {
     }
 }
 
+struct ArgVisitor;
+
+impl<'de> de::Visitor<'de> for ArgVisitor {
+    type Value = Arg;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if v.contains('=') || v.starts_with("--") || v.starts_with('-') {
+            if v.contains('=') {
+                let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();
+                Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+            } else {
+                let split: Vec<&str> = v.split(' ').collect::<Vec<&str>>();
+                if split.len() == 1 {
+                    Ok(Arg::Flag(v.to_string()))
+                } else {
+                    Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
+                }
+            }
+        } else {
+            Ok(Arg::Flag(v.to_string()))
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for Arg {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct ArgVisitor;
-
-        impl<'de> de::Visitor<'de> for ArgVisitor {
-            type Value = Arg;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if v.contains('=') || v.starts_with("--") || v.starts_with('-') {
-                    if v.contains('=') {
-                        let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();
-                        Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
-                    } else {
-                        let split: Vec<&str> = v.split(' ').collect::<Vec<&str>>();
-                        if split.len() == 1 {
-                            Ok(Arg::Flag(v.to_string()))
-                        } else {
-                            Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
-                        }
-                    }
-                } else {
-                    Ok(Arg::Flag(v.to_string()))
-                }
-            }
-        }
-
         deserializer.deserialize_any(ArgVisitor)
     }
 }

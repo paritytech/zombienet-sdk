@@ -1188,7 +1188,7 @@ mod tests {
                     expected_parachain.chain_spec_path(),
                     loaded_parachain.chain_spec_path()
                 );
-                // TODO: Test this
+                // TODO (nikos): Test this
                 // assert_eq!(
                 //     expected_parachain.registration_strategy(),
                 //     loaded_parachain.registration_strategy()
@@ -1258,6 +1258,145 @@ mod tests {
                     expected_hrmp_channel.max_message_size(),
                     loaded_hrmp_channel.max_message_size()
                 );
+            });
+    }
+
+    #[test]
+    fn the_toml_config_should_be_imported_and_match_a_network_with_overriden_defaults() {
+
+        let load_from_toml =
+        NetworkConfig::load_from_toml("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
+
+    let expected = NetworkConfigBuilder::new()
+    .with_relaychain(|relaychain| {
+        relaychain
+            .with_chain("polkadot")
+            .with_default_command("polkadot")
+            .with_default_image("docker.io/parity/polkadot:latest")
+            .with_default_args(vec![("-name", "value").into(), "--flag".into()])
+            .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+            .with_default_resources(|resources| {
+                resources
+                    .with_request_cpu(100000)
+                    .with_request_memory("500M")
+                    .with_limit_cpu("10Gi")
+                    .with_limit_memory("4000M")
+            })
+            .with_node(|node| {
+                node.with_name("alice")
+                    .with_initial_balance(1_000_000_000)
+                    .validator(true)
+                    .bootnode(true)
+                    .invulnerable(true)
+            })
+            .with_node(|node| {
+                node.with_name("bob")
+                    .validator(true)
+                    .invulnerable(true)
+                    .bootnode(true)
+                    .with_image("mycustomimage:latest")
+                    .with_command("my-custom-command")
+                    .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
+                    .with_resources(|resources| {
+                        resources
+                            .with_request_cpu(1000)
+                            .with_request_memory("250Mi")
+                            .with_limit_cpu("5Gi")
+                            .with_limit_memory("2Gi")
+                    })
+                    .with_args(vec![("-myothername", "value").into()])
+            })
+    })
+    .with_parachain(|parachain| {
+        parachain
+            .with_id(1000)
+            .with_chain("myparachain")
+            .with_chain_spec_path("/path/to/my/chain/spec.json")
+            .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
+            .with_default_command("my-default-command")
+            .with_default_image("mydefaultimage:latest")
+            .with_collator(|collator| {
+                collator
+                    .with_name("john")
+                    .bootnode(true)
+                    .validator(true)
+                    .invulnerable(true)
+                    .with_initial_balance(5_000_000_000)
+                    .with_command("my-non-default-command")
+                    .with_image("anotherimage:latest")
+            })
+            .with_collator(|collator| {
+                collator
+                    .with_name("charles")
+                    .bootnode(true)
+                    .invulnerable(true)
+                    .with_initial_balance(0)
+            })
+    })
+    .build()
+    .unwrap();
+
+    expected
+            .parachains()
+            .iter()
+            .zip(load_from_toml.parachains().iter())
+            .for_each(|(expected_parachain, loaded_parachain)| {
+                assert_eq!(expected_parachain.id(), loaded_parachain.id());
+                assert_eq!(expected_parachain.chain(), loaded_parachain.chain());
+                assert_eq!(
+                    expected_parachain.chain_spec_path(),
+                    loaded_parachain.chain_spec_path()
+                );
+                // TODO (nikos): Test this
+                // assert_eq!(
+                //     expected_parachain.registration_strategy(),
+                //     loaded_parachain.registration_strategy()
+                // );
+                assert_eq!(
+                    expected_parachain.onboard_as_parachain(),
+                    loaded_parachain.onboard_as_parachain()
+                );
+                assert_eq!(
+                    expected_parachain.default_db_snapshot(),
+                    loaded_parachain.default_db_snapshot()
+                );
+                assert_eq!(
+                    expected_parachain.default_command(),
+                    loaded_parachain.default_command()
+                );
+                assert_eq!(
+                    expected_parachain.default_image(),
+                    loaded_parachain.default_image()
+                );
+                assert_eq!(
+                    expected_parachain.collators().len(),
+                    loaded_parachain.collators().len()
+                );
+                expected_parachain
+                    .collators()
+                    .iter()
+                    .zip(loaded_parachain.collators().iter())
+                    .for_each(|(expected_collator, loaded_collator)| {
+                        assert_eq!(expected_collator.name(), loaded_collator.name());
+                        assert_eq!(expected_collator.command(), loaded_collator.command());
+                        assert_eq!(expected_collator.image(), loaded_collator.image());
+                        assert_eq!(
+                            expected_collator.is_validator(),
+                            loaded_collator.is_validator()
+                        );
+                        assert_eq!(
+                            expected_collator.is_bootnode(),
+                            loaded_collator.is_bootnode()
+                        );
+                        assert_eq!(
+                            expected_collator.is_invulnerable(),
+                            loaded_collator.is_invulnerable()
+                        );
+                        assert_eq!(
+                            expected_collator.initial_balance(),
+                            loaded_collator.initial_balance()
+                        );
+                    });
             });
     }
 }

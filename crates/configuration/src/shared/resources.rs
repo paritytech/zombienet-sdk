@@ -2,7 +2,7 @@ use std::error::Error;
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{de::{self}, ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::{ConversionError, FieldError},
@@ -65,7 +65,7 @@ impl From<u64> for ResourceQuantity {
 }
 
 /// Resources limits used in the context of podman/k8s.
-#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Resources {
     request_memory: Option<ResourceQuantity>,
     request_cpu: Option<ResourceQuantity>,
@@ -111,6 +111,58 @@ impl Serialize for Resources {
         }
 
         state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Resources {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de> {
+        
+        struct ResourcesVisitor;
+
+        #[derive(Deserialize)]
+        struct ResourcesField {
+            memory: Option<ResourceQuantity>,
+            cpu: Option<ResourceQuantity>,
+        }
+
+        impl<'de> de::Visitor<'de> for ResourcesVisitor {
+            type Value = Resources;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a resources object")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: de::MapAccess<'de>,
+            {
+                let mut resources: Resources = Resources::default();
+                
+                while let Some((key, value)) = map.next_entry::<String, ResourcesField>()? {
+                    match key.as_str() {
+                        "requests" => {
+                            resources.request_memory = value.memory;
+                            resources.request_cpu = value.cpu;
+                        }
+                        "limits" => {
+                            resources.limit_memory  = value.memory;
+                            resources.limit_cpu = value.cpu;
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(
+                                &key,
+                                &["requests", "limits", "cpu", "memory"],
+                            ))
+                        }
+                    } 
+                }
+                Ok(resources)
+            }
+        }
+
+        deserializer.deserialize_any(ResourcesVisitor)
     }
 }
 

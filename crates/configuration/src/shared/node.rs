@@ -157,31 +157,6 @@ impl Serialize for NodeConfig {
     }
 }
 
-// impl<'de> Deserialize<'de> for NodeConfig {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: de::Deserializer<'de>,
-//     {
-//         struct NodeConfigVisitor;
-
-//         impl<'de> de::Visitor<'de> for NodeConfigVisitor {
-//             type Value = NodeConfig;
-
-//             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-//                 formatter.write_str("a string")
-//             }
-
-//             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-//             where
-//                 E: de::Error,
-//             {
-//             }
-//         }
-
-//         deserializer.deserialize_any(NodeConfigVisitor)
-//     }
-// }
-
 impl NodeConfig {
     /// Node name (should be unique).
     pub fn name(&self) -> &str {

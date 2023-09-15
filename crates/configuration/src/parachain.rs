@@ -3,15 +3,18 @@ use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc
 use multiaddr::Multiaddr;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::shared::{
-    errors::{ConfigError, FieldError},
-    helpers::{merge_errors, merge_errors_vecs},
-    macros::states,
-    node::{self, NodeConfig, NodeConfigBuilder},
-    resources::{Resources, ResourcesBuilder},
-    types::{
-        Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
+use crate::{
+    shared::{
+        errors::{ConfigError, FieldError},
+        helpers::{merge_errors, merge_errors_vecs},
+        macros::states,
+        node::{self, NodeConfig, NodeConfigBuilder},
+        resources::{Resources, ResourcesBuilder},
+        types::{
+            Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
+        },
     },
+    utils::default_as_true,
 };
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -67,10 +70,6 @@ pub struct ParachainConfig {
     bootnodes_addresses: Vec<Multiaddr>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     collators: Vec<NodeConfig>,
-}
-
-fn default_as_true() -> bool {
-    true
 }
 
 impl ParachainConfig {

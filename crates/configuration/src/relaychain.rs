@@ -107,7 +107,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
             config: RelaychainConfig {
                 chain: "default"
                     .try_into()
-                    .expect(&format!("{} {}", DEFAULT_TYPESTATE, THIS_IS_A_BUG)),
+                    .unwrap_or_else(|_| panic!("{} {}", DEFAULT_TYPESTATE, THIS_IS_A_BUG)),
                 default_command: None,
                 default_image: None,
                 default_resources: None,
@@ -140,13 +140,13 @@ impl<A> RelaychainConfigBuilder<A> {
     }
 
     fn default_chain_context(&self) -> ChainDefaultContext {
-        let mut chain_default = ChainDefaultContext::default();
-        chain_default.default_command = self.config.default_command().cloned();
-        chain_default.default_image = self.config.default_image().cloned();
-        chain_default.default_resources = self.config.default_resources.clone();
-        chain_default.default_db_snapshot = self.config.default_db_snapshot.clone();
-        chain_default.default_args = self.config.default_args().into_iter().cloned().collect();
-        chain_default
+        ChainDefaultContext {
+            default_command: self.config.default_command().cloned(),
+            default_image: self.config.default_image().cloned(),
+            default_resources: self.config.default_resources.clone(),
+            default_db_snapshot: self.config.default_db_snapshot.clone(),
+            default_args: self.config.default_args().into_iter().cloned().collect(),
+        }
     }
 }
 

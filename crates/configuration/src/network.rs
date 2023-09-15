@@ -17,8 +17,7 @@ use crate::{
         helpers::merge_errors_vecs,
         macros::states,
         node::NodeConfig,
-        resources::Resources,
-        types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
+        types::{Arg, Chain, Command, Image, ValidationContext},
     },
 };
 
@@ -82,34 +81,32 @@ impl NetworkConfig {
             Err(anyhow!("Relay chain does not exist."))?
         }
 
+        // println!("+++++++++++++++++++++++++++");
+        // println!("{:?}", network_config);
+        // println!("+++++++++++++++++++++++++++");
+
         // retrieve the defaults relaychain for assigning to nodes if needed
-        let relaychain_default_command = network_config
+        let relaychain_default_command: Option<Command> = network_config
             .relaychain
             .as_ref()
             .unwrap()
             .default_command()
             .cloned();
 
-        let relaychain_default_image = network_config
+        let relaychain_default_image: Option<Image> = network_config
             .relaychain
             .as_ref()
             .unwrap()
             .default_image()
             .cloned();
 
-        let relaychain_default_resources = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
-            .default_resources()
-            .cloned();
-
-        let relaychain_default_db_snapshot = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
-            .default_db_snapshot()
-            .cloned();
+        let relaychain_default_db_snapshot: Option<crate::shared::types::AssetLocation> =
+            network_config
+                .relaychain
+                .as_ref()
+                .unwrap()
+                .default_db_snapshot()
+                .cloned();
 
         let default_args: Vec<Arg> = network_config
             .relaychain()
@@ -149,10 +146,6 @@ impl NetworkConfig {
                 node.image = relaychain_default_image.clone();
             }
 
-            if relaychain_default_resources.is_some() && node.resources.is_none() {
-                node.resources = relaychain_default_resources.clone();
-            }
-
             if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
                 node.db_snapshot = relaychain_default_db_snapshot.clone();
             }
@@ -167,6 +160,9 @@ impl NetworkConfig {
             .as_mut()
             .expect(&format!("{}, {}", NO_ERR_DEF_BUILDER, THIS_IS_A_BUG))
             .set_nodes(nodes);
+
+        // Validation checks for parachains
+        // TryInto::<Chain>::try_into(network_config.parachains().first().unwrap().chain().as_str())?;
 
         Ok(network_config)
     }
@@ -1045,86 +1041,223 @@ mod tests {
             });
     }
 
-
-    //     let expected = NetworkConfigBuilder::new()
-    //         .with_relaychain(|relaychain| {
-    //             relaychain
-    //                 .with_chain("polkadot")
-    //                 .with_default_command("polkadot")
-    //                 .with_default_image("docker.io/parity/polkadot:latest")
-    //                 .with_default_args(vec![("-name", "value").into(), "--flag".into()])
-    //                 .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
-    //                 .with_default_resources(|resources| {
-    //                     resources
-    //                         .with_request_cpu(100000)
-    //                         .with_request_memory("500M")
-    //                         .with_limit_cpu("10Gi")
-    //                         .with_limit_memory("4000M")
-    //                 })
-    //                 .with_node(|node| {
-    //                     node.with_name("alice")
-    //                         .with_initial_balance(1_000_000_000)
-    //                         .validator(true)
-    //                         .bootnode(true)
-    //                         .invulnerable(true)
-    //                 })
-    //                 .with_node(|node| {
-    //                     node.with_name("bob")
-    //                         .validator(true)
-    //                         .invulnerable(true)
-    //                         .bootnode(true)
-    //                         .with_image("mycustomimage:latest")
-    //                         .with_command("my-custom-command")
-    //                         .with_db_snapshot("https://storage.com/path/to/other/db_snapshot.tgz")
-    //                         .with_resources(|resources| {
-    //                             resources
-    //                                 .with_request_cpu(1000)
-    //                                 .with_request_memory("250Mi")
-    //                                 .with_limit_cpu("5Gi")
-    //                                 .with_limit_memory("2Gi")
-    //                         })
-    //                         .with_args(vec![("-myothername", "value").into()])
-    //                 })
-    //         })
-    //         .with_parachain(|parachain| {
-    //             parachain
-    //                 .with_id(1000)
-    //                 .with_chain("myparachain")
-    //                 .with_chain_spec_path("/path/to/my/chain/spec.json")
-    //                 .with_default_db_snapshot("https://storage.com/path/to/other_snapshot.tgz")
-    //                 .with_default_command("my-default-command")
-    //                 .with_default_image("mydefaultimage:latest")
-    //                 .with_collator(|collator| {
-    //                     collator
-    //                         .with_name("john")
-    //                         .bootnode(true)
-    //                         .validator(true)
-    //                         .invulnerable(true)
-    //                         .with_initial_balance(5_000_000_000)
-    //                         .with_command("my-non-default-command")
-    //                         .with_image("anotherimage:latest")
-    //                 })
-    //                 .with_collator(|collator| {
-    //                     collator
-    //                         .with_name("charles")
-    //                         .bootnode(true)
-    //                         .invulnerable(true)
-    //                         .with_initial_balance(0)
-    //                 })
-    //         })
-    //         .build()
-    //         .unwrap();
-
-    //     assert_eq!(load_from_toml, expected);
-    // }
-
     #[test]
-    fn dumb_test() {
-        // let file_str = fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
-        // let converted_toml = toml::from_str::<toml::Value>(file_str.as_str()).unwrap();
+    fn the_toml_config_should_be_imported_and_match_a_network_with_parachains() {
+        let load_from_toml =
+            NetworkConfig::load_from_toml("./testing/snapshots/0001-big-network.toml").unwrap();
 
-        let config =
-            NetworkConfig::load_from_toml("./testing/snapshots/0000-small-network.toml").unwrap();
-        println!("{:?}", config);
+        let expected = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:latest")
+                    .with_default_resources(|resources| {
+                        resources
+                            .with_request_cpu(100000)
+                            .with_request_memory("500M")
+                            .with_limit_cpu("10Gi")
+                            .with_limit_memory("4000M")
+                    })
+                    .with_node(|node| {
+                        node.with_name("alice")
+                            .with_initial_balance(1_000_000_000)
+                            .validator(true)
+                            .bootnode(true)
+                            .invulnerable(true)
+                    })
+                    .with_node(|node| {
+                        node.with_name("bob")
+                            .validator(true)
+                            .invulnerable(true)
+                            .bootnode(true)
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_chain("myparachain")
+                    .with_chain_spec_path("/path/to/my/chain/spec.json")
+                    .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+                    .onboard_as_parachain(false)
+                    .with_default_db_snapshot("https://storage.com/path/to/db_snapshot.tgz")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("john")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("charles")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("frank")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_initial_balance(1_000_000_000)
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(2000)
+                    .with_chain("myotherparachain")
+                    .with_chain_spec_path("/path/to/my/other/chain/spec.json")
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("mike")
+                            .bootnode(true)
+                            .validator(true)
+                            .invulnerable(true)
+                            .with_initial_balance(5_000_000_000)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("georges")
+                            .bootnode(true)
+                            .invulnerable(true)
+                            .with_initial_balance(0)
+                    })
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("victor")
+                            .validator(true)
+                            .bootnode(true)
+                            .with_initial_balance(1_000_000_000)
+                    })
+            })
+            .with_hrmp_channel(|hrmp_channel| {
+                hrmp_channel
+                    .with_sender(1000)
+                    .with_recipient(2000)
+                    .with_max_capacity(150)
+                    .with_max_message_size(5000)
+            })
+            .with_hrmp_channel(|hrmp_channel| {
+                hrmp_channel
+                    .with_sender(2000)
+                    .with_recipient(1000)
+                    .with_max_capacity(200)
+                    .with_max_message_size(8000)
+            })
+            .build()
+            .unwrap();
+
+        // Check the relay chain
+        assert_eq!(
+            expected.relaychain().default_resources(),
+            load_from_toml.relaychain().default_resources()
+        );
+
+        // Check the nodes without the Chain Default Context
+        expected
+            .relaychain()
+            .nodes()
+            .iter()
+            .zip(load_from_toml.relaychain().nodes().iter())
+            .for_each(|(expected_node, loaded_node)| {
+                assert_eq!(expected_node.name(), loaded_node.name());
+                assert_eq!(expected_node.command(), loaded_node.command());
+                assert_eq!(expected_node.args(), loaded_node.args());
+                assert_eq!(expected_node.is_validator(), loaded_node.is_validator());
+                assert_eq!(expected_node.is_bootnode(), loaded_node.is_bootnode());
+                assert_eq!(
+                    expected_node.initial_balance(),
+                    loaded_node.initial_balance()
+                );
+                assert_eq!(
+                    expected_node.is_invulnerable(),
+                    loaded_node.is_invulnerable()
+                );
+            });
+
+        expected
+            .parachains()
+            .iter()
+            .zip(load_from_toml.parachains().iter())
+            .for_each(|(expected_parachain, loaded_parachain)| {
+                assert_eq!(expected_parachain.id(), loaded_parachain.id());
+                assert_eq!(expected_parachain.chain(), loaded_parachain.chain());
+                assert_eq!(
+                    expected_parachain.chain_spec_path(),
+                    loaded_parachain.chain_spec_path()
+                );
+                // TODO: Test this
+                // assert_eq!(
+                //     expected_parachain.registration_strategy(),
+                //     loaded_parachain.registration_strategy()
+                // );
+                assert_eq!(
+                    expected_parachain.onboard_as_parachain(),
+                    loaded_parachain.onboard_as_parachain()
+                );
+                assert_eq!(
+                    expected_parachain.default_db_snapshot(),
+                    loaded_parachain.default_db_snapshot()
+                );
+                assert_eq!(
+                    expected_parachain.default_command(),
+                    loaded_parachain.default_command()
+                );
+                assert_eq!(
+                    expected_parachain.default_image(),
+                    loaded_parachain.default_image()
+                );
+                assert_eq!(
+                    expected_parachain.collators().len(),
+                    loaded_parachain.collators().len()
+                );
+                expected_parachain
+                    .collators()
+                    .iter()
+                    .zip(loaded_parachain.collators().iter())
+                    .for_each(|(expected_collator, loaded_collator)| {
+                        assert_eq!(expected_collator.name(), loaded_collator.name());
+                        assert_eq!(expected_collator.command(), loaded_collator.command());
+                        assert_eq!(expected_collator.image(), loaded_collator.image());
+                        assert_eq!(
+                            expected_collator.is_validator(),
+                            loaded_collator.is_validator()
+                        );
+                        assert_eq!(
+                            expected_collator.is_bootnode(),
+                            loaded_collator.is_bootnode()
+                        );
+                        assert_eq!(
+                            expected_collator.is_invulnerable(),
+                            loaded_collator.is_invulnerable()
+                        );
+                        assert_eq!(
+                            expected_collator.initial_balance(),
+                            loaded_collator.initial_balance()
+                        );
+                    });
+            });
+
+        expected
+            .hrmp_channels()
+            .iter()
+            .zip(load_from_toml.hrmp_channels().iter())
+            .for_each(|(expected_hrmp_channel, loaded_hrmp_channel)| {
+                assert_eq!(expected_hrmp_channel.sender(), loaded_hrmp_channel.sender());
+                assert_eq!(
+                    expected_hrmp_channel.recipient(),
+                    loaded_hrmp_channel.recipient()
+                );
+                assert_eq!(
+                    expected_hrmp_channel.max_capacity(),
+                    loaded_hrmp_channel.max_capacity()
+                );
+                assert_eq!(
+                    expected_hrmp_channel.max_message_size(),
+                    loaded_hrmp_channel.max_message_size()
+                );
+            });
     }
 }

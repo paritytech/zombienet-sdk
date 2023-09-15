@@ -25,7 +25,7 @@ pub struct RelaychainConfig {
     chain_spec_path: Option<AssetLocation>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<NodeConfig>,
 }
 
@@ -58,11 +58,6 @@ impl RelaychainConfig {
     /// The default arguments that will be used to launch the node command.
     pub fn default_args(&self) -> Vec<&Arg> {
         self.default_args.iter().collect::<Vec<&Arg>>()
-    }
-
-    /// Set the default arguments that will be used to launch the node command.
-    pub(crate) fn set_default_args(&mut self, args: Vec<Arg>) {
-        self.default_args = args;
     }
 
     /// The location of an pre-existing chain specification for the relay chain.

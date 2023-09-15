@@ -1,6 +1,7 @@
 pub const VALID_REGEX: &str = "Regex should be valid. ";
 pub const BORROWABLE: &str = "Must be borrowable as mutable. ";
-pub const RELAY_NOT_NONE: &str = "Typestate should ensure the relaychain isn't None at this point. ";
+pub const RELAY_NOT_NONE: &str =
+    "Typestate should ensure the relaychain isn't None at this point. ";
 pub const SHOULD_COMPILE: &str = "Should compile with success. ";
 pub const INFAILABLE: &str = "Infaillible. ";
 pub const NO_ERR_DEF_BUILDER: &str = "Should have no errors for default builder. ";

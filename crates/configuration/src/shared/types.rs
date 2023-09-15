@@ -222,7 +222,7 @@ impl Command {
 /// assert!(matches!(path_location, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
 /// assert!(matches!(path_location2, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));
 /// ```
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AssetLocation {
     Url(Url),
     FilePath(PathBuf),
@@ -267,6 +267,32 @@ impl Serialize for AssetLocation {
         S: serde::Serializer,
     {
         serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetLocation {
+    fn deserialize<D>(deserializer: D) -> Result<AssetLocation, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct AssetLocationVisitor;
+
+        impl<'de> de::Visitor<'de> for AssetLocationVisitor {
+            type Value = AssetLocation;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(AssetLocation::from(v))
+            }
+        }
+
+        deserializer.deserialize_any(AssetLocationVisitor)
     }
 }
 

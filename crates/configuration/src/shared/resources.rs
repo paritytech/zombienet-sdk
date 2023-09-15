@@ -2,7 +2,11 @@ use std::error::Error;
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{de::{self}, ser::SerializeStruct, Deserialize, Serialize};
+use serde::{
+    de::{self},
+    ser::SerializeStruct,
+    Deserialize, Serialize,
+};
 
 use super::{
     errors::{ConversionError, FieldError},
@@ -116,9 +120,9 @@ impl Serialize for Resources {
 
 impl<'de> Deserialize<'de> for Resources {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de> {
-        
+    where
+        D: serde::Deserializer<'de>,
+    {
         struct ResourcesVisitor;
 
         #[derive(Deserialize)]
@@ -135,28 +139,28 @@ impl<'de> Deserialize<'de> for Resources {
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                where
-                    A: de::MapAccess<'de>,
+            where
+                A: de::MapAccess<'de>,
             {
                 let mut resources: Resources = Resources::default();
-                
+
                 while let Some((key, value)) = map.next_entry::<String, ResourcesField>()? {
                     match key.as_str() {
                         "requests" => {
                             resources.request_memory = value.memory;
                             resources.request_cpu = value.cpu;
-                        }
+                        },
                         "limits" => {
-                            resources.limit_memory  = value.memory;
+                            resources.limit_memory = value.memory;
                             resources.limit_cpu = value.cpu;
-                        }
+                        },
                         _ => {
                             return Err(de::Error::unknown_field(
                                 &key,
                                 &["requests", "limits", "cpu", "memory"],
                             ))
-                        }
-                    } 
+                        },
+                    }
                 }
                 Ok(resources)
             }

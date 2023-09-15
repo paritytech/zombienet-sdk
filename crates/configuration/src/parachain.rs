@@ -43,7 +43,10 @@ pub struct ParachainConfig {
     chain: Option<Chain>,
     #[serde(flatten)]
     registration_strategy: Option<RegistrationStrategy>,
-    #[serde(skip_serializing_if = "super::utils::is_true")]
+    #[serde(
+        skip_serializing_if = "super::utils::is_true",
+        default = "default_as_true"
+    )]
     onboard_as_parachain: bool,
     #[serde(rename = "balance")]
     initial_balance: U128,
@@ -51,7 +54,7 @@ pub struct ParachainConfig {
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     genesis_wasm_path: Option<AssetLocation>,
     genesis_wasm_generator: Option<Command>,
@@ -60,10 +63,14 @@ pub struct ParachainConfig {
     chain_spec_path: Option<AssetLocation>,
     #[serde(rename = "cumulus_based")]
     is_cumulus_based: bool,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     collators: Vec<NodeConfig>,
+}
+
+fn default_as_true() -> bool {
+    true
 }
 
 impl ParachainConfig {

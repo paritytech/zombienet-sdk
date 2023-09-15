@@ -360,7 +360,6 @@ impl<'de> Deserialize<'de> for Arg {
             where
                 E: de::Error,
             {
-                // TODO: (nikos) This needs to be beautified somehow
                 if v.contains('=') || v.starts_with("--") || v.starts_with('-') {
                     if v.contains('=') {
                         let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();

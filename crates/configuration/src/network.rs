@@ -82,10 +82,6 @@ impl NetworkConfig {
             Err(anyhow!("Relay chain does not exist."))?
         }
 
-        // println!("+++++++++++++++++++++++++++");
-        // println!("{:?}", network_config);
-        // println!("+++++++++++++++++++++++++++");
-
         // retrieve the defaults relaychain for assigning to nodes if needed
         let relaychain_default_command: Option<Command> = network_config
             .relaychain

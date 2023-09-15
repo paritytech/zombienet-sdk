@@ -32,7 +32,7 @@ pub fn ensure_node_name_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .unwrap_or_else(|_| panic!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
+        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
 
     if !context.used_nodes_names.contains(&node_name) {
         context.used_nodes_names.push(node_name);
@@ -48,7 +48,7 @@ pub fn ensure_port_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .unwrap_or_else(|_| panic!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
+        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
 
     if !context.used_ports.contains(&port) {
         context.used_ports.push(port);

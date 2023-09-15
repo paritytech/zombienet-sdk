@@ -106,7 +106,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
             config: RelaychainConfig {
                 chain: "default"
                     .try_into()
-                    .unwrap_or_else(|_| panic!("{} {}", DEFAULT_TYPESTATE, THIS_IS_A_BUG)),
+                    .expect(&format!("{} {}", DEFAULT_TYPESTATE, THIS_IS_A_BUG)),
                 default_command: None,
                 default_image: None,
                 default_resources: None,

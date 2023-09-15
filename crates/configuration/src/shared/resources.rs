@@ -48,7 +48,7 @@ impl TryFrom<&str> for ResourceQuantity {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$")
-                .unwrap_or_else(|_| panic!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+                .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         }
 
         if !RE.is_match(value) {

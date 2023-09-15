@@ -150,7 +150,7 @@ impl TryFrom<&str> for Image {
             static ref RE: Regex = Regex::new(&format!(
                 "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
             ))
-            .unwrap_or_else(|_| panic!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+            .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         };
 
         if !RE.is_match(value) {
@@ -248,8 +248,7 @@ impl From<&str> for AssetLocation {
         }
 
         Self::FilePath(
-            PathBuf::from_str(value)
-                .unwrap_or_else(|_| panic!("{}, {}", INFAILABLE, THIS_IS_A_BUG)),
+            PathBuf::from_str(value).expect(&format!("{}, {}", INFAILABLE, THIS_IS_A_BUG)),
         )
     }
 }

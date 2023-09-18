@@ -57,9 +57,7 @@ struct WeakNativeProvider<FS: FileSystem + Send + Sync + Clone> {
 impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
     pub fn new(filesystem: FS) -> Self {
         NativeProvider {
-            capabilities: ProviderCapabilities {
-                requires_image: false,
-            },
+            capabilities: ProviderCapabilities::new(),
             tmp_dir: std::env::temp_dir(),
             filesystem,
             inner: Arc::new(RwLock::new(NativeProviderInner {
@@ -76,8 +74,19 @@ impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider<FS> {
-    fn capabilities(&self) -> ProviderCapabilities {
-        self.capabilities.clone()
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
+    }
+
+    async fn namespaces(&self) -> HashMap<String, DynNamespace> {
+        self.inner
+            .read()
+            .await
+            .namespaces
+            .clone()
+            .into_iter()
+            .map(|(id, namespace)| (id, Arc::new(namespace) as DynNamespace))
+            .collect()
     }
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
@@ -126,8 +135,23 @@ struct WeakNativeNamespace<FS: FileSystem + Send + Sync + Clone> {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for NativeNamespace<FS> {
-    fn id(&self) -> String {
-        self.id.clone()
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn base_dir(&self) -> &PathBuf {
+        &self.base_dir
+    }
+
+    async fn nodes(&self) -> HashMap<String, DynNode> {
+        self.inner
+            .read()
+            .await
+            .nodes
+            .clone()
+            .into_iter()
+            .map(|(id, node)| (id, Arc::new(node) as DynNode))
+            .collect()
     }
 
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
@@ -141,23 +165,20 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let base_dir_raw = format!("{}/{}", &self.base_dir.to_string_lossy(), &options.name);
         let base_dir = PathBuf::from(&base_dir_raw);
         let log_path = PathBuf::from(format!("{}/{}.log", base_dir_raw, &options.name));
-        let config_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_CONFIG_DIR));
-        let data_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_DATA_DIR));
-        let scripts_dir = PathBuf::from(format!("{}/{}", base_dir_raw, NODE_SCRIPTS_DIR));
+        let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
+        let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
+        let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
         self.filesystem.create_dir(&base_dir).await?;
         self.filesystem.create_dir(&config_dir).await?;
         self.filesystem.create_dir(&data_dir).await?;
+        self.filesystem.create_dir(&scripts_dir).await?;
 
         // copy injected files
         for file in options.injected_files {
             self.filesystem
                 .copy(
                     file.local_path,
-                    format!(
-                        "{}/{}",
-                        self.base_dir.to_string_lossy(),
-                        file.remote_path.to_string_lossy()
-                    ),
+                    format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
                 )
                 .await?;
         }
@@ -179,6 +200,8 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             args: options.args,
             env: options.env,
             base_dir,
+            config_dir,
+            data_dir,
             scripts_dir,
             log_path,
             filesystem: self.filesystem.clone(),
@@ -270,6 +293,8 @@ struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
     args: Vec<String>,
     env: Vec<(String, String)>,
     base_dir: PathBuf,
+    config_dir: PathBuf,
+    data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
     inner: Arc<RwLock<NativeNodeInner>>,
@@ -287,8 +312,28 @@ struct NativeNodeInner {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
-    fn name(&self) -> String {
-        self.name.clone()
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn base_dir(&self) -> &PathBuf {
+        &self.base_dir
+    }
+
+    fn config_dir(&self) -> &PathBuf {
+        &self.config_dir
+    }
+
+    fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
+    }
+
+    fn scripts_dir(&self) -> &PathBuf {
+        &self.scripts_dir
+    }
+
+    fn log_path(&self) -> &PathBuf {
+        &self.log_path
     }
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError> {

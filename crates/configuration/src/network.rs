@@ -12,12 +12,12 @@ use crate::{
     shared::{
         constants::{
             NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK,
-            VALID_REGEX,
+            VALID_REGEX, CHAIN_NAME_MUST_EXIST,
         },
         helpers::merge_errors_vecs,
         macros::states,
         node::NodeConfig,
-        types::{Arg, Chain, Command, Image, ValidationContext},
+        types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
     },
 };
 
@@ -75,30 +75,25 @@ impl NetworkConfig {
                 .as_ref(),
         )?;
 
+        // All unwraps below are safe, because we ensure that the relaychain is not None at this point
         if network_config.relaychain.is_none() {
             Err(anyhow!("Relay chain does not exist."))?
         }
 
         // retrieve the defaults relaychain for assigning to nodes if needed
         let relaychain_default_command: Option<Command> = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
+            .relaychain()
             .default_command()
             .cloned();
 
         let relaychain_default_image: Option<Image> = network_config
-            .relaychain
-            .as_ref()
-            .unwrap()
+            .relaychain()
             .default_image()
             .cloned();
 
-        let relaychain_default_db_snapshot: Option<crate::shared::types::AssetLocation> =
+        let relaychain_default_db_snapshot: Option<AssetLocation> =
             network_config
-                .relaychain
-                .as_ref()
-                .unwrap()
+                .relaychain()
                 .default_db_snapshot()
                 .cloned();
 
@@ -127,7 +122,6 @@ impl NetworkConfig {
             )?;
         }
 
-        // SAFETY: is ok to use `unwrap` here since we ensure that is some at the begging of this fn
         for node in nodes.iter_mut() {
             if relaychain_default_command.is_some() {
                 // we modify only nodes which don't already have a command
@@ -157,7 +151,7 @@ impl NetworkConfig {
 
         // Validation checks for parachains
         network_config.parachains().iter().for_each(|parachain| {
-            let _ = TryInto::<Chain>::try_into(parachain.chain().unwrap().as_str());
+            let _ = TryInto::<Chain>::try_into(parachain.chain().ok_or(&format!("{}", CHAIN_NAME_MUST_EXIST)).unwrap().as_str());
 
             if parachain.default_image().is_some() {
                 let _ = TryInto::<Image>::try_into(parachain.default_image().unwrap().as_str());

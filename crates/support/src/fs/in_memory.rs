@@ -13,11 +13,25 @@ pub enum InMemoryFile {
 }
 
 impl InMemoryFile {
-    pub fn file(contents: Vec<u8>) -> Self {
+    pub fn file<C>(contents: C) -> Self
+    where
+        C: AsRef<str>,
+    {
+        Self::file_raw(contents.as_ref())
+    }
+
+    pub fn file_raw<C>(contents: C) -> Self
+    where
+        C: AsRef<[u8]>,
+    {
         Self::File {
             mode: 0o664,
-            contents,
+            contents: contents.as_ref().to_vec(),
         }
+    }
+
+    pub fn empty() -> Self {
+        Self::file_raw(vec![])
     }
 
     pub fn dir() -> Self {
@@ -141,10 +155,7 @@ impl FileSystem for InMemoryFileSystem {
             return Err(anyhow!("file {:?} is a directory", os_path).into());
         }
 
-        files.insert(
-            os_path.to_owned(),
-            InMemoryFile::file(contents.as_ref().to_vec()),
-        );
+        files.insert(os_path.to_owned(), InMemoryFile::file_raw(contents));
 
         Ok(())
     }
@@ -239,7 +250,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/dir").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
         ]));
 
@@ -294,7 +305,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
             (
@@ -389,7 +400,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
@@ -404,7 +415,7 @@ mod tests {
     async fn read_should_return_the_file_content() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
-            InMemoryFile::file("content".as_bytes().to_vec()),
+            InMemoryFile::file("content"),
         )]));
 
         let content = fs.read("/myfile").await.unwrap();
@@ -437,7 +448,7 @@ mod tests {
     async fn read_to_string_should_return_the_file_content_as_a_string() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
-            InMemoryFile::file("content".as_bytes().to_vec()),
+            InMemoryFile::file("content"),
         )]));
 
         let content = fs.read_to_string("/myfile").await.unwrap();
@@ -470,7 +481,7 @@ mod tests {
     async fn read_to_string_should_return_an_error_if_file_isnt_utf8_encoded() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
-            InMemoryFile::file(vec![0xC3, 0x28]),
+            InMemoryFile::file_raw(vec![0xC3, 0x28]),
         )]));
 
         let err = fs.read_to_string("/myfile").await.unwrap_err();
@@ -506,7 +517,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -557,7 +568,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
@@ -577,7 +588,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -648,7 +659,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
@@ -668,7 +679,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -686,11 +697,11 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my new file content".as_bytes().to_vec()),
+                InMemoryFile::file("my new file content"),
             ),
             (
                 OsString::from_str("/myfilecopy").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -732,7 +743,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
             (
                 OsString::from_str("/myfilecopy").unwrap(),
@@ -752,7 +763,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -769,11 +780,11 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
             (
                 OsString::from_str("/mypath").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
         ]));
 
@@ -789,7 +800,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
         assert!(

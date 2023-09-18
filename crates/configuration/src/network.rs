@@ -11,7 +11,7 @@ use crate::{
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
         constants::{
-            CHAIN_NAME_MUST_EXIST, NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG,
+            NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG,
             VALIDATION_CHECK, VALID_REGEX,
         },
         helpers::merge_errors_vecs,
@@ -147,7 +147,7 @@ impl NetworkConfig {
             let _ = TryInto::<Chain>::try_into(
                 parachain
                     .chain()
-                    .ok_or(&format!("{}", CHAIN_NAME_MUST_EXIST))
+                    .ok_or("chain name must exist")
                     .unwrap()
                     .as_str(),
             );

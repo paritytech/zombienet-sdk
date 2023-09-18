@@ -2,7 +2,6 @@ pub const VALID_REGEX: &str = "regex should be valid ";
 pub const BORROWABLE: &str = "must be borrowable as mutable ";
 pub const RELAY_NOT_NONE: &str = "typestate should ensure the relaychain isn't None at this point ";
 pub const SHOULD_COMPILE: &str = "should compile with success ";
-pub const CHAIN_NAME_MUST_EXIST: &str = "chain name must exist ";
 pub const INFAILABLE: &str = "infaillible ";
 pub const NO_ERR_DEF_BUILDER: &str = "should have no errors for default builder ";
 pub const RW_FAILED: &str = "should be able to read/write - failed ";

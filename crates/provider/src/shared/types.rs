@@ -2,17 +2,17 @@ use std::path::{Path, PathBuf};
 
 pub type Port = u16;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct ProviderCapabilities {
     pub requires_image: bool,
 }
 
 impl ProviderCapabilities {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    fn requires_image(mut self) -> Self {
+    pub fn requires_image(mut self) -> Self {
         self.requires_image = true;
         self
     }
@@ -27,7 +27,7 @@ pub struct SpawnNodeOptions {
 }
 
 impl SpawnNodeOptions {
-    fn new<S>(name: S, command: S) -> Self
+    pub fn new<S>(name: S, command: S) -> Self
     where
         S: AsRef<str>,
     {
@@ -40,7 +40,7 @@ impl SpawnNodeOptions {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    pub fn args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -49,7 +49,7 @@ impl SpawnNodeOptions {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    pub fn env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -58,6 +58,14 @@ impl SpawnNodeOptions {
             .into_iter()
             .map(|(name, value)| (name.as_ref().to_string(), value.as_ref().to_string()))
             .collect();
+        self
+    }
+
+    pub fn injected_files<I>(mut self, injected_files: I) -> Self
+    where
+        I: IntoIterator<Item = TransferedFile>,
+    {
+        self.injected_files = injected_files.into_iter().collect();
         self
     }
 }
@@ -70,7 +78,7 @@ pub struct GenerateFileCommand {
 }
 
 impl GenerateFileCommand {
-    fn new<S, P>(command: S, local_output_path: P) -> Self
+    pub fn new<S, P>(command: S, local_output_path: P) -> Self
     where
         S: AsRef<str>,
         P: AsRef<Path>,
@@ -83,7 +91,7 @@ impl GenerateFileCommand {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    pub fn args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -92,7 +100,7 @@ impl GenerateFileCommand {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    pub fn env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -111,7 +119,7 @@ pub struct GenerateFilesOptions {
 }
 
 impl GenerateFilesOptions {
-    fn new<I>(commands: I) -> Self
+    pub fn new<I>(commands: I) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
@@ -121,7 +129,7 @@ impl GenerateFilesOptions {
         }
     }
 
-    fn injected_files<I>(mut self, injected_files: I) -> Self
+    pub fn injected_files<I>(mut self, injected_files: I) -> Self
     where
         I: IntoIterator<Item = TransferedFile>,
     {
@@ -137,7 +145,7 @@ pub struct RunCommandOptions {
 }
 
 impl RunCommandOptions {
-    fn new<S>(command: S) -> Self
+    pub fn new<S>(command: S) -> Self
     where
         S: AsRef<str>,
     {
@@ -148,7 +156,7 @@ impl RunCommandOptions {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    pub fn args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -157,7 +165,7 @@ impl RunCommandOptions {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    pub fn env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -177,7 +185,7 @@ pub struct RunScriptOptions {
 }
 
 impl RunScriptOptions {
-    fn new<P>(local_script_path: P) -> Self
+    pub fn new<P>(local_script_path: P) -> Self
     where
         P: AsRef<Path>,
     {
@@ -188,7 +196,7 @@ impl RunScriptOptions {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    pub fn args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -197,7 +205,7 @@ impl RunScriptOptions {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    pub fn env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -216,7 +224,7 @@ pub struct TransferedFile {
 }
 
 impl TransferedFile {
-    fn new<P>(local_path: P, remote_path: P) -> Self
+    pub fn new<P>(local_path: P, remote_path: P) -> Self
     where
         P: AsRef<Path>,
     {

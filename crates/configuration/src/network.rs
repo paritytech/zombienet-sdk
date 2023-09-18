@@ -11,8 +11,8 @@ use crate::{
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
         constants::{
-            NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK,
-            VALID_REGEX, CHAIN_NAME_MUST_EXIST,
+            CHAIN_NAME_MUST_EXIST, NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG,
+            VALIDATION_CHECK, VALID_REGEX,
         },
         helpers::merge_errors_vecs,
         macros::states,
@@ -81,21 +81,14 @@ impl NetworkConfig {
         }
 
         // retrieve the defaults relaychain for assigning to nodes if needed
-        let relaychain_default_command: Option<Command> = network_config
-            .relaychain()
-            .default_command()
-            .cloned();
+        let relaychain_default_command: Option<Command> =
+            network_config.relaychain().default_command().cloned();
 
-        let relaychain_default_image: Option<Image> = network_config
-            .relaychain()
-            .default_image()
-            .cloned();
+        let relaychain_default_image: Option<Image> =
+            network_config.relaychain().default_image().cloned();
 
         let relaychain_default_db_snapshot: Option<AssetLocation> =
-            network_config
-                .relaychain()
-                .default_db_snapshot()
-                .cloned();
+            network_config.relaychain().default_db_snapshot().cloned();
 
         let default_args: Vec<Arg> = network_config
             .relaychain()
@@ -151,7 +144,13 @@ impl NetworkConfig {
 
         // Validation checks for parachains
         network_config.parachains().iter().for_each(|parachain| {
-            let _ = TryInto::<Chain>::try_into(parachain.chain().ok_or(&format!("{}", CHAIN_NAME_MUST_EXIST)).unwrap().as_str());
+            let _ = TryInto::<Chain>::try_into(
+                parachain
+                    .chain()
+                    .ok_or(&format!("{}", CHAIN_NAME_MUST_EXIST))
+                    .unwrap()
+                    .as_str(),
+            );
 
             if parachain.default_image().is_some() {
                 let _ = TryInto::<Image>::try_into(parachain.default_image().unwrap().as_str());

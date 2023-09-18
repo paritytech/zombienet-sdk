@@ -1,0 +1,7 @@
+#!/bin/sh
+
+echo "Line 1"
+sleep 1
+echo "Line 2"
+sleep 1
+echo "Line 3"

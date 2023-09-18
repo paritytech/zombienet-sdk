@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use super::{FileSystem, FileSystemResult};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum InMemoryFile {
     File { mode: u32, contents: Vec<u8> },
     Directory { mode: u32 },

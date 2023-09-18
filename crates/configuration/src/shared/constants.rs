@@ -9,7 +9,7 @@ pub const RW_FAILED: &str = "Should be able to read/write - failed. ";
 pub const DEFAULT_TYPESTATE: &str = "'default' overriding should be ensured by typestate.";
 pub const VALIDATION_CHECK: &str = "Validation failed. ";
 
-pub const PREFIX_CANT_BE_NONE : &str = "Name prefix can't be None if a value exists.";
+pub const PREFIX_CANT_BE_NONE: &str = "Name prefix can't be None if a value exists.";
 
 pub const THIS_IS_A_BUG: &str =
     "This is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues";

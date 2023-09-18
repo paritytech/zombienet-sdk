@@ -11,7 +11,7 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
-use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG, INFAILABLE, PREFIX_CANT_BE_NONE};
+use crate::shared::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;

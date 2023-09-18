@@ -1,7 +1,7 @@
-mod native;
-mod shared;
+pub mod native;
+pub mod shared;
 
-use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
+use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration, collections::HashMap};
 
 use async_trait::async_trait;
 use shared::types::{
@@ -51,7 +51,9 @@ pub enum ProviderError {
 
 #[async_trait]
 pub trait Provider {
-    fn capabilities(&self) -> ProviderCapabilities;
+    fn capabilities(&self) -> &ProviderCapabilities;
+
+    async fn namespaces(&self) -> HashMap<String, DynNamespace>;
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
 }
@@ -60,7 +62,11 @@ pub type DynProvider = Arc<dyn Provider>;
 
 #[async_trait]
 pub trait ProviderNamespace {
-    fn id(&self) -> String;
+    fn id(&self) -> &str;
+
+    fn base_dir(&self) -> &PathBuf;
+
+    async fn nodes(&self) -> HashMap<String, DynNode>;
 
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
@@ -77,7 +83,17 @@ type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[async_trait]
 pub trait ProviderNode {
-    fn name(&self) -> String;
+    fn name(&self) -> &str;
+
+    fn base_dir(&self) -> &PathBuf;
+
+    fn config_dir(&self) -> &PathBuf;
+
+    fn data_dir(&self) -> &PathBuf;
+
+    fn scripts_dir(&self) -> &PathBuf;
+
+    fn log_path(&self) -> &PathBuf;
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
 

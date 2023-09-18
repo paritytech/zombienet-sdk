@@ -147,7 +147,7 @@ impl NetworkConfig {
             let _ = TryInto::<Chain>::try_into(
                 parachain
                     .chain()
-                    .ok_or(&format!("{}", CHAIN_NAME_MUST_EXIST.to_string()))
+                    .ok_or(&format!("{}", CHAIN_NAME_MUST_EXIST))
                     .unwrap()
                     .as_str(),
             );

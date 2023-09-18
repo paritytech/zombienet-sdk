@@ -10,8 +10,8 @@ use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
-use super::{constants::INFAILABLE, errors::ConversionError, resources::Resources};
-use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
+use super::{errors::ConversionError, resources::Resources};
+use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG, INFAILABLE, PREFIX_CANT_BE_NONE};
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;
@@ -355,21 +355,29 @@ impl<'de> de::Visitor<'de> for ArgVisitor {
     where
         E: de::Error,
     {
-        if v.contains('=') || v.starts_with("--") || v.starts_with('-') {
-            if v.contains('=') {
-                let split: Vec<&str> = v.split('=').collect::<Vec<&str>>();
-                Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
-            } else {
-                let split: Vec<&str> = v.split(' ').collect::<Vec<&str>>();
-                if split.len() == 1 {
-                    Ok(Arg::Flag(v.to_string()))
-                } else {
-                    Ok(Arg::Option(split[0].to_string(), split[1].to_string()))
-                }
+        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
+        let captures = re.captures(v);
+
+        if let Some(captures) = captures {
+            if let Some(value) = captures.name("value") {
+                return Ok(Arg::Option(
+                    captures
+                        .name("name_prefix")
+                        .expect(&format!("{} {}", PREFIX_CANT_BE_NONE, THIS_IS_A_BUG))
+                        .as_str()
+                        .to_string(),
+                    value.as_str().to_string(),
+                ));
             }
-        } else {
-            Ok(Arg::Flag(v.to_string()))
+
+            if let Some(name_prefix) = captures.name("name_prefix") {
+                return Ok(Arg::Flag(name_prefix.as_str().to_string()));
+            }
         }
+
+        Err(de::Error::custom(
+            "the provided argument is invalid and doesn't match Arg::Option or Arg::Flag",
+        ))
     }
 }
 

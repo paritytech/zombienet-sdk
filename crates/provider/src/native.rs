@@ -603,25 +603,30 @@ fn create_process_with_log_tasks(
 mod tests {
     use std::{ffi::OsString, str::FromStr};
 
-    use support::fs::{
-        in_memory::{InMemoryFile, InMemoryFileSystem},
-        local::LocalFileSystem,
-    };
+    use procfs::process::Process;
+    use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
+
+    use crate::shared::types::TransferedFile;
 
     use super::*;
 
     #[test]
-    fn it_should_possible_to_retrieve_capabilities() {
+    fn provider_capabilities_method_should_return_provider_capabilities() {
         let fs = InMemoryFileSystem::default();
         let provider = NativeProvider::new(fs);
 
         let capabilities = provider.capabilities();
 
-        assert_eq!(capabilities.requires_image, false);
+        assert_eq!(
+            capabilities,
+            &ProviderCapabilities {
+                requires_image: false
+            }
+        );
     }
 
     #[tokio::test]
-    async fn it_should_be_possible_to_create_a_new_namespace() {
+    async fn provider_create_namespace_method_should_create_a_new_namespace_and_returns_it() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
@@ -630,172 +635,239 @@ mod tests {
 
         let namespace = provider.create_namespace().await.unwrap();
 
-        println!("{:?}", fs.files.read().await);
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(namespace.base_dir().as_os_str()));
+        assert_eq!(provider.namespaces().await.len(), 1);
+        assert!(provider.namespaces().await.get(namespace.id()).is_some());
     }
 
     #[tokio::test]
-    async fn it_works() {
-        let fs = LocalFileSystem::default();
-        let provider = NativeProvider::new(fs);
+    async fn provider_namespaces_method_should_return_empty_namespaces_map_if_the_provider_has_no_namespaces(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+
+        assert_eq!(provider.namespaces().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn provider_namespaces_method_should_return_filled_namespaces_map_if_the_provider_has_one_namespace(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
 
         let namespace = provider.create_namespace().await.unwrap();
 
-        namespace
-            .generate_files(GenerateFilesOptions {
-                commands: vec![GenerateFileCommand {
-                    command: "/home/user/.bin/polkadot".to_string(),
-                    args: vec![
-                        "build-spec".to_string(),
-                        "--chain=rococo-local".to_string(),
-                        "--disable-default-bootnode".to_string(),
-                    ],
-                    env: vec![],
-                    local_output_path: "rococo-local-plain.json".into(),
-                }],
-                injected_files: vec![],
-            })
+        assert_eq!(provider.namespaces().await.len(), 1);
+        assert!(provider.namespaces().await.get(namespace.id()).is_some());
+    }
+
+    #[tokio::test]
+    async fn provider_namespaces_method_should_return_filled_namespaces_map_if_the_provider_has_two_namespaces(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+
+        let namespace1 = provider.create_namespace().await.unwrap();
+        let namespace2 = provider.create_namespace().await.unwrap();
+
+        assert_eq!(provider.namespaces().await.len(), 2);
+        assert!(provider.namespaces().await.get(namespace1.id()).is_some());
+        assert!(provider.namespaces().await.get(namespace2.id()).is_some());
+    }
+
+    #[tokio::test]
+    async fn namespace_spawn_node_method_should_creates_a_new_node_correctly() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/file1").unwrap(),
+                InMemoryFile::file("My file 1"),
+            ),
+            (
+                OsString::from_str("/file2").unwrap(),
+                InMemoryFile::file("My file 2"),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        let node = namespace
+            .spawn_node(
+                SpawnNodeOptions::new(
+                    "mynode",
+                    "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                )
+                .args(vec![
+                    "-flag1",
+                    "--flag2",
+                    "--option1=value1",
+                    "-option2=value2",
+                    "--option3 value3",
+                    "-option4 value4",
+                ])
+                .env(vec![
+                    ("MY_VAR_1", "MY_VALUE_1"),
+                    ("MY_VAR_2", "MY_VALUE_2"),
+                    ("MY_VAR_3", "MY_VALUE_3"),
+                ])
+                .injected_files(vec![
+                    TransferedFile::new("/file1", "/cfg/file1"),
+                    TransferedFile::new("/file2", "/data/file2"),
+                ]),
+            )
             .await
             .unwrap();
 
-        // let node = namespace
-        //     .spawn_node(SpawnNodeOptions {
-        //         name: "node1".to_string(),
-        //         command: "/home/user/.bin/polkadot".to_string(),
-        //         args: vec![],
-        //         env: vec![],
-        //         injected_files: vec![],
-        //     })
-        //     .await
-        //     .unwrap();
+        // ensure node directories are created
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.base_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.config_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.data_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.scripts_dir().as_os_str()));
 
-        // sleep(Duration::from_secs(10)).await;
+        // ensure injected files are presents
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!("{}/file1", node.config_dir().to_string_lossy()))
+                        .unwrap()
+                )
+                .unwrap(),
+            InMemoryFile::File { contents, .. } if contents == "My file 1".as_bytes()
+        ));
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!("{}/file2", node.data_dir().to_string_lossy()))
+                        .unwrap()
+                )
+                .unwrap(),
+            InMemoryFile::File { contents, .. } if contents == "My file 2".as_bytes()
+        ));
 
-        // node.pause().await.unwrap();
+        // retrieve running process
+        let processes = procfs::process::all_processes()
+            .unwrap()
+            .filter_map(|process| {
+                if let Ok(process) = process {
+                    process
+                        .cmdline()
+                        .iter()
+                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
+                        .then(|| process)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Process>>();
+        assert_eq!(processes.len(), 1);
+        let node_process = processes.first().unwrap();
 
-        // sleep(Duration::from_secs(10)).await;
+        // ensure process has correct state
+        assert!(matches!(
+            node_process.stat().unwrap().state().unwrap(),
+            // pocess can be running or sleeping because we sleep between echo calls
+            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+        ));
 
-        // node.resume().await.unwrap();
+        // ensure process is passed correct args
+        let node_args = node_process.cmdline().unwrap();
+        assert!(node_args.contains(&"-flag1".to_string()));
+        assert!(node_args.contains(&"--flag2".to_string()));
+        assert!(node_args.contains(&"--option1=value1".to_string()));
+        assert!(node_args.contains(&"-option2=value2".to_string()));
+        assert!(node_args.contains(&"--option3 value3".to_string()));
+        assert!(node_args.contains(&"-option4 value4".to_string()));
 
-        // node.restart(Some(Duration::from_secs(10))).await.unwrap();
+        // ensure process has correct environment
+        let node_env = node_process.environ().unwrap();
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_1").unwrap())
+                .unwrap(),
+            "MY_VALUE_1"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_2").unwrap())
+                .unwrap(),
+            "MY_VALUE_2"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_3").unwrap())
+                .unwrap(),
+            "MY_VALUE_3"
+        );
 
-        // sleep(Duration::from_secs(10)).await;
+        // ensure log file is created and logs are written 0.5s after process start
+        sleep(Duration::from_millis(500)).await;
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(node.log_path().as_os_str())
+                .unwrap(),
+            InMemoryFile::File { contents, .. } if contents == "Line 1\n".as_bytes()
+        ));
+
+        // ensure logs are updated when process continue running 1.5 sec after process start
+        sleep(Duration::from_millis(1000)).await;
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(node.log_path().as_os_str())
+                .unwrap(),
+            InMemoryFile::File { contents, .. } if contents == "Line 1\nLine 2\n".as_bytes()
+        ));
+
+        // ensure logs are updated when process continue running 2.5 sec after process start
+        sleep(Duration::from_millis(1000)).await;
+        assert!(matches!(
+            fs.files
+                .read()
+                .await
+                .get(node.log_path().as_os_str())
+                .unwrap(),
+            InMemoryFile::File { contents, .. } if contents == "Line 1\nLine 2\nLine 3\n".as_bytes()
+        ));
+
+        // ensure node is present in namespace
+        assert_eq!(namespace.nodes().await.len(), 1);
+        assert!(namespace.nodes().await.get(node.name()).is_some());
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
-
-//     use support::fs::mock::{MockError, MockFilesystem, Operation};
-
-//     use super::*;
-
-//     #[test]
-//     fn new_native_provider() {
-//         let native_provider: NativeProvider<MockFilesystem> =
-//             NativeProvider::new("something", "/tmp", MockFilesystem::new());
-
-//         assert_eq!(native_provider.namespace, "something");
-//         assert_eq!(native_provider.tmp_dir, "/tmp");
-//         assert_eq!(native_provider.command, "bash");
-//         assert_eq!(native_provider.remote_dir, "/tmp/cfg");
-//         assert_eq!(native_provider.data_dir, "/tmp/data");
-//     }
-
-//     #[tokio::test]
-//     async fn test_fielsystem_usage() {
-//         let mut native_provider: NativeProvider<MockFilesystem> =
-//             NativeProvider::new("something", "/tmp", MockFilesystem::new());
-
-//         native_provider.create_namespace().await.unwrap();
-
-//         assert!(native_provider.filesystem.operations.len() == 1);
-
-//         assert_eq!(
-//             native_provider.filesystem.operations[0],
-//             Operation::CreateDir {
-//                 path: "/tmp/cfg".into(),
-//             }
-//         );
-//     }
-
-//     #[tokio::test]
-//     #[should_panic(expected = "FSError(OpError(\"create\"))")]
-//     async fn test_fielsystem_usage_fails() {
-//         let mut native_provider: NativeProvider<MockFilesystem> = NativeProvider::new(
-//             "something",
-//             "/tmp",
-//             MockFilesystem::with_create_dir_error(MockError::OpError("create".into())),
-//         );
-
-//         native_provider.create_namespace().await.unwrap();
-//     }
-
-//     #[tokio::test]
-//     async fn test_get_node_ip() {
-//         let native_provider: NativeProvider<MockFilesystem> =
-//             NativeProvider::new("something", "/tmp", MockFilesystem::new());
-
-//         assert_eq!(
-//             native_provider.get_node_ip("some").await.unwrap(),
-//             LOCALHOST
-//         );
-//     }
-
-//     #[tokio::test]
-//     async fn test_run_command_when_bash_is_removed() {
-//         let native_provider: NativeProvider<MockFilesystem> =
-//             NativeProvider::new("something", "/tmp", MockFilesystem::new());
-
-//         let result: RunCommandResponse = native_provider
-//             .run_command(
-//                 vec!["bash".into(), "ls".into()],
-//                 NativeRunCommandOptions::default(),
-//             )
-//             .await
-//             .unwrap();
-
-//         assert_eq!(
-//             result,
-//             RunCommandResponse {
-//                 exit_code: ExitStatus::from_raw(0),
-//                 std_out: "Cargo.toml\nsrc\n".into(),
-//                 std_err: None,
-//             }
-//         );
-//     }
-
-//     #[tokio::test]
-//     async fn test_run_command_when_dash_c_is_provided() {
-//         let native_provider = NativeProvider::new("something", "/tmp", MockFilesystem::new());
-
-//         let result = native_provider.run_command(
-//             vec!["-c".into(), "ls".into()],
-//             NativeRunCommandOptions::default(),
-//         );
-
-//         let a = result.await;
-//         assert!(a.is_ok());
-//     }
-
-//     #[tokio::test]
-//     async fn test_run_command_when_error_return_error() {
-//         let native_provider = NativeProvider::new("something", "/tmp", MockFilesystem::new());
-
-//         let mut some = native_provider.run_command(
-//             vec!["ls".into(), "ls".into()],
-//             NativeRunCommandOptions::default(),
-//         );
-
-//         assert!(some.await.is_err());
-
-//         some = native_provider.run_command(
-//             vec!["ls".into(), "ls".into()],
-//             NativeRunCommandOptions {
-//                 is_failure_allowed: true,
-//             },
-//         );
-
-//         assert!(some.await.is_ok());
-//     }
-// }

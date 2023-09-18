@@ -11,8 +11,8 @@ use crate::{
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
         constants::{
-            NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG,
-            VALIDATION_CHECK, VALID_REGEX,
+            NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK,
+            VALID_REGEX,
         },
         helpers::merge_errors_vecs,
         macros::states,

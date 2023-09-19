@@ -250,7 +250,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
                     .filesystem
                     .write(
                         format!(
-                            "{}/{}",
+                            "{}{}",
                             self.base_dir.to_string_lossy(),
                             local_output_path.to_string_lossy()
                         ),
@@ -359,6 +359,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     ) -> Result<ExecutionResult, ProviderError> {
         let result = Command::new(options.command)
             .args(options.args)
+            .envs(options.env)
             .output()
             .await
             .map_err(|err| ProviderError::RunCommandError(err.into()))?;

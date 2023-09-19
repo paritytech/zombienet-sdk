@@ -1,7 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 
-echo "Line 1"
-sleep 1
-echo "Line 2"
-sleep 1
-echo "Line 3"
+i=0
+
+# infinite loop to simulate long-running process with fake output
+while :; do
+  echo "Line $i"
+  i=$((i+1))
+  # sleep randomly between 1 and 3 (included) seconds
+  sleep $((RANDOM % 3 + 1))
+done

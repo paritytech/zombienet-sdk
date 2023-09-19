@@ -37,6 +37,27 @@ impl InMemoryFile {
     pub fn dir() -> Self {
         Self::Directory { mode: 0o775 }
     }
+
+    pub fn mode(&self) -> u32 {
+        match self {
+            &Self::File { mode, .. } => mode,
+            &Self::Directory { mode, .. } => mode,
+        }
+    }
+
+    pub fn contents_raw(&self) -> Option<Vec<u8>> {
+        match self {
+            Self::File { contents, .. } => Some(contents.to_vec()),
+            Self::Directory { .. } => None,
+        }
+    }
+
+    pub fn contents(&self) -> Option<String> {
+        match self {
+            Self::File { contents, .. } => Some(String::from_utf8_lossy(contents).to_string()),
+            Self::Directory { .. } => None,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -248,10 +269,7 @@ mod tests {
     async fn create_dir_should_return_an_error_if_file_already_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/dir").unwrap(),
-                InMemoryFile::empty(),
-            ),
+            (OsString::from_str("/dir").unwrap(), InMemoryFile::empty()),
         ]));
 
         let err = fs.create_dir("/dir").await.unwrap_err();
@@ -303,10 +321,7 @@ mod tests {
     async fn create_dir_should_return_an_error_if_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::empty(),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/path/to/my").unwrap(),
@@ -398,10 +413,7 @@ mod tests {
     async fn create_dir_all_should_return_an_error_if_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::empty(),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
 
@@ -566,10 +578,7 @@ mod tests {
     async fn write_should_return_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::empty(),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
 
@@ -657,10 +666,7 @@ mod tests {
     async fn append_should_return_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::empty(),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
 

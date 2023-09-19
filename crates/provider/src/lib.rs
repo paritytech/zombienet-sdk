@@ -18,8 +18,8 @@ pub enum ProviderError {
     #[error("Failed to spawn node '{0}': {1}")]
     NodeSpawningFailed(String, anyhow::Error),
 
-    #[error("Error running command: {0}")]
-    RunCommandError(anyhow::Error),
+    #[error("Error running command '{0}': {1}")]
+    RunCommandError(String, anyhow::Error),
 
     #[error("Duplicated node name: {0}")]
     DuplicatedNodeName(String),

@@ -349,20 +349,19 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     }
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
-        let logs = self.logs().await?;
-        Ok(self.filesystem.write(local_dest, logs.as_bytes()).await?)
+        Ok(self.filesystem.copy(&self.log_path, local_dest).await?)
     }
 
     async fn run_command(
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        let result = Command::new(options.command)
+        let result = Command::new(options.command.clone())
             .args(options.args)
             .envs(options.env)
             .output()
             .await
-            .map_err(|err| ProviderError::RunCommandError(err.into()))?;
+            .map_err(|err| ProviderError::RunCommandError(options.command, err.into()))?;
 
         if result.status.success() {
             Ok(Ok(String::from_utf8_lossy(&result.stdout).to_string()))
@@ -738,51 +737,37 @@ mod tests {
             .await
             .unwrap();
 
+        let files = fs.files.read().await;
+
         // ensure node directories are created
-        assert!(fs
-            .files
-            .read()
-            .await
-            .contains_key(node.base_dir().as_os_str()));
-        assert!(fs
-            .files
-            .read()
-            .await
-            .contains_key(node.config_dir().as_os_str()));
-        assert!(fs
-            .files
-            .read()
-            .await
-            .contains_key(node.data_dir().as_os_str()));
-        assert!(fs
-            .files
-            .read()
-            .await
-            .contains_key(node.scripts_dir().as_os_str()));
+        assert!(files.contains_key(node.base_dir().as_os_str()));
+        assert!(files.contains_key(node.config_dir().as_os_str()));
+        assert!(files.contains_key(node.data_dir().as_os_str()));
+        assert!(files.contains_key(node.scripts_dir().as_os_str()));
 
         // ensure injected files are presents
-        assert!(matches!(
-            fs.files
-                .read()
-                .await
+        assert_eq!(
+            files
                 .get(
                     &OsString::from_str(&format!("{}/file1", node.config_dir().to_string_lossy()))
                         .unwrap()
                 )
+                .unwrap()
+                .contents()
                 .unwrap(),
-            InMemoryFile::File { contents, .. } if contents == "My file 1".as_bytes()
-        ));
-        assert!(matches!(
-            fs.files
-                .read()
-                .await
+            "My file 1"
+        );
+        assert_eq!(
+            files
                 .get(
                     &OsString::from_str(&format!("{}/file2", node.data_dir().to_string_lossy()))
                         .unwrap()
                 )
+                .unwrap()
+                .contents()
                 .unwrap(),
-            InMemoryFile::File { contents, .. } if contents == "My file 2".as_bytes()
-        ));
+            "My file 2"
+        );
 
         // retrieve running process
         let processes = procfs::process::all_processes()
@@ -844,9 +829,7 @@ mod tests {
         // ensure log file is created and logs are written 5s after process start
         sleep(Duration::from_secs(5)).await;
         assert!(
-            fs.files
-                .read()
-                .await
+            files
                 .get(node.log_path().as_os_str())
                 .unwrap()
                 .contents()
@@ -859,9 +842,7 @@ mod tests {
         // ensure logs are updated when process continue running 10s after process start
         sleep(Duration::from_secs(5)).await;
         assert!(
-            fs.files
-                .read()
-                .await
+            files
                 .get(node.log_path().as_os_str())
                 .unwrap()
                 .contents()
@@ -874,9 +855,7 @@ mod tests {
         // ensure logs are updated when process continue running 15s after process start
         sleep(Duration::from_secs(5)).await;
         assert!(
-            fs.files
-                .read()
-                .await
+            files
                 .get(node.log_path().as_os_str())
                 .unwrap()
                 .contents()
@@ -911,11 +890,11 @@ mod tests {
             .await
             .unwrap();
 
+        let files = fs.files.read().await;
+
         // ensure files have been generated correctly to right location
         assert_eq!(
-            fs.files
-                .read()
-                .await
+            files
                 .get(
                     &OsString::from_str(&format!(
                         "{}/myfile1",
@@ -929,9 +908,7 @@ mod tests {
             "My file 1\n"
         );
         assert_eq!(
-            fs.files
-                .read()
-                .await
+            files
                 .get(
                     &OsString::from_str(&format!(
                         "{}/myfile2",
@@ -1003,5 +980,165 @@ mod tests {
 
         // ensure namespace is destroyed
         assert_eq!(provider.namespaces().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn node_logs_method_should_return_its_logs_as_a_string() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // wait some time for node to write logs
+        sleep(Duration::from_secs(5)).await;
+
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(node.log_path().as_os_str())
+                .unwrap()
+                .contents()
+                .unwrap(),
+            node.logs().await.unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn node_dump_logs_method_should_writes_its_logs_to_a_given_destination() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // wait some time for node to write logs
+        sleep(Duration::from_secs(5)).await;
+
+        node.dump_logs(PathBuf::from("/tmp/my_log_file"))
+            .await
+            .unwrap();
+
+        let files = fs.files.read().await;
+
+        assert_eq!(
+            files
+                .get(node.log_path().as_os_str())
+                .unwrap()
+                .contents()
+                .unwrap(),
+            files
+                .get(&OsString::from_str("/tmp/my_log_file").unwrap())
+                .unwrap()
+                .contents()
+                .unwrap(),
+        );
+    }
+
+    #[tokio::test]
+    async fn node_run_command_method_should_execute_the_command_successfully_and_returns_stdout() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        let result = node
+            .run_command(
+                RunCommandOptions::new("sh")
+                    .args(vec!["-c", "echo $MY_ENV_VAR"])
+                    .env(vec![("MY_ENV_VAR", "Here is my content")]),
+            )
+            .await;
+
+        assert!(matches!(result, Ok(Ok(stdout)) if stdout == "Here is my content\n"));
+    }
+
+    #[tokio::test]
+    async fn node_run_command_method_should_execute_the_command_successfully_and_returns_error_code_and_stderr_if_an_error_happened(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        let result = node
+            .run_command(RunCommandOptions::new("sh").args(vec!["-fakeargs"]))
+            .await;
+
+        assert!(
+            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && stderr == "sh: 0: Illegal option -k\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn node_run_command_method_should_fail_to_execute_the_command_if_command_doesnt_exists() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        let err = node
+            .run_command(RunCommandOptions::new("myrandomprogram"))
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Error running command 'myrandomprogram': No such file or directory (os error 2)"
+        );
     }
 }

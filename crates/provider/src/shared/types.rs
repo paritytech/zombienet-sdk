@@ -23,7 +23,12 @@ pub struct SpawnNodeOptions {
     pub command: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+    // TODO: naming
     pub injected_files: Vec<TransferedFile>,
+    /// Paths to create before start the node (e.g keystore)
+    /// should be created with `create_dir_all` in order
+    /// to create the full path even when we have missing parts
+    pub created_paths: Vec<PathBuf>
 }
 
 impl SpawnNodeOptions {
@@ -37,6 +42,7 @@ impl SpawnNodeOptions {
             args: vec![],
             env: vec![],
             injected_files: vec![],
+            created_paths: vec![],
         }
     }
 
@@ -61,7 +67,7 @@ impl SpawnNodeOptions {
         self
     }
 }
-
+#[derive(Debug)]
 pub struct GenerateFileCommand {
     pub command: String,
     pub args: Vec<String>,
@@ -70,7 +76,7 @@ pub struct GenerateFileCommand {
 }
 
 impl GenerateFileCommand {
-    fn new<S, P>(command: S, local_output_path: P) -> Self
+    pub fn new<S, P>(command: S, local_output_path: P) -> Self
     where
         S: AsRef<str>,
         P: AsRef<Path>,
@@ -83,7 +89,7 @@ impl GenerateFileCommand {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    pub fn args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -92,7 +98,7 @@ impl GenerateFileCommand {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    pub fn env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -105,23 +111,24 @@ impl GenerateFileCommand {
     }
 }
 
+#[derive(Debug)]
 pub struct GenerateFilesOptions {
     pub commands: Vec<GenerateFileCommand>,
     pub injected_files: Vec<TransferedFile>,
 }
 
 impl GenerateFilesOptions {
-    fn new<I>(commands: I) -> Self
+    pub fn new<I>(commands: I) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
         Self {
-            commands: vec![],
+            commands: commands.into_iter().collect(),
             injected_files: vec![],
         }
     }
 
-    fn injected_files<I>(mut self, injected_files: I) -> Self
+    pub fn injected_files<I>(mut self, injected_files: I) -> Self
     where
         I: IntoIterator<Item = TransferedFile>,
     {
@@ -210,6 +217,8 @@ impl RunScriptOptions {
     }
 }
 
+// TODO(team): I think we can rename it to FileMap?
+#[derive(Debug, Clone)]
 pub struct TransferedFile {
     pub local_path: PathBuf,
     pub remote_path: PathBuf,
@@ -224,5 +233,11 @@ impl TransferedFile {
             local_path: local_path.as_ref().into(),
             remote_path: remote_path.as_ref().into(),
         }
+    }
+}
+
+impl std::fmt::Display for TransferedFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "File to transfer (local: {}, remote: {})", self.local_path.display().to_string(), self.remote_path.display().to_string())
     }
 }

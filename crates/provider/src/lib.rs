@@ -19,8 +19,8 @@ pub enum ProviderError {
     #[error("Failed to spawn node '{0}': {1}")]
     NodeSpawningFailed(String, anyhow::Error),
 
-    #[error("Error running command: {0}")]
-    RunCommandError(anyhow::Error),
+    #[error("Error running command '{0}': {1}")]
+    RunCommandError(String, anyhow::Error),
 
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
@@ -54,6 +54,8 @@ pub type DynProvider = Arc<dyn Provider>;
 pub trait ProviderNamespace {
     fn id(&self) -> String;
 
+    fn base_dir(&self) -> String;
+
     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
@@ -70,6 +72,12 @@ type ExecutionResult = Result<String, (ExitStatus, String)>;
 #[async_trait]
 pub trait ProviderNode {
     fn name(&self) -> String;
+
+    fn command(&self) -> String;
+
+    fn args(&self) -> Vec<String>;
+
+    async fn ip(&self) -> Result<IpAddr, ProviderError>;
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
 
@@ -103,3 +111,7 @@ pub trait ProviderNode {
 }
 
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
+
+// re-export
+pub use shared::{types, constants};
+pub use native::NativeProvider;

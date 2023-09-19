@@ -67,11 +67,11 @@ impl RelaychainSpec {
         };
 
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
-            ChainSpec::new_with_path(config.chain().as_str(), chain_spec_path.to_string())
+            ChainSpec::new(config.chain().as_str()).chain_name(config.chain().as_str()).asset_location(chain_spec_path.clone())
         } else {
             // TODO: Do we need to add the posibility to set the command to use?
             // Currently (v1) is possible but when is set is set to the default command.
-            ChainSpec::new(config.chain().as_str(), main_cmd.as_str())
+            ChainSpec::new(config.chain().as_str()).chain_name(config.chain().as_str()).commad(main_cmd.as_str())
         };
 
         // build the `node_specs`

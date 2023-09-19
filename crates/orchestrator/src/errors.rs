@@ -1,6 +1,8 @@
 //! Zombienet Orchestrator error definitions.
 
 use crate::generators;
+use provider::ProviderError;
+use support::fs::FileSystemError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
@@ -13,4 +15,8 @@ pub enum OrchestratorError {
     GlobalTimeOut(u32),
     #[error("Generator error")]
     GeneratorError(#[from] generators::errors::GeneratorError),
+    #[error("Provider error")]
+    ProviderError(#[from] ProviderError),
+    #[error("FileSystem error")]
+    FileSystemError(#[from] FileSystemError),
 }

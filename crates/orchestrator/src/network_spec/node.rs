@@ -4,13 +4,13 @@ use configuration::shared::{
     types::{Arg, AssetLocation, Command, Image},
 };
 use multiaddr::Multiaddr;
-use sha2::digest::Digest;
 
 use crate::{
     errors::OrchestratorError,
     generators,
     shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
 };
+
 
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone)]
@@ -20,6 +20,9 @@ pub struct NodeSpec {
 
     /// Node key, used for compute the p2p identity.
     pub(crate) key: String,
+
+    // libp2p local identity
+    pub(crate) peer_id: String,
 
     /// Accounts to be injected in the keystore.
     pub(crate) accounts: NodeAccounts,
@@ -109,8 +112,11 @@ impl NodeSpec {
             node_config.args().into_iter().cloned().collect()
         };
 
-        let key = hex::encode(sha2::Sha256::digest(node_config.name()));
-        let seed = format!("//{}", node_config.name());
+
+        let (key, peer_id) = generators::identity::generate_for_node(node_config.name())?;
+
+        let mut name = node_config.name().to_string();
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
         let accounts = generators::key::generate_for_node(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
@@ -118,6 +124,7 @@ impl NodeSpec {
         Ok(Self {
             name: node_config.name().to_string(),
             key,
+            peer_id,
             image,
             command,
             args,

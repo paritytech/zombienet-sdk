@@ -8,8 +8,8 @@ use configuration::shared::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
-    address: String,
-    public_key: String,
+    pub address: String,
+    pub public_key: String,
 }
 
 impl NodeAccount {
@@ -28,7 +28,7 @@ pub struct NodeAccounts {
 }
 
 #[derive(Clone, Debug)]
-pub struct ParkedPort(Port, Arc<TcpListener>);
+pub struct ParkedPort(pub(crate) Port, pub(crate) Arc<TcpListener>);
 impl ParkedPort {
     pub(crate) fn new(port: u16, listener: Arc<TcpListener>) -> ParkedPort {
         ParkedPort(port, listener)

@@ -47,14 +47,12 @@ impl ParachainSpec {
             };
 
             if let Some(chain_spec_path) = config.chain_spec_path() {
-                Some(ChainSpec::new_with_path(
-                    chain_name,
-                    chain_spec_path.to_string(),
-                ))
+                Some(ChainSpec::new(chain_name).asset_location(chain_spec_path.clone()).chain_name(chain_name))
+
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.
-                Some(ChainSpec::new(chain_name, main_cmd.as_str()))
+                Some(ChainSpec::new(chain_name).commad(main_cmd.as_str()).chain_name(chain_name))
             }
         } else {
             None

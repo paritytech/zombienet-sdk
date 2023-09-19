@@ -3,3 +3,7 @@ pub mod errors;
 pub mod key;
 pub mod para_artifact;
 pub mod port;
+pub mod keystore;
+pub mod command;
+pub mod identity;
+pub mod bootnode_addr;

@@ -4,7 +4,7 @@ use super::errors::GeneratorError;
 use crate::shared::types::{Accounts, NodeAccount};
 const KEY_TYPES: [&str; 3] = ["sr", "ed", "ec"];
 
-fn generate<T: Pair>(seed: &str) -> Result<T::Pair, ()> {
+pub fn generate<T: Pair>(seed: &str) -> Result<T::Pair, ()> {
     let pair = T::Pair::from_string(seed, None).map_err(|_| ())?;
     Ok(pair)
 }

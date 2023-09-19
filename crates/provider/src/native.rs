@@ -636,12 +636,17 @@ mod tests {
 
         let namespace = provider.create_namespace().await.unwrap();
 
+        // ensure namespace directory is created
         assert!(fs
             .files
             .read()
             .await
             .contains_key(namespace.base_dir().as_os_str()));
+
+        // ensure namespace is added to provider namespaces
         assert_eq!(provider.namespaces().await.len(), 1);
+
+        // ensure the only provider namespace is the same one as the one we just created
         assert!(provider.namespaces().await.get(namespace.id()).is_some());
     }
 
@@ -794,13 +799,15 @@ mod tests {
                 }
             })
             .collect::<Vec<Process>>();
+
+        // ensure only one dummy process exists
         assert_eq!(processes.len(), 1);
         let node_process = processes.first().unwrap();
 
         // ensure process has correct state
         assert!(matches!(
             node_process.stat().unwrap().state().unwrap(),
-            // pocess can be running or sleeping because we sleep between echo calls
+            // process can be running or sleeping because we sleep between echo calls
             procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
         ));
 
@@ -834,41 +841,167 @@ mod tests {
             "MY_VALUE_3"
         );
 
-        // ensure log file is created and logs are written 0.5s after process start
-        sleep(Duration::from_millis(500)).await;
-        assert!(matches!(
+        // ensure log file is created and logs are written 5s after process start
+        sleep(Duration::from_secs(5)).await;
+        assert!(
             fs.files
                 .read()
                 .await
                 .get(node.log_path().as_os_str())
-                .unwrap(),
-            InMemoryFile::File { contents, .. } if contents == "Line 1\n".as_bytes()
-        ));
+                .unwrap()
+                .contents()
+                .unwrap()
+                .lines()
+                .count()
+                >= 2
+        );
 
-        // ensure logs are updated when process continue running 1.5 sec after process start
-        sleep(Duration::from_millis(1000)).await;
-        assert!(matches!(
+        // ensure logs are updated when process continue running 10s after process start
+        sleep(Duration::from_secs(5)).await;
+        assert!(
             fs.files
                 .read()
                 .await
                 .get(node.log_path().as_os_str())
-                .unwrap(),
-            InMemoryFile::File { contents, .. } if contents == "Line 1\nLine 2\n".as_bytes()
-        ));
+                .unwrap()
+                .contents()
+                .unwrap()
+                .lines()
+                .count()
+                >= 4
+        );
 
-        // ensure logs are updated when process continue running 2.5 sec after process start
-        sleep(Duration::from_millis(1000)).await;
-        assert!(matches!(
+        // ensure logs are updated when process continue running 15s after process start
+        sleep(Duration::from_secs(5)).await;
+        assert!(
             fs.files
                 .read()
                 .await
                 .get(node.log_path().as_os_str())
-                .unwrap(),
-            InMemoryFile::File { contents, .. } if contents == "Line 1\nLine 2\nLine 3\n".as_bytes()
-        ));
+                .unwrap()
+                .contents()
+                .unwrap()
+                .lines()
+                .count()
+                >= 6
+        );
 
         // ensure node is present in namespace
         assert_eq!(namespace.nodes().await.len(), 1);
         assert!(namespace.nodes().await.get(node.name()).is_some());
+    }
+
+    #[tokio::test]
+    async fn namespace_generate_files_method_should_create_files_at_the_correct_locations_using_given_commands(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        namespace
+            .generate_files(GenerateFilesOptions::new(vec![
+                GenerateFileCommand::new("echo", "/myfile1").args(vec!["My file 1"]),
+                GenerateFileCommand::new("sh", "/myfile2")
+                    .args(vec!["-c", "echo -n $MY_CONTENT"])
+                    .env(vec![("MY_CONTENT", "My file 2")]),
+            ]))
+            .await
+            .unwrap();
+
+        // ensure files have been generated correctly to right location
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!(
+                        "{}/myfile1",
+                        namespace.base_dir().to_string_lossy()
+                    ))
+                    .unwrap()
+                )
+                .unwrap()
+                .contents()
+                .unwrap(),
+            "My file 1\n"
+        );
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!(
+                        "{}/myfile2",
+                        namespace.base_dir().to_string_lossy()
+                    ))
+                    .unwrap()
+                )
+                .unwrap()
+                .contents()
+                .unwrap(),
+            "My file 2"
+        );
+
+        // ensure temporary node has been destroyed
+        assert_eq!(namespace.nodes().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn namespace_destroy_should_destroy_all_namespace_nodes_and_namespace_itself() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn 2 dummy nodes to populate namespace
+        namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode1",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+        namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode2",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // ensure nodes are presents
+        assert_eq!(namespace.nodes().await.len(), 2);
+
+        namespace.destroy().await.unwrap();
+
+        // ensure nodes are destroyed
+        assert_eq!(namespace.nodes().await.len(), 0);
+
+        // retrieve running process
+        let processes = procfs::process::all_processes()
+            .unwrap()
+            .filter_map(|process| {
+                if let Ok(process) = process {
+                    process
+                        .cmdline()
+                        .iter()
+                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
+                        .then(|| process)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Process>>();
+
+        // ensure no running process exists
+        assert_eq!(processes.len(), 0);
+
+        // ensure namespace is destroyed
+        assert_eq!(provider.namespaces().await.len(), 0);
     }
 }

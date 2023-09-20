@@ -1,16 +1,10 @@
-use std::{
-    cell::RefCell,
-    error::Error,
-    fmt::{self, Display},
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
 use serde::{
-    de::{self, MapAccess, Visitor},
+    de::{self, Visitor},
     ser::SerializeStruct,
-    Deserialize, Deserializer, Serialize,
+    Deserialize, Serialize,
 };
 
 use crate::{
@@ -54,52 +48,48 @@ struct RegistrationStrategyVisitor;
 impl<'de> Visitor<'de> for RegistrationStrategyVisitor {
     type Value = RegistrationStrategy;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("struct RegistrationStrategy")
     }
 
-    fn visit_map<V>(self, mut map: V) -> Result<RegistrationStrategy, V::Error>
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
-        V: MapAccess<'de>,
+        A: serde::de::MapAccess<'de>,
     {
         let mut add_to_genesis = false;
         let mut register_para = false;
 
-        println!("It arrives here");
-
-        while let Some(key) = map.next_key()? {
-            match key {
-                "add_to_genesis" => {
-                    add_to_genesis = map.next_value()?;
-                },
-                "register_para" => {
-                    register_para = map.next_value()?;
-                },
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "add_to_genesis" => add_to_genesis = map.next_value()?,
+                "register_para" => register_para = map.next_value()?,
                 _ => {
-                    println!("Never arrrives here");
+                    return Err(de::Error::unknown_field(
+                        &key,
+                        &["add_to_genesis", "register_para"],
+                    ))
                 },
             }
         }
 
-        println!("Or here");
-        if add_to_genesis {
-            Ok(RegistrationStrategy::InGenesis)
-        } else if register_para {
-            Ok(RegistrationStrategy::UsingExtrinsic)
-        } else {
-            Err(de::Error::custom("unknown registration strategy"))
+        match (add_to_genesis, register_para) {
+            (true, false) => Ok(RegistrationStrategy::InGenesis),
+            (false, true) => Ok(RegistrationStrategy::UsingExtrinsic),
+            _ => Err(de::Error::missing_field("add_to_genesis or register_para")),
         }
     }
-
 }
 
 impl<'de> Deserialize<'de> for RegistrationStrategy {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        const FIELDS: &[&str] = &["add_to_genesis", "register_para"];
-        deserializer.deserialize_struct("RegistrationStrategy", FIELDS, RegistrationStrategyVisitor)
+        deserializer.deserialize_struct(
+            "RegistrationStrategy",
+            &["add_to_genesis", "register_para"],
+            RegistrationStrategyVisitor,
+        )
     }
 }
 
@@ -744,6 +734,7 @@ mod tests {
         assert_eq!(collator2.command().unwrap().as_str(), "command2");
         assert!(collator2.is_validator());
         assert_eq!(parachain_config.chain().unwrap().as_str(), "mychainname");
+
         assert_eq!(
             parachain_config.registration_strategy().unwrap(),
             &RegistrationStrategy::UsingExtrinsic
@@ -1081,16 +1072,25 @@ mod tests {
             if parachain.id() == 1000 {
                 assert_eq!(
                     parachain.registration_strategy(),
-                    Some(&RegistrationStrategy::InGenesis)
+                    Some(&RegistrationStrategy::UsingExtrinsic)
                 );
             }
             if parachain.id() == 2000 {
                 assert_eq!(
                     parachain.registration_strategy(),
-                    Some(&RegistrationStrategy::UsingExtrinsic)
+                    Some(&RegistrationStrategy::InGenesis)
                 );
             }
         }
+
+        let load_from_toml_small = NetworkConfig::load_from_toml(
+            "./testing/snapshots/0003-small-network_w_parachain.toml",
+        )
+        .unwrap();
+
+        let parachain = load_from_toml_small.parachains()[0];
+
+        assert_eq!(parachain.registration_strategy(), None);
     }
 
     #[test]

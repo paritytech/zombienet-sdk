@@ -1184,11 +1184,10 @@ mod tests {
                     expected_parachain.chain_spec_path(),
                     loaded_parachain.chain_spec_path()
                 );
-                // TODO (nikos): Test this
-                // assert_eq!(
-                //     expected_parachain.registration_strategy(),
-                //     loaded_parachain.registration_strategy()
-                // );
+                assert_eq!(
+                    expected_parachain.registration_strategy(),
+                    loaded_parachain.registration_strategy()
+                );
                 assert_eq!(
                     expected_parachain.onboard_as_parachain(),
                     loaded_parachain.onboard_as_parachain()
@@ -1343,11 +1342,10 @@ mod tests {
                     expected_parachain.chain_spec_path(),
                     loaded_parachain.chain_spec_path()
                 );
-                // TODO (nikos): Test this
-                // assert_eq!(
-                //     expected_parachain.registration_strategy(),
-                //     loaded_parachain.registration_strategy()
-                // );
+                assert_eq!(
+                    expected_parachain.registration_strategy(),
+                    loaded_parachain.registration_strategy()
+                );
                 assert_eq!(
                     expected_parachain.onboard_as_parachain(),
                     loaded_parachain.onboard_as_parachain()

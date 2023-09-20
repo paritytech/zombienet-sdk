@@ -1,7 +1,17 @@
-use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
+use std::{
+    cell::RefCell,
+    error::Error,
+    fmt::{self, Display},
+    marker::PhantomData,
+    rc::Rc,
+};
 
 use multiaddr::Multiaddr;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{
+    de::{self, MapAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Deserializer, Serialize,
+};
 
 use crate::{
     shared::{
@@ -17,7 +27,7 @@ use crate::{
     utils::default_as_true,
 };
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
@@ -36,6 +46,60 @@ impl Serialize for RegistrationStrategy {
         }
 
         state.end()
+    }
+}
+
+struct RegistrationStrategyVisitor;
+
+impl<'de> Visitor<'de> for RegistrationStrategyVisitor {
+    type Value = RegistrationStrategy;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("struct RegistrationStrategy")
+    }
+
+    fn visit_map<V>(self, mut map: V) -> Result<RegistrationStrategy, V::Error>
+    where
+        V: MapAccess<'de>,
+    {
+        let mut add_to_genesis = false;
+        let mut register_para = false;
+
+        println!("It arrives here");
+
+        while let Some(key) = map.next_key()? {
+            match key {
+                "add_to_genesis" => {
+                    add_to_genesis = map.next_value()?;
+                },
+                "register_para" => {
+                    register_para = map.next_value()?;
+                },
+                _ => {
+                    println!("Never arrrives here");
+                },
+            }
+        }
+
+        println!("Or here");
+        if add_to_genesis {
+            Ok(RegistrationStrategy::InGenesis)
+        } else if register_para {
+            Ok(RegistrationStrategy::UsingExtrinsic)
+        } else {
+            Err(de::Error::custom("unknown registration strategy"))
+        }
+    }
+
+}
+
+impl<'de> Deserialize<'de> for RegistrationStrategy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &["add_to_genesis", "register_para"];
+        deserializer.deserialize_struct("RegistrationStrategy", FIELDS, RegistrationStrategyVisitor)
     }
 }
 
@@ -624,6 +688,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NetworkConfig;
 
     #[test]
     fn parachain_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
@@ -1005,6 +1070,27 @@ mod tests {
             errors.get(4).unwrap().to_string(),
             "parachain[2000].collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
+
+    #[test]
+    fn import_toml_registration_strategy_should_deserialize() {
+        let load_from_toml =
+            NetworkConfig::load_from_toml("./testing/snapshots/0001-big-network.toml").unwrap();
+
+        for parachain in load_from_toml.parachains().iter() {
+            if parachain.id() == 1000 {
+                assert_eq!(
+                    parachain.registration_strategy(),
+                    Some(&RegistrationStrategy::InGenesis)
+                );
+            }
+            if parachain.id() == 2000 {
+                assert_eq!(
+                    parachain.registration_strategy(),
+                    Some(&RegistrationStrategy::UsingExtrinsic)
+                );
+            }
+        }
     }
 
     #[test]

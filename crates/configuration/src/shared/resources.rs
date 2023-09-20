@@ -299,9 +299,8 @@ impl ResourcesBuilder {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod tests {
-    use crate::NetworkConfig;
-
     use super::*;
+    use crate::NetworkConfig;
 
     macro_rules! impl_resources_quantity_unit_test {
         ($val:literal) => {{
@@ -407,7 +406,7 @@ mod tests {
     fn resources_config_toml_import_should_succeeds_and_returns_a_resources_config() {
         let load_from_toml =
             NetworkConfig::load_from_toml("./testing/snapshots/0001-big-network.toml").unwrap();
-        
+
         let resources = load_from_toml.relaychain().default_resources().unwrap();
         assert_eq!(resources.request_memory().unwrap().as_str(), "500M");
         assert_eq!(resources.request_cpu().unwrap().as_str(), "100000");

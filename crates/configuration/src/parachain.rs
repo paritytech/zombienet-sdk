@@ -165,7 +165,6 @@ states! {
 }
 
 /// A parachain configuration builder, used to build a [`ParachainConfig`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
     validation_context: Rc<RefCell<ValidationContext>>,

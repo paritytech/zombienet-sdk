@@ -605,6 +605,7 @@ mod tests {
 
     use procfs::process::Process;
     use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
+    use tokio::time::timeout;
 
     use crate::shared::types::TransferedFile;
 
@@ -737,17 +738,33 @@ mod tests {
             .await
             .unwrap();
 
-        let files = fs.files.read().await;
-
         // ensure node directories are created
-        assert!(files.contains_key(node.base_dir().as_os_str()));
-        assert!(files.contains_key(node.config_dir().as_os_str()));
-        assert!(files.contains_key(node.data_dir().as_os_str()));
-        assert!(files.contains_key(node.scripts_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.base_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.config_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.data_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.scripts_dir().as_os_str()));
 
         // ensure injected files are presents
         assert_eq!(
-            files
+            fs.files
+                .read()
+                .await
                 .get(
                     &OsString::from_str(&format!("{}/file1", node.config_dir().to_string_lossy()))
                         .unwrap()
@@ -758,7 +775,9 @@ mod tests {
             "My file 1"
         );
         assert_eq!(
-            files
+            fs.files
+                .read()
+                .await
                 .get(
                     &OsString::from_str(&format!("{}/file2", node.data_dir().to_string_lossy()))
                         .unwrap()
@@ -826,44 +845,56 @@ mod tests {
             "MY_VALUE_3"
         );
 
-        // ensure log file is created and logs are written 5s after process start
-        sleep(Duration::from_secs(5)).await;
-        assert!(
-            files
-                .get(node.log_path().as_os_str())
-                .unwrap()
-                .contents()
-                .unwrap()
-                .lines()
-                .count()
-                >= 2
-        );
+        // ensure log file is created and logs are written and at least 2 lines
+        timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
 
-        // ensure logs are updated when process continue running 10s after process start
-        sleep(Duration::from_secs(5)).await;
-        assert!(
-            files
-                .get(node.log_path().as_os_str())
-                .unwrap()
-                .contents()
-                .unwrap()
-                .lines()
-                .count()
-                >= 4
-        );
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= 2 {
+                            return;
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
 
-        // ensure logs are updated when process continue running 15s after process start
-        sleep(Duration::from_secs(5)).await;
-        assert!(
-            files
-                .get(node.log_path().as_os_str())
-                .unwrap()
-                .contents()
-                .unwrap()
-                .lines()
-                .count()
-                >= 6
-        );
+        // ensure logs contains at least 4 lines when node continue running
+        timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= 4 {
+                            return;
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        // ensure logs contains at least 6 lines when node continue running
+        timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= 6 {
+                            return;
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
 
         // ensure node is present in namespace
         assert_eq!(namespace.nodes().await.len(), 1);
@@ -890,11 +921,11 @@ mod tests {
             .await
             .unwrap();
 
-        let files = fs.files.read().await;
-
         // ensure files have been generated correctly to right location
         assert_eq!(
-            files
+            fs.files
+                .read()
+                .await
                 .get(
                     &OsString::from_str(&format!(
                         "{}/myfile1",
@@ -908,7 +939,9 @@ mod tests {
             "My file 1\n"
         );
         assert_eq!(
-            files
+            fs.files
+                .read()
+                .await
                 .get(
                     &OsString::from_str(&format!(
                         "{}/myfile2",
@@ -1141,4 +1174,46 @@ mod tests {
             "Error running command 'myrandomprogram': No such file or directory (os error 2)"
         );
     }
+
+    // #[tokio::test]
+    // async fn node_run_script_method_should_execute_the_script_successfully_and_returns_stdout() {
+    //     // we need to mirror the script between local fs and in memory fs else
+    //     // the tokio::process::Command won't be able to execute it
+    //     fs::copy(
+    //         "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_script",
+    //         "/tmp/dummy_script",
+    //     )
+    //     .unwrap();
+
+    //     let fs = InMemoryFileSystem::new(HashMap::from([
+    //         (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+    //         (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+    //         (
+    //             OsString::from_str("/tmp/dummy_script").unwrap(),
+    //             InMemoryFile::file(fs::read_to_string("/tmp/dummy_script").unwrap()),
+    //         ),
+    //     ]));
+    //     let provider = NativeProvider::new(fs.clone());
+    //     let namespace = provider.create_namespace().await.unwrap();
+
+    //     // spawn dummy node
+    //     let node = namespace
+    //         .spawn_node(SpawnNodeOptions::new(
+    //             "mynode",
+    //             "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+    //         ))
+    //         .await
+    //         .unwrap();
+
+    //     let result = node
+    //         .run_script(
+    //             RunScriptOptions::new("/tmp/dummy_script")
+    //                 .args(vec!["-c"])
+    //                 .env(vec![("MY_ENV_VAR", "Here is my content")]),
+    //         )
+    //         .await;
+
+    //     println!("{:?}", result);
+    //     // assert!(matches!(result, Ok(Ok(stdout)) if stdout == "Here is my content\n"));
+    // }
 }

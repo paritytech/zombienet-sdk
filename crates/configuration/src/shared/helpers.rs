@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use super::{
     errors::ValidationError,
-    types::{Port, ValidationContext},
+    types::{Port, ValidationContext, ParaId},
 };
 
 pub fn merge_errors(errors: Vec<anyhow::Error>, new_error: anyhow::Error) -> Vec<anyhow::Error> {
@@ -55,4 +55,20 @@ pub fn ensure_port_unique(
     }
 
     Err(ValidationError::PortAlreadyUsed(port).into())
+}
+
+pub fn ensure_parachain_id_unique(
+    id: ParaId,
+    validation_context: Rc<RefCell<ValidationContext>>,
+) -> Result<(), anyhow::Error> {
+    let mut context = validation_context
+        .try_borrow_mut()
+        .expect("must be borrowable as mutable, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+
+    if !context.used_parachain_ids.contains(&id) {
+        context.used_parachain_ids.push(id);
+        return Ok(());
+    }
+
+    Err(ValidationError::ParachainIdAlreadyUsed(id).into())
 }

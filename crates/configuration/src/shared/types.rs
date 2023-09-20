@@ -280,6 +280,7 @@ impl Serialize for Arg {
 pub struct ValidationContext {
     pub used_ports: Vec<Port>,
     pub used_nodes_names: Vec<String>,
+    pub used_parachain_ids: Vec<ParaId>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]

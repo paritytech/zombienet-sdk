@@ -5,7 +5,7 @@ use serde::{ser::SerializeStruct, Serialize};
 
 use crate::shared::{
     errors::{ConfigError, FieldError},
-    helpers::{merge_errors, merge_errors_vecs, ensure_parachain_id_unique},
+    helpers::{ensure_parachain_id_unique, merge_errors, merge_errors_vecs},
     macros::states,
     node::{self, NodeConfig, NodeConfigBuilder},
     resources::{Resources, ResourcesBuilder},
@@ -623,9 +623,8 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 
 #[cfg(test)]
 mod tests {
-    use crate::NetworkConfigBuilder;
-
     use super::*;
+    use crate::NetworkConfigBuilder;
 
     #[test]
     fn parachain_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
@@ -1011,29 +1010,22 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "'1000' is already used across config")]
-    fn parachains_with_same_id_should_fail(
-    ) {
+    fn parachains_with_same_id_should_fail() {
         let network = NetworkConfigBuilder::new()
             .with_relaychain(|relaychain| {
                 relaychain
                     .with_chain("polkadot")
-                    .with_node(|node| {
-                        node.with_name("alice")
-                    })
+                    .with_node(|node| node.with_name("alice"))
             })
             .with_parachain(|parachain| {
                 parachain
                     .with_id(1000)
-                    .with_collator(|collator| {
-                        collator.with_name("charles")
-                    })
+                    .with_collator(|collator| collator.with_name("charles"))
             })
             .with_parachain(|parachain| {
                 parachain
                     .with_id(1000)
-                    .with_collator(|collator| {
-                        collator.with_name("jim")
-                    })
+                    .with_collator(|collator| collator.with_name("jim"))
             })
             .build()
             .unwrap();

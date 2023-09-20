@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use super::{
     errors::ValidationError,
-    types::{Port, ValidationContext, ParaId},
+    types::{ParaId, Port, ValidationContext},
 };
 
 pub fn merge_errors(errors: Vec<anyhow::Error>, new_error: anyhow::Error) -> Vec<anyhow::Error> {

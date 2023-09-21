@@ -421,7 +421,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         local_dest: PathBuf,
     ) -> Result<(), ProviderError> {
         let remote_file_path = format!(
-            "{}/{}",
+            "{}{}",
             self.base_dir.to_string_lossy(),
             remote_src.to_string_lossy()
         );
@@ -845,49 +845,21 @@ mod tests {
             "MY_VALUE_3"
         );
 
-        // ensure log file is created and logs are written and at least 2 lines
-        timeout(Duration::from_secs(10), async {
+        // ensure log file is created and logs are written and keep being written for some time
+        timeout(Duration::from_secs(30), async {
+            let mut expected_logs_line_count = 2;
+
             loop {
                 sleep(Duration::from_millis(200)).await;
 
                 if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
                     if let Some(contents) = file.contents() {
-                        if contents.lines().count() >= 2 {
-                            return;
-                        }
-                    }
-                }
-            }
-        })
-        .await
-        .unwrap();
-
-        // ensure logs contains at least 4 lines when node continue running
-        timeout(Duration::from_secs(10), async {
-            loop {
-                sleep(Duration::from_millis(200)).await;
-
-                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
-                    if let Some(contents) = file.contents() {
-                        if contents.lines().count() >= 4 {
-                            return;
-                        }
-                    }
-                }
-            }
-        })
-        .await
-        .unwrap();
-
-        // ensure logs contains at least 6 lines when node continue running
-        timeout(Duration::from_secs(10), async {
-            loop {
-                sleep(Duration::from_millis(200)).await;
-
-                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
-                    if let Some(contents) = file.contents() {
-                        if contents.lines().count() >= 6 {
-                            return;
+                        if contents.lines().count() >= expected_logs_line_count {
+                            if expected_logs_line_count >= 6 {
+                                return;
+                            } else {
+                                expected_logs_line_count += 2;
+                            }
                         }
                     }
                 }
@@ -1173,6 +1145,202 @@ mod tests {
             err.to_string(),
             "Error running command 'myrandomprogram': No such file or directory (os error 2)"
         );
+    }
+
+    #[tokio::test]
+    async fn node_copy_file_from_node_method_should_copy_node_remote_file_to_local_path() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // wait 3s for node to start writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        node.copy_file_from_node(
+            PathBuf::from("/mynode.log"),
+            PathBuf::from("/nodelog.backup"),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            fs.files.read().await.get(node.log_path().as_os_str()),
+            fs.files
+                .read()
+                .await
+                .get(&OsString::from_str("/nodelog.backup").unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn node_pause_method_should_pause_the_node_process() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // wait 2s for node to spawn
+        sleep(Duration::from_secs(2)).await;
+
+        // retrieve running process
+        let processes = procfs::process::all_processes()
+            .unwrap()
+            .filter_map(|process| {
+                if let Ok(process) = process {
+                    process
+                        .cmdline()
+                        .iter()
+                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
+                        .then(|| process)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Process>>();
+        let node_process = processes.first().unwrap();
+
+        // ensure process has correct state pre-pause
+        assert!(matches!(
+            node_process.stat().unwrap().state().unwrap(),
+            // process can be running or sleeping because we sleep between echo calls
+            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+        ));
+
+        node.pause().await.unwrap();
+
+        // wait node 1s to stop writing logs
+        sleep(Duration::from_secs(1)).await;
+        let logs = node.logs().await.unwrap();
+
+        // ensure process has been paused for 10sec and logs stopped writing
+        let _ = timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert!(matches!(
+                    node_process.stat().unwrap().state().unwrap(),
+                    procfs::process::ProcState::Stopped
+                ));
+                assert_eq!(logs, node.logs().await.unwrap());
+            }
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn node_resume_method_should_resume_the_paused_node_process() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // wait 2s for node to spawn
+        sleep(Duration::from_secs(2)).await;
+
+        // retrieve running process
+        let processes = procfs::process::all_processes()
+            .unwrap()
+            .filter_map(|process| {
+                if let Ok(process) = process {
+                    process
+                        .cmdline()
+                        .iter()
+                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
+                        .then(|| process)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Process>>();
+        let node_process = processes.first().unwrap();
+
+        node.pause().await.unwrap();
+
+        // ensure process has been paused for 5sec
+        let _ = timeout(Duration::from_secs(5), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert!(matches!(
+                    node_process.stat().unwrap().state().unwrap(),
+                    procfs::process::ProcState::Stopped
+                ));
+            }
+        })
+        .await;
+
+        node.resume().await.unwrap();
+
+        // ensure process has been resumed for 10sec
+        let _ = timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert!(matches!(
+                    node_process.stat().unwrap().state().unwrap(),
+                    // process can be running or sleeping because we sleep between echo calls
+                    procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+                ));
+            }
+        })
+        .await;
+
+        // ensure logs continue being written for some time
+        timeout(Duration::from_secs(30), async {
+            let mut expected_logs_line_count = 2;
+
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= expected_logs_line_count {
+                            if expected_logs_line_count >= 6 {
+                                return;
+                            } else {
+                                expected_logs_line_count += 2;
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
     }
 
     // #[tokio::test]

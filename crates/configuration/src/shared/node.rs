@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::FieldError,
@@ -33,7 +33,7 @@ use crate::shared::{
 ///     }
 /// )
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnvVar {
     /// The name of the environment variable.
     pub name: String,
@@ -52,27 +52,36 @@ impl From<(&str, &str)> for EnvVar {
 }
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct NodeConfig {
     name: String,
-    image: Option<Image>,
-    command: Option<Command>,
+    pub(crate) image: Option<Image>,
+    pub(crate) command: Option<Command>,
+    #[serde(default)]
     args: Vec<Arg>,
-    is_validator: bool,
-    is_invulnerable: bool,
-    is_bootnode: bool,
+    #[serde(alias = "validator")]
+    pub(crate) is_validator: bool,
+    #[serde(alias = "invulnerable")]
+    pub(crate) is_invulnerable: bool,
+    #[serde(alias = "bootnode")]
+    pub(crate) is_bootnode: bool,
+    #[serde(alias = "balance")]
+    #[serde(default)]
     initial_balance: U128,
+    #[serde(default)]
     env: Vec<EnvVar>,
+    #[serde(default)]
     bootnodes_addresses: Vec<Multiaddr>,
-    resources: Option<Resources>,
+    pub(crate) resources: Option<Resources>,
     ws_port: Option<Port>,
     rpc_port: Option<Port>,
     prometheus_port: Option<Port>,
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
-    db_snapshot: Option<AssetLocation>,
+    pub(crate) db_snapshot: Option<AssetLocation>,
+    #[serde(default)]
     // used to skip serialization of fields with defaults to avoid duplication
-    chain_context: ChainDefaultContext,
+    pub(crate) chain_context: ChainDefaultContext,
 }
 
 impl Serialize for NodeConfig {
@@ -160,6 +169,11 @@ impl NodeConfig {
     /// Arguments to use for node.
     pub fn args(&self) -> Vec<&Arg> {
         self.args.iter().collect()
+    }
+
+    /// Arguments to use for node.
+    pub(crate) fn set_args(&mut self, args: Vec<Arg>) {
+        self.args = args;
     }
 
     /// Whether the node is a validator.

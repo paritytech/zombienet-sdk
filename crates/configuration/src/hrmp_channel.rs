@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::shared::{macros::states, types::ParaId};
 
 /// HRMP channel configuration, with fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HrmpChannelConfig {
     sender: ParaId,
     recipient: ParaId,

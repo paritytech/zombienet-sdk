@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use super::{
+    constants::{BORROWABLE, THIS_IS_A_BUG},
     errors::ValidationError,
     types::{Port, ValidationContext},
 };
@@ -31,7 +32,7 @@ pub fn ensure_node_name_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .expect("must be borrowable as mutable, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
 
     if !context.used_nodes_names.contains(&node_name) {
         context.used_nodes_names.push(node_name);
@@ -47,7 +48,7 @@ pub fn ensure_port_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .expect("must be borrowable as mutable, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
 
     if !context.used_ports.contains(&port) {
         context.used_ports.push(port);

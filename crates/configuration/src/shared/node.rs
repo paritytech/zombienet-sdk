@@ -248,7 +248,6 @@ states! {
 }
 
 /// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct NodeConfigBuilder<S> {
     config: NodeConfig,
     validation_context: Rc<RefCell<ValidationContext>>,

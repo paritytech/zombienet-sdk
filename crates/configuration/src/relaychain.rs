@@ -92,7 +92,6 @@ states! {
 }
 
 /// A relay chain configuration builder, used to build a [`RelaychainConfig`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
     validation_context: Rc<RefCell<ValidationContext>>,

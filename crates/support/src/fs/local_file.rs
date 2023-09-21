@@ -4,7 +4,6 @@ use std::{
     process::Stdio,
 };
 
-#[derive(Debug)]
 pub struct LocalFile(File);
 
 impl From<File> for LocalFile {

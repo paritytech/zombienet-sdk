@@ -44,7 +44,6 @@ impl GlobalSettings {
 }
 
 /// A global settings builder, used to build [`GlobalSettings`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
     errors: Vec<anyhow::Error>,

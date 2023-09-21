@@ -241,7 +241,6 @@ states! {
 ///
 /// assert!(network_config.is_ok())
 /// ```
-#[derive(Debug)]
 pub struct NetworkConfigBuilder<State> {
     config: NetworkConfig,
     validation_context: Rc<RefCell<ValidationContext>>,

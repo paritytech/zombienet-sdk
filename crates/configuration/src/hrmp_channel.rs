@@ -42,7 +42,6 @@ states! {
 }
 
 /// HRMP channel configuration builder, used to build an [`HrmpChannelConfig`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct HrmpChannelConfigBuilder<State> {
     config: HrmpChannelConfig,
     _state: PhantomData<State>,

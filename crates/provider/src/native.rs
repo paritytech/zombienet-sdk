@@ -789,20 +789,7 @@ mod tests {
         );
 
         // retrieve running process
-        let processes = procfs::process::all_processes()
-            .unwrap()
-            .filter_map(|process| {
-                if let Ok(process) = process {
-                    process
-                        .cmdline()
-                        .iter()
-                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
-                        .then(|| process)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Process>>();
+        let processes = get_processes_by_name("dummy_node").await;
 
         // ensure only one dummy process exists
         assert_eq!(processes.len(), 1);
@@ -965,20 +952,7 @@ mod tests {
         assert_eq!(namespace.nodes().await.len(), 0);
 
         // retrieve running process
-        let processes = procfs::process::all_processes()
-            .unwrap()
-            .filter_map(|process| {
-                if let Ok(process) = process {
-                    process
-                        .cmdline()
-                        .iter()
-                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
-                        .then(|| process)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Process>>();
+        let processes = get_processes_by_name("dummy_node").await;
 
         // ensure no running process exists
         assert_eq!(processes.len(), 0);
@@ -1206,20 +1180,7 @@ mod tests {
         sleep(Duration::from_secs(2)).await;
 
         // retrieve running process
-        let processes = procfs::process::all_processes()
-            .unwrap()
-            .filter_map(|process| {
-                if let Ok(process) = process {
-                    process
-                        .cmdline()
-                        .iter()
-                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
-                        .then(|| process)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Process>>();
+        let processes = get_processes_by_name("dummy_node").await;
         let node_process = processes.first().unwrap();
 
         // ensure process has correct state pre-pause
@@ -1272,20 +1233,8 @@ mod tests {
         sleep(Duration::from_secs(2)).await;
 
         // retrieve running process
-        let processes = procfs::process::all_processes()
-            .unwrap()
-            .filter_map(|process| {
-                if let Ok(process) = process {
-                    process
-                        .cmdline()
-                        .iter()
-                        .any(|args| args.iter().any(|arg| arg.contains("dummy_node")))
-                        .then(|| process)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Process>>();
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
         let node_process = processes.first().unwrap();
 
         node.pause().await.unwrap();
@@ -1343,6 +1292,181 @@ mod tests {
         .unwrap();
     }
 
+    #[tokio::test]
+    async fn node_restart_should_kill_the_node_and_respawn_it_successfully() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/file1").unwrap(),
+                InMemoryFile::file("My file 1"),
+            ),
+            (
+                OsString::from_str("/file2").unwrap(),
+                InMemoryFile::file("My file 2"),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        let node = namespace
+            .spawn_node(
+                SpawnNodeOptions::new(
+                    "mynode",
+                    "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                )
+                .args(vec![
+                    "-flag1",
+                    "--flag2",
+                    "--option1=value1",
+                    "-option2=value2",
+                    "--option3 value3",
+                    "-option4 value4",
+                ])
+                .env(vec![
+                    ("MY_VAR_1", "MY_VALUE_1"),
+                    ("MY_VAR_2", "MY_VALUE_2"),
+                    ("MY_VAR_3", "MY_VALUE_3"),
+                ])
+                .injected_files(vec![
+                    TransferedFile::new("/file1", "/cfg/file1"),
+                    TransferedFile::new("/file2", "/data/file2"),
+                ]),
+            )
+            .await
+            .unwrap();
+
+        // wait 3s for node to spawn and start writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
+        let old_process_id = processes.first().unwrap().pid();
+        let old_logs_count = node.logs().await.unwrap().lines().count();
+
+        node.restart(None).await.unwrap();
+
+        // wait 3s for node to restart and restart writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
+        let node_process = processes.first().unwrap();
+
+        // ensure process has correct state
+        assert!(matches!(
+            node_process.stat().unwrap().state().unwrap(),
+            // process can be running or sleeping because we sleep between echo calls
+            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+        ));
+
+        // ensure PID changed
+        assert_ne!(old_process_id, node_process.pid());
+
+        // ensure process restarted with correct args
+        let node_args = node_process.cmdline().unwrap();
+        assert!(node_args.contains(&"-flag1".to_string()));
+        assert!(node_args.contains(&"--flag2".to_string()));
+        assert!(node_args.contains(&"--option1=value1".to_string()));
+        assert!(node_args.contains(&"-option2=value2".to_string()));
+        assert!(node_args.contains(&"--option3 value3".to_string()));
+        assert!(node_args.contains(&"-option4 value4".to_string()));
+
+        // ensure process restarted with correct environment
+        let node_env = node_process.environ().unwrap();
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_1").unwrap())
+                .unwrap(),
+            "MY_VALUE_1"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_2").unwrap())
+                .unwrap(),
+            "MY_VALUE_2"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_3").unwrap())
+                .unwrap(),
+            "MY_VALUE_3"
+        );
+
+        // ensure log writing restarted and they keep being written for some time
+        timeout(Duration::from_secs(30), async {
+            let mut expected_logs_line_count = old_logs_count;
+
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= expected_logs_line_count {
+                            if expected_logs_line_count >= old_logs_count + 6 {
+                                return;
+                            } else {
+                                expected_logs_line_count += 2;
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        // ensure node is present in namespace
+        assert_eq!(namespace.nodes().await.len(), 1);
+        assert!(namespace.nodes().await.get(node.name()).is_some());
+    }
+
+    #[tokio::test]
+    async fn node_destroy_method_should_destroy_the_node_itfself_and_remove_process_and_stop_logs_writing(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        // wait 3s for node to start and begin writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        node.destroy().await.unwrap();
+
+        // wait node 1s to be killed and stop writing logs
+        sleep(Duration::from_secs(1)).await;
+        let logs = node.logs().await.unwrap();
+
+        // ensure process is not running anymore
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 0);
+
+        // ensure logs are not being written anymore
+        let _ = timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert_eq!(logs, node.logs().await.unwrap());
+            }
+        })
+        .await;
+
+        // ensure node doesn't exists anymore in namespace
+        assert_eq!(namespace.nodes().await.len(), 0);
+    }
+
     // #[tokio::test]
     // async fn node_run_script_method_should_execute_the_script_successfully_and_returns_stdout() {
     //     // we need to mirror the script between local fs and in memory fs else
@@ -1384,4 +1508,21 @@ mod tests {
     //     println!("{:?}", result);
     //     // assert!(matches!(result, Ok(Ok(stdout)) if stdout == "Here is my content\n"));
     // }
+
+    async fn get_processes_by_name(name: &str) -> Vec<Process> {
+        procfs::process::all_processes()
+            .unwrap()
+            .filter_map(|process| {
+                if let Ok(process) = process {
+                    process
+                        .cmdline()
+                        .iter()
+                        .any(|args| args.iter().any(|arg| arg.contains(name)))
+                        .then(|| process)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Process>>()
+    }
 }

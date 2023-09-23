@@ -3,11 +3,13 @@ use configuration::{shared::types::RegistrationStrategy, ParachainConfig};
 use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
-    generators::{chain_spec::ChainSpec, para_artifact::*},
+    generators::{{
+        chain_spec::ChainSpec, chain_spec::Context
+    }, para_artifact::*},
     shared::types::ChainDefaultContext,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)
     // name: Option<Chain>,
@@ -46,13 +48,21 @@ impl ParachainSpec {
                 ""
             };
 
+            let chain_spec_builder = if chain_name.is_empty() {
+                // if the chain don't have name use the id for the name of the file
+                ChainSpec::new(config.id().to_string(), Context::Para)
+            } else {
+                ChainSpec::new(chain_name, Context::Para)
+            };
+            let chain_spec_builder = chain_spec_builder.chain_name(chain_name);
+
             if let Some(chain_spec_path) = config.chain_spec_path() {
-                Some(ChainSpec::new(chain_name).asset_location(chain_spec_path.clone()).chain_name(chain_name))
+                Some(chain_spec_builder.asset_location(chain_spec_path.clone()))
 
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.
-                Some(ChainSpec::new(chain_name).commad(main_cmd.as_str()).chain_name(chain_name))
+                Some(chain_spec_builder.commad(main_cmd.as_str()))
             }
         } else {
             None

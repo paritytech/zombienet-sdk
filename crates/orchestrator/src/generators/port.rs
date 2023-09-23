@@ -1,4 +1,4 @@
-use std::{net::TcpListener, sync::Arc};
+use std::net::TcpListener;
 
 use configuration::shared::types::Port;
 
@@ -20,5 +20,5 @@ pub fn generate(port: Option<Port>) -> Result<ParkedPort, GeneratorError> {
         .local_addr()
         .expect("We should always get the local_addr from the listener, please report as bug")
         .port();
-    Ok(ParkedPort::new(port, Arc::new(listener)))
+    Ok(ParkedPort::new(port,listener))
 }

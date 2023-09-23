@@ -215,6 +215,9 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             local_output_path,
         } in options.commands
         {
+            println!("a1");
+            println!("{:#?}, {:#?}", command, args);
+            println!("{:#?}", local_output_path.as_os_str());
             match temp_node
                 .run_command(RunCommandOptions { command, args, env })
                 .await

@@ -9,7 +9,7 @@ pub mod relaychain;
 
 use self::{parachain::ParachainSpec, relaychain::RelaychainSpec};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NetworkSpec {
     /// Relaychain configuration.
     pub(crate) relaychain: RelaychainSpec,

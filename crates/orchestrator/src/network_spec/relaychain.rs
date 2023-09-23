@@ -8,7 +8,7 @@ use configuration::{
 
 use super::node::NodeSpec;
 use crate::{
-    errors::OrchestratorError, generators::chain_spec::ChainSpec,
+    errors::OrchestratorError, generators::chain_spec::{ChainSpec, Context},
     shared::types::ChainDefaultContext,
 };
 
@@ -66,12 +66,13 @@ impl RelaychainSpec {
             ));
         };
 
+        let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay).chain_name(config.chain().as_str());
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
-            ChainSpec::new(config.chain().as_str()).chain_name(config.chain().as_str()).asset_location(chain_spec_path.clone())
+            chain_spec.asset_location(chain_spec_path.clone())
         } else {
             // TODO: Do we need to add the posibility to set the command to use?
             // Currently (v1) is possible but when is set is set to the default command.
-            ChainSpec::new(config.chain().as_str()).chain_name(config.chain().as_str()).commad(main_cmd.as_str())
+            chain_spec.commad(main_cmd.as_str())
         };
 
         // build the `node_specs`

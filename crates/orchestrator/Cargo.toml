@@ -20,3 +20,4 @@ sp-core = "22.0.0"
 serde_json = { workspace = true }
 futures = { workspace = true }
 libp2p = { version = "0.52" }
+anyhow = { workspace = true }

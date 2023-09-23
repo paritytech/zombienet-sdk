@@ -13,6 +13,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
                 .with_node(|node| node.with_name("alice"))
                 .with_node(|node| node.with_name("bob"))
         })
+        .with_parachain(|p| {
+            p.with_id(100)
+            .cumulus_based(true)
+            .with_collator(|n| {
+                n.with_name("collator")
+                .with_command("polkadot-parachain")
+                //.with_command("adder-collator")
+            })
+        })
         .build().unwrap();
 
     println!("{:?}", &config);
@@ -20,7 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
     let fs = LocalFileSystem;
     let provider = NativeProvider::new(fs.clone());
     let orchestrator = Orchestrator::new(fs, provider);
-    orchestrator.spawn(config).await?;
+    let _network = orchestrator.spawn(config).await?;
+    //println!("{:#?}", network);
     while true {
 
     }

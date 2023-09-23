@@ -31,42 +31,42 @@ pub struct SpawnNodeOptions {
     pub created_paths: Vec<PathBuf>
 }
 
-impl SpawnNodeOptions {
-    fn new<S>(name: S, command: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        Self {
-            name: name.as_ref().to_string(),
-            command: command.as_ref().to_string(),
-            args: vec![],
-            env: vec![],
-            injected_files: vec![],
-            created_paths: vec![],
-        }
-    }
+// impl SpawnNodeOptions {
+//     fn new<S>(name: S, command: S) -> Self
+//     where
+//         S: AsRef<str>,
+//     {
+//         Self {
+//             name: name.as_ref().to_string(),
+//             command: command.as_ref().to_string(),
+//             args: vec![],
+//             env: vec![],
+//             injected_files: vec![],
+//             created_paths: vec![],
+//         }
+//     }
 
-    fn args<S, I>(mut self, args: I) -> Self
-    where
-        S: AsRef<str>,
-        I: IntoIterator<Item = S>,
-    {
-        self.args = args.into_iter().map(|s| s.as_ref().to_string()).collect();
-        self
-    }
+//     fn args<S, I>(mut self, args: I) -> Self
+//     where
+//         S: AsRef<str>,
+//         I: IntoIterator<Item = S>,
+//     {
+//         self.args = args.into_iter().map(|s| s.as_ref().to_string()).collect();
+//         self
+//     }
 
-    fn env<S, I>(mut self, env: I) -> Self
-    where
-        S: AsRef<str>,
-        I: IntoIterator<Item = (S, S)>,
-    {
-        self.env = env
-            .into_iter()
-            .map(|(name, value)| (name.as_ref().to_string(), value.as_ref().to_string()))
-            .collect();
-        self
-    }
-}
+//     fn env<S, I>(mut self, env: I) -> Self
+//     where
+//         S: AsRef<str>,
+//         I: IntoIterator<Item = (S, S)>,
+//     {
+//         self.env = env
+//             .into_iter()
+//             .map(|(name, value)| (name.as_ref().to_string(), value.as_ref().to_string()))
+//             .collect();
+//         self
+//     }
+// }
 #[derive(Debug)]
 pub struct GenerateFileCommand {
     pub command: String,

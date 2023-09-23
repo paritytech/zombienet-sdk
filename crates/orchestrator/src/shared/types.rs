@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::TcpListener, sync::Arc};
+use std::{collections::HashMap, net::TcpListener, sync::{Arc, RwLock}};
 
 pub type Accounts = HashMap<String, NodeAccount>;
 use configuration::shared::{
@@ -28,10 +28,22 @@ pub struct NodeAccounts {
 }
 
 #[derive(Clone, Debug)]
-pub struct ParkedPort(pub(crate) Port, pub(crate) Arc<TcpListener>);
+pub struct ParkedPort(
+    pub(crate) Port,
+    pub(crate) Arc<RwLock<Option<TcpListener>>>
+);
+
 impl ParkedPort {
-    pub(crate) fn new(port: u16, listener: Arc<TcpListener>) -> ParkedPort {
+    pub(crate) fn new(port: u16, listener: TcpListener) -> ParkedPort {
+        let listener = Arc::new(RwLock::new(Some(listener)));
         ParkedPort(port, listener)
+    }
+
+    pub(crate) fn drop_listener(&self) {
+        // drop the listener will allow the running node to start listenen connections
+        //drop(self.1.write())
+        let mut l = self.1.write().unwrap();
+        *l = None;
     }
 }
 

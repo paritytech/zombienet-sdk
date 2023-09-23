@@ -61,6 +61,7 @@ where
         println!("{:#?}", ns.id());
         println!("{:#?}", ns.base_dir());
 
+        // TODO: noop for native
         // Static setup
         // ns.static_setup().await?;
 
@@ -69,26 +70,23 @@ where
         // Create chain-spec for relaychain
         network_spec.relaychain.chain_spec.build(&ns, &scoped_fs).await?;
 
-        println!("{:#?}", network_spec.relaychain.chain_spec);
+        // TODO: move to logger
+        // println!("{:#?}", network_spec.relaychain.chain_spec);
 
-        // TODO: move this to `try_join_all` per para
         // Create parachain artifacts (chain-spec, wasm, state)
         let relay_chain_id = network_spec.relaychain.chain_spec.read_chain_id(&scoped_fs).await?;
         let relay_chain_name = network_spec.relaychain.chain.as_str();
         // TODO: if we don't need to register this para we can skip it
-        // network_spec.parachains.iter_mut().for_each(|para| {
-
-        // });
         for para in network_spec.parachains.iter_mut() {
             let para_cloned = para.clone();
             let chain_spec_raw_path = if let Some(chain_spec) = para.chain_spec.as_mut() {
                 chain_spec.build(&ns, &scoped_fs).await?;
-                println!("{:#?}", chain_spec);
+                // TODO: move to logger
+                // println!("{:#?}", chain_spec);
 
                 chain_spec.customize_para(&para_cloned, &relay_chain_id, &scoped_fs).await?;
-                println!("p1");
                 chain_spec.build_raw(&ns).await?;
-                println!("p2");
+
 
                 let chain_spec_raw_path = chain_spec.raw_path().ok_or(OrchestratorError::InvariantError("chain-spec raw path should be set now"))?;
                 Some(chain_spec_raw_path)
@@ -99,14 +97,10 @@ where
             // TODO: this need to be abstracted in a single call to generate_files.
             scoped_fs.create_dir(para.id.to_string()).await?;
             // create wasm/state
-            println!("p3");
             para.genesis_state.build(chain_spec_raw_path, format!("{}/genesis-state", para.id),&ns, &scoped_fs).await?;
-            println!("p4");
             para.genesis_wasm.build(chain_spec_raw_path, format!("{}/genesis-wasm", para.id),&ns, &scoped_fs).await?;
-            println!("p5");
-        }
 
-        println!("pse1");
+        }
 
         let para_to_register_in_genesis: Vec<&ParachainSpec> = network_spec.parachains.iter()
             .filter(|para| {
@@ -147,10 +141,7 @@ where
         }
 
 
-
-        // Spawn first node of relay-chain
         // TODO: we want to still supporting spawn a dedicated bootnode??
-        //let first_node = network_spec.relaychain.nodes.get(0).ok_or(OrchestratorError::InvalidConfig("At least one relaychain node is required".into()))?;
         let mut ctx = SpawnNodeCtx {
             chain_id: &relay_chain_id,
             parachain_id: None,
@@ -174,7 +165,6 @@ where
         let mut network = Network::new_with_relay(r, ns.clone(), network_spec.clone());
 
         let spawning_tasks = bootnodes.iter_mut().map(|node| self.spawn_node(node, global_files_to_inject.clone(), &ctx));
-        //let mut running_nodes = futures::future::try_join_all(spawning_tasks).await?;
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr : Vec<String> = vec![];
@@ -192,7 +182,6 @@ where
 
         // spawn the rest of the nodes (TODO: in batches)
         let spawning_tasks = relaynodes.iter().map(|node| self.spawn_node(node, global_files_to_inject.clone(), &ctx));
-        // running_nodes.append(&mut futures::future::try_join_all(spawning_tasks).await?);
         for node  in futures::future::try_join_all(spawning_tasks).await? {
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
@@ -227,10 +216,8 @@ where
             }
 
             let spawning_tasks = para.collators.iter().map(|node| self.spawn_node(node, para_files_to_inject.clone(), &ctx_para));
-            // TODO: Add para
+            // TODO: Add para to Network instance
             futures::future::try_join_all(spawning_tasks).await?;
-            // running_nodes.append(&mut futures::future::try_join_all(spawning_tasks).await?);
-
         }
 
         // TODO:
@@ -239,9 +226,8 @@ where
 
         // - verify nodes (clean metrics cache?)
 
-        // - write zombie.json state file
+        // - write zombie.json state file (we should defined in a way we can load later)
 
-        // - return `Network` instance
         Ok(network)
     }
 
@@ -453,6 +439,9 @@ impl Network {
     }
 
     // Pub API
+
+    // Teardown the network
+    // destroy()
 
     // This should include at least of collator?
     // add_parachain()

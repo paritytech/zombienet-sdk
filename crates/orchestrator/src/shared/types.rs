@@ -41,7 +41,6 @@ impl ParkedPort {
 
     pub(crate) fn drop_listener(&self) {
         // drop the listener will allow the running node to start listenen connections
-        //drop(self.1.write())
         let mut l = self.1.write().unwrap();
         *l = None;
     }

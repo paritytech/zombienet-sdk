@@ -215,7 +215,8 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             local_output_path,
         } in options.commands
         {
-            println!("a1");
+
+            // TODO: move to logger
             println!("{:#?}, {:#?}", command, args);
             println!("{:#?}", local_output_path.as_os_str());
             match temp_node

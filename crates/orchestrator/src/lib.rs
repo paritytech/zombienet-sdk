@@ -226,6 +226,7 @@ where
 
         let r = Relaychain::new(
             relay_chain_name.to_string(),
+            relay_chain_id.clone(),
             PathBuf::from(network_spec.relaychain.chain_spec.raw_path().ok_or(
                 OrchestratorError::InvariantError("chain-spec raw path should be set now"),
             )?),
@@ -282,7 +283,7 @@ where
                     .ok_or(OrchestratorError::InvariantError(
                         "chain-spec path should be set by now.",
                     ))?;
-                let mut running_para = Parachain::with_chain_spec(para.id, raw_path);
+                let mut running_para = Parachain::with_chain_spec(para.id, &id, raw_path);
                 if let Some(chain_name) = chain_spec.chain_name() {
                     running_para.chain = Some(chain_name.to_string());
                 }
@@ -473,7 +474,7 @@ where
 // but the FileSystem trait isn't object-safe so we can't pass around
 // as `dyn FileSystem`. We can refactor or using some `erase` techniques
 // to resolve this and remove this struct
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ScopedFilesystem<'a, FS: FileSystem> {
     fs: &'a FS,
     base_dir: &'a str,
@@ -540,7 +541,7 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ZombieRole {
     Temp,
     Node,
@@ -625,21 +626,39 @@ impl<T: FileSystem> Network<T> {
     // Teardown the network
     // destroy()
 
-    // Could be for relay/para?
-    // pub fn add_node(&mut self, name: impl Into<String>, cmd: Command, args: Vec<Arg>, env: Vec<EnvVar>, is_validator: bool, para_id: Option<u32>) -> Result<(), anyhow::Error> {
     pub async fn add_node(
         &mut self,
         name: impl Into<String>,
         options: AddNodeOpts,
+        para_id: Option<u32>,
     ) -> Result<(), anyhow::Error> {
         // build context
-        let spec = &self.initial_spec.relaychain;
-        let chain_context = ChainDefaultContext {
-            default_command: spec.default_command.as_ref(),
-            default_image: spec.default_image.as_ref(),
-            default_resources: spec.default_resources.as_ref(),
-            default_db_snapshot: spec.default_db_snapshot.as_ref(),
-            default_args: spec.default_args.iter().collect(),
+        //let (maybe_para_chain_id, chain_context, para_spec, role) =
+        let (chain_context, role, maybe_para_chain_id, para_spec, maybe_para_chain_spec_path) =
+        if let Some(para_id) = para_id {
+            let spec = self.initial_spec.parachains.iter().find(|para| para.id == para_id).ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
+            let role = if spec.is_cumulus_based { ZombieRole::CumulusCollator } else { ZombieRole::Collator };
+            let chain_context = ChainDefaultContext {
+                default_command: spec.default_command.as_ref(),
+                default_image: spec.default_image.as_ref(),
+                default_resources: spec.default_resources.as_ref(),
+                default_db_snapshot: spec.default_db_snapshot.as_ref(),
+                default_args: spec.default_args.iter().collect(),
+            };
+            let parachain = self.parachains.get(&para_id).ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
+
+            // (parachain.chain_id.clone(), chain_context, Some(spec), role)
+            (chain_context, role, parachain.chain_id.clone(), Some(spec), parachain.chain_spec_path.clone())
+        } else {
+            let spec = &self.initial_spec.relaychain;
+            let chain_context = ChainDefaultContext {
+                default_command: spec.default_command.as_ref(),
+                default_image: spec.default_image.as_ref(),
+                default_resources: spec.default_resources.as_ref(),
+                default_db_snapshot: spec.default_db_snapshot.as_ref(),
+                default_args: spec.default_args.iter().collect(),
+            };
+            (chain_context, ZombieRole::Node, None, None, None)
         };
 
         let node_spec =
@@ -649,20 +668,30 @@ impl<T: FileSystem> Network<T> {
 
         // TODO: we want to still supporting spawn a dedicated bootnode??
         let ctx = SpawnNodeCtx {
-            chain_id: &self.relay.chain,
-            parachain_id: None,
+            chain_id: &self.relay.chain_id,
+            parachain_id: maybe_para_chain_id.as_deref(),
             chain: &self.relay.chain,
-            role: ZombieRole::Node,
+            role,
             ns: &self.ns,
             scoped_fs: &scoped_fs,
-            parachain: None,
+            parachain: para_spec,
             bootnodes_addr: &vec![],
         };
 
-        let global_files_to_inject = vec![TransferedFile {
+        let mut global_files_to_inject = vec![TransferedFile {
             local_path: PathBuf::from(format!("{}/{}.json", self.ns.base_dir(), self.relay.chain)),
             remote_path: PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
         }];
+
+        if let Some(para_spec_path) = maybe_para_chain_spec_path {
+            global_files_to_inject.push(
+                TransferedFile {
+                    local_path: PathBuf::from(format!("{}/{}", self.ns.base_dir(), para_spec_path.to_string_lossy())),
+                    remote_path: PathBuf::from(format!("/cfg/{}.json", para_id.ok_or(anyhow::anyhow!("para_id should be valid here, this is a bug!"))?)),
+                }
+
+            );
+        }
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
         self.add_running_node(node, None);
@@ -751,14 +780,16 @@ impl<T: FileSystem> Network<T> {
 #[derive(Debug)]
 pub struct Relaychain {
     chain: String,
+    chain_id: String,
     chain_spec_path: PathBuf,
     nodes: Vec<NetworkNode>,
 }
 
 impl Relaychain {
-    fn new(chain: String, chain_spec_path: PathBuf) -> Self {
+    fn new(chain: String, chain_id: String, chain_spec_path: PathBuf) -> Self {
         Self {
             chain,
+            chain_id,
             chain_spec_path,
             nodes: Default::default(),
         }
@@ -769,6 +800,7 @@ impl Relaychain {
 pub struct Parachain {
     chain: Option<String>,
     para_id: u32,
+    chain_id: Option<String>,
     chain_spec_path: Option<PathBuf>,
     collators: Vec<NetworkNode>,
 }
@@ -778,15 +810,17 @@ impl Parachain {
         Self {
             chain: None,
             para_id,
+            chain_id: None,
             chain_spec_path: None,
             collators: Default::default(),
         }
     }
 
-    fn with_chain_spec(para_id: u32, chain_spec_path: impl AsRef<Path>) -> Self {
+    fn with_chain_spec(para_id: u32, chain_id: impl Into<String>, chain_spec_path: impl AsRef<Path>) -> Self {
         Self {
             para_id,
             chain: None,
+            chain_id: Some(chain_id.into()),
             chain_spec_path: Some(chain_spec_path.as_ref().into()),
             collators: Default::default(),
         }

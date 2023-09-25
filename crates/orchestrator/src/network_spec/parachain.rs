@@ -1,4 +1,4 @@
-use configuration::{shared::types::RegistrationStrategy, ParachainConfig};
+use configuration::{shared::{types::RegistrationStrategy, resources::Resources}, ParachainConfig, types::{Command, Image, AssetLocation, Arg}};
 
 use super::node::NodeSpec;
 use crate::{
@@ -14,14 +14,47 @@ use crate::{
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)
     // name: Option<Chain>,
+
+    /// Parachain id
     pub(crate) id: u32,
-    pub(crate) chain_spec: Option<ChainSpec>, // Only needed by cumulus based paras
+
+    /// Default command to run the node. Can be overriden on each node.
+    pub(crate) default_command: Option<Command>,
+
+    /// Default image to use (only podman/k8s). Can be overriden on each node.
+    pub(crate) default_image: Option<Image>,
+
+    /// Default resources. Can be overriden on each node.
+    pub(crate) default_resources: Option<Resources>,
+
+    /// Default database snapshot. Can be overriden on each node.
+    pub(crate) default_db_snapshot: Option<AssetLocation>,
+
+    /// Default arguments to use in nodes. Can be overriden on each node.
+    pub(crate) default_args: Vec<Arg>,
+
+    /// Chain-spec, only needed by cumulus based paras
+    pub(crate) chain_spec: Option<ChainSpec>,
+
+    /// Registration strategy to use
     pub(crate) registration_strategy: RegistrationStrategy,
+
+    /// Oboard as parachain or parathread
     pub(crate) onboard_as_parachain: bool,
+
+    /// Is the parachain cumulus-based
     pub(crate) is_cumulus_based: bool,
+
+    /// Initial balance
     pub(crate) initial_balance: u128,
+
+    /// Genesis state (head) to register the parachain
     pub(crate) genesis_state: ParaArtifact,
+
+    /// Genesis wasm to register the parachain
     pub(crate) genesis_wasm: ParaArtifact,
+
+    /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
 }
 
@@ -123,6 +156,11 @@ impl ParachainSpec {
 
         let para_spec = ParachainSpec {
             id: config.id(),
+            default_command: config.default_command().cloned(),
+            default_image: config.default_image().cloned(),
+            default_resources: config.default_resources().cloned(),
+            default_db_snapshot: config.default_db_snapshot().cloned(),
+            default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec,
             registration_strategy: config
                 .registration_strategy()

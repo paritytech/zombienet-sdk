@@ -1,4 +1,4 @@
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
 use super::node::NetworkNode;
 
@@ -22,7 +22,11 @@ impl Parachain {
         }
     }
 
-    pub(crate) fn with_chain_spec(para_id: u32, chain_id: impl Into<String>, chain_spec_path: impl AsRef<Path>) -> Self {
+    pub(crate) fn with_chain_spec(
+        para_id: u32,
+        chain_id: impl Into<String>,
+        chain_spec_path: impl AsRef<Path>,
+    ) -> Self {
         Self {
             para_id,
             chain: None,

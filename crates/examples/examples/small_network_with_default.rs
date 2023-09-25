@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use configuration::NetworkConfigBuilder;
-use orchestrator::{Orchestrator, AddNodeOpts};
+use orchestrator::{AddNodeOpts, Orchestrator};
 use provider::NativeProvider;
 use support::fs::local::LocalFileSystem;
 

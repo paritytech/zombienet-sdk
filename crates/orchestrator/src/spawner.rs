@@ -2,11 +2,17 @@ use std::path::PathBuf;
 
 use provider::{
     constants::LOCALHOST,
-    types::{SpawnNodeOptions, TransferedFile}, DynNamespace,
+    types::{SpawnNodeOptions, TransferedFile},
+    DynNamespace,
 };
 use support::fs::FileSystem;
 
-use crate::{generators, network_spec::{node::NodeSpec, parachain::ParachainSpec}, ZombieRole, ScopedFilesystem, network::node::NetworkNode};
+use crate::{
+    generators,
+    network::node::NetworkNode,
+    network_spec::{node::NodeSpec, parachain::ParachainSpec},
+    ScopedFilesystem, ZombieRole,
+};
 
 #[derive(Clone)]
 pub struct SpawnNodeCtx<'a, T: FileSystem> {

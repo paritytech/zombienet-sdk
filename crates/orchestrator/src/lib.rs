@@ -3,29 +3,21 @@
 
 mod errors;
 mod generators;
+mod network;
 mod network_spec;
 mod shared;
 mod spawner;
-mod network;
 
 use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use configuration::{
-    types::RegistrationStrategy,
-    NetworkConfig,
-};
+use configuration::{types::RegistrationStrategy, NetworkConfig};
 use errors::OrchestratorError;
-use network::{Network, relaychain::Relaychain, parachain::Parachain};
+use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
-use provider::{
-    constants::LOCALHOST,
-    types::TransferedFile,
-    Provider,
-};
-
+use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 

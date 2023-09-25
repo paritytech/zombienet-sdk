@@ -1,16 +1,23 @@
-pub mod relaychain;
-pub mod parachain;
 pub mod node;
+pub mod parachain;
+pub mod relaychain;
 
-use std::{collections::HashMap, time::Duration, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
-use configuration::{types::{Image, Arg, Command, Port}, shared::node::EnvVar};
-use provider::{DynNamespace, types::TransferedFile};
+use configuration::{
+    shared::node::EnvVar,
+    types::{Arg, Command, Image, Port},
+};
+use provider::{types::TransferedFile, DynNamespace};
 use support::fs::FileSystem;
 
-use crate::{network_spec::{NetworkSpec, self}, ZombieRole, shared::types::ChainDefaultContext, ScopedFilesystem, spawner::{SpawnNodeCtx, self}};
-
-use self::{relaychain::Relaychain, node::NetworkNode, parachain::Parachain};
+use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
+use crate::{
+    network_spec::{self, NetworkSpec},
+    shared::types::ChainDefaultContext,
+    spawner::{self, SpawnNodeCtx},
+    ScopedFilesystem, ZombieRole,
+};
 
 pub struct Network<T: FileSystem> {
     ns: DynNamespace,
@@ -74,33 +81,51 @@ impl<T: FileSystem> Network<T> {
         para_id: Option<u32>,
     ) -> Result<(), anyhow::Error> {
         // build context
-        //let (maybe_para_chain_id, chain_context, para_spec, role) =
+        // let (maybe_para_chain_id, chain_context, para_spec, role) =
         let (chain_context, role, maybe_para_chain_id, para_spec, maybe_para_chain_spec_path) =
-        if let Some(para_id) = para_id {
-            let spec = self.initial_spec.parachains.iter().find(|para| para.id == para_id).ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
-            let role = if spec.is_cumulus_based { ZombieRole::CumulusCollator } else { ZombieRole::Collator };
-            let chain_context = ChainDefaultContext {
-                default_command: spec.default_command.as_ref(),
-                default_image: spec.default_image.as_ref(),
-                default_resources: spec.default_resources.as_ref(),
-                default_db_snapshot: spec.default_db_snapshot.as_ref(),
-                default_args: spec.default_args.iter().collect(),
-            };
-            let parachain = self.parachains.get(&para_id).ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
+            if let Some(para_id) = para_id {
+                let spec = self
+                    .initial_spec
+                    .parachains
+                    .iter()
+                    .find(|para| para.id == para_id)
+                    .ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
+                let role = if spec.is_cumulus_based {
+                    ZombieRole::CumulusCollator
+                } else {
+                    ZombieRole::Collator
+                };
+                let chain_context = ChainDefaultContext {
+                    default_command: spec.default_command.as_ref(),
+                    default_image: spec.default_image.as_ref(),
+                    default_resources: spec.default_resources.as_ref(),
+                    default_db_snapshot: spec.default_db_snapshot.as_ref(),
+                    default_args: spec.default_args.iter().collect(),
+                };
+                let parachain = self
+                    .parachains
+                    .get(&para_id)
+                    .ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
 
-            // (parachain.chain_id.clone(), chain_context, Some(spec), role)
-            (chain_context, role, parachain.chain_id.clone(), Some(spec), parachain.chain_spec_path.clone())
-        } else {
-            let spec = &self.initial_spec.relaychain;
-            let chain_context = ChainDefaultContext {
-                default_command: spec.default_command.as_ref(),
-                default_image: spec.default_image.as_ref(),
-                default_resources: spec.default_resources.as_ref(),
-                default_db_snapshot: spec.default_db_snapshot.as_ref(),
-                default_args: spec.default_args.iter().collect(),
+                // (parachain.chain_id.clone(), chain_context, Some(spec), role)
+                (
+                    chain_context,
+                    role,
+                    parachain.chain_id.clone(),
+                    Some(spec),
+                    parachain.chain_spec_path.clone(),
+                )
+            } else {
+                let spec = &self.initial_spec.relaychain;
+                let chain_context = ChainDefaultContext {
+                    default_command: spec.default_command.as_ref(),
+                    default_image: spec.default_image.as_ref(),
+                    default_resources: spec.default_resources.as_ref(),
+                    default_db_snapshot: spec.default_db_snapshot.as_ref(),
+                    default_args: spec.default_args.iter().collect(),
+                };
+                (chain_context, ZombieRole::Node, None, None, None)
             };
-            (chain_context, ZombieRole::Node, None, None, None)
-        };
 
         let node_spec =
             network_spec::node::NodeSpec::from_ad_hoc(name.into(), options, &chain_context)?;
@@ -125,13 +150,19 @@ impl<T: FileSystem> Network<T> {
         }];
 
         if let Some(para_spec_path) = maybe_para_chain_spec_path {
-            global_files_to_inject.push(
-                TransferedFile {
-                    local_path: PathBuf::from(format!("{}/{}", self.ns.base_dir(), para_spec_path.to_string_lossy())),
-                    remote_path: PathBuf::from(format!("/cfg/{}.json", para_id.ok_or(anyhow::anyhow!("para_id should be valid here, this is a bug!"))?)),
-                }
-
-            );
+            global_files_to_inject.push(TransferedFile {
+                local_path: PathBuf::from(format!(
+                    "{}/{}",
+                    self.ns.base_dir(),
+                    para_spec_path.to_string_lossy()
+                )),
+                remote_path: PathBuf::from(format!(
+                    "/cfg/{}.json",
+                    para_id.ok_or(anyhow::anyhow!(
+                        "para_id should be valid here, this is a bug!"
+                    ))?
+                )),
+            });
         }
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;

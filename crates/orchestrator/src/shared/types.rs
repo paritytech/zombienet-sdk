@@ -10,7 +10,6 @@ use configuration::shared::{
     types::{Arg, AssetLocation, Command, Image, Port},
 };
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
     pub address: String,

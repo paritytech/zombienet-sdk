@@ -1,4 +1,8 @@
-use configuration::{shared::{types::RegistrationStrategy, resources::Resources}, ParachainConfig, types::{Command, Image, AssetLocation, Arg}};
+use configuration::{
+    shared::{resources::Resources, types::RegistrationStrategy},
+    types::{Arg, AssetLocation, Command, Image},
+    ParachainConfig,
+};
 
 use super::node::NodeSpec;
 use crate::{
@@ -14,7 +18,6 @@ use crate::{
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)
     // name: Option<Chain>,
-
     /// Parachain id
     pub(crate) id: u32,
 

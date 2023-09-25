@@ -732,7 +732,7 @@ mod tests {
             .spawn_node(
                 SpawnNodeOptions::new(
                     "mynode",
-                    "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                    "./testing/dummy_node",
                 )
                 .args(vec![
                     "-flag1",
@@ -890,7 +890,7 @@ mod tests {
         namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -898,7 +898,7 @@ mod tests {
         let result = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await;
 
@@ -980,14 +980,14 @@ mod tests {
         namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode1",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
         namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode2",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1023,7 +1023,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1056,7 +1056,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1097,7 +1097,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1127,7 +1127,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1154,7 +1154,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1179,7 +1179,7 @@ mod tests {
                 OsString::from_str("/tmp/dummy_script").unwrap(),
                 InMemoryFile::mirror(
                     "/tmp/dummy_script",
-                    fs::read_to_string("/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_script").unwrap(),
+                    fs::read_to_string("./testing/dummy_script").unwrap(),
                 ),
             ),
         ]));
@@ -1190,7 +1190,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1219,7 +1219,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1256,7 +1256,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1309,7 +1309,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();
@@ -1398,7 +1398,7 @@ mod tests {
             .spawn_node(
                 SpawnNodeOptions::new(
                     "mynode",
-                    "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                    "./testing/dummy_node",
                 )
                 .args(vec![
                     "-flag1",
@@ -1520,7 +1520,7 @@ mod tests {
         let node = namespace
             .spawn_node(SpawnNodeOptions::new(
                 "mynode",
-                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+                "./testing/dummy_node",
             ))
             .await
             .unwrap();

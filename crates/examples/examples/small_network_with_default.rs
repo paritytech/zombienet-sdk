@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use configuration::{types::Command, NetworkConfigBuilder};
+use configuration::NetworkConfigBuilder;
 use orchestrator::{AddNodeOpts, Orchestrator};
 use provider::NativeProvider;
 use support::fs::local::LocalFileSystem;
@@ -33,19 +33,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // add  a new node
     let mut opts = AddNodeOpts::default();
     opts.rpc_port = Some(9444);
+    opts.is_validator = true;
 
-    network.add_node("new1", opts).await?;
+    network.add_node("new1", opts, None).await?;
 
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // pause the node
     network.pause_node("new1").await?;
     println!("node new1 paused!");
 
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     network.resume_node("new1").await?;
     println!("node new1 resumed!");
+
+    let mut col_opts = AddNodeOpts::default();
+    col_opts.command = Some("polkadot-parachain".try_into()?);
+    network.add_node("new-col-1", col_opts, Some(100)).await?;
+    println!("new collator deployed!");
 
     // For now let just loop....
     while true {}

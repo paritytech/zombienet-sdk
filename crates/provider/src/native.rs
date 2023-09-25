@@ -601,7 +601,7 @@ fn create_process_with_log_tasks(
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, str::FromStr};
+    use std::{ffi::OsString, str::FromStr, fs};
 
     use procfs::process::Process;
     use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
@@ -624,6 +624,23 @@ mod tests {
                 requires_image: false
             }
         );
+    }
+
+    #[tokio::test]
+    async fn provider_tmp_dir_method_should_set_the_temporary_for_provider() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/someotherdir").unwrap(),
+                InMemoryFile::dir(),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone()).tmp_dir("/someotherdir");
+
+        // we create a namespace to ensure tmp dir will be used to store namespace
+        let namespace = provider.create_namespace().await.unwrap();
+
+        assert!(namespace.base_dir().starts_with("/someotherdir"))
     }
 
     #[tokio::test]

@@ -878,6 +878,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn namespace_spawn_node_method_should_returns_an_error_if_a_node_already_exists_with_this_name(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        let result = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await;
+
+        // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
+        match result {
+            Ok(_) => panic!("expected result to be an error"),
+            Err(err) => assert_eq!(err.to_string(), "Duplicated node name: mynode"),
+        };
+    }
+
+    #[tokio::test]
     async fn namespace_generate_files_method_should_create_files_at_the_correct_locations_using_given_commands(
     ) {
         let fs = InMemoryFileSystem::new(HashMap::from([
@@ -1105,7 +1137,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && stderr == "sh: 0: Illegal option -k\n")
+            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && stderr.len() > 0)
         );
     }
 

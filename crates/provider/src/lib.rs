@@ -1,7 +1,10 @@
 pub mod native;
 pub mod shared;
 
-use std::{net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration, collections::HashMap};
+use std::{
+    collections::HashMap, net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use shared::types::{

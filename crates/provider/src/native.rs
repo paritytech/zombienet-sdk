@@ -607,9 +607,8 @@ mod tests {
     use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
     use tokio::time::timeout;
 
-    use crate::shared::types::TransferedFile;
-
     use super::*;
+    use crate::shared::types::TransferedFile;
 
     #[test]
     fn provider_capabilities_method_should_return_provider_capabilities() {

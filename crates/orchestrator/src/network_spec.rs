@@ -6,7 +6,6 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-
 use self::{parachain::ParachainSpec, relaychain::RelaychainSpec};
 
 #[derive(Debug, Clone)]

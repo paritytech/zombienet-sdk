@@ -8,9 +8,9 @@ use multiaddr::Multiaddr;
 use crate::{
     errors::OrchestratorError,
     generators,
-    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort}, AddNodeOpts,
+    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
+    AddNodeOpts,
 };
-
 
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone)]
@@ -112,7 +112,6 @@ impl NodeSpec {
             node_config.args().into_iter().cloned().collect()
         };
 
-
         let (key, peer_id) = generators::identity::generate_for_node(node_config.name())?;
 
         let mut name = node_config.name().to_string();
@@ -186,17 +185,19 @@ impl NodeSpec {
             options.args
         };
 
-
         let (key, peer_id) = generators::identity::generate_for_node(&name)?;
 
         let mut name_capitalized = name.clone();
-        let seed = format!("//{}{name_capitalized}", name_capitalized.remove(0).to_uppercase());
+        let seed = format!(
+            "//{}{name_capitalized}",
+            name_capitalized.remove(0).to_uppercase()
+        );
         let accounts = generators::key::generate_for_node(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
         //
         Ok(Self {
-            name: name,
+            name,
             key,
             peer_id,
             image,

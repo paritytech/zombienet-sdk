@@ -28,7 +28,7 @@ pub struct SpawnNodeOptions {
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order
     /// to create the full path even when we have missing parts
-    pub created_paths: Vec<PathBuf>
+    pub created_paths: Vec<PathBuf>,
 }
 
 // impl SpawnNodeOptions {
@@ -238,6 +238,11 @@ impl TransferedFile {
 
 impl std::fmt::Display for TransferedFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "File to transfer (local: {}, remote: {})", self.local_path.display().to_string(), self.remote_path.display().to_string())
+        write!(
+            f,
+            "File to transfer (local: {}, remote: {})",
+            self.local_path.display().to_string(),
+            self.remote_path.display().to_string()
+        )
     }
 }

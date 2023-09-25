@@ -3,9 +3,10 @@ use configuration::{shared::types::RegistrationStrategy, ParachainConfig};
 use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
-    generators::{{
-        chain_spec::ChainSpec, chain_spec::Context
-    }, para_artifact::*},
+    generators::{
+        chain_spec::{ChainSpec, Context},
+        para_artifact::*,
+    },
     shared::types::ChainDefaultContext,
 };
 
@@ -58,7 +59,6 @@ impl ParachainSpec {
 
             if let Some(chain_spec_path) = config.chain_spec_path() {
                 Some(chain_spec_builder.asset_location(chain_spec_path.clone()))
-
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.

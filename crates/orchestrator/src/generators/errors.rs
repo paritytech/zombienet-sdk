@@ -17,5 +17,4 @@ pub enum GeneratorError {
     IdentityGeneration(String),
     #[error("Generating bootnode address, err {0}")]
     BootnodeAddrGeneration(String),
-
 }

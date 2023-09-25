@@ -30,10 +30,11 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    shared::{constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR}},
+    constants::LOCALHOST,
+    shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     DynNamespace, DynNode, ExecutionResult, GenerateFileCommand, GenerateFilesOptions, Provider,
     ProviderCapabilities, ProviderError, ProviderNamespace, ProviderNode, RunCommandOptions,
-    RunScriptOptions, SpawnNodeOptions, constants::LOCALHOST,
+    RunScriptOptions, SpawnNodeOptions,
 };
 
 #[derive(Debug, Clone)]
@@ -151,11 +152,18 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
 
         // Created needed paths
         for path in options.created_paths {
-            self.filesystem.create_dir_all(format!("{}{}", &base_dir, path.to_string_lossy())).await?;
+            self.filesystem
+                .create_dir_all(format!("{}{}", &base_dir, path.to_string_lossy()))
+                .await?;
         }
         // Inject files before start the node
         for file in options.injected_files {
-            self.filesystem.copy(file.local_path, format!("{}{}", base_dir, file.remote_path.to_string_lossy()) ).await?;
+            self.filesystem
+                .copy(
+                    file.local_path,
+                    format!("{}{}", base_dir, file.remote_path.to_string_lossy()),
+                )
+                .await?;
         }
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
@@ -215,7 +223,6 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             local_output_path,
         } in options.commands
         {
-
             // TODO: move to logger
             println!("{:#?}, {:#?}", command, args);
             println!("{:#?}", local_output_path.as_os_str());
@@ -224,16 +231,14 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
                 .await
                 .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
             {
-                Ok(contents) => {
-                    self
+                Ok(contents) => self
                     .filesystem
                     .write(
                         format!("{}/{}", self.base_dir, local_output_path.display()),
                         contents,
                     )
                     .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
-                },
+                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
                 Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
             };
         }
@@ -355,14 +360,19 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
         if !local_script_path.try_exists().unwrap() {
             // FIXME
-            return Err(ProviderError::RunCommandError("test".into(), anyhow!("Test")));
+            return Err(ProviderError::RunCommandError(
+                "test".into(),
+                anyhow!("Test"),
+            ));
         }
 
         // extract file name and build remote file path
         let script_file_name = local_script_path
             .file_name()
             .map(|file_name| file_name.to_string_lossy().to_string())
-            .ok_or(ProviderError::InvalidScriptPath(options.local_script_path.display().to_string()))?;
+            .ok_or(ProviderError::InvalidScriptPath(
+                options.local_script_path.display().to_string(),
+            ))?;
         let remote_script_path = format!("{}/{}", self.scripts_dir, script_file_name);
 
         // copy and set script's execute permission

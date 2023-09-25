@@ -1,4 +1,8 @@
-use std::{collections::HashMap, net::TcpListener, sync::{Arc, RwLock}};
+use std::{
+    collections::HashMap,
+    net::TcpListener,
+    sync::{Arc, RwLock},
+};
 
 pub type Accounts = HashMap<String, NodeAccount>;
 use configuration::shared::{
@@ -28,10 +32,7 @@ pub struct NodeAccounts {
 }
 
 #[derive(Clone, Debug)]
-pub struct ParkedPort(
-    pub(crate) Port,
-    pub(crate) Arc<RwLock<Option<TcpListener>>>
-);
+pub struct ParkedPort(pub(crate) Port, pub(crate) Arc<RwLock<Option<TcpListener>>>);
 
 impl ParkedPort {
     pub(crate) fn new(port: u16, listener: TcpListener) -> ParkedPort {

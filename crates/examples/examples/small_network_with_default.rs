@@ -1,11 +1,12 @@
-use configuration::{NetworkConfigBuilder, types::{Command}};
-use orchestrator::{Orchestrator, AddNodeOpts};
-use provider::NativeProvider;
-use support::fs::local::LocalFileSystem;
 use std::time::Duration;
 
+use configuration::{types::Command, NetworkConfigBuilder};
+use orchestrator::{AddNodeOpts, Orchestrator};
+use provider::NativeProvider;
+use support::fs::local::LocalFileSystem;
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>>{
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
@@ -14,15 +15,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
                 .with_node(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
-            p.with_id(100)
-            .cumulus_based(true)
-            .with_collator(|n| {
-                n.with_name("collator")
-                .with_command("polkadot-parachain")
+            p.with_id(100).cumulus_based(true).with_collator(|n| {
+                n.with_name("collator").with_command("polkadot-parachain")
                 //.with_command("adder-collator")
             })
         })
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     println!("{:?}", &config);
 
@@ -33,10 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
     println!("🚀🚀🚀🚀 network deployed");
     // add  a new node
     let mut opts = AddNodeOpts::default();
-    opts.rpc_port =  Some(9444);
+    opts.rpc_port = Some(9444);
 
     network.add_node("new1", opts).await?;
-
 
     tokio::time::sleep(Duration::from_secs(60)).await;
 
@@ -49,11 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
     network.resume_node("new1").await?;
     println!("node new1 resumed!");
 
-
-
     // For now let just loop....
-    while true {
-
-    }
+    while true {}
     Ok(())
 }

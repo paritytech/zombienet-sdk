@@ -1,11 +1,13 @@
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
-use provider::{types::{TransferedFile, GenerateFileCommand, GenerateFilesOptions}, DynNamespace};
+use provider::{
+    types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
+    DynNamespace,
+};
 use support::fs::FileSystem;
 
-use crate::ScopedFilesystem;
-
 use super::errors::GeneratorError;
+use crate::ScopedFilesystem;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ParaArtifactType {
@@ -43,14 +45,21 @@ impl ParaArtifact {
         self.artifact_path.as_ref()
     }
 
-    pub(crate) async fn build<'a, T>(&mut self, chain_spec_path: Option<impl AsRef<Path>>, artifact_path: impl AsRef<Path>, ns: &DynNamespace, scoped_fs: &ScopedFilesystem<'a, T>) -> Result<(), GeneratorError>
-    where T: FileSystem
+    pub(crate) async fn build<'a, T>(
+        &mut self,
+        chain_spec_path: Option<impl AsRef<Path>>,
+        artifact_path: impl AsRef<Path>,
+        ns: &DynNamespace,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
     {
         match &self.build_option {
             ParaArtifactBuildOption::Path(path) => {
                 let t = TransferedFile {
                     local_path: PathBuf::from(path),
-                    remote_path: artifact_path.as_ref().into()
+                    remote_path: artifact_path.as_ref().into(),
                 };
                 scoped_fs.copy_files(vec![&t]).await?;
             },
@@ -60,9 +69,13 @@ impl ParaArtifact {
                     ParaArtifactType::State => "export-genesis-state",
                 };
 
-                let mut args: Vec<String> = vec![ generate_subcmd.into() ];
+                let mut args: Vec<String> = vec![generate_subcmd.into()];
                 if let Some(chain_spec_path) = chain_spec_path {
-                    let full_chain_path = format!("{}/{}", ns.base_dir(), chain_spec_path.as_ref().to_string_lossy());
+                    let full_chain_path = format!(
+                        "{}/{}",
+                        ns.base_dir(),
+                        chain_spec_path.as_ref().to_string_lossy()
+                    );
                     args.push("--chain".into());
                     args.push(full_chain_path)
                 }
@@ -70,11 +83,12 @@ impl ParaArtifact {
                 // TODO: add to logger
                 // println!("{:#?}", &args);
                 let artifact_path_ref = artifact_path.as_ref();
-                let generate_command = GenerateFileCommand::new(cmd.as_str(), artifact_path_ref).args(args);
+                let generate_command =
+                    GenerateFileCommand::new(cmd.as_str(), artifact_path_ref).args(args);
                 let options = GenerateFilesOptions::new(vec![generate_command]);
                 ns.generate_files(options).await?;
                 self.artifact_path = Some(artifact_path_ref.into());
-            }
+            },
         }
 
         Ok(())

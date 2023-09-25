@@ -8,10 +8,9 @@ use shared::types::{
     GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
     RunScriptOptions, SpawnNodeOptions,
 };
+use support::fs::FileSystemError;
 
 use crate::shared::types::Port;
-
-use support::fs::FileSystemError;
 
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -113,5 +112,5 @@ pub trait ProviderNode {
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 
 // re-export
-pub use shared::{types, constants};
 pub use native::NativeProvider;
+pub use shared::{constants, types};

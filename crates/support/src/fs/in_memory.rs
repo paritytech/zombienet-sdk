@@ -1,9 +1,10 @@
 use std::{collections::HashMap, ffi::OsString, path::Path, sync::Arc};
 
-use super::{FileSystem, FileSystemResult};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
+
+use super::{FileSystem, FileSystemResult};
 
 #[derive(Debug, Clone)]
 pub enum InMemoryFile {
@@ -197,8 +198,9 @@ impl FileSystem for InMemoryFileSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::str::FromStr;
+
+    use super::*;
 
     #[tokio::test]
     async fn create_dir_should_create_a_directory_at_root() {

@@ -1,8 +1,9 @@
 //! Zombienet Orchestrator error definitions.
 
-use crate::generators;
 use provider::ProviderError;
 use support::fs::FileSystemError;
+
+use crate::generators;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {

@@ -1,26 +1,40 @@
 use std::path::PathBuf;
 
-use provider::{types::{TransferedFile, SpawnNodeOptions}, constants::LOCALHOST};
+use provider::{
+    constants::LOCALHOST,
+    types::{SpawnNodeOptions, TransferedFile},
+};
 use support::fs::FileSystem;
 
-use crate::{network_spec::node::NodeSpec, SpawnNodeCtx, NetworkNode, generators, ZombieRole};
+use crate::{generators, network_spec::node::NodeSpec, NetworkNode, SpawnNodeCtx, ZombieRole};
 
-pub async fn spawn_node<'a, T>(node: &NodeSpec, mut files_to_inject: Vec<TransferedFile>, ctx: &SpawnNodeCtx<'a, T>) -> Result<NetworkNode, anyhow::Error>
-where T: FileSystem
+pub async fn spawn_node<'a, T>(
+    node: &NodeSpec,
+    mut files_to_inject: Vec<TransferedFile>,
+    ctx: &SpawnNodeCtx<'a, T>,
+) -> Result<NetworkNode, anyhow::Error>
+where
+    T: FileSystem,
 {
     let mut created_paths = vec![];
     // Create and inject the keystore IFF
     // - The node is validator in the relaychain
     // - The node is collator (encoded as validator) and the parachain is cumulus_based
     // (parachain_id) should be set then.
-    if node.is_validator && ( ctx.parachain.is_none() || ctx.parachain_id.is_some() ) {
+    if node.is_validator && (ctx.parachain.is_none() || ctx.parachain_id.is_some()) {
         // Generate keystore for node
         let node_files_path = if let Some(para) = ctx.parachain {
             para.id.to_string()
         } else {
             node.name.clone()
         };
-        let key_filenames = generators::keystore::generate_keystore(&node.accounts, &node_files_path, ctx.scoped_fs).await.unwrap();
+        let key_filenames = generators::keystore::generate_keystore(
+            &node.accounts,
+            &node_files_path,
+            ctx.scoped_fs,
+        )
+        .await
+        .unwrap();
 
         // Paths returned are relative to the base dir, we need to convert into
         // fullpaths to inject them in the nodes.
@@ -32,12 +46,24 @@ where T: FileSystem
 
         for key_filename in key_filenames {
             let f = TransferedFile {
-                local_path: PathBuf::from(format!("{}/{}/{}", ctx.ns.base_dir(), node_files_path, key_filename.to_string_lossy())),
-                remote_path: PathBuf::from(format!("/data/chains/{}/keystore/{}", remote_keystore_chain_id, key_filename.to_string_lossy()))
+                local_path: PathBuf::from(format!(
+                    "{}/{}/{}",
+                    ctx.ns.base_dir(),
+                    node_files_path,
+                    key_filename.to_string_lossy()
+                )),
+                remote_path: PathBuf::from(format!(
+                    "/data/chains/{}/keystore/{}",
+                    remote_keystore_chain_id,
+                    key_filename.to_string_lossy()
+                )),
             };
             files_to_inject.push(f);
         }
-        created_paths.push(PathBuf::from(format!("/data/chains/{}/keystore",remote_keystore_chain_id )));
+        created_paths.push(PathBuf::from(format!(
+            "/data/chains/{}/keystore",
+            remote_keystore_chain_id
+        )));
     }
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir(), &node.name);
@@ -46,11 +72,11 @@ where T: FileSystem
     let relay_data_path = format!("{}/relay-data", &base_dir);
     let gen_opts = generators::command::GenCmdOptions {
         relay_chain_name: ctx.chain,
-        cfg_path: &cfg_path, // TODO: get from provider/ns
-        data_path: &data_path, // TODO: get from provider
+        cfg_path: &cfg_path,               // TODO: get from provider/ns
+        data_path: &data_path,             // TODO: get from provider
         relay_data_path: &relay_data_path, // TODO: get from provider
-        use_wrapper: false, // TODO: get from provider
-        bootnode_addr: ctx.bootnodes_addr.clone()
+        use_wrapper: false,                // TODO: get from provider
+        bootnode_addr: ctx.bootnodes_addr.clone(),
     };
 
     let (cmd, args) = match ctx.role {
@@ -83,7 +109,11 @@ where T: FileSystem
         name: node.name.clone(),
         command: cmd,
         args,
-        env: node.env.iter().map(|env| (env.name.clone(), env.value.clone())).collect(),
+        env: node
+            .env
+            .iter()
+            .map(|env| (env.name.clone(), env.value.clone()))
+            .collect(),
         injected_files: files_to_inject,
         created_paths,
     };
@@ -98,10 +128,13 @@ where T: FileSystem
     let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
     println!("🚀 {}, should be running now", node.name);
-    println!("🚀 {} : direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer", node.name);
+    println!(
+        "🚀 {} : direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
+        node.name
+    );
     println!("🚀 {} : metrics link {prometheus_uri}", node.name);
     println!("\n");
-    Ok( NetworkNode {
+    Ok(NetworkNode {
         inner: running_node,
         spec: node.clone(),
         name: node.name.clone(),

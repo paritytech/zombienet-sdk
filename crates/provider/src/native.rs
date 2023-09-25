@@ -601,7 +601,7 @@ fn create_process_with_log_tasks(
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, str::FromStr, fs};
+    use std::{ffi::OsString, fs, str::FromStr};
 
     use procfs::process::Process;
     use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
@@ -1171,6 +1171,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn node_run_script_method_should_execute_the_script_successfully_and_returns_stdout() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/tmp/dummy_script").unwrap(),
+                InMemoryFile::mirror(
+                    "/tmp/dummy_script",
+                    fs::read_to_string("/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_script").unwrap(),
+                ),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new(
+                "mynode",
+                "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
+            ))
+            .await
+            .unwrap();
+
+        let result = node
+            .run_script(
+                RunScriptOptions::new("/tmp/dummy_script")
+                    .args(vec!["-c"])
+                    .env(vec![("MY_ENV_VAR", "With env")]),
+            )
+            .await;
+
+        assert!(matches!(result, Ok(Ok(stdout)) if stdout == "My script\nWith env\nWith args\n"));
+    }
+
+    #[tokio::test]
     async fn node_copy_file_from_node_method_should_copy_node_remote_file_to_local_path() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
@@ -1515,48 +1551,6 @@ mod tests {
         // ensure node doesn't exists anymore in namespace
         assert_eq!(namespace.nodes().await.len(), 0);
     }
-
-    // #[tokio::test]
-    // async fn node_run_script_method_should_execute_the_script_successfully_and_returns_stdout() {
-    //     // we need to mirror the script between local fs and in memory fs else
-    //     // the tokio::process::Command won't be able to execute it
-    //     fs::copy(
-    //         "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_script",
-    //         "/tmp/dummy_script",
-    //     )
-    //     .unwrap();
-
-    //     let fs = InMemoryFileSystem::new(HashMap::from([
-    //         (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-    //         (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
-    //         (
-    //             OsString::from_str("/tmp/dummy_script").unwrap(),
-    //             InMemoryFile::file(fs::read_to_string("/tmp/dummy_script").unwrap()),
-    //         ),
-    //     ]));
-    //     let provider = NativeProvider::new(fs.clone());
-    //     let namespace = provider.create_namespace().await.unwrap();
-
-    //     // spawn dummy node
-    //     let node = namespace
-    //         .spawn_node(SpawnNodeOptions::new(
-    //             "mynode",
-    //             "/home/user/Work/parity/zombienet-sdk/crates/provider/testing/dummy_node",
-    //         ))
-    //         .await
-    //         .unwrap();
-
-    //     let result = node
-    //         .run_script(
-    //             RunScriptOptions::new("/tmp/dummy_script")
-    //                 .args(vec!["-c"])
-    //                 .env(vec![("MY_ENV_VAR", "Here is my content")]),
-    //         )
-    //         .await;
-
-    //     println!("{:?}", result);
-    //     // assert!(matches!(result, Ok(Ok(stdout)) if stdout == "Here is my content\n"));
-    // }
 
     async fn get_processes_by_name(name: &str) -> Vec<Process> {
         procfs::process::all_processes()

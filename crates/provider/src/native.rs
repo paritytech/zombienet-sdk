@@ -730,27 +730,24 @@ mod tests {
 
         let node = namespace
             .spawn_node(
-                SpawnNodeOptions::new(
-                    "mynode",
-                    "./testing/dummy_node",
-                )
-                .args(vec![
-                    "-flag1",
-                    "--flag2",
-                    "--option1=value1",
-                    "-option2=value2",
-                    "--option3 value3",
-                    "-option4 value4",
-                ])
-                .env(vec![
-                    ("MY_VAR_1", "MY_VALUE_1"),
-                    ("MY_VAR_2", "MY_VALUE_2"),
-                    ("MY_VAR_3", "MY_VALUE_3"),
-                ])
-                .injected_files(vec![
-                    TransferedFile::new("/file1", "/cfg/file1"),
-                    TransferedFile::new("/file2", "/data/file2"),
-                ]),
+                SpawnNodeOptions::new("mynode", "./testing/dummy_node")
+                    .args(vec![
+                        "-flag1",
+                        "--flag2",
+                        "--option1=value1",
+                        "-option2=value2",
+                        "--option3 value3",
+                        "-option4 value4",
+                    ])
+                    .env(vec![
+                        ("MY_VAR_1", "MY_VALUE_1"),
+                        ("MY_VAR_2", "MY_VALUE_2"),
+                        ("MY_VAR_3", "MY_VALUE_3"),
+                    ])
+                    .injected_files(vec![
+                        TransferedFile::new("/file1", "/cfg/file1"),
+                        TransferedFile::new("/file2", "/data/file2"),
+                    ]),
             )
             .await
             .unwrap();
@@ -888,18 +885,12 @@ mod tests {
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
         let result = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await;
 
         // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
@@ -978,17 +969,11 @@ mod tests {
 
         // spawn 2 dummy nodes to populate namespace
         namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode1",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode1", "./testing/dummy_node"))
             .await
             .unwrap();
         namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode2",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode2", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1021,10 +1006,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1054,10 +1036,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1095,10 +1074,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1125,10 +1101,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1137,7 +1110,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && stderr.len() > 0)
+            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && !stderr.is_empty())
         );
     }
 
@@ -1152,10 +1125,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1188,10 +1158,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1217,10 +1184,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1254,10 +1218,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1307,10 +1268,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1396,27 +1354,24 @@ mod tests {
 
         let node = namespace
             .spawn_node(
-                SpawnNodeOptions::new(
-                    "mynode",
-                    "./testing/dummy_node",
-                )
-                .args(vec![
-                    "-flag1",
-                    "--flag2",
-                    "--option1=value1",
-                    "-option2=value2",
-                    "--option3 value3",
-                    "-option4 value4",
-                ])
-                .env(vec![
-                    ("MY_VAR_1", "MY_VALUE_1"),
-                    ("MY_VAR_2", "MY_VALUE_2"),
-                    ("MY_VAR_3", "MY_VALUE_3"),
-                ])
-                .injected_files(vec![
-                    TransferedFile::new("/file1", "/cfg/file1"),
-                    TransferedFile::new("/file2", "/data/file2"),
-                ]),
+                SpawnNodeOptions::new("mynode", "./testing/dummy_node")
+                    .args(vec![
+                        "-flag1",
+                        "--flag2",
+                        "--option1=value1",
+                        "-option2=value2",
+                        "--option3 value3",
+                        "-option4 value4",
+                    ])
+                    .env(vec![
+                        ("MY_VAR_1", "MY_VALUE_1"),
+                        ("MY_VAR_2", "MY_VALUE_2"),
+                        ("MY_VAR_3", "MY_VALUE_3"),
+                    ])
+                    .injected_files(vec![
+                        TransferedFile::new("/file1", "/cfg/file1"),
+                        TransferedFile::new("/file2", "/data/file2"),
+                    ]),
             )
             .await
             .unwrap();
@@ -1518,10 +1473,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new(
-                "mynode",
-                "./testing/dummy_node",
-            ))
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
@@ -1561,7 +1513,7 @@ mod tests {
                         .cmdline()
                         .iter()
                         .any(|args| args.iter().any(|arg| arg.contains(name)))
-                        .then(|| process)
+                        .then_some(process)
                 } else {
                     None
                 }

@@ -77,9 +77,9 @@ impl InMemoryFile {
     }
 
     pub fn mode(&self) -> u32 {
-        match self {
-            &Self::File { mode, .. } => mode,
-            &Self::Directory { mode, .. } => mode,
+        match *self {
+            Self::File { mode, .. } => mode,
+            Self::Directory { mode, .. } => mode,
         }
     }
 
@@ -98,9 +98,8 @@ impl InMemoryFile {
     }
 
     pub fn set_mirror(&mut self) {
-        match self {
-            Self::File { mirror, .. } => *mirror = true,
-            _ => {},
+        if let Self::File { mirror, .. } = self {
+            *mirror = true;
         };
     }
 }

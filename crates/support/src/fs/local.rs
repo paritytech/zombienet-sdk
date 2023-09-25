@@ -88,13 +88,13 @@ mod tests {
     }
 
     fn teardown(test_dir: String) {
-        std::fs::remove_dir_all(&test_dir).unwrap();
+        std::fs::remove_dir_all(test_dir).unwrap();
     }
 
     #[tokio::test]
     async fn create_dir_should_create_a_new_directory_at_path() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let new_dir = format!("{test_dir}/mynewdir");
         fs.create_dir(&new_dir).await.unwrap();
@@ -107,7 +107,7 @@ mod tests {
     #[tokio::test]
     async fn create_dir_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let new_dir = format!("{test_dir}/mynewdir");
         // intentionally create new dir before calling function to force error
@@ -121,7 +121,7 @@ mod tests {
     #[tokio::test]
     async fn create_dir_all_should_create_a_new_directory_and_all_of_it_ancestors_at_path() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let new_dir = format!("{test_dir}/the/path/to/mynewdir");
         fs.create_dir_all(&new_dir).await.unwrap();
@@ -134,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn create_dir_all_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let new_dir = format!("{test_dir}/the/path/to/mynewdir");
         // intentionally create new file as ancestor before calling function to force error
@@ -148,7 +148,7 @@ mod tests {
     #[tokio::test]
     async fn read_should_return_the_contents_of_the_file_at_path() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         std::fs::write(&file_path, b"Test").unwrap();
@@ -161,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn read_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         // intentionally forget to create file to force error
@@ -174,7 +174,7 @@ mod tests {
     #[tokio::test]
     async fn read_to_string_should_return_the_contents_of_the_file_at_path_as_string() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         std::fs::write(&file_path, b"Test").unwrap();
@@ -187,7 +187,7 @@ mod tests {
     #[tokio::test]
     async fn read_to_string_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         // intentionally forget to create file to force error
@@ -200,7 +200,7 @@ mod tests {
     #[tokio::test]
     async fn write_should_create_a_new_file_at_path_with_contents() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         fs.write(&file_path, "Test").await.unwrap();
@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test]
     async fn write_should_overwrite_an_existing_file_with_contents() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         std::fs::write(&file_path, "Test").unwrap();
@@ -226,7 +226,7 @@ mod tests {
     #[tokio::test]
     async fn write_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         // intentionally create directory instead of file to force error
@@ -240,7 +240,7 @@ mod tests {
     #[tokio::test]
     async fn append_should_create_a_new_file_at_path_with_contents() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         fs.append(&file_path, "Test").await.unwrap();
@@ -252,7 +252,7 @@ mod tests {
     #[tokio::test]
     async fn append_should_updates_an_existing_file_by_appending_contents() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         std::fs::write(&file_path, "Test").unwrap();
@@ -266,7 +266,7 @@ mod tests {
     #[tokio::test]
     async fn append_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let file_path = format!("{test_dir}/myfile");
         // intentionally create directory instead of file to force error
@@ -280,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn copy_should_create_a_duplicate_of_source() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let from_path = format!("{test_dir}/myfile");
         std::fs::write(&from_path, "Test").unwrap();
@@ -294,7 +294,7 @@ mod tests {
     #[tokio::test]
     async fn copy_should_ovewrite_destination_if_alread_exists() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let from_path = format!("{test_dir}/myfile");
         std::fs::write(&from_path, "Test").unwrap();
@@ -309,7 +309,7 @@ mod tests {
     #[tokio::test]
     async fn copy_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
 
         let from_path = format!("{test_dir}/nonexistentfile");
         let to_path = format!("{test_dir}/mycopy");
@@ -322,10 +322,10 @@ mod tests {
     #[tokio::test]
     async fn set_mode_should_update_the_file_mode_at_path() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
         let path = format!("{test_dir}/myfile");
         std::fs::write(&path, "Test").unwrap();
-        assert!(std::fs::metadata(&path).unwrap().permissions().mode() != (FILE_BITS + 0400));
+        assert!(std::fs::metadata(&path).unwrap().permissions().mode() != (FILE_BITS + 0o400));
 
         fs.set_mode(&path, 0o400).await.unwrap();
 
@@ -339,7 +339,7 @@ mod tests {
     #[tokio::test]
     async fn set_mode_should_update_the_directory_mode_at_path() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
         let path = format!("{test_dir}/mydir");
         std::fs::create_dir(&path).unwrap();
         assert!(std::fs::metadata(&path).unwrap().permissions().mode() != (DIR_BITS + 0o700));
@@ -356,7 +356,7 @@ mod tests {
     #[tokio::test]
     async fn set_mode_should_bubble_up_error_if_some_happens() {
         let test_dir = setup();
-        let fs = LocalFileSystem::default();
+        let fs = LocalFileSystem;
         let path = format!("{test_dir}/somemissingfile");
         // intentionnally don't create file
 

@@ -1,8 +1,8 @@
-use configuration::NetworkConfigBuilder;
-use orchestrator::Orchestrator;
+use configuration::{NetworkConfigBuilder, types::{Command}};
+use orchestrator::{Orchestrator, AddNodeOpts};
 use provider::NativeProvider;
 use support::fs::local::LocalFileSystem;
-
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>>{
@@ -29,8 +29,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
     let fs = LocalFileSystem;
     let provider = NativeProvider::new(fs.clone());
     let orchestrator = Orchestrator::new(fs, provider);
-    let _network = orchestrator.spawn(config).await?;
-    //println!("{:#?}", network);
+    let mut network = orchestrator.spawn(config).await?;
+    println!("🚀🚀🚀🚀 network deployed");
+    // add  a new node
+    let mut opts = AddNodeOpts::default();
+    opts.rpc_port =  Some(9444);
+
+    network.add_node("new1", opts).await?;
+
+
+    tokio::time::sleep(Duration::from_secs(60)).await;
+
+    // pause the node
+    network.pause_node("new1").await?;
+    println!("node new1 paused!");
+
+    tokio::time::sleep(Duration::from_secs(20)).await;
+
+    network.resume_node("new1").await?;
+    println!("node new1 resumed!");
+
+
+
+    // For now let just loop....
     while true {
 
     }

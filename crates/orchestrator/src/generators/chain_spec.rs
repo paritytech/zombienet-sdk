@@ -448,7 +448,7 @@ impl ChainSpec {
             }
 
             // TODO:
-            // - manage session/aura for keys
+            // - manage session/aura for keys ( Javier think is done!)
             // - staking
             // - nominators
             // - hrmp_channels
@@ -754,7 +754,6 @@ fn add_aura_authorities(
 }
 // TODO: (team)
 
-// fn add_grandpa_authorities() {}
 // fn add_staking() {}
 // fn add_nominators() {}
 

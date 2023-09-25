@@ -6,30 +6,30 @@ mod generators;
 mod network_spec;
 mod shared;
 mod spawner;
+mod network;
 
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use configuration::{
-    shared::node::EnvVar,
-    types::{Arg, Command, Image, RegistrationStrategy},
+    types::RegistrationStrategy,
     NetworkConfig,
 };
 use errors::OrchestratorError;
-use network_spec::{node::NodeSpec, parachain::ParachainSpec, NetworkSpec};
+use network::{Network, relaychain::Relaychain, parachain::Parachain};
+use network_spec::{parachain::ParachainSpec, NetworkSpec};
 use provider::{
     constants::LOCALHOST,
-    types::{Port, SpawnNodeOptions, TransferedFile},
-    DynNamespace, DynNode, Provider,
+    types::TransferedFile,
+    Provider,
 };
-use shared::types::ChainDefaultContext;
+
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 
-use crate::generators::chain_spec::ParaGenesisConfig;
+use crate::{generators::chain_spec::ParaGenesisConfig, spawner::SpawnNodeCtx};
 
 pub struct Orchestrator<T, P>
 where
@@ -325,7 +325,7 @@ where
             }
         }
 
-        // TODO:
+        // TODO (future):
 
         // - add-ons (introspector/tracing/etc)
 
@@ -334,139 +334,6 @@ where
         // - write zombie.json state file (we should defined in a way we can load later)
 
         Ok(network)
-    }
-
-    // TODO: move this to other module
-    async fn spawn_node<'a>(
-        node: &NodeSpec,
-        mut files_to_inject: Vec<TransferedFile>,
-        ctx: &SpawnNodeCtx<'a, T>,
-    ) -> Result<NetworkNode, OrchestratorError> {
-        let mut created_paths = vec![];
-        // Create and inject the keystore IFF
-        // - The node is validator in the relaychain
-        // - The node is collator (encoded as validator) and the parachain is cumulus_based
-        // (parachain_id) should be set then.
-        if node.is_validator && (ctx.parachain.is_none() || ctx.parachain_id.is_some()) {
-            // Generate keystore for node
-            let node_files_path = if let Some(para) = ctx.parachain {
-                para.id.to_string()
-            } else {
-                node.name.clone()
-            };
-            let key_filenames = generators::keystore::generate_keystore(
-                &node.accounts,
-                &node_files_path,
-                ctx.scoped_fs,
-            )
-            .await
-            .unwrap();
-
-            // Paths returned are relative to the base dir, we need to convert into
-            // fullpaths to inject them in the nodes.
-            let remote_keystore_chain_id = if let Some(id) = ctx.parachain_id {
-                id
-            } else {
-                ctx.chain_id
-            };
-
-            for key_filename in key_filenames {
-                let f = TransferedFile {
-                    local_path: PathBuf::from(format!(
-                        "{}/{}/{}",
-                        ctx.ns.base_dir(),
-                        node_files_path,
-                        key_filename.to_string_lossy()
-                    )),
-                    remote_path: PathBuf::from(format!(
-                        "/data/chains/{}/keystore/{}",
-                        remote_keystore_chain_id,
-                        key_filename.to_string_lossy()
-                    )),
-                };
-                files_to_inject.push(f);
-            }
-            created_paths.push(PathBuf::from(format!(
-                "/data/chains/{}/keystore",
-                remote_keystore_chain_id
-            )));
-        }
-
-        let base_dir = format!("{}/{}", ctx.ns.base_dir(), &node.name);
-        let cfg_path = format!("{}/cfg", &base_dir);
-        let data_path = format!("{}/data", &base_dir);
-        let relay_data_path = format!("{}/relay-data", &base_dir);
-        let gen_opts = generators::command::GenCmdOptions {
-            relay_chain_name: ctx.chain,
-            cfg_path: &cfg_path,               // TODO: get from provider/ns
-            data_path: &data_path,             // TODO: get from provider
-            relay_data_path: &relay_data_path, // TODO: get from provider
-            use_wrapper: false,                // TODO: get from provider
-            bootnode_addr: ctx.bootnodes_addr.clone(),
-        };
-
-        let (cmd, args) = match ctx.role {
-            // Collator should be `non-cumulus` one (e.g adder/undying)
-            ZombieRole::Node | ZombieRole::Collator => {
-
-                let maybe_para_id = if let Some(para) = ctx.parachain {
-                    Some(para.id)
-                } else {
-                    None
-                };
-
-                generators::command::generate_for_node(&node, gen_opts, maybe_para_id)
-            },
-            ZombieRole::CumulusCollator => {
-                let para = ctx.parachain.expect("parachain must be part of the context, this is a bug".into());
-                generators::command::generate_for_cumulus_node(&node, gen_opts, para.id)
-            }
-            _ => unreachable!()
-            // TODO: do we need those?
-            // ZombieRole::Bootnode => todo!(),
-            // ZombieRole::Companion => todo!(),
-        };
-
-        println!("\n");
-        println!("🚀 {}, spawning.... with command:", node.name);
-        println!("{}", format!("{cmd} {}", args.join(" ")));
-
-        let spawn_ops = SpawnNodeOptions {
-            name: node.name.clone(),
-            command: cmd,
-            args,
-            env: node
-                .env
-                .iter()
-                .map(|env| (env.name.clone(), env.value.clone()))
-                .collect(),
-            injected_files: files_to_inject,
-            created_paths,
-        };
-
-        // Drops the port parking listeners before spawn
-        node.p2p_port.drop_listener();
-        node.rpc_port.drop_listener();
-        node.prometheus_port.drop_listener();
-
-        let running_node = ctx.ns.spawn_node(spawn_ops).await?;
-
-        let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
-        let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
-        println!("🚀 {}, should be running now", node.name);
-        println!(
-            "🚀 {} : direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
-            node.name
-        );
-        println!("🚀 {} : metrics link {prometheus_uri}", node.name);
-        println!("\n");
-        Ok(NetworkNode {
-            inner: running_node,
-            spec: node.clone(),
-            name: node.name.clone(),
-            ws_uri,
-            prometheus_uri,
-        })
     }
 }
 
@@ -551,317 +418,5 @@ pub enum ZombieRole {
     Companion,
 }
 
-#[derive(Clone)]
-pub struct SpawnNodeCtx<'a, T: FileSystem> {
-    // Relaychain id, from the chain-spec (e.g rococo_local_testnet)
-    chain_id: &'a str,
-    // Parachain id, from the chain-spec (e.g local_testnet)
-    parachain_id: Option<&'a str>,
-    // Relaychain chain name (e.g rococo-local)
-    chain: &'a str,
-    // Role of the node in the network
-    role: ZombieRole,
-    // Ref to the namespace
-    ns: &'a DynNamespace,
-    // Ref to an scoped filesystem (encapsulate fs actions inside the ns directory)
-    scoped_fs: &'a ScopedFilesystem<'a, T>,
-    // Ref to a parachain (used to spawn collators)
-    parachain: Option<&'a ParachainSpec>,
-    /// The string represenation of the bootnode addres to pass to nodes
-    bootnodes_addr: &'a Vec<String>,
-}
-
-pub struct Network<T: FileSystem> {
-    ns: DynNamespace,
-    filesystem: T,
-    relay: Relaychain,
-    initial_spec: NetworkSpec,
-    parachains: HashMap<u32, Parachain>,
-    nodes_by_name: HashMap<String, NetworkNode>,
-}
-
-impl<T: FileSystem> std::fmt::Debug for Network<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Network")
-            .field("ns", &"ns_skipped")
-            .field("relay", &self.relay)
-            .field("initial_spec", &self.initial_spec)
-            .field("parachains", &self.parachains)
-            .field("nodes_by_name", &self.nodes_by_name)
-            .finish()
-    }
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct AddNodeOpts {
-    pub image: Option<Image>,
-    pub command: Option<Command>,
-    pub args: Vec<Arg>,
-    pub env: Vec<EnvVar>,
-    pub is_validator: bool,
-    pub rpc_port: Option<Port>,
-    pub prometheus_port: Option<Port>,
-    pub p2p_port: Option<Port>,
-}
-
-impl<T: FileSystem> Network<T> {
-    fn new_with_relay(
-        relay: Relaychain,
-        ns: DynNamespace,
-        fs: T,
-        initial_spec: NetworkSpec,
-    ) -> Self {
-        Self {
-            ns,
-            filesystem: fs,
-            relay,
-            initial_spec,
-            parachains: Default::default(),
-            nodes_by_name: Default::default(),
-        }
-    }
-
-    // Pub API
-
-    // Teardown the network
-    // destroy()
-
-    pub async fn add_node(
-        &mut self,
-        name: impl Into<String>,
-        options: AddNodeOpts,
-        para_id: Option<u32>,
-    ) -> Result<(), anyhow::Error> {
-        // build context
-        //let (maybe_para_chain_id, chain_context, para_spec, role) =
-        let (chain_context, role, maybe_para_chain_id, para_spec, maybe_para_chain_spec_path) =
-        if let Some(para_id) = para_id {
-            let spec = self.initial_spec.parachains.iter().find(|para| para.id == para_id).ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
-            let role = if spec.is_cumulus_based { ZombieRole::CumulusCollator } else { ZombieRole::Collator };
-            let chain_context = ChainDefaultContext {
-                default_command: spec.default_command.as_ref(),
-                default_image: spec.default_image.as_ref(),
-                default_resources: spec.default_resources.as_ref(),
-                default_db_snapshot: spec.default_db_snapshot.as_ref(),
-                default_args: spec.default_args.iter().collect(),
-            };
-            let parachain = self.parachains.get(&para_id).ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
-
-            // (parachain.chain_id.clone(), chain_context, Some(spec), role)
-            (chain_context, role, parachain.chain_id.clone(), Some(spec), parachain.chain_spec_path.clone())
-        } else {
-            let spec = &self.initial_spec.relaychain;
-            let chain_context = ChainDefaultContext {
-                default_command: spec.default_command.as_ref(),
-                default_image: spec.default_image.as_ref(),
-                default_resources: spec.default_resources.as_ref(),
-                default_db_snapshot: spec.default_db_snapshot.as_ref(),
-                default_args: spec.default_args.iter().collect(),
-            };
-            (chain_context, ZombieRole::Node, None, None, None)
-        };
-
-        let node_spec =
-            network_spec::node::NodeSpec::from_ad_hoc(name.into(), options, &chain_context)?;
-        let base_dir = self.ns.base_dir();
-        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
-
-        // TODO: we want to still supporting spawn a dedicated bootnode??
-        let ctx = SpawnNodeCtx {
-            chain_id: &self.relay.chain_id,
-            parachain_id: maybe_para_chain_id.as_deref(),
-            chain: &self.relay.chain,
-            role,
-            ns: &self.ns,
-            scoped_fs: &scoped_fs,
-            parachain: para_spec,
-            bootnodes_addr: &vec![],
-        };
-
-        let mut global_files_to_inject = vec![TransferedFile {
-            local_path: PathBuf::from(format!("{}/{}.json", self.ns.base_dir(), self.relay.chain)),
-            remote_path: PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
-        }];
-
-        if let Some(para_spec_path) = maybe_para_chain_spec_path {
-            global_files_to_inject.push(
-                TransferedFile {
-                    local_path: PathBuf::from(format!("{}/{}", self.ns.base_dir(), para_spec_path.to_string_lossy())),
-                    remote_path: PathBuf::from(format!("/cfg/{}.json", para_id.ok_or(anyhow::anyhow!("para_id should be valid here, this is a bug!"))?)),
-                }
-
-            );
-        }
-
-        let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
-        self.add_running_node(node, None);
-
-        Ok(())
-    }
-
-    // This should include at least of collator?
-    // add_parachain()
-
-    // deregister and stop the collator?
-    // remove_parachain()
-
-    // Node actions
-    pub async fn pause_node(&self, node_name: impl Into<String>) -> Result<(), anyhow::Error> {
-        let node_name = node_name.into();
-        if let Some(node) = self.nodes_by_name.get(&node_name) {
-            node.inner.pause().await?;
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("can't find the node!"))
-        }
-    }
-
-    pub async fn resume_node(&self, node_name: impl Into<String>) -> Result<(), anyhow::Error> {
-        let node_name = node_name.into();
-        if let Some(node) = self.nodes_by_name.get(&node_name) {
-            node.inner.resume().await?;
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("can't find the node!"))
-        }
-    }
-
-    pub async fn restart_node(
-        &self,
-        node_name: impl Into<String>,
-        after: Option<Duration>,
-    ) -> Result<(), anyhow::Error> {
-        let node_name = node_name.into();
-        if let Some(node) = self.nodes_by_name.get(&node_name) {
-            node.inner.restart(after).await?;
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("can't find the node!"))
-        }
-    }
-
-    // Internal API
-    fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
-        if let Some(para_id) = para_id {
-            if let Some(para) = self.parachains.get_mut(&para_id) {
-                para.collators.push(node.clone());
-            } else {
-                unreachable!()
-            }
-        } else {
-            self.relay.nodes.push(node.clone());
-        }
-        // TODO: we should hold a ref to the node in the vec in the future.
-        let node_name = node.name.clone();
-        self.nodes_by_name.insert(node_name, node);
-    }
-
-    fn add_para(&mut self, para: Parachain) {
-        self.parachains.insert(para.para_id, para);
-    }
-
-    fn id(&self) -> String {
-        self.ns.id()
-    }
-
-    fn relaychain(&self) -> &Relaychain {
-        &self.relay
-    }
-
-    fn parachain(&self, para_id: u32) -> Option<&Parachain> {
-        self.parachains.get(&para_id)
-    }
-
-    fn parachains(&self) -> Vec<&Parachain> {
-        self.parachains.values().collect()
-    }
-}
-
-#[derive(Debug)]
-pub struct Relaychain {
-    chain: String,
-    chain_id: String,
-    chain_spec_path: PathBuf,
-    nodes: Vec<NetworkNode>,
-}
-
-impl Relaychain {
-    fn new(chain: String, chain_id: String, chain_spec_path: PathBuf) -> Self {
-        Self {
-            chain,
-            chain_id,
-            chain_spec_path,
-            nodes: Default::default(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Parachain {
-    chain: Option<String>,
-    para_id: u32,
-    chain_id: Option<String>,
-    chain_spec_path: Option<PathBuf>,
-    collators: Vec<NetworkNode>,
-}
-
-impl Parachain {
-    fn new(para_id: u32) -> Self {
-        Self {
-            chain: None,
-            para_id,
-            chain_id: None,
-            chain_spec_path: None,
-            collators: Default::default(),
-        }
-    }
-
-    fn with_chain_spec(para_id: u32, chain_id: impl Into<String>, chain_spec_path: impl AsRef<Path>) -> Self {
-        Self {
-            para_id,
-            chain: None,
-            chain_id: Some(chain_id.into()),
-            chain_spec_path: Some(chain_spec_path.as_ref().into()),
-            collators: Default::default(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct NetworkNode {
-    inner: DynNode,
-    // TODO: do we need the full spec here?
-    // Maybe a reduce set of values.
-    spec: NodeSpec,
-    name: String,
-    ws_uri: String,
-    prometheus_uri: String,
-}
-
-impl NetworkNode {
-    fn new(inner: DynNode, spec: NodeSpec, _ip: String) -> Self {
-        let name = spec.name.clone();
-        let ws_uri = "".into();
-        let prometheus_uri = "".into();
-
-        Self {
-            inner,
-            spec,
-            name,
-            ws_uri,
-            prometheus_uri,
-        }
-    }
-}
-
-impl std::fmt::Debug for NetworkNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NetworkNode")
-            .field("inner", &"inner_skipped")
-            .field("spec", &self.spec)
-            .field("name", &self.name)
-            .field("ws_uri", &self.ws_uri)
-            .field("prometheus_uri", &self.prometheus_uri)
-            .finish()
-    }
-}
+// re-export
+pub use network::AddNodeOpts;

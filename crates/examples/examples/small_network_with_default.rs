@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use configuration::NetworkConfigBuilder;
-use orchestrator::{AddNodeOpts, Orchestrator};
+use orchestrator::{Orchestrator, AddNodeOpts};
 use provider::NativeProvider;
 use support::fs::local::LocalFileSystem;
 
@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     opts.rpc_port = Some(9444);
     opts.is_validator = true;
 
+    // TODO: add check to ensure if unique
     network.add_node("new1", opts, None).await?;
 
     tokio::time::sleep(Duration::from_secs(5)).await;

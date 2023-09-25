@@ -8,11 +8,11 @@ pub struct ProviderCapabilities {
 }
 
 impl ProviderCapabilities {
-    fn new() -> Self {
+    fn _new() -> Self {
         Self::default()
     }
 
-    fn requires_image(mut self) -> Self {
+    fn _requires_image(mut self) -> Self {
         self.requires_image = true;
         self
     }
@@ -144,7 +144,7 @@ pub struct RunCommandOptions {
 }
 
 impl RunCommandOptions {
-    fn new<S>(command: S) -> Self
+    fn _new<S>(command: S) -> Self
     where
         S: AsRef<str>,
     {
@@ -155,7 +155,7 @@ impl RunCommandOptions {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    fn _args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -164,7 +164,7 @@ impl RunCommandOptions {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    fn _env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -184,7 +184,7 @@ pub struct RunScriptOptions {
 }
 
 impl RunScriptOptions {
-    fn new<P>(local_script_path: P) -> Self
+    fn _new<P>(local_script_path: P) -> Self
     where
         P: AsRef<Path>,
     {
@@ -195,7 +195,7 @@ impl RunScriptOptions {
         }
     }
 
-    fn args<S, I>(mut self, args: I) -> Self
+    fn _args<S, I>(mut self, args: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = S>,
@@ -204,7 +204,7 @@ impl RunScriptOptions {
         self
     }
 
-    fn env<S, I>(mut self, env: I) -> Self
+    fn _env<S, I>(mut self, env: I) -> Self
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S)>,
@@ -225,7 +225,7 @@ pub struct TransferedFile {
 }
 
 impl TransferedFile {
-    fn new<P>(local_path: P, remote_path: P) -> Self
+    fn _new<P>(local_path: P, remote_path: P) -> Self
     where
         P: AsRef<Path>,
     {

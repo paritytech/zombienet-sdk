@@ -2,11 +2,31 @@ use std::path::PathBuf;
 
 use provider::{
     constants::LOCALHOST,
-    types::{SpawnNodeOptions, TransferedFile},
+    types::{SpawnNodeOptions, TransferedFile}, DynNamespace,
 };
 use support::fs::FileSystem;
 
-use crate::{generators, network_spec::node::NodeSpec, NetworkNode, SpawnNodeCtx, ZombieRole};
+use crate::{generators, network_spec::{node::NodeSpec, parachain::ParachainSpec}, ZombieRole, ScopedFilesystem, network::node::NetworkNode};
+
+#[derive(Clone)]
+pub struct SpawnNodeCtx<'a, T: FileSystem> {
+    /// Relaychain id, from the chain-spec (e.g rococo_local_testnet)
+    pub(crate) chain_id: &'a str,
+    // Parachain id, from the chain-spec (e.g local_testnet)
+    pub(crate) parachain_id: Option<&'a str>,
+    /// Relaychain chain name (e.g rococo-local)
+    pub(crate) chain: &'a str,
+    /// Role of the node in the network
+    pub(crate) role: ZombieRole,
+    /// Ref to the namespace
+    pub(crate) ns: &'a DynNamespace,
+    /// Ref to an scoped filesystem (encapsulate fs actions inside the ns directory)
+    pub(crate) scoped_fs: &'a ScopedFilesystem<'a, T>,
+    /// Ref to a parachain (used to spawn collators)
+    pub(crate) parachain: Option<&'a ParachainSpec>,
+    /// The string represenation of the bootnode addres to pass to nodes
+    pub(crate) bootnodes_addr: &'a Vec<String>,
+}
 
 pub async fn spawn_node<'a, T>(
     node: &NodeSpec,

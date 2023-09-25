@@ -8,8 +8,7 @@ use multiaddr::Multiaddr;
 use crate::{
     errors::OrchestratorError,
     generators,
-    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
-    AddNodeOpts,
+    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort}, network::AddNodeOpts
 };
 
 /// A node configuration, with fine-grained configuration options.

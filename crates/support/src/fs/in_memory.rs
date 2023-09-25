@@ -1,4 +1,11 @@
-use std::{collections::HashMap, ffi::OsString, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    fs::{self, Permissions},
+    os::unix::prelude::PermissionsExt,
+    path::Path,
+    sync::Arc,
+};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -8,8 +15,14 @@ use super::{FileSystem, FileSystemResult};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InMemoryFile {
-    File { mode: u32, contents: Vec<u8> },
-    Directory { mode: u32 },
+    File {
+        mode: u32,
+        contents: Vec<u8>,
+        mirror: bool,
+    },
+    Directory {
+        mode: u32,
+    },
 }
 
 impl InMemoryFile {
@@ -27,6 +40,31 @@ impl InMemoryFile {
         Self::File {
             mode: 0o664,
             contents: contents.as_ref().to_vec(),
+            mirror: false,
+        }
+    }
+
+    pub fn mirror<P, C>(path: P, contents: C) -> Self
+    where
+        P: AsRef<Path>,
+        C: AsRef<str>,
+    {
+        Self::mirror_raw(path, contents.as_ref())
+    }
+
+    pub fn mirror_raw<P, C>(path: P, contents: C) -> Self
+    where
+        P: AsRef<Path>,
+        C: AsRef<[u8]>,
+    {
+        // mirror file to local filesystem
+        fs::create_dir_all(path.as_ref().parent().unwrap()).unwrap();
+        fs::write(path, contents.as_ref()).unwrap();
+
+        Self::File {
+            mode: 0o664,
+            contents: contents.as_ref().to_vec(),
+            mirror: true,
         }
     }
 
@@ -57,6 +95,13 @@ impl InMemoryFile {
             Self::File { contents, .. } => Some(String::from_utf8_lossy(contents).to_string()),
             Self::Directory { .. } => None,
         }
+    }
+
+    pub fn set_mirror(&mut self) {
+        match self {
+            Self::File { mirror, .. } => *mirror = true,
+            _ => {},
+        };
     }
 }
 
@@ -204,16 +249,45 @@ impl FileSystem for InMemoryFileSystem {
         from: impl AsRef<Path> + Send,
         to: impl AsRef<Path> + Send,
     ) -> FileSystemResult<()> {
-        let content = self.read(from).await?;
-        self.write(to, content).await
+        let from_ref = from.as_ref();
+        let to_ref = to.as_ref();
+        let content = self.read(from_ref).await?;
+        self.write(to_ref, content).await?;
+
+        // handle mirror file
+        let mut files = self.files.write().await;
+        let file = files.get(from_ref.as_os_str()).unwrap();
+        if let InMemoryFile::File {
+            mode,
+            contents,
+            mirror,
+        } = file
+        {
+            if *mirror {
+                fs::create_dir_all(to_ref.parent().unwrap()).unwrap();
+                fs::write(to_ref, contents).unwrap();
+                fs::set_permissions(to_ref, Permissions::from_mode(*mode)).unwrap();
+                files.get_mut(to_ref.as_os_str()).unwrap().set_mirror();
+            }
+        }
+
+        Ok(())
     }
 
     async fn set_mode(&self, path: impl AsRef<Path> + Send, mode: u32) -> FileSystemResult<()> {
         let os_path = path.as_ref().as_os_str();
         if let Some(file) = self.files.write().await.get_mut(os_path) {
             match file {
-                InMemoryFile::File { mode: old_mode, .. } => {
+                InMemoryFile::File {
+                    mode: old_mode,
+                    mirror,
+                    ..
+                } => {
                     *old_mode = mode;
+
+                    if *mirror {
+                        fs::set_permissions(os_path, Permissions::from_mode(mode)).unwrap();
+                    }
                 },
                 InMemoryFile::Directory { mode: old_mode, .. } => {
                     *old_mode = mode;
@@ -519,7 +593,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File {mode, contents}) if *mode == 0o664 && contents == "my file content".as_bytes()
+            Some(InMemoryFile::File {mode, contents, .. }) if *mode == 0o664 && contents == "my file content".as_bytes()
         ));
     }
 
@@ -541,7 +615,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File { mode, contents }) if *mode == 0o664 && contents == "my new file content".as_bytes()
+            Some(InMemoryFile::File { mode, contents, .. }) if *mode == 0o664 && contents == "my new file content".as_bytes()
         ));
     }
 
@@ -611,7 +685,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File { mode, contents }) if *mode == 0o664 && contents == "my file content has been updated with new things".as_bytes()
+            Some(InMemoryFile::File { mode, contents, .. }) if *mode == 0o664 && contents == "my file content has been updated with new things".as_bytes()
         ));
     }
 
@@ -630,7 +704,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File { mode,contents }) if *mode == 0o664 && contents == "my file content".as_bytes()
+            Some(InMemoryFile::File { mode,contents, .. }) if *mode == 0o664 && contents == "my file content".as_bytes()
         ));
     }
 
@@ -693,7 +767,7 @@ mod tests {
 
         assert_eq!(fs.files.read().await.len(), 3);
         assert!(
-            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents } if *mode == 0o664 && contents == "my file content".as_bytes())
+            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents, .. } if *mode == 0o664 && contents == "my file content".as_bytes())
         );
     }
 
@@ -715,7 +789,7 @@ mod tests {
 
         assert_eq!(fs.files.read().await.len(), 3);
         assert!(
-            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents } if *mode == 0o664 && contents == "my new file content".as_bytes())
+            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents, .. } if *mode == 0o664 && contents == "my new file content".as_bytes())
         );
     }
 

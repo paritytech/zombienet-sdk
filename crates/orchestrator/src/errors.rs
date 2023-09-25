@@ -21,4 +21,6 @@ pub enum OrchestratorError {
     ProviderError(#[from] ProviderError),
     #[error("FileSystem error")]
     FileSystemError(#[from] FileSystemError),
+    #[error(transparent)]
+    SpawnerError(#[from] anyhow::Error),
 }

@@ -5,13 +5,15 @@ mod errors;
 mod generators;
 mod network_spec;
 mod shared;
+mod spawner;
 
 use std::{time::Duration, path::{PathBuf, Path}, collections::HashMap};
 
-use configuration::{NetworkConfig, types::RegistrationStrategy};
+use configuration::{NetworkConfig, types::{RegistrationStrategy, Command, Arg, Image}, shared::node::EnvVar};
 use errors::OrchestratorError;
 use network_spec::{NetworkSpec, node::NodeSpec, parachain::ParachainSpec};
-use provider::{Provider, types::{TransferedFile, SpawnNodeOptions}, DynNamespace, DynNode, constants::LOCALHOST};
+use provider::{Provider, types::{TransferedFile, SpawnNodeOptions, Port}, DynNamespace, DynNode, constants::LOCALHOST};
+use shared::types::ChainDefaultContext;
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 
@@ -38,7 +40,7 @@ where
         }
     }
 
-    pub async fn spawn(&self, network_config: NetworkConfig) -> Result<Network, OrchestratorError> {
+    pub async fn spawn(&self, network_config: NetworkConfig) -> Result<Network<T>, OrchestratorError> {
         let global_timeout = network_config.global_settings().network_spawn_timeout();
         let network_spec = NetworkSpec::from_config(&network_config).await?;
 
@@ -50,7 +52,7 @@ where
         .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout))?
     }
 
-    async fn spawn_inner(&self, mut network_spec: NetworkSpec) -> Result<Network, OrchestratorError> {
+    async fn spawn_inner(&self, mut network_spec: NetworkSpec) -> Result<Network<T>, OrchestratorError> {
         // main driver for spawn the network
         println!("{:#?}", network_spec);
 
@@ -160,11 +162,10 @@ where
             }
         ];
 
-
         let r = Relaychain::new(relay_chain_name.to_string(),PathBuf::from(network_spec.relaychain.chain_spec.raw_path().ok_or(OrchestratorError::InvariantError("chain-spec raw path should be set now"))?));
-        let mut network = Network::new_with_relay(r, ns.clone(), network_spec.clone());
+        let mut network = Network::new_with_relay(r, ns.clone(), self.filesystem.clone(), network_spec.clone());
 
-        let spawning_tasks = bootnodes.iter_mut().map(|node| self.spawn_node(node, global_files_to_inject.clone(), &ctx));
+        let spawning_tasks = bootnodes.iter_mut().map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr : Vec<String> = vec![];
@@ -181,7 +182,7 @@ where
         ctx.bootnodes_addr = &bootnodes_addr;
 
         // spawn the rest of the nodes (TODO: in batches)
-        let spawning_tasks = relaynodes.iter().map(|node| self.spawn_node(node, global_files_to_inject.clone(), &ctx));
+        let spawning_tasks = relaynodes.iter().map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
         for node  in futures::future::try_join_all(spawning_tasks).await? {
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
@@ -195,8 +196,17 @@ where
             // parachain id is used for the keystore
             let parachain_id = if let Some(chain_spec) = para.chain_spec.as_ref() {
                 let id = chain_spec.read_chain_id(&scoped_fs).await?;
+                let raw_path = chain_spec.raw_path().ok_or(OrchestratorError::InvariantError("chain-spec path should be set by now."))?;
+                let mut running_para = Parachain::with_chain_spec( para.id, raw_path);
+                if let Some(chain_name) = chain_spec.chain_name() {
+                    running_para.chain = Some(chain_name.to_string());
+                }
+                network.add_para(running_para);
+
                 Some(id)
             } else {
+                network.add_para(Parachain::new(para.id));
+
                 None
             };
 
@@ -215,9 +225,11 @@ where
                 });
             }
 
-            let spawning_tasks = para.collators.iter().map(|node| self.spawn_node(node, para_files_to_inject.clone(), &ctx_para));
+            let spawning_tasks = para.collators.iter().map(|node| spawner::spawn_node(node, para_files_to_inject.clone(), &ctx_para));
             // TODO: Add para to Network instance
-            futures::future::try_join_all(spawning_tasks).await?;
+            for node  in futures::future::try_join_all(spawning_tasks).await? {
+                network.add_running_node(node, Some(para.id));
+            }
         }
 
         // TODO:
@@ -231,7 +243,8 @@ where
         Ok(network)
     }
 
-    async fn spawn_node<'a>(&self, node: &NodeSpec, mut files_to_inject: Vec<TransferedFile>, ctx: &SpawnNodeCtx<'a, T>) -> Result<NetworkNode, OrchestratorError> {
+    // TODO: move this to other module
+    async fn spawn_node<'a>(node: &NodeSpec, mut files_to_inject: Vec<TransferedFile>, ctx: &SpawnNodeCtx<'a, T>) -> Result<NetworkNode, OrchestratorError> {
         let mut created_paths = vec![];
         // Create and inject the keystore IFF
         // - The node is validator in the relaychain
@@ -340,6 +353,7 @@ where
 // but the FileSystem trait isn't object-safe so we can't pass around
 // as `dyn FileSystem`. We can refactor or using some `erase` techniques
 // to resolve this and remove this struct
+#[derive(Clone)]
 pub struct ScopedFilesystem<'a, FS: FileSystem> {
     fs: &'a FS,
     base_dir: &'a str
@@ -393,7 +407,7 @@ pub enum ZombieRole {
 }
 
 #[derive(Clone)]
-struct SpawnNodeCtx<'a, T: FileSystem> {
+pub struct SpawnNodeCtx<'a, T: FileSystem> {
     // Relaychain id, from the chain-spec (e.g rococo_local_testnet)
     chain_id: &'a str,
     // Parachain id, from the chain-spec (e.g local_testnet)
@@ -413,24 +427,39 @@ struct SpawnNodeCtx<'a, T: FileSystem> {
 }
 
 
-pub struct Network {
+pub struct Network<T: FileSystem> {
     ns: DynNamespace,
+    filesystem: T,
     relay: Relaychain,
     initial_spec: NetworkSpec,
     parachains: HashMap<u32, Parachain>,
     nodes_by_name: HashMap<String, NetworkNode>
 }
 
-impl std::fmt::Debug for Network {
+impl<T: FileSystem> std::fmt::Debug for Network<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Network").field("ns", &"ns_skipped").field("relay", &self.relay).field("initial_spec", &self.initial_spec).field("parachains", &self.parachains).field("nodes_by_name", &self.nodes_by_name).finish()
     }
 }
 
-impl Network {
-    fn new_with_relay(relay: Relaychain, ns: DynNamespace, initial_spec: NetworkSpec) -> Self {
+#[derive(Default, Debug, Clone)]
+pub struct AddNodeOpts {
+    pub image: Option<Image>,
+    pub command: Option<Command>,
+    pub args: Vec<Arg>,
+    pub env: Vec<EnvVar>,
+    pub is_validator: bool,
+    pub rpc_port: Option<Port>,
+    pub prometheus_port: Option<Port>,
+    pub p2p_port: Option<Port>,
+}
+
+
+impl<T: FileSystem> Network<T> {
+    fn new_with_relay(relay: Relaychain, ns: DynNamespace, fs: T, initial_spec: NetworkSpec) -> Self {
         Self {
             ns,
+            filesystem: fs,
             relay,
             initial_spec,
             parachains: Default::default(),
@@ -443,29 +472,106 @@ impl Network {
     // Teardown the network
     // destroy()
 
+    // Could be for relay/para?
+    // pub fn add_node(&mut self, name: impl Into<String>, cmd: Command, args: Vec<Arg>, env: Vec<EnvVar>, is_validator: bool, para_id: Option<u32>) -> Result<(), anyhow::Error> {
+    pub async fn add_node(&mut self, name: impl Into<String>, options: AddNodeOpts ) -> Result<(), anyhow::Error> {
+        // build context
+        let spec = &self.initial_spec.relaychain;
+        let chain_context = ChainDefaultContext {
+            default_command: spec.default_command.as_ref(),
+            default_image: spec.default_image.as_ref(),
+            default_resources: spec.default_resources.as_ref(),
+            default_db_snapshot: spec.default_db_snapshot.as_ref(),
+            default_args: spec.default_args.iter().collect(),
+        };
+
+        let node_spec = network_spec::node::NodeSpec::from_ad_hoc(name.into(), options, &chain_context)?;
+        let base_dir = self.ns.base_dir();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+
+
+        // TODO: we want to still supporting spawn a dedicated bootnode??
+        let ctx = SpawnNodeCtx {
+            chain_id: &self.relay.chain,
+            parachain_id: None,
+            chain: &self.relay.chain,
+            role: ZombieRole::Node,
+            ns: &self.ns,
+            scoped_fs: &scoped_fs,
+            parachain: None,
+            bootnodes_addr: &vec![],
+        };
+
+        let global_files_to_inject = vec![
+            TransferedFile {
+                local_path: PathBuf::from(format!("{}/{}.json", self.ns.base_dir(), self.relay.chain)),
+                remote_path: PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
+            }
+        ];
+
+        let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+        self.add_running_node(node, None);
+
+
+        Ok(())
+    }
+
     // This should include at least of collator?
     // add_parachain()
-
-    // Could be for relay/para?
-    // add_node()
 
     // deregister and stop the collator?
     // remove_parachain()
 
     // Node actions
-    // stop_node()
-    // start_node()
-    // restart_node()
+    pub async fn pause_node(&self, node_name: impl Into<String>) -> Result<(), anyhow::Error> {
+        let node_name = node_name.into();
+        if let Some(node) = self.nodes_by_name.get(&node_name) {
+            node.inner.pause().await?;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("can't find the node!"))
+        }
+    }
 
+    pub async fn resume_node(&self, node_name: impl Into<String>) -> Result<(), anyhow::Error> {
+        let node_name = node_name.into();
+        if let Some(node) = self.nodes_by_name.get(&node_name) {
+            node.inner.resume().await?;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("can't find the node!"))
+        }
+    }
+
+    pub async fn restart_node(&self, node_name: impl Into<String>, after: Option<Duration>) -> Result<(), anyhow::Error> {
+        let node_name = node_name.into();
+        if let Some(node) = self.nodes_by_name.get(&node_name) {
+            node.inner.restart(after).await?;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("can't find the node!"))
+        }
+    }
 
 
     // Internal API
-    fn add_running_node(&mut self, _node: NetworkNode, _para_id: Option<u32>) {
-
+    fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
+        if let Some(para_id) = para_id {
+            if let Some(para) = self.parachains.get_mut(&para_id) {
+                para.collators.push(node.clone());
+            } else {
+                unreachable!()
+            }
+        } else {
+            self.relay.nodes.push(node.clone());
+        }
+        // TODO: we should hold a ref to the node in the vec in the future.
+        let node_name = node.name.clone();
+        self.nodes_by_name.insert(node_name, node);
     }
 
-    fn add_para(&mut self, _para: Parachain) {
-
+    fn add_para(&mut self, para: Parachain) {
+        self.parachains.insert(para.para_id, para);
     }
 
     fn id(&self) -> String {
@@ -505,18 +611,27 @@ impl Relaychain {
 
 #[derive(Debug)]
 pub struct Parachain {
-    chain_id: Option<String>,
+    chain: Option<String>,
     para_id: u32,
     chain_spec_path: Option<PathBuf>,
     collators: Vec<NetworkNode>,
 }
 
 impl Parachain {
-    fn new(para_id: u32, chain_id: Option<String>, chain_spec_path: Option<PathBuf>) -> Self {
+    fn new(para_id: u32) -> Self {
         Self {
-            chain_id,
+            chain: None,
             para_id,
-            chain_spec_path,
+            chain_spec_path: None,
+            collators: Default::default()
+        }
+    }
+
+    fn with_chain_spec(para_id: u32, chain_spec_path: impl AsRef<Path>) -> Self {
+        Self {
+            para_id,
+            chain: None,
+            chain_spec_path: Some(chain_spec_path.as_ref().into()),
             collators: Default::default()
         }
     }

@@ -70,7 +70,11 @@ impl ChainSpec {
         }
     }
 
-    pub(crate) fn chain_name(mut self, chain_name: impl Into<String>) -> Self {
+    pub(crate) fn chain_name(&self) -> Option<&str> {
+        self.chain_name.as_deref()
+    }
+
+    pub(crate) fn set_chain_name(mut self, chain_name: impl Into<String>) -> Self {
         self.chain_name = Some(chain_name.into());
         self
     }

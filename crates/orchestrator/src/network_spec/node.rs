@@ -8,7 +8,7 @@ use multiaddr::Multiaddr;
 use crate::{
     errors::OrchestratorError,
     generators,
-    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
+    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort}, AddNodeOpts,
 };
 
 
@@ -146,6 +146,77 @@ impl NodeSpec {
             rpc_port: generators::port::generate(node_config.rpc_port())?,
             prometheus_port: generators::port::generate(node_config.prometheus_port())?,
             p2p_port: generators::port::generate(node_config.p2p_port())?,
+        })
+    }
+
+    pub fn from_ad_hoc(
+        name: impl Into<String>,
+        options: AddNodeOpts,
+        chain_context: &ChainDefaultContext,
+    ) -> Result<Self, OrchestratorError> {
+        // Check first if the image is set at node level, then try with the default
+        let image = if let Some(img) = options.image {
+            Some(img.clone())
+        } else {
+            chain_context.default_image.cloned()
+        };
+
+        let name = name.into();
+        // Check first if the command is set at node level, then try with the default
+        let command = if let Some(cmd) = options.command {
+            cmd.clone()
+        } else if let Some(cmd) = chain_context.default_command {
+            cmd.clone()
+        } else {
+            return Err(OrchestratorError::InvalidNodeConfig(
+                name.into(),
+                "command".to_string(),
+            ));
+        };
+
+        // If `args` is set at `node` level use them
+        // otherwise use the default_args (can be empty).
+        let args: Vec<Arg> = if options.args.is_empty() {
+            chain_context
+                .default_args
+                .iter()
+                .map(|x| x.to_owned().clone())
+                .collect()
+        } else {
+            options.args
+        };
+
+
+        let (key, peer_id) = generators::identity::generate_for_node(&name)?;
+
+        let mut name_capitalized = name.clone();
+        let seed = format!("//{}{name_capitalized}", name_capitalized.remove(0).to_uppercase());
+        let accounts = generators::key::generate_for_node(&seed)?;
+        let accounts = NodeAccounts { seed, accounts };
+
+        //
+        Ok(Self {
+            name: name,
+            key,
+            peer_id,
+            image,
+            command,
+            args,
+            is_validator: options.is_validator,
+            is_invulnerable: false,
+            is_bootnode: false,
+            initial_balance: 0,
+            env: options.env,
+            bootnodes_addresses: vec![],
+            resources: None,
+            p2p_cert_hash: None,
+            db_snapshot: None,
+            accounts,
+            // should be deprecated now!
+            ws_port: generators::port::generate(None)?,
+            rpc_port: generators::port::generate(options.rpc_port)?,
+            prometheus_port: generators::port::generate(options.prometheus_port)?,
+            p2p_port: generators::port::generate(options.p2p_port)?,
         })
     }
 }

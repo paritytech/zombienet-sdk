@@ -66,7 +66,7 @@ impl RelaychainSpec {
             ));
         };
 
-        let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay).chain_name(config.chain().as_str());
+        let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay).set_chain_name(config.chain().as_str());
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
             chain_spec.asset_location(chain_spec_path.clone())
         } else {

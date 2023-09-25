@@ -54,7 +54,7 @@ impl ParachainSpec {
             } else {
                 ChainSpec::new(chain_name, Context::Para)
             };
-            let chain_spec_builder = chain_spec_builder.chain_name(chain_name);
+            let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
 
             if let Some(chain_spec_path) = config.chain_spec_path() {
                 Some(chain_spec_builder.asset_location(chain_spec_path.clone()))

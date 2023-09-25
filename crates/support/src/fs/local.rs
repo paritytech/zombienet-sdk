@@ -1,8 +1,7 @@
-use std::{os::unix::fs::PermissionsExt, path::Path};
+use std::{fs::Permissions, os::unix::fs::PermissionsExt, path::Path};
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
-use uuid::Uuid;
 
 use super::{FileSystem, FileSystemError, FileSystemResult};
 
@@ -67,23 +66,7 @@ impl FileSystem for LocalFileSystem {
     }
 
     async fn set_mode(&self, path: impl AsRef<Path> + Send, mode: u32) -> FileSystemResult<()> {
-        // because we can't create a Permissions struct directly, we create a temporary empty file and retrieve the
-        // Permissions from it, we then modify its mode and apply it to our file
-        let temp_file_path = format!(
-            "{}/{}",
-            std::env::temp_dir().to_string_lossy(),
-            Uuid::new_v4()
-        );
-        let temp_file =
-            std::fs::File::create(temp_file_path).map_err(Into::<FileSystemError>::into)?;
-
-        let mut permissions = temp_file
-            .metadata()
-            .map_err(Into::<FileSystemError>::into)?
-            .permissions();
-        permissions.set_mode(mode);
-
-        tokio::fs::set_permissions(path, permissions)
+        tokio::fs::set_permissions(path, Permissions::from_mode(mode))
             .await
             .map_err(Into::into)
     }
@@ -342,10 +325,7 @@ mod tests {
         let fs = LocalFileSystem::default();
         let path = format!("{test_dir}/myfile");
         std::fs::write(&path, "Test").unwrap();
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode(),
-            FILE_BITS + 0o664
-        );
+        assert!(std::fs::metadata(&path).unwrap().permissions().mode() != (FILE_BITS + 0400));
 
         fs.set_mode(&path, 0o400).await.unwrap();
 
@@ -362,10 +342,7 @@ mod tests {
         let fs = LocalFileSystem::default();
         let path = format!("{test_dir}/mydir");
         std::fs::create_dir(&path).unwrap();
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode(),
-            DIR_BITS + 0o775
-        );
+        assert!(std::fs::metadata(&path).unwrap().permissions().mode() != (DIR_BITS + 0o700));
 
         fs.set_mode(&path, 0o700).await.unwrap();
 

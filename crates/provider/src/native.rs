@@ -838,15 +838,9 @@ mod tests {
         sleep(Duration::from_secs(30)).await;
 
         // ensure process has correct environment
-        assert!(node_process
-            .env
-            .contains("MY_VAR_1=MY_VALUE_1"));
-        assert!(node_process
-            .env
-            .contains("MY_VAR_2=MY_VALUE_2"));
-        assert!(node_process
-            .env
-            .contains("MY_VAR_3=MY_VALUE_3"));
+        assert!(node_process.env.contains("MY_VAR_1=MY_VALUE_1"));
+        assert!(node_process.env.contains("MY_VAR_2=MY_VALUE_2"));
+        assert!(node_process.env.contains("MY_VAR_3=MY_VALUE_3"));
 
         // ensure log file is created and logs are written and keep being written for some time
         timeout(Duration::from_secs(30), async {
@@ -1418,15 +1412,9 @@ mod tests {
             .contains(&"-option4 value4".to_string()));
 
         // ensure process restarted with correct environment
-        assert!(node_process
-            .env
-            .contains("MY_VAR_1=MY_VALUE_1"));
-        assert!(node_process
-            .env
-            .contains("MY_VAR_2=MY_VALUE_2"));
-        assert!(node_process
-            .env
-            .contains("MY_VAR_3=MY_VALUE_3"));
+        assert!(node_process.env.contains("MY_VAR_1=MY_VALUE_1"));
+        assert!(node_process.env.contains("MY_VAR_2=MY_VALUE_2"));
+        assert!(node_process.env.contains("MY_VAR_3=MY_VALUE_3"));
 
         // ensure log writing restarted and they keep being written for some time
         timeout(Duration::from_secs(30), async {
@@ -1530,7 +1518,7 @@ mod tests {
             .map(|line| {
                 let mut parts = line.split_whitespace();
 
-                let pid = parts.next().unwrap().parse().unwrap(); 
+                let pid = parts.next().unwrap().parse().unwrap();
 
                 parts.next(); // skip tty
 

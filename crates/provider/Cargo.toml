@@ -27,4 +27,4 @@ uuid = { workspace = true, features = ["v4"] }
 nix = { workspace = true, features = ["signal"] }
 
 [dev-dependencies]
-procfs = { workspace = true }
+regex = { workspace = true }

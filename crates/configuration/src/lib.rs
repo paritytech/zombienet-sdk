@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)]
 mod global_settings;
 mod hrmp_channel;
 mod network;

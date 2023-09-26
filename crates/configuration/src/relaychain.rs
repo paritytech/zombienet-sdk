@@ -1,8 +1,9 @@
 use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::shared::{
+    constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG},
     errors::{ConfigError, FieldError},
     helpers::{merge_errors, merge_errors_vecs},
     macros::states,
@@ -12,19 +13,19 @@ use crate::shared::{
 };
 
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelaychainConfig {
     chain: Chain,
     default_command: Option<Command>,
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     chain_spec_path: Option<AssetLocation>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<NodeConfig>,
 }
 
@@ -78,6 +79,10 @@ impl RelaychainConfig {
     pub fn nodes(&self) -> Vec<&NodeConfig> {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
+
+    pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
+        self.nodes = nodes;
+    }
 }
 
 states! {
@@ -87,7 +92,6 @@ states! {
 }
 
 /// A relay chain configuration builder, used to build a [`RelaychainConfig`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct RelaychainConfigBuilder<State> {
     config: RelaychainConfig,
     validation_context: Rc<RefCell<ValidationContext>>,
@@ -101,7 +105,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
             config: RelaychainConfig {
                 chain: "default"
                     .try_into()
-                    .expect("'default' overriding should be ensured by typestate. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues"),
+                    .expect(&format!("{} {}", DEFAULT_TYPESTATE, THIS_IS_A_BUG)),
                 default_command: None,
                 default_image: None,
                 default_resources: None,

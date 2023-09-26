@@ -1,28 +1,111 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
 use multiaddr::Multiaddr;
-use serde::Serialize;
-
-use crate::shared::{
-    errors::{ConfigError, FieldError},
-    helpers::{merge_errors, merge_errors_vecs},
-    macros::states,
-    node::{self, NodeConfig, NodeConfigBuilder},
-    resources::{Resources, ResourcesBuilder},
-    types::{
-        Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, RegistrationStrategy,
-        ValidationContext, U128,
-    },
+use serde::{
+    de::{self, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Serialize,
 };
 
+use crate::{
+    shared::{
+        errors::{ConfigError, FieldError},
+        helpers::{merge_errors, merge_errors_vecs},
+        macros::states,
+        node::{self, NodeConfig, NodeConfigBuilder},
+        resources::{Resources, ResourcesBuilder},
+        types::{
+            Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
+        },
+    },
+    utils::default_as_true,
+};
+
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RegistrationStrategy {
+    InGenesis,
+    UsingExtrinsic,
+}
+
+impl Serialize for RegistrationStrategy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("RegistrationStrategy", 1)?;
+
+        match self {
+            Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
+            Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
+        }
+
+        state.end()
+    }
+}
+
+struct RegistrationStrategyVisitor;
+
+impl<'de> Visitor<'de> for RegistrationStrategyVisitor {
+    type Value = RegistrationStrategy;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("struct RegistrationStrategy")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut add_to_genesis = false;
+        let mut register_para = false;
+
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "add_to_genesis" => add_to_genesis = map.next_value()?,
+                "register_para" => register_para = map.next_value()?,
+                _ => {
+                    return Err(de::Error::unknown_field(
+                        &key,
+                        &["add_to_genesis", "register_para"],
+                    ))
+                },
+            }
+        }
+
+        match (add_to_genesis, register_para) {
+            (true, false) => Ok(RegistrationStrategy::InGenesis),
+            (false, true) => Ok(RegistrationStrategy::UsingExtrinsic),
+            _ => Err(de::Error::missing_field("add_to_genesis or register_para")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RegistrationStrategy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_struct(
+            "RegistrationStrategy",
+            &["add_to_genesis", "register_para"],
+            RegistrationStrategyVisitor,
+        )
+    }
+}
+
 /// A parachain configuration, composed of collators and fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParachainConfig {
     id: u32,
     chain: Option<Chain>,
     #[serde(flatten)]
     registration_strategy: Option<RegistrationStrategy>,
-    #[serde(skip_serializing_if = "super::utils::is_true")]
+    #[serde(
+        skip_serializing_if = "super::utils::is_true",
+        default = "default_as_true"
+    )]
     onboard_as_parachain: bool,
     #[serde(rename = "balance")]
     initial_balance: U128,
@@ -30,7 +113,7 @@ pub struct ParachainConfig {
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     genesis_wasm_path: Option<AssetLocation>,
     genesis_wasm_generator: Option<Command>,
@@ -39,9 +122,9 @@ pub struct ParachainConfig {
     chain_spec_path: Option<AssetLocation>,
     #[serde(rename = "cumulus_based")]
     is_cumulus_based: bool,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
-    #[serde(skip_serializing_if = "std::vec::Vec::is_empty")]
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     collators: Vec<NodeConfig>,
 }
 
@@ -144,7 +227,6 @@ states! {
 }
 
 /// A parachain configuration builder, used to build a [`ParachainConfig`] declaratively with fields validation.
-#[derive(Debug)]
 pub struct ParachainConfigBuilder<S> {
     config: ParachainConfig,
     validation_context: Rc<RefCell<ValidationContext>>,
@@ -597,6 +679,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NetworkConfig;
 
     #[test]
     fn parachain_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
@@ -652,6 +735,7 @@ mod tests {
         assert_eq!(collator2.command().unwrap().as_str(), "command2");
         assert!(collator2.is_validator());
         assert_eq!(parachain_config.chain().unwrap().as_str(), "mychainname");
+
         assert_eq!(
             parachain_config.registration_strategy().unwrap(),
             &RegistrationStrategy::UsingExtrinsic
@@ -978,6 +1062,36 @@ mod tests {
             errors.get(4).unwrap().to_string(),
             "parachain[2000].collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
+
+    #[test]
+    fn import_toml_registration_strategy_should_deserialize() {
+        let load_from_toml =
+            NetworkConfig::load_from_toml("./testing/snapshots/0001-big-network.toml").unwrap();
+
+        for parachain in load_from_toml.parachains().iter() {
+            if parachain.id() == 1000 {
+                assert_eq!(
+                    parachain.registration_strategy(),
+                    Some(&RegistrationStrategy::UsingExtrinsic)
+                );
+            }
+            if parachain.id() == 2000 {
+                assert_eq!(
+                    parachain.registration_strategy(),
+                    Some(&RegistrationStrategy::InGenesis)
+                );
+            }
+        }
+
+        let load_from_toml_small = NetworkConfig::load_from_toml(
+            "./testing/snapshots/0003-small-network_w_parachain.toml",
+        )
+        .unwrap();
+
+        let parachain = load_from_toml_small.parachains()[0];
+
+        assert_eq!(parachain.registration_strategy(), None);
     }
 
     #[test]

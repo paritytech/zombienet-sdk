@@ -1,4 +1,11 @@
-use std::{collections::HashMap, ffi::OsString, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    fs::{self, Permissions},
+    os::unix::prelude::PermissionsExt,
+    path::Path,
+    sync::Arc,
+};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -6,22 +13,94 @@ use tokio::sync::RwLock;
 
 use super::{FileSystem, FileSystemResult};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum InMemoryFile {
-    File { mode: u32, contents: Vec<u8> },
-    Directory { mode: u32 },
+    File {
+        mode: u32,
+        contents: Vec<u8>,
+        mirror: bool,
+    },
+    Directory {
+        mode: u32,
+    },
 }
 
 impl InMemoryFile {
-    pub fn file(contents: Vec<u8>) -> Self {
+    pub fn file<C>(contents: C) -> Self
+    where
+        C: AsRef<str>,
+    {
+        Self::file_raw(contents.as_ref())
+    }
+
+    pub fn file_raw<C>(contents: C) -> Self
+    where
+        C: AsRef<[u8]>,
+    {
         Self::File {
             mode: 0o664,
-            contents,
+            contents: contents.as_ref().to_vec(),
+            mirror: false,
         }
+    }
+
+    pub fn mirror<P, C>(path: P, contents: C) -> Self
+    where
+        P: AsRef<Path>,
+        C: AsRef<str>,
+    {
+        Self::mirror_raw(path, contents.as_ref())
+    }
+
+    pub fn mirror_raw<P, C>(path: P, contents: C) -> Self
+    where
+        P: AsRef<Path>,
+        C: AsRef<[u8]>,
+    {
+        // mirror file to local filesystem
+        fs::create_dir_all(path.as_ref().parent().unwrap()).unwrap();
+        fs::write(path, contents.as_ref()).unwrap();
+
+        Self::File {
+            mode: 0o664,
+            contents: contents.as_ref().to_vec(),
+            mirror: true,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self::file_raw(vec![])
     }
 
     pub fn dir() -> Self {
         Self::Directory { mode: 0o775 }
+    }
+
+    pub fn mode(&self) -> u32 {
+        match *self {
+            Self::File { mode, .. } => mode,
+            Self::Directory { mode, .. } => mode,
+        }
+    }
+
+    pub fn contents_raw(&self) -> Option<Vec<u8>> {
+        match self {
+            Self::File { contents, .. } => Some(contents.to_vec()),
+            Self::Directory { .. } => None,
+        }
+    }
+
+    pub fn contents(&self) -> Option<String> {
+        match self {
+            Self::File { contents, .. } => Some(String::from_utf8_lossy(contents).to_string()),
+            Self::Directory { .. } => None,
+        }
+    }
+
+    pub fn set_mirror(&mut self) {
+        if let Self::File { mirror, .. } = self {
+            *mirror = true;
+        };
     }
 }
 
@@ -54,8 +133,8 @@ impl FileSystem for InMemoryFileSystem {
             None => {},
         };
 
-        let mut ancestors = path.ancestors().skip(1);
-        while let Some(path) = ancestors.next() {
+
+        for path in path.ancestors().skip(1) {
             match self.files.read().await.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,
                 Some(InMemoryFile::File { .. }) => Err(anyhow!(
@@ -77,14 +156,14 @@ impl FileSystem for InMemoryFileSystem {
     async fn create_dir_all(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()> {
         let path = path.as_ref();
         let mut files = self.files.write().await;
-        let mut ancestors = path
+        let ancestors = path
             .ancestors()
             .collect::<Vec<&Path>>()
             .into_iter()
             .rev()
             .skip(1);
 
-        while let Some(path) = ancestors.next() {
+        for path in ancestors {
             match files.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,
                 Some(InMemoryFile::File { .. }) => Err(anyhow!(
@@ -127,8 +206,7 @@ impl FileSystem for InMemoryFileSystem {
         let os_path = path.as_os_str();
         let mut files = self.files.write().await;
 
-        let mut ancestors = path.ancestors().skip(1);
-        while let Some(path) = ancestors.next() {
+        for path in path.ancestors().skip(1) {
             match files.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,
                 Some(InMemoryFile::File { .. }) => Err(anyhow!(
@@ -143,10 +221,7 @@ impl FileSystem for InMemoryFileSystem {
             return Err(anyhow!("file {:?} is a directory", os_path).into());
         }
 
-        files.insert(
-            os_path.to_owned(),
-            InMemoryFile::file(contents.as_ref().to_vec()),
-        );
+        files.insert(os_path.to_owned(), InMemoryFile::file_raw(contents));
 
         Ok(())
     }
@@ -174,16 +249,45 @@ impl FileSystem for InMemoryFileSystem {
         from: impl AsRef<Path> + Send,
         to: impl AsRef<Path> + Send,
     ) -> FileSystemResult<()> {
-        let content = self.read(from).await?;
-        self.write(to, content).await
+        let from_ref = from.as_ref();
+        let to_ref = to.as_ref();
+        let content = self.read(from_ref).await?;
+        self.write(to_ref, content).await?;
+
+        // handle mirror file
+        let mut files = self.files.write().await;
+        let file = files.get(from_ref.as_os_str()).unwrap();
+        if let InMemoryFile::File {
+            mode,
+            contents,
+            mirror,
+        } = file
+        {
+            if *mirror {
+                fs::create_dir_all(to_ref.parent().unwrap()).unwrap();
+                fs::write(to_ref, contents).unwrap();
+                fs::set_permissions(to_ref, Permissions::from_mode(*mode)).unwrap();
+                files.get_mut(to_ref.as_os_str()).unwrap().set_mirror();
+            }
+        }
+
+        Ok(())
     }
 
     async fn set_mode(&self, path: impl AsRef<Path> + Send, mode: u32) -> FileSystemResult<()> {
         let os_path = path.as_ref().as_os_str();
         if let Some(file) = self.files.write().await.get_mut(os_path) {
             match file {
-                InMemoryFile::File { mode: old_mode, .. } => {
+                InMemoryFile::File {
+                    mode: old_mode,
+                    mirror,
+                    ..
+                } => {
                     *old_mode = mode;
+
+                    if *mirror {
+                        fs::set_permissions(os_path, Permissions::from_mode(mode)).unwrap();
+                    }
                 },
                 InMemoryFile::Directory { mode: old_mode, .. } => {
                     *old_mode = mode;
@@ -239,10 +343,7 @@ mod tests {
     async fn create_dir_should_return_an_error_if_file_already_exists() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/dir").unwrap(),
-                InMemoryFile::file(vec![]),
-            ),
+            (OsString::from_str("/dir").unwrap(), InMemoryFile::empty()),
         ]));
 
         let err = fs.create_dir("/dir").await.unwrap_err();
@@ -294,10 +395,7 @@ mod tests {
     async fn create_dir_should_return_an_error_if_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/path/to/my").unwrap(),
@@ -389,10 +487,7 @@ mod tests {
     async fn create_dir_all_should_return_an_error_if_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
 
@@ -406,7 +501,7 @@ mod tests {
     async fn read_should_return_the_file_content() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
-            InMemoryFile::file("content".as_bytes().to_vec()),
+            InMemoryFile::file("content"),
         )]));
 
         let content = fs.read("/myfile").await.unwrap();
@@ -439,7 +534,7 @@ mod tests {
     async fn read_to_string_should_return_the_file_content_as_a_string() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
-            InMemoryFile::file("content".as_bytes().to_vec()),
+            InMemoryFile::file("content"),
         )]));
 
         let content = fs.read_to_string("/myfile").await.unwrap();
@@ -472,7 +567,7 @@ mod tests {
     async fn read_to_string_should_return_an_error_if_file_isnt_utf8_encoded() {
         let fs = InMemoryFileSystem::new(HashMap::from([(
             OsString::from_str("/myfile").unwrap(),
-            InMemoryFile::file(vec![0xC3, 0x28]),
+            InMemoryFile::file_raw(vec![0xC3, 0x28]),
         )]));
 
         let err = fs.read_to_string("/myfile").await.unwrap_err();
@@ -498,7 +593,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File {mode, contents}) if *mode == 0o664 && contents == "my file content".as_bytes()
+            Some(InMemoryFile::File {mode, contents, .. }) if *mode == 0o664 && contents == "my file content".as_bytes()
         ));
     }
 
@@ -508,7 +603,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -520,7 +615,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File { mode, contents }) if *mode == 0o664 && contents == "my new file content".as_bytes()
+            Some(InMemoryFile::File { mode, contents, .. }) if *mode == 0o664 && contents == "my new file content".as_bytes()
         ));
     }
 
@@ -557,10 +652,7 @@ mod tests {
     async fn write_should_return_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
 
@@ -579,7 +671,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -593,7 +685,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File { mode, contents }) if *mode == 0o664 && contents == "my file content has been updated with new things".as_bytes()
+            Some(InMemoryFile::File { mode, contents, .. }) if *mode == 0o664 && contents == "my file content has been updated with new things".as_bytes()
         ));
     }
 
@@ -612,7 +704,7 @@ mod tests {
                 .read()
                 .await
                 .get(&OsString::from_str("/myfile").unwrap()),
-            Some(InMemoryFile::File { mode,contents }) if *mode == 0o664 && contents == "my file content".as_bytes()
+            Some(InMemoryFile::File { mode,contents, .. }) if *mode == 0o664 && contents == "my file content".as_bytes()
         ));
     }
 
@@ -648,10 +740,7 @@ mod tests {
     async fn append_should_return_an_error_if_file_is_new_and_some_ancestor_is_not_a_directory() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (
-                OsString::from_str("/path").unwrap(),
-                InMemoryFile::file(vec![]),
-            ),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::empty()),
             (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
         ]));
 
@@ -670,7 +759,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -678,7 +767,7 @@ mod tests {
 
         assert_eq!(fs.files.read().await.len(), 3);
         assert!(
-            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents } if *mode == 0o664 && contents == "my file content".as_bytes())
+            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents, .. } if *mode == 0o664 && contents == "my file content".as_bytes())
         );
     }
 
@@ -688,11 +777,11 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my new file content".as_bytes().to_vec()),
+                InMemoryFile::file("my new file content"),
             ),
             (
                 OsString::from_str("/myfilecopy").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -700,7 +789,7 @@ mod tests {
 
         assert_eq!(fs.files.read().await.len(), 3);
         assert!(
-            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents } if *mode == 0o664 && contents == "my new file content".as_bytes())
+            matches!(fs.files.read().await.get(&OsString::from_str("/myfilecopy").unwrap()).unwrap(), InMemoryFile::File { mode, contents, .. } if *mode == 0o664 && contents == "my new file content".as_bytes())
         );
     }
 
@@ -734,7 +823,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
             (
                 OsString::from_str("/myfilecopy").unwrap(),
@@ -754,7 +843,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
 
@@ -771,11 +860,11 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
             (
                 OsString::from_str("/mypath").unwrap(),
-                InMemoryFile::file(vec![]),
+                InMemoryFile::empty(),
             ),
         ]));
 
@@ -791,7 +880,7 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (
                 OsString::from_str("/myfile").unwrap(),
-                InMemoryFile::file("my file content".as_bytes().to_vec()),
+                InMemoryFile::file("my file content"),
             ),
         ]));
         assert!(

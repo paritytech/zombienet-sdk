@@ -1,11 +1,17 @@
-use std::{fmt::Display, path::PathBuf, str::FromStr};
+use std::{
+    error::Error,
+    fmt::{self, Display},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
+use crate::shared::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;
@@ -18,12 +24,20 @@ pub type ParaId = u32;
 
 /// Custom type wrapping u128 to add custom Serialization/Deserialization logic because it's not supported
 /// issue tracking the problem: <https://github.com/toml-rs/toml/issues/540>
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct U128(pub(crate) u128);
 
 impl From<u128> for U128 {
     fn from(value: u128) -> Self {
         Self(value)
+    }
+}
+
+impl TryFrom<&str> for U128 {
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self(value.to_string().parse::<u128>()?))
     }
 }
 
@@ -35,6 +49,32 @@ impl Serialize for U128 {
         // here we add a prefix to the string to be able to replace the wrapped
         // value with "" to a value without "" in the TOML string
         serializer.serialize_str(&format!("U128%{}", self.0))
+    }
+}
+
+struct U128Visitor;
+
+impl<'de> de::Visitor<'de> for U128Visitor {
+    type Value = U128;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an integer between 0 and 2^128 − 1.")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        v.try_into().map_err(de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for U128 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(U128Visitor)
     }
 }
 
@@ -53,7 +93,7 @@ impl Serialize for U128 {
 /// assert_eq!(kusama.as_str(), "kusama");
 /// assert_eq!(myparachain.as_str(), "myparachain");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain(String);
 
 impl TryFrom<&str> for Chain {
@@ -95,7 +135,7 @@ impl Chain {
 /// assert_eq!(image3.as_str(), "myrepo.com/name:version");
 /// assert_eq!(image4.as_str(), "10.15.43.155/name:version");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Image(String);
 
 impl TryFrom<&str> for Image {
@@ -110,7 +150,7 @@ impl TryFrom<&str> for Image {
             static ref RE: Regex = Regex::new(&format!(
                 "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
             ))
-            .expect("should compile with success. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues");
+            .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         };
 
         if !RE.is_match(value) {
@@ -143,7 +183,7 @@ impl Image {
 /// assert_eq!(command1.as_str(), "mycommand");
 /// assert_eq!(command2.as_str(), "myothercommand");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Command(String);
 
 impl TryFrom<&str> for Command {
@@ -208,7 +248,7 @@ impl From<&str> for AssetLocation {
         }
 
         Self::FilePath(
-            PathBuf::from_str(value).expect("infaillible. this is a bug, please report it"),
+            PathBuf::from_str(value).expect(&format!("{}, {}", INFAILABLE, THIS_IS_A_BUG)),
         )
     }
 }
@@ -228,6 +268,32 @@ impl Serialize for AssetLocation {
         S: serde::Serializer,
     {
         serializer.serialize_str(&self.to_string())
+    }
+}
+
+struct AssetLocationVisitor;
+
+impl<'de> de::Visitor<'de> for AssetLocationVisitor {
+    type Value = AssetLocation;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AssetLocation::from(v))
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetLocation {
+    fn deserialize<D>(deserializer: D) -> Result<AssetLocation, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(AssetLocationVisitor)
     }
 }
 
@@ -276,41 +342,68 @@ impl Serialize for Arg {
     }
 }
 
+struct ArgVisitor;
+
+impl<'de> de::Visitor<'de> for ArgVisitor {
+    type Value = Arg;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
+        let captures = re.captures(v);
+
+        if let Some(captures) = captures {
+            if let Some(value) = captures.name("value") {
+                return Ok(Arg::Option(
+                    captures
+                        .name("name_prefix")
+                        .expect(&format!("{} {}", PREFIX_CANT_BE_NONE, THIS_IS_A_BUG))
+                        .as_str()
+                        .to_string(),
+                    value.as_str().to_string(),
+                ));
+            }
+
+            if let Some(name_prefix) = captures.name("name_prefix") {
+                return Ok(Arg::Flag(name_prefix.as_str().to_string()));
+            }
+        }
+
+        Err(de::Error::custom(
+            "the provided argument is invalid and doesn't match Arg::Option or Arg::Flag",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for Arg {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ArgVisitor)
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ValidationContext {
     pub used_ports: Vec<Port>,
     pub used_nodes_names: Vec<String>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
 pub struct ChainDefaultContext {
-    pub default_command: Option<Command>,
-    pub default_image: Option<Image>,
-    pub default_resources: Option<Resources>,
-    pub default_db_snapshot: Option<AssetLocation>,
-    pub default_args: Vec<Arg>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum RegistrationStrategy {
-    InGenesis,
-    UsingExtrinsic,
-}
-
-impl Serialize for RegistrationStrategy {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RegistrationStrategy", 1)?;
-
-        match self {
-            Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
-            Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
-        }
-
-        state.end()
-    }
+    pub(crate) default_command: Option<Command>,
+    pub(crate) default_image: Option<Image>,
+    pub(crate) default_resources: Option<Resources>,
+    pub(crate) default_db_snapshot: Option<AssetLocation>,
+    #[serde(default)]
+    pub(crate) default_args: Vec<Arg>,
 }
 
 #[cfg(test)]

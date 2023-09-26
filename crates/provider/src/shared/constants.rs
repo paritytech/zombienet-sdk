@@ -7,7 +7,7 @@ pub const NODE_DATA_DIR: &str = "/data";
 /// Directory for node scripts
 pub const NODE_SCRIPTS_DIR: &str = "/scripts";
 /// Localhost ip
-pub const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+pub const _LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 /// The port substrate listens for p2p connections on
 pub const _P2P_PORT: u16 = 30333;
 /// The remote port prometheus can be accessed with

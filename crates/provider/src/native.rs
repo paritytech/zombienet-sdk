@@ -12,6 +12,7 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::Port;
+use futures::{future::try_join_all, try_join};
 use nix::{
     sys::signal::{kill, Signal},
     unistd::Pid,
@@ -169,19 +170,21 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
         self.filesystem.create_dir(&base_dir).await?;
-        self.filesystem.create_dir(&config_dir).await?;
-        self.filesystem.create_dir(&data_dir).await?;
-        self.filesystem.create_dir(&scripts_dir).await?;
+        try_join!(
+            self.filesystem.create_dir(&config_dir),
+            self.filesystem.create_dir(&data_dir),
+            self.filesystem.create_dir(&scripts_dir),
+        )?;
 
         // copy injected files
+        let mut futures = vec![];
         for file in options.injected_files {
-            self.filesystem
-                .copy(
-                    file.local_path,
-                    format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
-                )
-                .await?;
+            futures.push(self.filesystem.copy(
+                file.local_path,
+                format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
+            ));
         }
+        try_join_all(futures).await?;
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(

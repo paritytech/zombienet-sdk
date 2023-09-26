@@ -322,7 +322,9 @@ impl ChainSpec {
                 .collect();
 
             // check chain key types
-            if chain_spec_json.pointer(&format!("{}/session", pointer)).is_some()
+            if chain_spec_json
+                .pointer(&format!("{}/session", pointer))
+                .is_some()
             {
                 add_authorities(
                     &pointer,
@@ -411,7 +413,10 @@ impl ChainSpec {
                 .collect();
 
             // check chain key types
-            if chain_spec_json.pointer(&format!("{}/session", pointer)).is_some() {
+            if chain_spec_json
+                .pointer(&format!("{}/session", pointer))
+                .is_some()
+            {
                 add_authorities(
                     &pointer,
                     &mut chain_spec_json,

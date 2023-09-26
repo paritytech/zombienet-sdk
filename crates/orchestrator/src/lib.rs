@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use configuration::{types::RegistrationStrategy, NetworkConfig};
+use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
@@ -69,14 +69,14 @@ where
         // create namespace
         let ns = self.provider.create_namespace().await?;
 
-        println!("{:#?}", ns.id());
-        println!("{:#?}", ns.base_dir());
+        println!("ns: {:#?}", ns.id());
+        println!("base_dir: {:#?}", ns.base_dir());
 
         // TODO: noop for native
         // Static setup
         // ns.static_setup().await?;
 
-        let base_dir = ns.base_dir();
+        let base_dir = ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
         // Create chain-spec for relaychain
         network_spec
@@ -212,7 +212,10 @@ where
         };
 
         let global_files_to_inject = vec![TransferedFile {
-            local_path: PathBuf::from(format!("{}/{relay_chain_name}.json", ns.base_dir())),
+            local_path: PathBuf::from(format!(
+                "{}/{relay_chain_name}.json",
+                ns.base_dir().to_string_lossy()
+            )),
             remote_path: PathBuf::from(format!("/cfg/{relay_chain_name}.json")),
         }];
 
@@ -239,7 +242,7 @@ where
                     &node.spec.peer_id,
                     &LOCALHOST,
                     node.spec.p2p_port.0,
-                    &node.inner.args(),
+                    &node.inner.args().iter().map(|x| String::from(*x)).collect(),
                     &node.spec.p2p_cert_hash,
                 )?,
             );
@@ -302,7 +305,11 @@ where
             let mut para_files_to_inject = global_files_to_inject.clone();
             if para.is_cumulus_based {
                 para_files_to_inject.push(TransferedFile {
-                    local_path: PathBuf::from(format!("{}/{}.json", ns.base_dir(), para.id)),
+                    local_path: PathBuf::from(format!(
+                        "{}/{}.json",
+                        ns.base_dir().to_string_lossy(),
+                        para.id
+                    )),
                     remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
                 });
             }

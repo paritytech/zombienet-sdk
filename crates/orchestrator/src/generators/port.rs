@@ -5,7 +5,7 @@ use configuration::shared::types::Port;
 use super::errors::GeneratorError;
 use crate::shared::types::ParkedPort;
 
-// TODO: (team), we want to continue support ws_port?
+// TODO: (team), we want to continue support ws_port? No
 enum PortTypes {
     Rpc,
     P2P,

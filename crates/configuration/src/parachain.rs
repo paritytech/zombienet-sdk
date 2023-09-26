@@ -21,8 +21,6 @@ use crate::{
     utils::default_as_true,
 };
 
-
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegistrationStrategy {
     InGenesis,

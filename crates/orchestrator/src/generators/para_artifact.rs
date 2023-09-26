@@ -73,15 +73,13 @@ impl ParaArtifact {
                 if let Some(chain_spec_path) = chain_spec_path {
                     let full_chain_path = format!(
                         "{}/{}",
-                        ns.base_dir(),
+                        ns.base_dir().to_string_lossy(),
                         chain_spec_path.as_ref().to_string_lossy()
                     );
                     args.push("--chain".into());
                     args.push(full_chain_path)
                 }
 
-                // TODO: add to logger
-                // println!("{:#?}", &args);
                 let artifact_path_ref = artifact_path.as_ref();
                 let generate_command =
                     GenerateFileCommand::new(cmd.as_str(), artifact_path_ref).args(args);

@@ -95,7 +95,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
         let id = format!("zombie_{}", Uuid::new_v4());
         let mut inner = self.inner.write().await;
 
-        let base_dir = PathBuf::from(format!("{}/{}", self.tmp_dir.to_string_lossy(), &id));
+        let base_dir = PathBuf::from(format!("{}{}", self.tmp_dir.to_string_lossy(), &id));
         self.filesystem.create_dir(&base_dir).await?;
 
         let namespace = NativeNamespace {
@@ -137,45 +137,45 @@ struct WeakNativeNamespace<FS: FileSystem + Send + Sync + Clone> {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for NativeNamespace<FS> {
-// <<<<<<< HEAD
-//     fn id(&self) -> String {
-//         self.id.clone()
-//     }
+    // <<<<<<< HEAD
+    //     fn id(&self) -> String {
+    //         self.id.clone()
+    //     }
 
-//     fn base_dir(&self) -> String {
-//         self.base_dir.clone()
-//     }
+    //     fn base_dir(&self) -> String {
+    //         self.base_dir.clone()
+    //     }
 
-//     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
-//         let mut inner = self.inner.write().await;
+    //     async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
+    //         let mut inner = self.inner.write().await;
 
-//         // create node directories and filepaths
-//         let base_dir = format!("{}/{}", &self.base_dir, &options.name);
-//         let log_path = format!("{}/{}.log", &base_dir, &options.name);
-//         let config_dir = format!("{}{}", &base_dir, NODE_CONFIG_DIR);
-//         let data_dir = format!("{}{}", &base_dir, NODE_DATA_DIR);
-//         let scripts_dir = format!("{}{}", &base_dir, NODE_SCRIPTS_DIR);
-//         // NOTE: in native this base path already exist
-//         self.filesystem.create_dir_all(&base_dir).await?;
-//         self.filesystem.create_dir(&config_dir).await?;
-//         self.filesystem.create_dir(&data_dir).await?;
+    //         // create node directories and filepaths
+    //         let base_dir = format!("{}/{}", &self.base_dir, &options.name);
+    //         let log_path = format!("{}/{}.log", &base_dir, &options.name);
+    //         let config_dir = format!("{}{}", &base_dir, NODE_CONFIG_DIR);
+    //         let data_dir = format!("{}{}", &base_dir, NODE_DATA_DIR);
+    //         let scripts_dir = format!("{}{}", &base_dir, NODE_SCRIPTS_DIR);
+    //         // NOTE: in native this base path already exist
+    //         self.filesystem.create_dir_all(&base_dir).await?;
+    //         self.filesystem.create_dir(&config_dir).await?;
+    //         self.filesystem.create_dir(&data_dir).await?;
 
-//         // Created needed paths
-//         for path in options.created_paths {
-//             self.filesystem
-//                 .create_dir_all(format!("{}{}", &base_dir, path.to_string_lossy()))
-//                 .await?;
-//         }
-//         // Inject files before start the node
-//         for file in options.injected_files {
-//             self.filesystem
-//                 .copy(
-//                     file.local_path,
-//                     format!("{}{}", base_dir, file.remote_path.to_string_lossy()),
-//                 )
-//                 .await?;
-//         }
-// =======
+    //         // Created needed paths
+    //         for path in options.created_paths {
+    //             self.filesystem
+    //                 .create_dir_all(format!("{}{}", &base_dir, path.to_string_lossy()))
+    //                 .await?;
+    //         }
+    //         // Inject files before start the node
+    //         for file in options.injected_files {
+    //             self.filesystem
+    //                 .copy(
+    //                     file.local_path,
+    //                     format!("{}{}", base_dir, file.remote_path.to_string_lossy()),
+    //                 )
+    //                 .await?;
+    //         }
+    // =======
     fn id(&self) -> &str {
         &self.id
     }
@@ -209,23 +209,47 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
-        self.filesystem.create_dir(&base_dir).await?;
+        // NOTE: in native this base path already exist
+        self.filesystem.create_dir_all(&base_dir).await?;
         try_join!(
             self.filesystem.create_dir(&config_dir),
             self.filesystem.create_dir(&data_dir),
             self.filesystem.create_dir(&scripts_dir),
         )?;
 
+        // Created needed paths
+        // for path in options.created_paths {
+        //     self.filesystem
+        //         .create_dir_all(format!("{}{}", &base_dir.to_string_lossy(), path.to_string_lossy()))
+        //         .await?;
+        // }
+
+        // Created needed paths
+        let ops_fut: Vec<_> = options
+            .created_paths
+            .iter()
+            .map(|created_path| {
+                self.filesystem.create_dir_all(format!(
+                    "{}{}",
+                    &base_dir.to_string_lossy(),
+                    created_path.to_string_lossy()
+                ))
+            })
+            .collect();
+        try_join_all(ops_fut).await?;
+
         // copy injected files
-        let mut futures = vec![];
-        for file in options.injected_files {
-            futures.push(self.filesystem.copy(
-                file.local_path,
-                format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
-            ));
-        }
-        try_join_all(futures).await?;
-//>>>>>>> main
+        let ops_fut: Vec<_> = options
+            .injected_files
+            .iter()
+            .map(|file| {
+                self.filesystem.copy(
+                    &file.local_path,
+                    format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
+                )
+            })
+            .collect();
+        try_join_all(ops_fut).await?;
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(
@@ -286,10 +310,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             local_output_path,
         } in options.commands
         {
-
             // TODO: move to logger
             println!("{:#?}, {:#?}", command, args);
+            println!("{:#?}", self.base_dir.to_string_lossy());
             println!("{:#?}", local_output_path.as_os_str());
+
             match temp_node
                 .run_command(RunCommandOptions { command, args, env })
                 .await
@@ -298,15 +323,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
                 Ok(contents) => self
                     .filesystem
                     .write(
-// <<<<<<< HEAD
-                        // format!("{}/{}", self.base_dir, local_output_path.display()),
-// =======
                         format!(
-                            "{}{}",
+                            "{}/{}",
                             self.base_dir.to_string_lossy(),
                             local_output_path.to_string_lossy()
                         ),
-// >>>>>>> main
                         contents,
                     )
                     .await
@@ -346,17 +367,11 @@ struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
     command: String,
     args: Vec<String>,
     env: Vec<(String, String)>,
-// <<<<<<< HEAD
-//     base_dir: String,
-//     scripts_dir: String,
-//     log_path: String,
-// =======
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
-// >>>>>>> main
     inner: Arc<RwLock<NativeNodeInner>>,
     filesystem: FS,
     namespace: WeakNativeNamespace<FS>,
@@ -372,24 +387,20 @@ struct NativeNodeInner {
 
 #[async_trait]
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
-// <<<<<<< HEAD
-//     fn name(&self) -> String {
-//         self.name.clone()
-//     }
-
-//     fn command(&self) -> String {
-//         self.command.clone()
-//     }
-
-//     fn args(&self) -> Vec<String> {
-//         self.args.clone()
-//     }
-
-//     async fn ip(&self) -> Result<IpAddr, ProviderError> {
-//         Ok(LOCALHOST)
-// =======
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn command(&self) -> &str {
+        &self.command
+    }
+
+    fn args(&self) -> Vec<&String> {
+        self.args.iter().collect::<Vec<&String>>()
+    }
+
+    async fn ip(&self) -> Result<IpAddr, ProviderError> {
+        Ok(LOCALHOST)
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -426,38 +437,15 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
         Ok(self.filesystem.copy(&self.log_path, local_dest).await?)
-// >>>>>>> main
-    }
-
-    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError> {
-        todo!();
-    }
-
-    async fn mapped_port(&self, _port: Port) -> Result<Port, ProviderError> {
-        todo!()
-    }
-
-    async fn logs(&self) -> Result<String, ProviderError> {
-        Ok(self.filesystem.read_to_string(&self.log_path).await?)
-    }
-
-    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
-        let logs = self.logs().await?;
-        Ok(self.filesystem.write(local_dest, logs.as_bytes()).await?)
     }
 
     async fn run_command(
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-// <<<<<<< HEAD
-//         let result = Command::new(&options.command)
-//             .args(options.args)
-// =======
         let result = Command::new(options.command.clone())
             .args(options.args)
             .envs(options.env)
-// >>>>>>> main
             .output()
             .await
             .map_err(|err| ProviderError::RunCommandError(options.command, err.into()))?;
@@ -478,20 +466,11 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     ) -> Result<ExecutionResult, ProviderError> {
         let local_script_path = PathBuf::from(&options.local_script_path);
 
-// <<<<<<< HEAD
-//         if !local_script_path.try_exists().unwrap() {
-//             // FIXME
-//             return Err(ProviderError::RunCommandError(
-//                 "test".into(),
-//                 anyhow!("Test"),
-//             ));
-// =======
         if !local_script_path
             .try_exists()
             .map_err(|err| ProviderError::InvalidScriptPath(err.into()))?
         {
             return Err(ProviderError::ScriptNotFound(local_script_path));
-// >>>>>>> main
         }
 
         // extract file name and build remote file path

@@ -1,7 +1,7 @@
 use configuration::{
-    shared::{resources::Resources, types::RegistrationStrategy},
+    shared::resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
-    ParachainConfig,
+    ParachainConfig, RegistrationStrategy,
 };
 
 use super::node::NodeSpec;

@@ -133,7 +133,6 @@ impl FileSystem for InMemoryFileSystem {
             None => {},
         };
 
-
         for path in path.ancestors().skip(1) {
             match self.files.read().await.get(path.as_os_str()) {
                 Some(InMemoryFile::Directory { .. }) => continue,

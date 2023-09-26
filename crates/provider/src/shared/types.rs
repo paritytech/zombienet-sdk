@@ -76,6 +76,7 @@ impl SpawnNodeOptions {
     }
 }
 
+#[derive(Debug)]
 pub struct GenerateFileCommand {
     pub command: String,
     pub args: Vec<String>,

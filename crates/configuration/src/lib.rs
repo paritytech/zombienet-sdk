@@ -10,7 +10,7 @@ mod utils;
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
 pub use network::{NetworkConfig, NetworkConfigBuilder};
-pub use parachain::{ParachainConfig, ParachainConfigBuilder};
+pub use parachain::{ParachainConfig, ParachainConfigBuilder, RegistrationStrategy};
 pub use relaychain::{RelaychainConfig, RelaychainConfigBuilder};
 // re-export shared
 pub use shared::{node::NodeConfig, types};

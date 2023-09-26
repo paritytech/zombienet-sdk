@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-
 use async_trait::async_trait;
 use shared::types::{
     GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -72,7 +71,6 @@ pub type DynProvider = Arc<dyn Provider>;
 
 #[async_trait]
 pub trait ProviderNamespace {
-
     fn id(&self) -> &str;
 
     fn base_dir(&self) -> &PathBuf;
@@ -95,6 +93,12 @@ type ExecutionResult = Result<String, (ExitStatus, String)>;
 #[async_trait]
 pub trait ProviderNode {
     fn name(&self) -> &str;
+
+    fn command(&self) -> &str;
+
+    fn args(&self) -> Vec<&String>;
+
+    async fn ip(&self) -> Result<IpAddr, ProviderError>;
 
     fn base_dir(&self) -> &PathBuf;
 

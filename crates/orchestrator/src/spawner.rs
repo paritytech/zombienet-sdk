@@ -74,7 +74,7 @@ where
             let f = TransferedFile {
                 local_path: PathBuf::from(format!(
                     "{}/{}/{}",
-                    ctx.ns.base_dir(),
+                    ctx.ns.base_dir().to_string_lossy(),
                     node_files_path,
                     key_filename.to_string_lossy()
                 )),
@@ -92,7 +92,7 @@ where
         )));
     }
 
-    let base_dir = format!("{}/{}", ctx.ns.base_dir(), &node.name);
+    let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
     let cfg_path = format!("{}/cfg", &base_dir);
     let data_path = format!("{}/data", &base_dir);
     let relay_data_path = format!("{}/relay-data", &base_dir);

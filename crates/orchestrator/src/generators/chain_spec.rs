@@ -178,7 +178,7 @@ impl ChainSpec {
             // TODO: we should get the full path from the scoped filesystem
             format!(
                 "{}/{}",
-                ns.base_dir(),
+                ns.base_dir().to_string_lossy(),
                 maybe_plain_path.display().to_string()
             ),
             "--raw".into(),

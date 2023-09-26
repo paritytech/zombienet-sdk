@@ -129,7 +129,7 @@ impl<T: FileSystem> Network<T> {
 
         let node_spec =
             network_spec::node::NodeSpec::from_ad_hoc(name.into(), options, &chain_context)?;
-        let base_dir = self.ns.base_dir();
+        let base_dir = self.ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
         // TODO: we want to still supporting spawn a dedicated bootnode??
@@ -145,7 +145,11 @@ impl<T: FileSystem> Network<T> {
         };
 
         let mut global_files_to_inject = vec![TransferedFile {
-            local_path: PathBuf::from(format!("{}/{}.json", self.ns.base_dir(), self.relay.chain)),
+            local_path: PathBuf::from(format!(
+                "{}/{}.json",
+                self.ns.base_dir().to_string_lossy(),
+                self.relay.chain
+            )),
             remote_path: PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
         }];
 
@@ -153,7 +157,7 @@ impl<T: FileSystem> Network<T> {
             global_files_to_inject.push(TransferedFile {
                 local_path: PathBuf::from(format!(
                     "{}/{}",
-                    self.ns.base_dir(),
+                    self.ns.base_dir().to_string_lossy(),
                     para_spec_path.to_string_lossy()
                 )),
                 remote_path: PathBuf::from(format!(
@@ -232,7 +236,7 @@ impl<T: FileSystem> Network<T> {
         self.parachains.insert(para.para_id, para);
     }
 
-    pub(crate) fn id(&self) -> String {
+    pub(crate) fn id(&self) -> &str {
         self.ns.id()
     }
 

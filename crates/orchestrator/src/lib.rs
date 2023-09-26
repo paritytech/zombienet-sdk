@@ -242,7 +242,7 @@ where
                     &node.spec.peer_id,
                     &LOCALHOST,
                     node.spec.p2p_port.0,
-                    &node.inner.args().iter().map(|x| String::from(*x)).collect(),
+                    node.inner.args().as_ref(),
                     &node.spec.p2p_cert_hash,
                 )?,
             );

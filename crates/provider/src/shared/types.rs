@@ -250,8 +250,8 @@ impl std::fmt::Display for TransferedFile {
         write!(
             f,
             "File to transfer (local: {}, remote: {})",
-            self.local_path.display().to_string(),
-            self.remote_path.display().to_string()
+            self.local_path.display(),
+            self.remote_path.display()
         )
     }
 }

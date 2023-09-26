@@ -6,10 +6,10 @@ pub fn generate(
     peer_id: &str,
     ip: &IpAddr,
     port: u16,
-    args: &Vec<String>,
+    args: &[&String],
     p2p_cert: &Option<String>,
 ) -> Result<String, GeneratorError> {
-    let addr = if let Some(index) = args.iter().position(|arg| arg.eq("--lister-addr")) {
+    let addr = if let Some(index) = args.iter().position(|arg| (*arg).eq("--lister-addr")) {
         let listen_value = args
             .get(index + 1)
             .ok_or(GeneratorError::BootnodeAddrGeneration(
@@ -17,7 +17,7 @@ pub fn generate(
             ))?;
         let ip_str = ip.to_string();
         let port_str = port.to_string();
-        let mut parts = listen_value.split("/").collect::<Vec<&str>>();
+        let mut parts = listen_value.split('/').collect::<Vec<&str>>();
         parts[2] = ip_str.as_str();
         parts[4] = port_str.as_str();
         let mut addr = parts.join("/");

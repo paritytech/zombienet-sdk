@@ -248,7 +248,7 @@ pub fn generate_for_node(
             }
         },
     }) {
-        let mut parts = listen_val.split("/").collect::<Vec<&str>>();
+        let mut parts = listen_val.split('/').collect::<Vec<&str>>();
         // TODO: move this to error
         let port_part = parts
             .get_mut(4)

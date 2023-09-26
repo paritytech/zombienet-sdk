@@ -308,7 +308,7 @@ impl ChainSpec {
 
         if let ChainSpecFormat::Plain = format {
             let pointer = get_runtime_config_pointer(&chain_spec_json)
-                .map_err(|e| GeneratorError::ChainSpecGeneration(e))?;
+                .map_err(GeneratorError::ChainSpecGeneration)?;
 
             // make genesis overrides first.
             // override_genesis()
@@ -322,8 +322,7 @@ impl ChainSpec {
                 .collect();
 
             // check chain key types
-            let _key_type = if let Some(_) =
-                chain_spec_json.pointer(&format!("{}/session", pointer))
+            if chain_spec_json.pointer(&format!("{}/session", pointer)).is_some()
             {
                 add_authorities(
                     &pointer,
@@ -331,7 +330,6 @@ impl ChainSpec {
                     &validators,
                     KeyType::Session,
                 );
-                KeyType::Session
             } else {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
                 let invulnerables: Vec<&NodeSpec> = para
@@ -341,7 +339,6 @@ impl ChainSpec {
                     .collect();
                 add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
                 // await addParaCustom(chainSpecFullPathPlain, node);
-                KeyType::Aura
             };
 
             // override `parachainInfo/parachainId`
@@ -351,7 +348,7 @@ impl ChainSpec {
             let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
                 GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
             })?;
-            self.write_spec(&scoped_fs, content).await?;
+            self.write_spec(scoped_fs, content).await?;
         } else {
             // TODO: add a warning here
         }
@@ -361,7 +358,7 @@ impl ChainSpec {
     pub async fn customize_relay<'a, T, U>(
         &self,
         relaychain: &RelaychainSpec,
-        _hrmp_channels: &Vec<HrmpChannelConfig>,
+        _hrmp_channels: &[HrmpChannelConfig],
         para_artifacts: Vec<ParaGenesisConfig<U>>,
         scoped_fs: &ScopedFilesystem<'a, T>,
     ) -> Result<(), GeneratorError>
@@ -378,7 +375,7 @@ impl ChainSpec {
         if let ChainSpecFormat::Plain = format {
             // get the config pointer
             let pointer = get_runtime_config_pointer(&chain_spec_json)
-                .map_err(|e| GeneratorError::ChainSpecGeneration(e))?;
+                .map_err(GeneratorError::ChainSpecGeneration)?;
 
             // make genesis overrides first.
             // override_genesis()
@@ -414,18 +411,14 @@ impl ChainSpec {
                 .collect();
 
             // check chain key types
-            let _key_type =
-                if let Some(_) = chain_spec_json.pointer(&format!("{}/session", pointer)) {
-                    add_authorities(
-                        &pointer,
-                        &mut chain_spec_json,
-                        &validators,
-                        KeyType::Session,
-                    );
-                    KeyType::Session
-                } else {
-                    KeyType::Aura
-                };
+            if chain_spec_json.pointer(&format!("{}/session", pointer)).is_some() {
+                add_authorities(
+                    &pointer,
+                    &mut chain_spec_json,
+                    &validators,
+                    KeyType::Session,
+                );
+            }
 
             // staking && nominators
 
@@ -441,7 +434,7 @@ impl ChainSpec {
                     &pointer,
                     &mut chain_spec_json,
                     para_genesis_config,
-                    &scoped_fs,
+                    scoped_fs,
                 )
                 .await
                 .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
@@ -457,7 +450,7 @@ impl ChainSpec {
             let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
                 GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
             })?;
-            self.write_spec(&scoped_fs, content).await?;
+            self.write_spec(scoped_fs, content).await?;
         } else {
             // TODO: add a warning here
         }
@@ -467,7 +460,7 @@ impl ChainSpec {
     pub async fn add_bootnodes<'a, T>(
         &self,
         scoped_fs: &ScopedFilesystem<'a, T>,
-        bootnodes: &Vec<String>,
+        bootnodes: &[String],
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
@@ -498,7 +491,7 @@ impl ChainSpec {
         let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
             GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
         })?;
-        self.write_spec(&scoped_fs, content).await?;
+        self.write_spec(scoped_fs, content).await?;
 
         Ok(())
     }
@@ -548,7 +541,7 @@ where
 
         println!("{:#?}", paras_pointer);
 
-        let paras = val.pointer_mut(&paras_pointer).ok_or(anyhow!(
+        let paras = val.pointer_mut(paras_pointer).ok_or(anyhow!(
             "paras pointer should be valid {:?} ",
             paras_pointer
         ))?;
@@ -705,7 +698,7 @@ fn get_node_keys(node: &NodeSpec) -> GenesisNodeKey {
 fn add_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    nodes: &Vec<&NodeSpec>,
+    nodes: &[&NodeSpec],
     _key_type: KeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
@@ -719,7 +712,7 @@ fn add_authorities(
 fn add_hrmp_channels(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    _hrmp_channels: &Vec<HrmpChannelConfig>,
+    _hrmp_channels: &[HrmpChannelConfig],
 ) {
     if let Some(_val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         todo!()
@@ -731,7 +724,7 @@ fn add_hrmp_channels(
 fn add_aura_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    nodes: &Vec<&NodeSpec>,
+    nodes: &[&NodeSpec],
     _key_type: KeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
@@ -778,7 +771,7 @@ fn override_parachain_info(
 fn add_collator_selection(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    nodes: &Vec<&NodeSpec>,
+    nodes: &[&NodeSpec],
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<String> = nodes

@@ -109,17 +109,13 @@ where
         // Collator should be `non-cumulus` one (e.g adder/undying)
         ZombieRole::Node | ZombieRole::Collator => {
 
-            let maybe_para_id = if let Some(para) = ctx.parachain {
-                Some(para.id)
-            } else {
-                None
-            };
+            let maybe_para_id = ctx.parachain.map(|para| para.id);
 
-            generators::command::generate_for_node(&node, gen_opts, maybe_para_id)
+            generators::command::generate_for_node(node, gen_opts, maybe_para_id)
         },
         ZombieRole::CumulusCollator => {
-            let para = ctx.parachain.expect("parachain must be part of the context, this is a bug".into());
-            generators::command::generate_for_cumulus_node(&node, gen_opts, para.id)
+            let para = ctx.parachain.expect("parachain must be part of the context, this is a bug");
+            generators::command::generate_for_cumulus_node(node, gen_opts, para.id)
         }
         _ => unreachable!()
         // TODO: do we need those?
@@ -129,7 +125,7 @@ where
 
     println!("\n");
     println!("🚀 {}, spawning.... with command:", node.name);
-    println!("{}", format!("{cmd} {}", args.join(" ")));
+    println!("{cmd} {}", args.join(" "));
 
     let spawn_ops = SpawnNodeOptions {
         name: node.name.clone(),

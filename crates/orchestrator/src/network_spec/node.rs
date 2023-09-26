@@ -168,7 +168,7 @@ impl NodeSpec {
             cmd.clone()
         } else {
             return Err(OrchestratorError::InvalidNodeConfig(
-                name.into(),
+                name,
                 "command".to_string(),
             ));
         };

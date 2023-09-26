@@ -37,9 +37,12 @@ jobs:
       - name: Build
         run: cargo build
 
-      - name: Tests
+      - name: Tests (except provider crate)
+        run: cargo test --workspace --exclude provider
+
+      - name: Tests (provider crate)
         # there should be a unique test thread for native provider tests (asserting spawned processes count)
-        run: cargo test -- --test-threads 1 
+        cargo test -p provider -- --test-threads 1
 
   coverage:
     name: Zombienet SDK - coverage

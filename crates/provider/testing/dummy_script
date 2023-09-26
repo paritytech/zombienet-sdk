@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo "My script"
+
+echo "$MY_ENV_VAR"
+
+if [ "$1" == "-c" ]; then
+    echo "With args"
+fi

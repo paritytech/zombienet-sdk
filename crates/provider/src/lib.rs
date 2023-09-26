@@ -1,94 +1,132 @@
-mod errors;
-mod native;
-mod shared;
+pub mod native;
+pub mod shared;
 
-use std::{net::IpAddr, path::PathBuf};
+use std::{
+    collections::HashMap, net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
-use errors::ProviderError;
-use shared::types::{FileMap, NativeRunCommandOptions, PodDef, Port, RunCommandResponse};
+use shared::types::{
+    GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+    RunScriptOptions, SpawnNodeOptions,
+};
+use support::fs::FileSystemError;
+
+use crate::shared::types::Port;
+
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum ProviderError {
+    #[error("Failed to spawn node '{0}': {1}")]
+    NodeSpawningFailed(String, anyhow::Error),
+
+    #[error("Error running command '{0}': {1}")]
+    RunCommandError(String, anyhow::Error),
+
+    #[error("Duplicated node name: {0}")]
+    DuplicatedNodeName(String),
+
+    #[error(transparent)]
+    FileSystemError(#[from] FileSystemError),
+
+    #[error("Invalid script path for {0}")]
+    InvalidScriptPath(anyhow::Error),
+
+    #[error("Script with path {0} not found")]
+    ScriptNotFound(PathBuf),
+
+    #[error("File generation failed: {0}")]
+    FileGenerationFailed(anyhow::Error),
+
+    #[error("Failed to retrieve process ID for node '{0}'")]
+    ProcessIdRetrievalFailed(String),
+
+    #[error("Failed to pause node '{0}'")]
+    PauseNodeFailed(String),
+
+    #[error("Failed to resume node '{0}'")]
+    ResumeNodeFaied(String),
+
+    #[error("Failed to kill node '{0}'")]
+    KillNodeFailed(String),
+}
 
 #[async_trait]
 pub trait Provider {
-    async fn create_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_node_ip(&self) -> Result<IpAddr, ProviderError>;
-    async fn get_port_mapping(
-        &mut self,
-        port: Port,
-        pod_name: String,
-    ) -> Result<Port, ProviderError>;
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(IpAddr, Port), ProviderError>;
-    async fn run_command(
-        &self,
-        args: Vec<String>,
-        opts: NativeRunCommandOptions,
-    ) -> Result<RunCommandResponse, ProviderError>;
-    async fn run_script(
-        &mut self,
-        identifier: String,
-        script_path: String,
-        args: Vec<String>,
-    ) -> Result<RunCommandResponse, ProviderError>;
-    async fn spawn_from_def(
-        &mut self,
-        pod_def: PodDef,
-        files_to_copy: Vec<FileMap>,
-        keystore: String,
-        chain_spec_id: String,
-        db_snapshot: String,
-    ) -> Result<(), ProviderError>;
-    async fn copy_file_from_pod(
-        &mut self,
-        pod_file_path: PathBuf,
-        local_file_path: PathBuf,
-    ) -> Result<(), ProviderError>;
-    async fn create_resource(
-        &mut self,
-        resource_def: PodDef,
-        scoped: bool,
-        wait_ready: bool,
-    ) -> Result<(), ProviderError>;
-    async fn wait_node_ready(&mut self, node_name: String) -> Result<(), ProviderError>;
-    async fn get_node_logs(&mut self, node_name: String) -> Result<String, ProviderError>;
-    async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), ProviderError>;
-    fn get_pause_args(&mut self, name: String) -> Vec<String>;
-    fn get_resume_args(&mut self, name: String) -> Vec<String>;
-    async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError>;
-    async fn get_help_info(&mut self) -> Result<(), ProviderError>;
-    async fn destroy_namespace(&mut self) -> Result<(), ProviderError>;
-    async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError>;
-    async fn put_local_magic_file(
-        &self,
-        _name: String,
-        _container: Option<String>,
-    ) -> Result<(), ProviderError> {
-        Ok(())
-    }
-    fn is_pod_monitor_available() -> Result<bool, ProviderError> {
-        Ok(false)
-    }
-    async fn spawn_introspector() -> Result<(), ProviderError> {
-        Ok(())
-    }
+    fn capabilities(&self) -> &ProviderCapabilities;
 
-    async fn static_setup() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn create_static_resource() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn create_pod_monitor() -> Result<(), ProviderError> {
-        Ok(())
-    }
-    async fn setup_cleaner() -> Result<(), ProviderError> {
-        Ok(())
-    }
+    async fn namespaces(&self) -> HashMap<String, DynNamespace>;
 
-    #[allow(clippy::diverging_sub_expression)]
-    async fn upsert_cron_job() -> Result<(), ProviderError> {
-        unimplemented!();
-    }
+    async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
 }
 
-// re-exports
-pub use native::NativeProvider;
+pub type DynProvider = Arc<dyn Provider>;
+
+#[async_trait]
+pub trait ProviderNamespace {
+    fn id(&self) -> &str;
+
+    fn base_dir(&self) -> &PathBuf;
+
+    async fn nodes(&self) -> HashMap<String, DynNode>;
+
+    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
+
+    async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
+
+    async fn destroy(&self) -> Result<(), ProviderError>;
+
+    async fn static_setup(&self) -> Result<(), ProviderError>;
+}
+
+pub type DynNamespace = Arc<dyn ProviderNamespace>;
+
+type ExecutionResult = Result<String, (ExitStatus, String)>;
+
+#[async_trait]
+pub trait ProviderNode {
+    fn name(&self) -> &str;
+
+    fn base_dir(&self) -> &PathBuf;
+
+    fn config_dir(&self) -> &PathBuf;
+
+    fn data_dir(&self) -> &PathBuf;
+
+    fn scripts_dir(&self) -> &PathBuf;
+
+    fn log_path(&self) -> &PathBuf;
+
+    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
+
+    async fn mapped_port(&self, port: Port) -> Result<Port, ProviderError>;
+
+    async fn logs(&self) -> Result<String, ProviderError>;
+
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
+
+    async fn run_command(
+        &self,
+        options: RunCommandOptions,
+    ) -> Result<ExecutionResult, ProviderError>;
+
+    async fn run_script(&self, options: RunScriptOptions)
+        -> Result<ExecutionResult, ProviderError>;
+
+    async fn copy_file_from_node(
+        &self,
+        remote_src: PathBuf,
+        local_dest: PathBuf,
+    ) -> Result<(), ProviderError>;
+
+    async fn pause(&self) -> Result<(), ProviderError>;
+
+    async fn resume(&self) -> Result<(), ProviderError>;
+
+    async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError>;
+
+    async fn destroy(&self) -> Result<(), ProviderError>;
+}
+
+pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;

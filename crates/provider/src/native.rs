@@ -269,6 +269,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
     }
 
     async fn static_setup(&self) -> Result<(), ProviderError> {
+        // no static setup exists for native provider
         todo!()
     }
 

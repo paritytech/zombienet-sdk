@@ -607,7 +607,7 @@ fn create_process_with_log_tasks(
 mod tests {
     use std::{ffi::OsString, fs, str::FromStr};
 
-    use procfs::process::Process;
+    use regex::Regex;
     use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
     use tokio::time::timeout;
 
@@ -814,40 +814,39 @@ mod tests {
 
         // ensure process has correct state
         assert!(matches!(
-            node_process.stat().unwrap().state().unwrap(),
+            node_process.state,
             // process can be running or sleeping because we sleep between echo calls
-            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+            ProcessState::Running | ProcessState::Sleeping
         ));
 
         // ensure process is passed correct args
-        let node_args = node_process.cmdline().unwrap();
-        assert!(node_args.contains(&"-flag1".to_string()));
-        assert!(node_args.contains(&"--flag2".to_string()));
-        assert!(node_args.contains(&"--option1=value1".to_string()));
-        assert!(node_args.contains(&"-option2=value2".to_string()));
-        assert!(node_args.contains(&"--option3 value3".to_string()));
-        assert!(node_args.contains(&"-option4 value4".to_string()));
+        assert!(node_process.command.contains(&"-flag1".to_string()));
+        assert!(node_process.command.contains(&"--flag2".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"--option1=value1".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"-option2=value2".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"--option3 value3".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"-option4 value4".to_string()));
+
+        sleep(Duration::from_secs(30)).await;
 
         // ensure process has correct environment
-        let node_env = node_process.environ().unwrap();
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_1").unwrap())
-                .unwrap(),
-            "MY_VALUE_1"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_2").unwrap())
-                .unwrap(),
-            "MY_VALUE_2"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_3").unwrap())
-                .unwrap(),
-            "MY_VALUE_3"
-        );
+        assert!(node_process
+            .env
+            .contains("MY_VAR_1=MY_VALUE_1"));
+        assert!(node_process
+            .env
+            .contains("MY_VAR_2=MY_VALUE_2"));
+        assert!(node_process
+            .env
+            .contains("MY_VAR_3=MY_VALUE_3"));
 
         // ensure log file is created and logs are written and keep being written for some time
         timeout(Duration::from_secs(30), async {
@@ -1234,9 +1233,9 @@ mod tests {
 
         // ensure process has correct state pre-pause
         assert!(matches!(
-            node_process.stat().unwrap().state().unwrap(),
+            node_process.state,
             // process can be running or sleeping because we sleep between echo calls
-            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+            ProcessState::Running | ProcessState::Sleeping
         ));
 
         node.pause().await.unwrap();
@@ -1249,11 +1248,9 @@ mod tests {
         let _ = timeout(Duration::from_secs(10), async {
             loop {
                 sleep(Duration::from_millis(200)).await;
-
-                assert!(matches!(
-                    node_process.stat().unwrap().state().unwrap(),
-                    procfs::process::ProcState::Stopped
-                ));
+                let processes = get_processes_by_name("dummy_node").await;
+                let node_process = processes.first().unwrap();
+                assert!(matches!(node_process.state, ProcessState::Stopped));
                 assert_eq!(logs, node.logs().await.unwrap());
             }
         })
@@ -1281,7 +1278,6 @@ mod tests {
         // retrieve running process
         let processes = get_processes_by_name("dummy_node").await;
         assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
-        let node_process = processes.first().unwrap();
 
         node.pause().await.unwrap();
 
@@ -1289,11 +1285,9 @@ mod tests {
         let _ = timeout(Duration::from_secs(5), async {
             loop {
                 sleep(Duration::from_millis(200)).await;
-
-                assert!(matches!(
-                    node_process.stat().unwrap().state().unwrap(),
-                    procfs::process::ProcState::Stopped
-                ));
+                let processes = get_processes_by_name("dummy_node").await;
+                let node_process = processes.first().unwrap();
+                assert!(matches!(node_process.state, ProcessState::Stopped));
             }
         })
         .await;
@@ -1304,11 +1298,12 @@ mod tests {
         let _ = timeout(Duration::from_secs(10), async {
             loop {
                 sleep(Duration::from_millis(200)).await;
-
+                let processes = get_processes_by_name("dummy_node").await;
+                let node_process = processes.first().unwrap();
                 assert!(matches!(
-                    node_process.stat().unwrap().state().unwrap(),
+                    node_process.state,
                     // process can be running or sleeping because we sleep between echo calls
-                    procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+                    ProcessState::Running | ProcessState::Sleeping
                 ));
             }
         })
@@ -1384,7 +1379,7 @@ mod tests {
 
         let processes = get_processes_by_name("dummy_node").await;
         assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
-        let old_process_id = processes.first().unwrap().pid();
+        let old_process_id = processes.first().unwrap().pid;
         let old_logs_count = node.logs().await.unwrap().lines().count();
 
         node.restart(None).await.unwrap();
@@ -1398,43 +1393,40 @@ mod tests {
 
         // ensure process has correct state
         assert!(matches!(
-            node_process.stat().unwrap().state().unwrap(),
+            node_process.state,
             // process can be running or sleeping because we sleep between echo calls
-            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+            ProcessState::Running | ProcessState::Sleeping
         ));
 
         // ensure PID changed
-        assert_ne!(old_process_id, node_process.pid());
+        assert_ne!(old_process_id, node_process.pid);
 
         // ensure process restarted with correct args
-        let node_args = node_process.cmdline().unwrap();
-        assert!(node_args.contains(&"-flag1".to_string()));
-        assert!(node_args.contains(&"--flag2".to_string()));
-        assert!(node_args.contains(&"--option1=value1".to_string()));
-        assert!(node_args.contains(&"-option2=value2".to_string()));
-        assert!(node_args.contains(&"--option3 value3".to_string()));
-        assert!(node_args.contains(&"-option4 value4".to_string()));
+        assert!(node_process.command.contains(&"-flag1".to_string()));
+        assert!(node_process.command.contains(&"--flag2".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"--option1=value1".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"-option2=value2".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"--option3 value3".to_string()));
+        assert!(node_process
+            .command
+            .contains(&"-option4 value4".to_string()));
 
         // ensure process restarted with correct environment
-        let node_env = node_process.environ().unwrap();
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_1").unwrap())
-                .unwrap(),
-            "MY_VALUE_1"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_2").unwrap())
-                .unwrap(),
-            "MY_VALUE_2"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_3").unwrap())
-                .unwrap(),
-            "MY_VALUE_3"
-        );
+        assert!(node_process
+            .env
+            .contains("MY_VAR_1=MY_VALUE_1"));
+        assert!(node_process
+            .env
+            .contains("MY_VAR_2=MY_VALUE_2"));
+        assert!(node_process
+            .env
+            .contains("MY_VAR_3=MY_VALUE_3"));
 
         // ensure log writing restarted and they keep being written for some time
         timeout(Duration::from_secs(30), async {
@@ -1507,20 +1499,59 @@ mod tests {
         assert_eq!(namespace.nodes().await.len(), 0);
     }
 
-    async fn get_processes_by_name(name: &str) -> Vec<Process> {
-        procfs::process::all_processes()
-            .unwrap()
-            .filter_map(|process| {
-                if let Ok(process) = process {
-                    process
-                        .cmdline()
-                        .iter()
-                        .any(|args| args.iter().any(|arg| arg.contains(name)))
-                        .then_some(process)
-                } else {
-                    None
-                }
+    #[derive(Debug)]
+    struct Process {
+        pid: u32,
+        state: ProcessState,
+        command: String,
+        env: String,
+    }
+
+    #[derive(Debug)]
+    enum ProcessState {
+        Running,
+        Sleeping,
+        Stopped,
+        Other,
+    }
+
+    async fn get_processes_by_name(command: &str) -> Vec<Process> {
+        let res = Command::new("ps")
+            .arg("eww")
+            .output()
+            .await
+            .expect("Failed to execute ps");
+
+        let env_var_pattern = Regex::new(r"[A-Z_]+=([^ ]+)?").unwrap();
+
+        String::from_utf8_lossy(&res.stdout)
+            .lines()
+            .filter(|line| line.contains(command)) // skip lines without wanted command
+            .map(|line| {
+                let mut parts = line.split_whitespace();
+
+                let pid = parts.next().unwrap().parse().unwrap(); 
+
+                parts.next(); // skip tty
+
+                let state = match &parts.next().unwrap()[..1] {
+                    "R" => ProcessState::Running,
+                    "S" => ProcessState::Sleeping,
+                    "T" => ProcessState::Stopped,
+                    _ => ProcessState::Other,
+                };
+
+                parts.next(); // skip time
+
+                let rest = parts.collect::<Vec<_>>().join(" ");
+
+                let mat = env_var_pattern.find(&rest).unwrap();
+                let split_index = mat.start();
+                let command = rest[..split_index].trim().to_string();
+                let env = rest[split_index..].trim().to_string();
+
+                Process { pid, command, state, env}
             })
-            .collect::<Vec<Process>>()
+            .collect::<Vec<_>>()
     }
 }

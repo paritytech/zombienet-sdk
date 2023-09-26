@@ -42,7 +42,7 @@ jobs:
 
       - name: Tests (provider crate)
         # there should be a unique test thread for native provider tests (asserting spawned processes count)
-        cargo test -p provider -- --test-threads 1
+        run: cargo test -p provider -- --test-threads 1
 
   coverage:
     name: Zombienet SDK - coverage

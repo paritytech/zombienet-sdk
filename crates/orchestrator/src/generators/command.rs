@@ -44,6 +44,7 @@ pub fn generate_for_cumulus_node(
     node: &NodeSpec,
     options: GenCmdOptions,
     para_id: u32,
+    full_p2p_port: u16,
 ) -> (String, Vec<String>) {
     let NodeSpec {
         key,
@@ -109,6 +110,7 @@ pub fn generate_for_cumulus_node(
         tmp_args.push(full_bootnodes.join(" "));
     }
 
+    let mut full_node_p2p_needs_to_be_injected = false;
     let mut full_node_args_filtered = full_node_args
         .iter()
         .filter_map(|arg| match arg {
@@ -123,12 +125,21 @@ pub fn generate_for_cumulus_node(
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    if k.eq(&"port") && v.eq(&"30333") {
+                        full_node_p2p_needs_to_be_injected = true;
+                        None
+                    } else {
+                        let kv_str = format!("{} {}", k, v);
+                        Some(kv_str)
+                    }
                 }
             },
         })
         .collect::<Vec<String>>();
+
+    // change p2p port if is the default
+    full_node_args_filtered.push("--port".into());
+    full_node_args_filtered.push(full_p2p_port.to_string());
 
     let mut args_filtered = collator_args
         .iter()
@@ -179,6 +190,7 @@ pub fn generate_for_cumulus_node(
         "--execution".into(),
         "wasm".into(),
     ];
+
     final_args.append(&mut full_node_injected);
     final_args.append(&mut full_node_args_filtered);
 

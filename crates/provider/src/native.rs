@@ -1,833 +1,1526 @@
 use std::{
     self,
-    collections::{
-        hash_map::Entry::{Occupied, Vacant},
-        HashMap,
-    },
+    collections::HashMap,
     fmt::Debug,
+    io::Error,
     net::IpAddr,
-    path::{Path, PathBuf},
+    path::PathBuf,
+    process::Stdio,
+    sync::{Arc, Weak},
 };
 
+use anyhow::anyhow;
 use async_trait::async_trait;
-use serde::Serialize;
-use support::{fs::FileSystem, net::download_file};
+use configuration::types::Port;
+use futures::{future::try_join_all, try_join};
+use nix::{
+    sys::signal::{kill, Signal},
+    unistd::Pid,
+};
+use support::fs::FileSystem;
 use tokio::{
-    process::Command,
+    io::{AsyncRead, AsyncReadExt, BufReader},
+    process::{Child, Command},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        RwLock,
+    },
+    task::JoinHandle,
     time::{sleep, Duration},
 };
+use uuid::Uuid;
 
-use super::Provider;
 use crate::{
-    errors::ProviderError,
-    shared::{
-        constants::{DEFAULT_DATA_DIR, DEFAULT_REMOTE_DIR, LOCALHOST, P2P_PORT},
-        types::{
-            FileMap, NativeRunCommandOptions, PodDef, Port, Process, RunCommandResponse, ZombieRole,
-        },
-    },
+    shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
+    DynNamespace, DynNode, ExecutionResult, GenerateFileCommand, GenerateFilesOptions, Provider,
+    ProviderCapabilities, ProviderError, ProviderNamespace, ProviderNode, RunCommandOptions,
+    RunScriptOptions, SpawnNodeOptions,
 };
-#[derive(Debug, Serialize, Clone, PartialEq)]
-pub struct NativeProvider<T: FileSystem + Send + Sync> {
-    // Namespace of the client (isolation directory)
-    namespace: String,
-    // Path where configuration relies, all the `files` are accessed relative to this.
-    config_path: String,
-    // Variable that shows if debug is activated
-    is_debug: bool,
-    // The timeout for start the node
-    timeout: u32,
-    // Command to use, e.g "bash"
-    command: String,
-    // Temporary directory, root directory for the network
-    tmp_dir: String,
-    local_magic_file_path: String,
-    remote_dir: String,
-    data_dir: String,
-    process_map: HashMap<String, Process>,
-    filesystem: T,
+
+#[derive(Debug, Clone)]
+pub struct NativeProvider<FS: FileSystem + Send + Sync + Clone> {
+    capabilities: ProviderCapabilities,
+    tmp_dir: PathBuf,
+    filesystem: FS,
+    inner: Arc<RwLock<NativeProviderInner<FS>>>,
 }
 
-impl<T: FileSystem + Send + Sync> NativeProvider<T> {
-    /// Zombienet `native` provider allows to run the nodes as a local process in the local environment
-    /// params:
-    ///   namespace:  Namespace of the clien
-    ///   config_path: Path where configuration relies
-    ///   tmp_dir: Temporary directory where files will be placed
-    ///   filesystem: Filesystem to use (std::fs::FileSystem, mock etc.)
-    pub fn new(
-        namespace: impl Into<String>,
-        config_path: impl Into<String>,
-        tmp_dir: impl Into<String>,
-        filesystem: T,
-    ) -> Self {
-        let tmp_dir: String = tmp_dir.into();
-        let process_map: HashMap<String, Process> = HashMap::new();
+#[derive(Debug)]
+struct NativeProviderInner<FS: FileSystem + Send + Sync + Clone> {
+    namespaces: HashMap<String, NativeNamespace<FS>>,
+}
 
-        Self {
-            namespace: namespace.into(),
-            config_path: config_path.into(),
-            is_debug: true,
-            timeout: 60, // seconds
-            local_magic_file_path: format!("{}/finished.txt", &tmp_dir),
-            remote_dir: format!("{}{}", &tmp_dir, DEFAULT_REMOTE_DIR),
-            data_dir: format!("{}{}", &tmp_dir, DEFAULT_DATA_DIR),
-            command: "bash".into(),
-            tmp_dir,
-            process_map,
+#[derive(Debug, Clone)]
+struct WeakNativeProvider<FS: FileSystem + Send + Sync + Clone> {
+    inner: Weak<RwLock<NativeProviderInner<FS>>>,
+}
+
+impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
+    pub fn new(filesystem: FS) -> Self {
+        NativeProvider {
+            capabilities: ProviderCapabilities::new(),
+            tmp_dir: std::env::temp_dir(),
             filesystem,
+            inner: Arc::new(RwLock::new(NativeProviderInner {
+                namespaces: Default::default(),
+            })),
         }
+    }
+
+    pub fn tmp_dir(mut self, tmp_dir: impl Into<PathBuf>) -> Self {
+        self.tmp_dir = tmp_dir.into();
+        self
     }
 }
 
 #[async_trait]
-impl<T: FileSystem + Send + Sync> Provider for NativeProvider<T> {
-    async fn create_namespace(&mut self) -> Result<(), ProviderError> {
-        // Native provider don't have the `namespace` isolation.
-        // but we create the `remoteDir` to place files
-        self.filesystem
-            .create_dir(&self.remote_dir)
-            .await
-            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-        Ok(())
+impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider<FS> {
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
     }
 
-    async fn get_port_mapping(
-        &mut self,
-        port: Port,
-        pod_name: String,
-    ) -> Result<Port, ProviderError> {
-        let r = match self.process_map.get(&pod_name) {
-            Some(process) => match process.port_mapping.get(&port) {
-                Some(port) => Ok(*port),
-                None => Err(ProviderError::MissingNodeInfo(pod_name, "port".into())),
+    async fn namespaces(&self) -> HashMap<String, DynNamespace> {
+        self.inner
+            .read()
+            .await
+            .namespaces
+            .clone()
+            .into_iter()
+            .map(|(id, namespace)| (id, Arc::new(namespace) as DynNamespace))
+            .collect()
+    }
+
+    async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
+        let id = format!("zombie_{}", Uuid::new_v4());
+        let mut inner = self.inner.write().await;
+
+        let base_dir = PathBuf::from(format!("{}/{}", self.tmp_dir.to_string_lossy(), &id));
+        self.filesystem.create_dir(&base_dir).await?;
+
+        let namespace = NativeNamespace {
+            id: id.clone(),
+            base_dir,
+            filesystem: self.filesystem.clone(),
+            provider: WeakNativeProvider {
+                inner: Arc::downgrade(&self.inner),
             },
-            None => Err(ProviderError::MissingNodeInfo(pod_name, "process".into())),
+            inner: Arc::new(RwLock::new(NativeNamespaceInner {
+                nodes: Default::default(),
+            })),
         };
 
-        return r;
+        inner.namespaces.insert(id, namespace.clone());
+
+        Ok(Arc::new(namespace))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NativeNamespace<FS: FileSystem + Send + Sync + Clone> {
+    id: String,
+    base_dir: PathBuf,
+    inner: Arc<RwLock<NativeNamespaceInner<FS>>>,
+    filesystem: FS,
+    provider: WeakNativeProvider<FS>,
+}
+
+#[derive(Debug)]
+struct NativeNamespaceInner<FS: FileSystem + Send + Sync + Clone> {
+    nodes: HashMap<String, NativeNode<FS>>,
+}
+
+#[derive(Debug, Clone)]
+struct WeakNativeNamespace<FS: FileSystem + Send + Sync + Clone> {
+    inner: Weak<RwLock<NativeNamespaceInner<FS>>>,
+}
+
+#[async_trait]
+impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for NativeNamespace<FS> {
+    fn id(&self) -> &str {
+        &self.id
     }
 
-    async fn get_node_info(&mut self, pod_name: String) -> Result<(IpAddr, Port), ProviderError> {
-        let host_port = self.get_port_mapping(P2P_PORT, pod_name).await?;
-        Ok((LOCALHOST, host_port))
+    fn base_dir(&self) -> &PathBuf {
+        &self.base_dir
     }
 
-    async fn get_node_ip(&self) -> Result<IpAddr, ProviderError> {
-        Ok(LOCALHOST)
+    async fn nodes(&self) -> HashMap<String, DynNode> {
+        self.inner
+            .read()
+            .await
+            .nodes
+            .clone()
+            .into_iter()
+            .map(|(id, node)| (id, Arc::new(node) as DynNode))
+            .collect()
     }
 
-    async fn run_command(
-        &self,
-        mut args: Vec<String>,
-        opts: NativeRunCommandOptions,
-    ) -> Result<RunCommandResponse, ProviderError> {
-        if let Some(arg) = args.get(0) {
-            if arg == "bash" {
-                args.remove(0);
-            }
+    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
+        let mut inner = self.inner.write().await;
+
+        if inner.nodes.contains_key(&options.name) {
+            return Err(ProviderError::DuplicatedNodeName(options.name));
         }
 
-        // -c is already used in the process::Command to execute the command thus
-        // needs to be removed in case provided
-        if let Some(arg) = args.get(0) {
-            if arg == "-c" {
-                args.remove(0);
-            }
+        // create node directories and filepaths
+        let base_dir_raw = format!("{}/{}", &self.base_dir.to_string_lossy(), &options.name);
+        let base_dir = PathBuf::from(&base_dir_raw);
+        let log_path = PathBuf::from(format!("{}/{}.log", base_dir_raw, &options.name));
+        let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
+        let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
+        let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
+        self.filesystem.create_dir(&base_dir).await?;
+        try_join!(
+            self.filesystem.create_dir(&config_dir),
+            self.filesystem.create_dir(&data_dir),
+            self.filesystem.create_dir(&scripts_dir),
+        )?;
+
+        // copy injected files
+        let mut futures = vec![];
+        for file in options.injected_files {
+            futures.push(self.filesystem.copy(
+                file.local_path,
+                format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
+            ));
         }
+        try_join_all(futures).await?;
 
-        let result = Command::new(&self.command)
-            .arg("-c")
-            .arg(args.join(" "))
-            .output()
-            .await?;
+        let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
+            create_process_with_log_tasks(
+                &options.name,
+                &options.command,
+                &options.args,
+                &options.env,
+                &log_path,
+                self.filesystem.clone(),
+            )?;
 
-        if !result.status.success() && !opts.is_failure_allowed {
-            return Err(ProviderError::RunCommandError(args.join(" ")));
-        } else {
-            // cmd success or we allow to fail
-            // in either case we return Ok
-            Ok(RunCommandResponse {
-                exit_code: result.status,
-                std_out: String::from_utf8_lossy(&result.stdout).into(),
-                std_err: if result.stderr.is_empty() {
-                    None
-                } else {
-                    Some(String::from_utf8_lossy(&result.stderr).into())
-                },
+        // create node structure holding state
+        let node = NativeNode {
+            name: options.name.clone(),
+            command: options.command,
+            args: options.args,
+            env: options.env,
+            base_dir,
+            config_dir,
+            data_dir,
+            scripts_dir,
+            log_path,
+            filesystem: self.filesystem.clone(),
+            namespace: WeakNativeNamespace {
+                inner: Arc::downgrade(&self.inner),
+            },
+            inner: Arc::new(RwLock::new(NativeNodeInner {
+                process,
+                stdout_reading_handle,
+                stderr_reading_handle,
+                log_writing_handle,
+            })),
+        };
+
+        // store node inside namespace
+        inner.nodes.insert(options.name, node.clone());
+
+        Ok(Arc::new(node))
+    }
+
+    async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
+        // we spawn a node doing nothing but looping so we can execute our commands
+        let temp_node = self
+            .spawn_node(SpawnNodeOptions {
+                name: format!("temp_{}", Uuid::new_v4()),
+                command: "bash".to_string(),
+                args: vec!["-c".to_string(), "while :; do sleep 1; done".to_string()],
+                env: vec![],
+                injected_files: options.injected_files,
             })
-        }
-    }
-
-    // TODO: Add test
-    async fn run_script(
-        &mut self,
-        identifier: String,
-        script_path: String,
-        args: Vec<String>,
-    ) -> Result<RunCommandResponse, ProviderError> {
-        let script_filename = Path::new(&script_path)
-            .file_name()
-            .ok_or(ProviderError::InvalidScriptPath(script_path.clone()))?
-            .to_str()
-            .ok_or(ProviderError::InvalidScriptPath(script_path.clone()))?;
-        let script_path_in_pod = format!("{}/{}/{}", self.tmp_dir, identifier, script_filename);
-
-        // upload the script
-        self.filesystem
-            .copy(&script_path, &script_path_in_pod)
-            .await
-            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-
-        // set as executable
-        self.run_command(
-            vec![
-                "chmod".to_owned(),
-                "+x".to_owned(),
-                script_path_in_pod.clone(),
-            ],
-            NativeRunCommandOptions::default(),
-        )
-        .await?;
-
-        let command = format!(
-            "cd {}/{} && {} {}",
-            self.tmp_dir,
-            identifier,
-            script_path_in_pod,
-            args.join(" ")
-        );
-        let result = self
-            .run_command(vec![command], NativeRunCommandOptions::default())
             .await?;
 
-        Ok(RunCommandResponse {
-            exit_code: result.exit_code,
-            std_out: result.std_out,
-            std_err: result.std_err,
-        })
-    }
-
-    // TODO: Add test
-    async fn spawn_from_def(
-        &mut self,
-        pod_def: PodDef,
-        files_to_copy: Vec<FileMap>,
-        keystore: String,
-        chain_spec_id: String,
-        // TODO: add logic to download the snapshot
-        db_snapshot: String,
-    ) -> Result<(), ProviderError> {
-        let name = pod_def.metadata.name.clone();
-        // TODO: log::debug!(format!("{}", serde_json::to_string(&pod_def)));
-
-        // keep this in the client.
-        self.process_map.entry(name.clone()).and_modify(|p| {
-            p.logs = format!("{}/{}.log", self.tmp_dir, name);
-            p.port_mapping = pod_def
-                .spec
-                .ports
-                .iter()
-                .map(|item| (item.container_port, item.host_port))
-                .collect();
-        });
-
-        // TODO: check how we will log with tables
-        // let logTable = new CreateLogTable({
-        //   colWidths: [25, 100],
-        // });
-
-        // const logs = [
-        //   [decorators.cyan("Pod"), decorators.green(name)],
-        //   [decorators.cyan("Status"), decorators.green("Launching")],
-        //   [
-        //     decorators.cyan("Command"),
-        //     decorators.white(podDef.spec.command.join(" ")),
-        //   ],
-        // ];
-        // if (dbSnapshot) {
-        //   logs.push([decorators.cyan("DB Snapshot"), decorators.green(dbSnapshot)]);
-        // }
-        // logTable.pushToPrint(logs);
-
-        // we need to get the snapshot from a public access
-        // and extract to /data
-        let _ = self
-            .filesystem
-            .create_dir(pod_def.spec.data_path.clone())
-            .await;
-
-        let _ = download_file(db_snapshot, format!("{}/db.tgz", pod_def.spec.data_path)).await;
-        let command = format!("cd {}/.. && tar -xzvf data/db.tgz", pod_def.spec.data_path);
-
-        self.run_command(vec![command], NativeRunCommandOptions::default())
-            .await?;
-
-        if !keystore.is_empty() {
-            // initialize keystore
-            let keystore_remote_dir = format!(
-                "{}/chains/{}/keystore",
-                pod_def.spec.data_path, chain_spec_id
-            );
-
-            let _ = self
-                .filesystem
-                .create_dir(keystore_remote_dir.clone())
-                .await;
-
-            let _ = self.filesystem.copy(&keystore, &keystore_remote_dir).await;
-        }
-
-        let files_to_copy_iter = files_to_copy.iter();
-
-        for file in files_to_copy_iter {
-            // log::debug!(format!("file.local_file_path: {}", file.local_file_path));
-            // log::debug!(format!("file.remote_file_path: {}", file.remote_file_path));
-
-            // log::debug!(format!("self.remote_dir: {}", self.remote_dir);
-            // log::debug!(format!("self.data_dir: {}", self.data_dir);
-
-            let remote_file_path_str: String = file
-                .clone()
-                .remote_file_path
-                .into_os_string()
-                .into_string()
-                .unwrap();
-
-            let resolved_remote_file_path = if remote_file_path_str.contains(&self.remote_dir) {
-                format!(
-                    "{}/{}",
-                    &pod_def.spec.cfg_path,
-                    remote_file_path_str.replace(&self.remote_dir, "")
-                )
-            } else {
-                format!(
-                    "{}/{}",
-                    &pod_def.spec.data_path,
-                    remote_file_path_str.replace(&self.data_dir, "")
-                )
-            };
-
-            let _ = self
-                .filesystem
-                .copy(
-                    file.clone()
-                        .local_file_path
-                        .into_os_string()
-                        .into_string()
-                        .unwrap(),
-                    resolved_remote_file_path,
-                )
-                .await;
-        }
-
-        self.create_resource(pod_def, false, true).await?;
-
-        // TODO: check how we will log with tables
-        // logTable = new CreateLogTable({
-        //   colWidths: [40, 80],
-        // });
-        // logTable.pushToPrint([
-        //   [decorators.cyan("Pod"), decorators.green(name)],
-        //   [decorators.cyan("Status"), decorators.green("Ready")],
-        // ]);
-        Ok(())
-    }
-
-    async fn copy_file_from_pod(
-        &mut self,
-        pod_file_path: PathBuf,
-        local_file_path: PathBuf,
-    ) -> Result<(), ProviderError> {
-        // TODO: log::debug!(format!("cp {} {}", pod_file_path, local_file_path));
-
-        self.filesystem
-            .copy(&pod_file_path, &local_file_path)
-            .await
-            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-        Ok(())
-    }
-
-    async fn create_resource(
-        &mut self,
-        mut resource_def: PodDef,
-        _scoped: bool,
-        wait_ready: bool,
-    ) -> Result<(), ProviderError> {
-        let name: String = resource_def.metadata.name.clone();
-        let local_file_path: String = format!("{}/{}.yaml", &self.tmp_dir, name);
-        let content: String = serde_json::to_string(&resource_def)?;
-
-        self.filesystem
-            .write(&local_file_path, content)
-            .await
-            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-
-        if resource_def.spec.command.get(0) == Some(&"bash".into()) {
-            resource_def.spec.command.remove(0);
-        }
-
-        if resource_def.metadata.labels.zombie_role == ZombieRole::Temp {
-            // for temp we run some short living cmds
-            self.run_command(
-                resource_def.spec.command,
-                NativeRunCommandOptions {
-                    is_failure_allowed: Some(true).is_some(),
-                },
-            )
-            .await?;
-        } else {
-            // Allow others are spawned.
-            let logs = format!("{}/{}.log", self.tmp_dir, name);
-            let file_handler = self
-                .filesystem
-                .create(logs.clone())
+        for GenerateFileCommand {
+            command,
+            args,
+            env,
+            local_output_path,
+        } in options.commands
+        {
+            match temp_node
+                .run_command(RunCommandOptions { command, args, env })
                 .await
-                .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-
-            let final_command = resource_def.spec.command.join(" ");
-            let child_process = std::process::Command::new(&self.command)
-                .arg("-c")
-                .arg(final_command.clone())
-                .stdout(file_handler)
-                // TODO: redirect stderr to the same stdout
-                //.stderr()
-                .spawn()?;
-
-            // TODO: log::debug!(node_process.id());
-            //   nodeProcess.stdout.pipe(log);
-            //   nodeProcess.stderr.pipe(log);
-
-            match self.process_map.entry(name.clone()) {
-                Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
-                Vacant(slot) => {
-                    slot.insert(Process {
-                        pid: child_process.id(),
-                        logs,
-                        port_mapping: resource_def.spec.ports.iter().fold(
-                            HashMap::new(),
-                            |mut memo: HashMap<u16, u16>, item| {
-                                memo.insert(item.container_port, item.host_port);
-                                memo
-                            },
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
+            {
+                Ok(contents) => self
+                    .filesystem
+                    .write(
+                        format!(
+                            "{}{}",
+                            self.base_dir.to_string_lossy(),
+                            local_output_path.to_string_lossy()
                         ),
-                        command: final_command,
-                    });
-                },
-            }
-
-            if wait_ready {
-                self.wait_node_ready(name).await?;
-            }
-        }
-        Ok(())
-    }
-
-    // TODO: Add test
-    async fn destroy_namespace(&mut self) -> Result<(), ProviderError> {
-        // get pids to kill all related process
-        let pids: Vec<String> = self
-            .process_map
-            .iter()
-            .filter(|(_, process)| process.pid != 0)
-            .map(|(_, process)| process.pid.to_string())
-            .collect();
-
-        // TODO: use a crate (or even std) to get this info instead of relying on bash
-        let result = self
-            .run_command(
-                [format!(
-                    "ps ax| awk '{{print $1}}'| grep -E '{}'",
-                    pids.join("|")
-                )]
-                .to_vec(),
-                NativeRunCommandOptions {
-                    is_failure_allowed: true,
-                },
-            )
-            .await
-            .unwrap();
-
-        if result.exit_code.code().unwrap() == 0 {
-            let pids_to_kill: Vec<String> = result
-                .std_out
-                .split(|c| c == '\n')
-                .map(|s| s.into())
-                .collect();
-
-            let _ = self
-                .run_command(
-                    [format!("kill -9 {}", pids_to_kill.join(" "))].to_vec(),
-                    NativeRunCommandOptions {
-                        is_failure_allowed: true,
-                    },
-                )
-                .await?;
-        }
-        Ok(())
-    }
-
-    // TODO: Add test
-    async fn get_node_logs(&mut self, name: String) -> Result<String, ProviderError> {
-        // For now in native let's just return all the logs
-        let result = self
-            .filesystem
-            .read_file(&format!("{}/{}.log", self.tmp_dir, name))
-            .await
-            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-        return Ok(result);
-    }
-
-    async fn dump_logs(&mut self, path: String, pod_name: String) -> Result<(), ProviderError> {
-        let dst_file_name: String = format!("{}/logs/{}.log", path, pod_name);
-        let _ = self
-            .filesystem
-            .copy(
-                &format!("{}/{}.log", self.tmp_dir, pod_name),
-                &dst_file_name,
-            )
-            .await;
-        Ok(())
-    }
-
-    async fn wait_node_ready(&mut self, node_name: String) -> Result<(), ProviderError> {
-        // check if the process is alive after 1 seconds
-        sleep(Duration::from_millis(1000)).await;
-
-        let Some(process_node) = self.process_map.get(&node_name) else {
-            return Err(ProviderError::MissingNodeInfo(node_name, "process".into()));
-        };
-
-        let result = self
-            .run_command(
-                vec![format!("ps {}", process_node.pid)],
-                NativeRunCommandOptions {
-                    is_failure_allowed: true,
-                },
-            )
-            .await?;
-
-        if result.exit_code.code().unwrap() > 0 {
-            let lines: String = self.get_node_logs(node_name).await?;
-            // TODO: check how we will log with tables
-            // TODO: Log with a log table
-            // const logTable = new CreateLogTable({
-            //   colWidths: [20, 100],
-            // });
-            // logTable.pushToPrint([
-            //   [decorators.cyan("Pod"), decorators.green(nodeName)],
-            //   [
-            //     decorators.cyan("Status"),
-            //     decorators.reverse(decorators.red("Error")),
-            //   ],
-            //   [
-            //     decorators.cyan("Message"),
-            //     decorators.white(`Process: ${pid}, for node: ${nodeName} dies.`),
-            //   ],
-            //   [decorators.cyan("Output"), decorators.white(lines)],
-            // ]);
-
-            return Err(ProviderError::NodeNotReady(lines));
-        }
-
-        // Process pid is
-        // check log lines grow between 2/6/12 secs
-        let lines_intial: RunCommandResponse = self
-            .run_command(
-                vec![format!("wc -l  {}", process_node.logs)],
-                NativeRunCommandOptions::default(),
-            )
-            .await?;
-
-        for i in [2000, 6000, 12000] {
-            sleep(Duration::from_millis(i)).await;
-            let lines_now = self
-                .run_command(
-                    vec![format!("wc -l  {}", process_node.logs)],
-                    NativeRunCommandOptions::default(),
-                )
-                .await?;
-            if lines_now.std_out > lines_intial.std_out {
-                return Ok(());
+                        contents,
+                    )
+                    .await
+                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
             };
         }
 
-        let error_string = format!(
-            "Log lines of process: {} ( node: {} ) doesn't grow, please check logs at {}",
-            process_node.pid, node_name, process_node.logs
-        );
-
-        Err(ProviderError::NodeNotReady(error_string))
+        temp_node.destroy().await
     }
 
-    // TODO: Add test
-    fn get_pause_args(&mut self, name: String) -> Vec<String> {
-        let command = format!("kill -STOP {}", self.process_map[&name].pid);
-        vec![command]
+    async fn static_setup(&self) -> Result<(), ProviderError> {
+        // no static setup exists for native provider
+        todo!()
     }
 
-    // TODO: Add test
-    fn get_resume_args(&mut self, name: String) -> Vec<String> {
-        let command = format!("kill -CONT {}", self.process_map[&name].pid);
-        vec![command]
-    }
-
-    async fn restart_node(&mut self, name: String, timeout: u64) -> Result<bool, ProviderError> {
-        let command = format!("kill -9 {}", self.process_map[&name].pid);
-        let result = self
-            .run_command(
-                vec![command],
-                NativeRunCommandOptions {
-                    is_failure_allowed: true,
-                },
-            )
-            .await?;
-
-        if result.exit_code.code().unwrap() > 0 {
-            return Ok(false);
+    async fn destroy(&self) -> Result<(), ProviderError> {
+        // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
+        // method acquiring a lock the namespace to remove the node from the nodes hashmap.
+        let nodes: Vec<NativeNode<FS>> = self.inner.write().await.nodes.values().cloned().collect();
+        for node in nodes.iter() {
+            node.destroy().await?;
         }
 
-        sleep(Duration::from_millis(timeout * 1000)).await;
-
-        let logs = self.process_map[&name].logs.clone();
-
-        // log::debug!("Command: {}", self.process_map[&name].cmd.join(" "));
-
-        let file_handler = self
-            .filesystem
-            .create(logs.clone())
-            .await
-            .map_err(|e| ProviderError::FSError(Box::new(e)))?;
-        let final_command = self.process_map[&name].command.clone();
-
-        let child_process = std::process::Command::new(&self.command)
-        .arg("-c")
-        .arg(final_command.clone())
-        // TODO: set env
-        .stdout(file_handler)
-        // TODO: redirect stderr to the same stdout
-        //.stderr()
-        .spawn()?;
-
-        match self.process_map.entry(name.clone()) {
-            Occupied(_) => return Err(ProviderError::DuplicatedNodeName(name)),
-            Vacant(slot) => {
-                slot.insert(Process {
-                    pid: child_process.id(),
-                    // TODO: complete this field
-                    logs,
-                    // TODO: complete this field
-                    port_mapping: HashMap::default(),
-                    command: final_command,
-                });
-            },
+        // remove namespace from provider
+        if let Some(provider) = self.provider.inner.upgrade() {
+            provider.write().await.namespaces.remove(&self.id);
         }
-        self.wait_node_ready(name).await?;
-
-        Ok(true)
-    }
-
-    async fn get_logs_command(&mut self, name: String) -> Result<String, ProviderError> {
-        Ok(format!("tail -f {}/{}.log", self.tmp_dir, name))
-    }
-
-    // TODO: Add test
-    async fn get_help_info(&mut self) -> Result<(), ProviderError> {
-        let _ = self
-            .run_command(
-                vec!["--help".to_owned()],
-                NativeRunCommandOptions::default(),
-            )
-            .await?;
 
         Ok(())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
+#[derive(Debug, Clone)]
+struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    base_dir: PathBuf,
+    config_dir: PathBuf,
+    data_dir: PathBuf,
+    scripts_dir: PathBuf,
+    log_path: PathBuf,
+    inner: Arc<RwLock<NativeNodeInner>>,
+    filesystem: FS,
+    namespace: WeakNativeNamespace<FS>,
+}
 
-    use support::fs::mock::{MockError, MockFilesystem, Operation};
+#[derive(Debug)]
+struct NativeNodeInner {
+    process: Child,
+    stdout_reading_handle: JoinHandle<()>,
+    stderr_reading_handle: JoinHandle<()>,
+    log_writing_handle: JoinHandle<()>,
+}
 
-    use super::*;
-    use crate::shared::types::{PodLabels, PodMetadata, PodSpec};
-
-    #[test]
-    fn new_native_provider() {
-        let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
-
-        assert_eq!(native_provider.namespace, "something");
-        assert_eq!(native_provider.config_path, "./");
-        assert!(native_provider.is_debug);
-        assert_eq!(native_provider.timeout, 60);
-        assert_eq!(native_provider.tmp_dir, "/tmp");
-        assert_eq!(native_provider.command, "bash");
-        assert_eq!(native_provider.local_magic_file_path, "/tmp/finished.txt");
-        assert_eq!(native_provider.remote_dir, "/tmp/cfg");
-        assert_eq!(native_provider.data_dir, "/tmp/data");
+#[async_trait]
+impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
+    fn name(&self) -> &str {
+        &self.name
     }
 
-    #[tokio::test]
-    async fn test_fielsystem_usage() {
-        let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+    fn base_dir(&self) -> &PathBuf {
+        &self.base_dir
+    }
 
-        native_provider.create_namespace().await.unwrap();
+    fn config_dir(&self) -> &PathBuf {
+        &self.config_dir
+    }
 
-        assert!(native_provider.filesystem.operations.len() == 1);
+    fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
+    }
+
+    fn scripts_dir(&self) -> &PathBuf {
+        &self.scripts_dir
+    }
+
+    fn log_path(&self) -> &PathBuf {
+        &self.log_path
+    }
+
+    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError> {
+        todo!();
+    }
+
+    async fn mapped_port(&self, _port: Port) -> Result<Port, ProviderError> {
+        todo!()
+    }
+
+    async fn logs(&self) -> Result<String, ProviderError> {
+        Ok(self.filesystem.read_to_string(&self.log_path).await?)
+    }
+
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
+        Ok(self.filesystem.copy(&self.log_path, local_dest).await?)
+    }
+
+    async fn run_command(
+        &self,
+        options: RunCommandOptions,
+    ) -> Result<ExecutionResult, ProviderError> {
+        let result = Command::new(options.command.clone())
+            .args(options.args)
+            .envs(options.env)
+            .output()
+            .await
+            .map_err(|err| ProviderError::RunCommandError(options.command, err.into()))?;
+
+        if result.status.success() {
+            Ok(Ok(String::from_utf8_lossy(&result.stdout).to_string()))
+        } else {
+            Ok(Err((
+                result.status,
+                String::from_utf8_lossy(&result.stderr).to_string(),
+            )))
+        }
+    }
+
+    async fn run_script(
+        &self,
+        options: RunScriptOptions,
+    ) -> Result<ExecutionResult, ProviderError> {
+        let local_script_path = PathBuf::from(&options.local_script_path);
+
+        if !local_script_path
+            .try_exists()
+            .map_err(|err| ProviderError::InvalidScriptPath(err.into()))?
+        {
+            return Err(ProviderError::ScriptNotFound(local_script_path));
+        }
+
+        // extract file name and build remote file path
+        let script_file_name = local_script_path
+            .file_name()
+            .map(|file_name| file_name.to_string_lossy().to_string())
+            .ok_or(ProviderError::InvalidScriptPath(anyhow!(
+                "Can't retrieve filename from script with path: {:?}",
+                options.local_script_path
+            )))?;
+        let remote_script_path = format!(
+            "{}/{}",
+            self.scripts_dir.to_string_lossy(),
+            script_file_name
+        );
+
+        // copy and set script's execute permission
+        self.filesystem
+            .copy(local_script_path, &remote_script_path)
+            .await?;
+        self.filesystem.set_mode(&remote_script_path, 0o744).await?;
+
+        // execute script
+        self.run_command(RunCommandOptions {
+            command: remote_script_path,
+            args: options.args,
+            env: options.env,
+        })
+        .await
+    }
+
+    async fn copy_file_from_node(
+        &self,
+        remote_src: PathBuf,
+        local_dest: PathBuf,
+    ) -> Result<(), ProviderError> {
+        let remote_file_path = format!(
+            "{}{}",
+            self.base_dir.to_string_lossy(),
+            remote_src.to_string_lossy()
+        );
+        self.filesystem.copy(remote_file_path, local_dest).await?;
+
+        Ok(())
+    }
+
+    async fn pause(&self) -> Result<(), ProviderError> {
+        let inner = self.inner.write().await;
+        let pid = retrieve_pid_from_process(&inner.process, &self.name)?;
+
+        kill(pid, Signal::SIGSTOP)
+            .map_err(|_| ProviderError::PauseNodeFailed(self.name.clone()))?;
+
+        Ok(())
+    }
+
+    async fn resume(&self) -> Result<(), ProviderError> {
+        let inner = self.inner.write().await;
+        let pid = retrieve_pid_from_process(&inner.process, &self.name)?;
+
+        kill(pid, Signal::SIGCONT)
+            .map_err(|_| ProviderError::ResumeNodeFaied(self.name.clone()))?;
+
+        Ok(())
+    }
+
+    async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
+
+        let mut inner = self.inner.write().await;
+
+        // abort all task handlers and kill process
+        inner.log_writing_handle.abort();
+        inner.stdout_reading_handle.abort();
+        inner.stderr_reading_handle.abort();
+        inner
+            .process
+            .kill()
+            .await
+            .map_err(|_| ProviderError::KillNodeFailed(self.name.clone()))?;
+
+        // re-spawn process with tasks for logs
+        let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
+            create_process_with_log_tasks(
+                &self.name,
+                &self.command,
+                &self.args,
+                &self.env,
+                &self.log_path,
+                self.filesystem.clone(),
+            )?;
+
+        // update node process and handlers
+        inner.process = process;
+        inner.stderr_reading_handle = stdout_reading_handle;
+        inner.stderr_reading_handle = stderr_reading_handle;
+        inner.log_writing_handle = log_writing_handle;
+
+        Ok(())
+    }
+
+    async fn destroy(&self) -> Result<(), ProviderError> {
+        let mut inner = self.inner.write().await;
+
+        inner.log_writing_handle.abort();
+        inner.stdout_reading_handle.abort();
+        inner.stderr_reading_handle.abort();
+        inner
+            .process
+            .kill()
+            .await
+            .map_err(|_| ProviderError::KillNodeFailed(self.name.clone()))?;
+
+        if let Some(namespace) = self.namespace.inner.upgrade() {
+            namespace.write().await.nodes.remove(&self.name);
+        }
+
+        Ok(())
+    }
+}
+
+fn retrieve_pid_from_process(process: &Child, node_name: &str) -> Result<Pid, ProviderError> {
+    Ok(Pid::from_raw(
+        process
+            .id()
+            .ok_or(ProviderError::ProcessIdRetrievalFailed(
+                node_name.to_string(),
+            ))?
+            .try_into()
+            .map_err(|_| ProviderError::ProcessIdRetrievalFailed(node_name.to_string()))?,
+    ))
+}
+
+fn create_stream_polling_task(
+    stream: impl AsyncRead + Unpin + Send + 'static,
+    tx: Sender<Result<Vec<u8>, Error>>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stream);
+        let mut buffer = vec![0u8; 1024];
+
+        loop {
+            match reader.read(&mut buffer).await {
+                Ok(0) => {
+                    let _ = tx.send(Ok(Vec::new())).await;
+                    break;
+                },
+                Ok(n) => {
+                    let _ = tx.send(Ok(buffer[..n].to_vec())).await;
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    break;
+                },
+            }
+        }
+    })
+}
+
+fn create_log_writing_task(
+    mut rx: Receiver<Result<Vec<u8>, Error>>,
+    filesystem: impl FileSystem + Send + Sync + 'static,
+    log_path: PathBuf,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_millis(250)).await;
+            while let Some(Ok(data)) = rx.recv().await {
+                // TODO: find a better way instead of ignoring error ?
+                let _ = filesystem.append(&log_path, data).await;
+            }
+        }
+    })
+}
+
+type CreateProcessOutput = (Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>);
+
+fn create_process_with_log_tasks(
+    name: &str,
+    command: &str,
+    args: &Vec<String>,
+    env: &Vec<(String, String)>,
+    log_path: &PathBuf,
+    filesystem: impl FileSystem + Send + Sync + 'static,
+) -> Result<CreateProcessOutput, ProviderError> {
+    // create process
+    let mut process = Command::new(command)
+        .args(args)
+        .envs(env.to_owned())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|err| ProviderError::NodeSpawningFailed(name.to_string(), err.into()))?;
+    let stdout = process.stdout.take().expect("infaillible, stdout is piped");
+    let stderr = process.stderr.take().expect("Infaillible, stderr is piped");
+
+    // create additionnal long-running tasks for logs
+    let (stdout_tx, rx) = mpsc::channel(10);
+    let stderr_tx = stdout_tx.clone();
+    let stdout_reading_handle = create_stream_polling_task(stdout, stdout_tx);
+    let stderr_reading_handle = create_stream_polling_task(stderr, stderr_tx);
+    let log_writing_handle = create_log_writing_task(rx, filesystem, log_path.to_owned());
+
+    Ok((
+        process,
+        stdout_reading_handle,
+        stderr_reading_handle,
+        log_writing_handle,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{ffi::OsString, fs, str::FromStr};
+
+    use procfs::process::Process;
+    use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
+    use tokio::time::timeout;
+
+    use super::*;
+    use crate::shared::types::TransferedFile;
+
+    #[test]
+    fn provider_capabilities_method_should_return_provider_capabilities() {
+        let fs = InMemoryFileSystem::default();
+        let provider = NativeProvider::new(fs);
+
+        let capabilities = provider.capabilities();
 
         assert_eq!(
-            native_provider.filesystem.operations[0],
-            Operation::CreateDir {
-                path: "/tmp/cfg".into(),
+            capabilities,
+            &ProviderCapabilities {
+                requires_image: false
             }
         );
     }
 
     #[tokio::test]
-    #[should_panic(expected = "FSError(OpError(\"create\"))")]
-    async fn test_fielsystem_usage_fails() {
-        let mut native_provider: NativeProvider<MockFilesystem> = NativeProvider::new(
-            "something",
-            "./",
-            "/tmp",
-            MockFilesystem::with_create_dir_error(MockError::OpError("create".into())),
-        );
+    async fn provider_tmp_dir_method_should_set_the_temporary_for_provider() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/someotherdir").unwrap(),
+                InMemoryFile::dir(),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone()).tmp_dir("/someotherdir");
 
-        native_provider.create_namespace().await.unwrap();
+        // we create a namespace to ensure tmp dir will be used to store namespace
+        let namespace = provider.create_namespace().await.unwrap();
+
+        assert!(namespace.base_dir().starts_with("/someotherdir"))
     }
 
     #[tokio::test]
-    async fn test_get_node_ip() {
-        let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+    async fn provider_create_namespace_method_should_create_a_new_namespace_and_returns_it() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
 
-        assert_eq!(native_provider.get_node_ip().await.unwrap(), LOCALHOST);
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // ensure namespace directory is created
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(namespace.base_dir().as_os_str()));
+
+        // ensure namespace is added to provider namespaces
+        assert_eq!(provider.namespaces().await.len(), 1);
+
+        // ensure the only provider namespace is the same one as the one we just created
+        assert!(provider.namespaces().await.get(namespace.id()).is_some());
     }
 
     #[tokio::test]
-    async fn test_run_command_when_bash_is_removed() {
-        let native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+    async fn provider_namespaces_method_should_return_empty_namespaces_map_if_the_provider_has_no_namespaces(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
 
-        let result: RunCommandResponse = native_provider
-            .run_command(
-                vec!["bash".into(), "ls".into()],
-                NativeRunCommandOptions::default(),
+        assert_eq!(provider.namespaces().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn provider_namespaces_method_should_return_filled_namespaces_map_if_the_provider_has_one_namespace(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+
+        let namespace = provider.create_namespace().await.unwrap();
+
+        assert_eq!(provider.namespaces().await.len(), 1);
+        assert!(provider.namespaces().await.get(namespace.id()).is_some());
+    }
+
+    #[tokio::test]
+    async fn provider_namespaces_method_should_return_filled_namespaces_map_if_the_provider_has_two_namespaces(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+
+        let namespace1 = provider.create_namespace().await.unwrap();
+        let namespace2 = provider.create_namespace().await.unwrap();
+
+        assert_eq!(provider.namespaces().await.len(), 2);
+        assert!(provider.namespaces().await.get(namespace1.id()).is_some());
+        assert!(provider.namespaces().await.get(namespace2.id()).is_some());
+    }
+
+    #[tokio::test]
+    async fn namespace_spawn_node_method_should_creates_a_new_node_correctly() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/file1").unwrap(),
+                InMemoryFile::file("My file 1"),
+            ),
+            (
+                OsString::from_str("/file2").unwrap(),
+                InMemoryFile::file("My file 2"),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        let node = namespace
+            .spawn_node(
+                SpawnNodeOptions::new("mynode", "./testing/dummy_node")
+                    .args(vec![
+                        "-flag1",
+                        "--flag2",
+                        "--option1=value1",
+                        "-option2=value2",
+                        "--option3 value3",
+                        "-option4 value4",
+                    ])
+                    .env(vec![
+                        ("MY_VAR_1", "MY_VALUE_1"),
+                        ("MY_VAR_2", "MY_VALUE_2"),
+                        ("MY_VAR_3", "MY_VALUE_3"),
+                    ])
+                    .injected_files(vec![
+                        TransferedFile::new("/file1", "/cfg/file1"),
+                        TransferedFile::new("/file2", "/data/file2"),
+                    ]),
             )
             .await
             .unwrap();
 
+        // ensure node directories are created
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.base_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.config_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.data_dir().as_os_str()));
+        assert!(fs
+            .files
+            .read()
+            .await
+            .contains_key(node.scripts_dir().as_os_str()));
+
+        // ensure injected files are presents
         assert_eq!(
-            result,
-            RunCommandResponse {
-                exit_code: ExitStatus::from_raw(0),
-                std_out: "Cargo.toml\nsrc\n".into(),
-                std_err: None,
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!("{}/file1", node.config_dir().to_string_lossy()))
+                        .unwrap()
+                )
+                .unwrap()
+                .contents()
+                .unwrap(),
+            "My file 1"
+        );
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!("{}/file2", node.data_dir().to_string_lossy()))
+                        .unwrap()
+                )
+                .unwrap()
+                .contents()
+                .unwrap(),
+            "My file 2"
+        );
+
+        // retrieve running process
+        let processes = get_processes_by_name("dummy_node").await;
+
+        // ensure only one dummy process exists
+        assert_eq!(processes.len(), 1);
+        let node_process = processes.first().unwrap();
+
+        // ensure process has correct state
+        assert!(matches!(
+            node_process.stat().unwrap().state().unwrap(),
+            // process can be running or sleeping because we sleep between echo calls
+            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+        ));
+
+        // ensure process is passed correct args
+        let node_args = node_process.cmdline().unwrap();
+        assert!(node_args.contains(&"-flag1".to_string()));
+        assert!(node_args.contains(&"--flag2".to_string()));
+        assert!(node_args.contains(&"--option1=value1".to_string()));
+        assert!(node_args.contains(&"-option2=value2".to_string()));
+        assert!(node_args.contains(&"--option3 value3".to_string()));
+        assert!(node_args.contains(&"-option4 value4".to_string()));
+
+        // ensure process has correct environment
+        let node_env = node_process.environ().unwrap();
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_1").unwrap())
+                .unwrap(),
+            "MY_VALUE_1"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_2").unwrap())
+                .unwrap(),
+            "MY_VALUE_2"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_3").unwrap())
+                .unwrap(),
+            "MY_VALUE_3"
+        );
+
+        // ensure log file is created and logs are written and keep being written for some time
+        timeout(Duration::from_secs(30), async {
+            let mut expected_logs_line_count = 2;
+
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= expected_logs_line_count {
+                            if expected_logs_line_count >= 6 {
+                                return;
+                            } else {
+                                expected_logs_line_count += 2;
+                            }
+                        }
+                    }
+                }
             }
-        );
+        })
+        .await
+        .unwrap();
+
+        // ensure node is present in namespace
+        assert_eq!(namespace.nodes().await.len(), 1);
+        assert!(namespace.nodes().await.get(node.name()).is_some());
     }
 
     #[tokio::test]
-    async fn test_run_command_when_dash_c_is_provided() {
-        let native_provider = NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+    async fn namespace_spawn_node_method_should_returns_an_error_if_a_node_already_exists_with_this_name(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
 
-        let result = native_provider.run_command(
-            vec!["-c".into(), "ls".into()],
-            NativeRunCommandOptions::default(),
-        );
-
-        let a = result.await;
-        assert!(a.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_run_command_when_error_return_error() {
-        let native_provider = NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
-
-        let mut some = native_provider.run_command(
-            vec!["ls".into(), "ls".into()],
-            NativeRunCommandOptions::default(),
-        );
-
-        assert!(some.await.is_err());
-
-        some = native_provider.run_command(
-            vec!["ls".into(), "ls".into()],
-            NativeRunCommandOptions {
-                is_failure_allowed: true,
-            },
-        );
-
-        assert!(some.await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_create_resource() {
-        let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
-
-        let resource_def: PodDef = PodDef {
-            metadata: PodMetadata {
-                name: "string".to_owned(),
-                namespace: "string".to_owned(),
-                labels: PodLabels {
-                    app: "String".to_owned(),
-                    zombie_ns: "String".to_owned(),
-                    name: "String".to_owned(),
-                    instance: "String".to_owned(),
-                    zombie_role: ZombieRole::Node,
-                },
-            },
-            spec: PodSpec {
-                cfg_path: "string".to_owned(),
-                data_path: "string".to_owned(),
-                ports: vec![],
-                command: vec!["ls".to_owned()],
-                env: vec![],
-            },
-        };
-
-        native_provider
-            .create_resource(resource_def, false, false)
+        namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
-        assert_eq!(native_provider.process_map.len(), 1);
-    }
-    #[tokio::test]
-    async fn test_create_resource_wait_ready() {
-        let mut native_provider: NativeProvider<MockFilesystem> =
-            NativeProvider::new("something", "./", "/tmp", MockFilesystem::new());
+        let result = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await;
 
-        let resource_def: PodDef = PodDef {
-            metadata: PodMetadata {
-                name: "string".to_owned(),
-                namespace: "string".to_owned(),
-                labels: PodLabels {
-                    app: "String".to_owned(),
-                    zombie_ns: "String".to_owned(),
-                    name: "String".to_owned(),
-                    instance: "String".to_owned(),
-                    zombie_role: ZombieRole::Node,
-                },
-            },
-            spec: PodSpec {
-                cfg_path: "string".to_owned(),
-                data_path: "string".to_owned(),
-                ports: vec![],
-                command: vec!["for i in $(seq 1 10); do echo $i;sleep 1;done".into()],
-                env: vec![],
-            },
+        // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
+        match result {
+            Ok(_) => panic!("expected result to be an error"),
+            Err(err) => assert_eq!(err.to_string(), "Duplicated node name: mynode"),
         };
+    }
 
-        native_provider
-            .create_resource(resource_def, false, true)
+    #[tokio::test]
+    async fn namespace_generate_files_method_should_create_files_at_the_correct_locations_using_given_commands(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        namespace
+            .generate_files(GenerateFilesOptions::new(vec![
+                GenerateFileCommand::new("echo", "/myfile1").args(vec!["My file 1"]),
+                GenerateFileCommand::new("sh", "/myfile2")
+                    .args(vec!["-c", "echo -n $MY_CONTENT"])
+                    .env(vec![("MY_CONTENT", "My file 2")]),
+            ]))
             .await
             .unwrap();
 
-        assert_eq!(native_provider.process_map.len(), 1);
+        // ensure files have been generated correctly to right location
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!(
+                        "{}/myfile1",
+                        namespace.base_dir().to_string_lossy()
+                    ))
+                    .unwrap()
+                )
+                .unwrap()
+                .contents()
+                .unwrap(),
+            "My file 1\n"
+        );
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(
+                    &OsString::from_str(&format!(
+                        "{}/myfile2",
+                        namespace.base_dir().to_string_lossy()
+                    ))
+                    .unwrap()
+                )
+                .unwrap()
+                .contents()
+                .unwrap(),
+            "My file 2"
+        );
+
+        // ensure temporary node has been destroyed
+        assert_eq!(namespace.nodes().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn namespace_destroy_should_destroy_all_namespace_nodes_and_namespace_itself() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn 2 dummy nodes to populate namespace
+        namespace
+            .spawn_node(SpawnNodeOptions::new("mynode1", "./testing/dummy_node"))
+            .await
+            .unwrap();
+        namespace
+            .spawn_node(SpawnNodeOptions::new("mynode2", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // ensure nodes are presents
+        assert_eq!(namespace.nodes().await.len(), 2);
+
+        namespace.destroy().await.unwrap();
+
+        // ensure nodes are destroyed
+        assert_eq!(namespace.nodes().await.len(), 0);
+
+        // retrieve running process
+        let processes = get_processes_by_name("dummy_node").await;
+
+        // ensure no running process exists
+        assert_eq!(processes.len(), 0);
+
+        // ensure namespace is destroyed
+        assert_eq!(provider.namespaces().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn node_logs_method_should_return_its_logs_as_a_string() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // wait some time for node to write logs
+        sleep(Duration::from_secs(5)).await;
+
+        assert_eq!(
+            fs.files
+                .read()
+                .await
+                .get(node.log_path().as_os_str())
+                .unwrap()
+                .contents()
+                .unwrap(),
+            node.logs().await.unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn node_dump_logs_method_should_writes_its_logs_to_a_given_destination() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // wait some time for node to write logs
+        sleep(Duration::from_secs(5)).await;
+
+        node.dump_logs(PathBuf::from("/tmp/my_log_file"))
+            .await
+            .unwrap();
+
+        let files = fs.files.read().await;
+
+        assert_eq!(
+            files
+                .get(node.log_path().as_os_str())
+                .unwrap()
+                .contents()
+                .unwrap(),
+            files
+                .get(&OsString::from_str("/tmp/my_log_file").unwrap())
+                .unwrap()
+                .contents()
+                .unwrap(),
+        );
+    }
+
+    #[tokio::test]
+    async fn node_run_command_method_should_execute_the_command_successfully_and_returns_stdout() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        let result = node
+            .run_command(
+                RunCommandOptions::new("sh")
+                    .args(vec!["-c", "echo $MY_ENV_VAR"])
+                    .env(vec![("MY_ENV_VAR", "Here is my content")]),
+            )
+            .await;
+
+        assert!(matches!(result, Ok(Ok(stdout)) if stdout == "Here is my content\n"));
+    }
+
+    #[tokio::test]
+    async fn node_run_command_method_should_execute_the_command_successfully_and_returns_error_code_and_stderr_if_an_error_happened(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        let result = node
+            .run_command(RunCommandOptions::new("sh").args(vec!["-fakeargs"]))
+            .await;
+
+        assert!(
+            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && !stderr.is_empty())
+        );
+    }
+
+    #[tokio::test]
+    async fn node_run_command_method_should_fail_to_execute_the_command_if_command_doesnt_exists() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        let err = node
+            .run_command(RunCommandOptions::new("myrandomprogram"))
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Error running command 'myrandomprogram': No such file or directory (os error 2)"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_run_script_method_should_execute_the_script_successfully_and_returns_stdout() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/tmp/dummy_script").unwrap(),
+                InMemoryFile::mirror(
+                    "/tmp/dummy_script",
+                    fs::read_to_string("./testing/dummy_script").unwrap(),
+                ),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        let result = node
+            .run_script(
+                RunScriptOptions::new("/tmp/dummy_script")
+                    .args(vec!["-c"])
+                    .env(vec![("MY_ENV_VAR", "With env")]),
+            )
+            .await;
+
+        assert!(matches!(result, Ok(Ok(stdout)) if stdout == "My script\nWith env\nWith args\n"));
+    }
+
+    #[tokio::test]
+    async fn node_copy_file_from_node_method_should_copy_node_remote_file_to_local_path() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // wait 3s for node to start writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        node.copy_file_from_node(
+            PathBuf::from("/mynode.log"),
+            PathBuf::from("/nodelog.backup"),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            fs.files.read().await.get(node.log_path().as_os_str()),
+            fs.files
+                .read()
+                .await
+                .get(&OsString::from_str("/nodelog.backup").unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn node_pause_method_should_pause_the_node_process() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // wait 2s for node to spawn
+        sleep(Duration::from_secs(2)).await;
+
+        // retrieve running process
+        let processes = get_processes_by_name("dummy_node").await;
+        let node_process = processes.first().unwrap();
+
+        // ensure process has correct state pre-pause
+        assert!(matches!(
+            node_process.stat().unwrap().state().unwrap(),
+            // process can be running or sleeping because we sleep between echo calls
+            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+        ));
+
+        node.pause().await.unwrap();
+
+        // wait node 1s to stop writing logs
+        sleep(Duration::from_secs(1)).await;
+        let logs = node.logs().await.unwrap();
+
+        // ensure process has been paused for 10sec and logs stopped writing
+        let _ = timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert!(matches!(
+                    node_process.stat().unwrap().state().unwrap(),
+                    procfs::process::ProcState::Stopped
+                ));
+                assert_eq!(logs, node.logs().await.unwrap());
+            }
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn node_resume_method_should_resume_the_paused_node_process() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // wait 2s for node to spawn
+        sleep(Duration::from_secs(2)).await;
+
+        // retrieve running process
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
+        let node_process = processes.first().unwrap();
+
+        node.pause().await.unwrap();
+
+        // ensure process has been paused for 5sec
+        let _ = timeout(Duration::from_secs(5), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert!(matches!(
+                    node_process.stat().unwrap().state().unwrap(),
+                    procfs::process::ProcState::Stopped
+                ));
+            }
+        })
+        .await;
+
+        node.resume().await.unwrap();
+
+        // ensure process has been resumed for 10sec
+        let _ = timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert!(matches!(
+                    node_process.stat().unwrap().state().unwrap(),
+                    // process can be running or sleeping because we sleep between echo calls
+                    procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+                ));
+            }
+        })
+        .await;
+
+        // ensure logs continue being written for some time
+        timeout(Duration::from_secs(30), async {
+            let mut expected_logs_line_count = 2;
+
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= expected_logs_line_count {
+                            if expected_logs_line_count >= 6 {
+                                return;
+                            } else {
+                                expected_logs_line_count += 2;
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn node_restart_should_kill_the_node_and_respawn_it_successfully() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (
+                OsString::from_str("/file1").unwrap(),
+                InMemoryFile::file("My file 1"),
+            ),
+            (
+                OsString::from_str("/file2").unwrap(),
+                InMemoryFile::file("My file 2"),
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        let node = namespace
+            .spawn_node(
+                SpawnNodeOptions::new("mynode", "./testing/dummy_node")
+                    .args(vec![
+                        "-flag1",
+                        "--flag2",
+                        "--option1=value1",
+                        "-option2=value2",
+                        "--option3 value3",
+                        "-option4 value4",
+                    ])
+                    .env(vec![
+                        ("MY_VAR_1", "MY_VALUE_1"),
+                        ("MY_VAR_2", "MY_VALUE_2"),
+                        ("MY_VAR_3", "MY_VALUE_3"),
+                    ])
+                    .injected_files(vec![
+                        TransferedFile::new("/file1", "/cfg/file1"),
+                        TransferedFile::new("/file2", "/data/file2"),
+                    ]),
+            )
+            .await
+            .unwrap();
+
+        // wait 3s for node to spawn and start writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
+        let old_process_id = processes.first().unwrap().pid();
+        let old_logs_count = node.logs().await.unwrap().lines().count();
+
+        node.restart(None).await.unwrap();
+
+        // wait 3s for node to restart and restart writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
+        let node_process = processes.first().unwrap();
+
+        // ensure process has correct state
+        assert!(matches!(
+            node_process.stat().unwrap().state().unwrap(),
+            // process can be running or sleeping because we sleep between echo calls
+            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
+        ));
+
+        // ensure PID changed
+        assert_ne!(old_process_id, node_process.pid());
+
+        // ensure process restarted with correct args
+        let node_args = node_process.cmdline().unwrap();
+        assert!(node_args.contains(&"-flag1".to_string()));
+        assert!(node_args.contains(&"--flag2".to_string()));
+        assert!(node_args.contains(&"--option1=value1".to_string()));
+        assert!(node_args.contains(&"-option2=value2".to_string()));
+        assert!(node_args.contains(&"--option3 value3".to_string()));
+        assert!(node_args.contains(&"-option4 value4".to_string()));
+
+        // ensure process restarted with correct environment
+        let node_env = node_process.environ().unwrap();
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_1").unwrap())
+                .unwrap(),
+            "MY_VALUE_1"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_2").unwrap())
+                .unwrap(),
+            "MY_VALUE_2"
+        );
+        assert_eq!(
+            node_env
+                .get(&OsString::from_str("MY_VAR_3").unwrap())
+                .unwrap(),
+            "MY_VALUE_3"
+        );
+
+        // ensure log writing restarted and they keep being written for some time
+        timeout(Duration::from_secs(30), async {
+            let mut expected_logs_line_count = old_logs_count;
+
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
+                    if let Some(contents) = file.contents() {
+                        if contents.lines().count() >= expected_logs_line_count {
+                            if expected_logs_line_count >= old_logs_count + 6 {
+                                return;
+                            } else {
+                                expected_logs_line_count += 2;
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        // ensure node is present in namespace
+        assert_eq!(namespace.nodes().await.len(), 1);
+        assert!(namespace.nodes().await.get(node.name()).is_some());
+    }
+
+    #[tokio::test]
+    async fn node_destroy_method_should_destroy_the_node_itfself_and_remove_process_and_stop_logs_writing(
+    ) {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let provider = NativeProvider::new(fs.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await
+            .unwrap();
+
+        // wait 3s for node to start and begin writing logs
+        sleep(Duration::from_secs(3)).await;
+
+        node.destroy().await.unwrap();
+
+        // wait node 1s to be killed and stop writing logs
+        sleep(Duration::from_secs(1)).await;
+        let logs = node.logs().await.unwrap();
+
+        // ensure process is not running anymore
+        let processes = get_processes_by_name("dummy_node").await;
+        assert_eq!(processes.len(), 0);
+
+        // ensure logs are not being written anymore
+        let _ = timeout(Duration::from_secs(10), async {
+            loop {
+                sleep(Duration::from_millis(200)).await;
+
+                assert_eq!(logs, node.logs().await.unwrap());
+            }
+        })
+        .await;
+
+        // ensure node doesn't exists anymore in namespace
+        assert_eq!(namespace.nodes().await.len(), 0);
+    }
+
+    async fn get_processes_by_name(name: &str) -> Vec<Process> {
+        procfs::process::all_processes()
+            .unwrap()
+            .filter_map(|process| {
+                if let Ok(process) = process {
+                    process
+                        .cmdline()
+                        .iter()
+                        .any(|args| args.iter().any(|arg| arg.contains(name)))
+                        .then_some(process)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Process>>()
     }
 }

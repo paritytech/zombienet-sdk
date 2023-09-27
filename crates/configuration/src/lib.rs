@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)]
 mod global_settings;
 mod hrmp_channel;
 mod network;
@@ -11,3 +12,5 @@ pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
 pub use network::{NetworkConfig, NetworkConfigBuilder};
 pub use parachain::{ParachainConfig, ParachainConfigBuilder};
 pub use relaychain::{RelaychainConfig, RelaychainConfigBuilder};
+// re-export shared
+pub use shared::{node::NodeConfig, types};

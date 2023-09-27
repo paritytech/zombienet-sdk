@@ -2,12 +2,17 @@ use std::error::Error;
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{ser::SerializeStruct, Serialize};
+use serde::{
+    de::{self},
+    ser::SerializeStruct,
+    Deserialize, Serialize,
+};
 
 use super::{
     errors::{ConversionError, FieldError},
     helpers::merge_errors,
 };
+use crate::shared::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 /// A resource quantity used to define limits (k8s/podman only).
 /// It can be constructed from a `&str` or u64, if it fails, it returns a [`ConversionError`].
@@ -28,7 +33,7 @@ use super::{
 /// assert_eq!(quantity3.as_str(), "1Gi");
 /// assert_eq!(quantity4.as_str(), "10000");
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResourceQuantity(String);
 
 impl ResourceQuantity {
@@ -43,7 +48,7 @@ impl TryFrom<&str> for ResourceQuantity {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$")
-                .expect("should compile with success. this is a bug, please report it: https://github.com/paritytech/zombienet-sdk/issues");
+                .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
         }
 
         if !RE.is_match(value) {
@@ -72,18 +77,18 @@ pub struct Resources {
     limit_cpu: Option<ResourceQuantity>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ResourcesField {
+    memory: Option<ResourceQuantity>,
+    cpu: Option<ResourceQuantity>,
+}
+
 impl Serialize for Resources {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut state = serializer.serialize_struct("Resources", 2)?;
-
-        #[derive(Serialize)]
-        struct ResourcesField {
-            memory: Option<ResourceQuantity>,
-            cpu: Option<ResourceQuantity>,
-        }
 
         if self.request_memory.is_some() || self.request_memory.is_some() {
             state.serialize_field(
@@ -110,6 +115,52 @@ impl Serialize for Resources {
         }
 
         state.end()
+    }
+}
+
+struct ResourcesVisitor;
+
+impl<'de> de::Visitor<'de> for ResourcesVisitor {
+    type Value = Resources;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a resources object")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::MapAccess<'de>,
+    {
+        let mut resources: Resources = Resources::default();
+
+        while let Some((key, value)) = map.next_entry::<String, ResourcesField>()? {
+            match key.as_str() {
+                "requests" => {
+                    resources.request_memory = value.memory;
+                    resources.request_cpu = value.cpu;
+                },
+                "limits" => {
+                    resources.limit_memory = value.memory;
+                    resources.limit_cpu = value.cpu;
+                },
+                _ => {
+                    return Err(de::Error::unknown_field(
+                        &key,
+                        &["requests", "limits", "cpu", "memory"],
+                    ))
+                },
+            }
+        }
+        Ok(resources)
+    }
+}
+
+impl<'de> Deserialize<'de> for Resources {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ResourcesVisitor)
     }
 }
 
@@ -249,6 +300,7 @@ impl ResourcesBuilder {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::NetworkConfig;
 
     macro_rules! impl_resources_quantity_unit_test {
         ($val:literal) => {{
@@ -348,6 +400,18 @@ mod tests {
         assert_eq!(resources.request_cpu().unwrap().as_str(), "1G");
         assert_eq!(resources.limit_cpu().unwrap().as_str(), "500M");
         assert_eq!(resources.limit_memory().unwrap().as_str(), "2G");
+    }
+
+    #[test]
+    fn resources_config_toml_import_should_succeeds_and_returns_a_resources_config() {
+        let load_from_toml =
+            NetworkConfig::load_from_toml("./testing/snapshots/0001-big-network.toml").unwrap();
+
+        let resources = load_from_toml.relaychain().default_resources().unwrap();
+        assert_eq!(resources.request_memory().unwrap().as_str(), "500M");
+        assert_eq!(resources.request_cpu().unwrap().as_str(), "100000");
+        assert_eq!(resources.limit_cpu().unwrap().as_str(), "10Gi");
+        assert_eq!(resources.limit_memory().unwrap().as_str(), "4000M");
     }
 
     #[test]

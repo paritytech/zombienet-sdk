@@ -59,6 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("new collator deployed!");
 
     // For now let just loop....
+    #[allow(clippy::empty_loop)]
     loop {}
-    Ok(())
+
+    // Ok(())
 }

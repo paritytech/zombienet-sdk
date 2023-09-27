@@ -15,14 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_node(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
-            p.with_id(100).cumulus_based(true).with_collator(|n| {
-                n.with_name("collator").with_command("polkadot-parachain")
-            })
+            p.with_id(100)
+                .cumulus_based(true)
+                .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
         .unwrap();
-
-    println!("{:?}", &config);
 
     let fs = LocalFileSystem;
     let provider = NativeProvider::new(fs.clone());
@@ -41,14 +39,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::time::sleep(Duration::from_secs(5)).await;
 
+    // Example of some opertions that you can do
+    // with `nodes` (e.g pause, resume, restart)
     // pause the node
-    network.pause_node("new1").await?;
-    println!("node new1 paused!");
+    // network.pause_node("new1").await?;
+    // println!("node new1 paused!");
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // tokio::time::sleep(Duration::from_secs(5)).await;
 
-    network.resume_node("new1").await?;
-    println!("node new1 resumed!");
+    // network.resume_node("new1").await?;
+    // println!("node new1 resumed!");
 
     let col_opts = AddNodeOpts {
         command: Some("polkadot-parachain".try_into()?),

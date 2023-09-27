@@ -86,7 +86,7 @@ impl ChainSpec {
         self
     }
 
-    pub(crate) fn commad(mut self, command: impl Into<String>) -> Self {
+    pub(crate) fn command(mut self, command: impl Into<String>) -> Self {
         self.command = Some(command.into());
         self
     }
@@ -353,7 +353,7 @@ impl ChainSpec {
             self.write_spec(scoped_fs, content).await?;
         } else {
             // TODO: add a warning here
-	   todo!();
+            todo!();
         }
         Ok(())
     }

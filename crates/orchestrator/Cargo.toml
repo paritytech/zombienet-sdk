@@ -14,11 +14,11 @@ thiserror = { workspace = true }
 # TODO: add logger in a new pr.
 #log = { workspace = true }
 multiaddr = { workspace = true }
-rand = "0.8"
-sha2 = { version = "0.10.2", default-features = false }
-hex = "0.4"
-sp-core = "22.0.0"
 serde_json = { workspace = true }
 futures = { workspace = true }
-libp2p = { version = "0.52" }
 anyhow = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true, default-features = false }
+hex = { workspace = true }
+sp-core = { workspace = true }
+libp2p = { workspace = true }

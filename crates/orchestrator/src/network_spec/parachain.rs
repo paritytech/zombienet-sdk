@@ -98,7 +98,7 @@ impl ParachainSpec {
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.
-                Some(chain_spec_builder.commad(main_cmd.as_str()))
+                Some(chain_spec_builder.command(main_cmd.as_str()))
             }
         } else {
             None

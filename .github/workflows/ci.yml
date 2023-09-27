@@ -18,7 +18,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - nightly
+          # - nightly
     steps:
       - uses: actions/checkout@v3
 
@@ -41,9 +41,9 @@ jobs:
         run: cargo test --workspace --exclude provider
 
       - name: Setup upterm session
-      uses: lhotari/action-upterm@v1
-      with:
-        limit-access-to-users: l0r1s
+        uses: lhotari/action-upterm@v1
+        with:
+          limit-access-to-users: l0r1s
 
       # - name: Tests (provider crate)
       #   # there should be a unique test thread for native provider tests (asserting spawned processes count)

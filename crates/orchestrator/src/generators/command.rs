@@ -124,14 +124,12 @@ pub fn generate_for_cumulus_node(
             Arg::Option(k, v) => {
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
-                } else {
-                    if k.eq(&"port") && v.eq(&"30333") {
+                } else if k.eq(&"port") && v.eq(&"30333") {
                         full_node_p2p_needs_to_be_injected = true;
                         None
-                    } else {
+                } else {
                         let kv_str = format!("{} {}", k, v);
                         Some(kv_str)
-                    }
                 }
             },
         })

@@ -125,11 +125,11 @@ pub fn generate_for_cumulus_node(
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
                 } else if k.eq(&"port") && v.eq(&"30333") {
-                        full_node_p2p_needs_to_be_injected = true;
-                        None
+                    full_node_p2p_needs_to_be_injected = true;
+                    None
                 } else {
-                        let kv_str = format!("{} {}", k, v);
-                        Some(kv_str)
+                    let kv_str = format!("{} {}", k, v);
+                    Some(kv_str)
                 }
             },
         })

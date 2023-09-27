@@ -15,7 +15,7 @@ use crate::{
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone)]
 pub struct NodeSpec {
-    /// Node name (should be unique or an index will be appended).
+    // Node name (should be unique or an index will be appended).
     pub(crate) name: String,
 
     /// Node key, used for compute the p2p identity.

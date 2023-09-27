@@ -115,7 +115,8 @@ where
         },
         ZombieRole::CumulusCollator => {
             let para = ctx.parachain.expect("parachain must be part of the context, this is a bug");
-            generators::command::generate_for_cumulus_node(node, gen_opts, para.id)
+            let full_p2p = generators::port::generate(None)?;
+            generators::command::generate_for_cumulus_node(node, gen_opts, para.id, full_p2p.0)
         }
         _ => unreachable!()
         // TODO: do we need those?

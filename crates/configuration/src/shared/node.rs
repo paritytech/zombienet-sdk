@@ -10,10 +10,13 @@ use super::{
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext, U128},
 };
-use crate::{shared::{
-    resources::Resources,
-    types::{Arg, Port},
-}, utils::default_as_true};
+use crate::{
+    shared::{
+        resources::Resources,
+        types::{Arg, Port},
+    },
+    utils::default_as_true,
+};
 
 /// An environment variable with a name and a value.
 /// It can be constructed from a `(&str, &str)`.

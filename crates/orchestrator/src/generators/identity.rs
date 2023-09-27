@@ -26,7 +26,7 @@ mod tests {
     #[test]
     fn generate_for_alice() {
         let s = "alice";
-        let (key, peer_id) = generate_for_node(&s).unwrap();
+        let (key, peer_id) = generate_for_node(s).unwrap();
         assert_eq!(
             &key,
             "2bd806c97f0e00af1a1fc3328fa763a9269723c8db8fac4f93af71db186d6e90"

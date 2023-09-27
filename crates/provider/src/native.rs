@@ -272,6 +272,16 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             println!("{:#?}, {:#?}", command, args);
             println!("{:#?}", self.base_dir.to_string_lossy());
             println!("{:#?}", local_output_path.as_os_str());
+            let local_output_full_path = format!(
+                "{}{}{}",
+                self.base_dir.to_string_lossy(),
+                if local_output_path.starts_with("/") {
+                    ""
+                } else {
+                    "/"
+                },
+                local_output_path.to_string_lossy()
+            );
 
             match temp_node
                 .run_command(RunCommandOptions { command, args, env })
@@ -280,14 +290,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             {
                 Ok(contents) => self
                     .filesystem
-                    .write(
-                        format!(
-                            "{}/{}",
-                            self.base_dir.to_string_lossy(),
-                            local_output_path.to_string_lossy()
-                        ),
-                        contents,
-                    )
+                    .write(local_output_full_path, contents)
                     .await
                     .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
                 Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,

@@ -9,7 +9,7 @@ pub fn generate(
     args: &[&String],
     p2p_cert: &Option<String>,
 ) -> Result<String, GeneratorError> {
-    let addr = if let Some(index) = args.iter().position(|arg| (*arg).eq("--lister-addr")) {
+    let addr = if let Some(index) = args.iter().position(|arg| (*arg).eq("--listen-addr")) {
         let listen_value = args
             .get(index + 1)
             .ok_or(GeneratorError::BootnodeAddrGeneration(

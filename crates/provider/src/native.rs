@@ -60,6 +60,10 @@ impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
     pub fn new(filesystem: FS) -> Self {
         NativeProvider {
             capabilities: ProviderCapabilities::new(),
+            // NOTE: temp_dir in linux return `/tmp` but on mac something like
+            //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having
+            // one `trailing slash` and the other no can cause issues if
+            // you try to build a fullpath by concatenate. Use Pathbuf to prevent the issue.
             tmp_dir: std::env::temp_dir(),
             filesystem,
             inner: Arc::new(RwLock::new(NativeProviderInner {
@@ -95,7 +99,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
         let id = format!("zombie_{}", Uuid::new_v4());
         let mut inner = self.inner.write().await;
 
-        let base_dir = PathBuf::from(format!("{}{}", self.tmp_dir.to_string_lossy(), &id));
+        let base_dir = PathBuf::from_iter([&self.tmp_dir, &PathBuf::from(&id)]);
         self.filesystem.create_dir(&base_dir).await?;
 
         let namespace = NativeNamespace {
@@ -177,13 +181,6 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             self.filesystem.create_dir(&data_dir),
             self.filesystem.create_dir(&scripts_dir),
         )?;
-
-        // Created needed paths
-        // for path in options.created_paths {
-        //     self.filesystem
-        //         .create_dir_all(format!("{}{}", &base_dir.to_string_lossy(), path.to_string_lossy()))
-        //         .await?;
-        // }
 
         // Created needed paths
         let ops_fut: Vec<_> = options

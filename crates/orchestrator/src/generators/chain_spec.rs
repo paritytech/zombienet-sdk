@@ -353,6 +353,7 @@ impl ChainSpec {
             self.write_spec(scoped_fs, content).await?;
         } else {
             // TODO: add a warning here
+	   todo!();
         }
         Ok(())
     }

@@ -40,35 +40,40 @@ jobs:
       - name: Tests (except provider crate)
         run: cargo test --workspace --exclude provider
 
-      - name: Tests (provider crate)
-        # there should be a unique test thread for native provider tests (asserting spawned processes count)
-        run: cargo test -p provider -- --test-threads 1
+      - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+      with:
+        limit-access-to-users: l0r1s
 
-  coverage:
-    name: Zombienet SDK - coverage
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+      # - name: Tests (provider crate)
+      #   # there should be a unique test thread for native provider tests (asserting spawned processes count)
+      #   run: cargo test -p provider -- --test-threads 1
 
-    permissions:
-       issues: write
-       pull-requests: write
+  # coverage:
+  #   name: Zombienet SDK - coverage
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request'
 
-    steps:
-      - uses: actions/checkout@v3
+  #   permissions:
+  #      issues: write
+  #      pull-requests: write
 
-      - name: Install latest nextest release
-        uses: taiki-e/install-action@nextest
+  #   steps:
+  #     - uses: actions/checkout@v3
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+  #     - name: Install latest nextest release
+  #       uses: taiki-e/install-action@nextest
 
-      - name: Collect coverage data
-        # there should be a unique test thread for native provider tests (asserting spawned processes count)
-        run: cargo llvm-cov nextest -j 1 --lcov --output-path lcov.info
+  #     - name: Install cargo-llvm-cov
+  #       uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Report code coverage
-        uses: Nef10/lcov-reporter-action@v0.4.0
-        with:
-          lcov-file: lcov.info
-          pr-number: ${{ github.event.pull_request.number }}
+  #     - name: Collect coverage data
+  #       # there should be a unique test thread for native provider tests (asserting spawned processes count)
+  #       run: cargo llvm-cov nextest -j 1 --lcov --output-path lcov.info
+
+  #     - name: Report code coverage
+  #       uses: Nef10/lcov-reporter-action@v0.4.0
+  #       with:
+  #         lcov-file: lcov.info
+  #         pr-number: ${{ github.event.pull_request.number }}

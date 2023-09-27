@@ -31,7 +31,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut network = orchestrator.spawn(config).await?;
     println!("🚀🚀🚀🚀 network deployed");
     // add  a new node
-    let  opts = AddNodeOpts { rpc_port: Some(9444), is_validator: true, ..Default::default()};
+    let opts = AddNodeOpts {
+        rpc_port: Some(9444),
+        is_validator: true,
+        ..Default::default()
+    };
 
     // TODO: add check to ensure if unique
     network.add_node("new1", opts, None).await?;
@@ -47,13 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     network.resume_node("new1").await?;
     println!("node new1 resumed!");
 
-    let  col_opts = AddNodeOpts { command: Some("polkadot-parachain".try_into()?), ..Default::default() };
+    let col_opts = AddNodeOpts {
+        command: Some("polkadot-parachain".try_into()?),
+        ..Default::default()
+    };
     network.add_node("new-col-1", col_opts, Some(100)).await?;
     println!("new collator deployed!");
 
     // For now let just loop....
-    loop {
-
-    }
+    loop {}
     Ok(())
 }

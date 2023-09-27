@@ -82,11 +82,7 @@ impl NodeSpec {
         chain_context: &ChainDefaultContext,
     ) -> Result<Self, OrchestratorError> {
         // Check first if the image is set at node level, then try with the default
-        let image = if let Some(img) = node_config.image() {
-            Some(img.clone())
-        } else {
-            chain_context.default_image.cloned()
-        };
+        let image = node_config.image().or(chain_context.default_image).cloned();
 
         // Check first if the command is set at node level, then try with the default
         let command = if let Some(cmd) = node_config.command() {

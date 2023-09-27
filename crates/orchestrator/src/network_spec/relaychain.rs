@@ -53,19 +53,10 @@ impl RelaychainSpec {
         // set as `default_command` or
         // use the command of the first node.
         // If non of those is set, return an error.
-        let main_cmd = if let Some(cmd) = config.default_command() {
-            cmd
-        } else if let Some(first_node) = config.nodes().first() {
-            let Some(cmd) = first_node.command() else {
-                return Err(OrchestratorError::InvalidConfig("Relaychain, either default_command or command in the first node needs to be set.".to_string()));
-            };
-
-            cmd
-        } else {
-            return Err(OrchestratorError::InvalidConfig(
-                "Relaychain without nodes and default_command isn't set.".to_string(),
-            ));
-        };
+        let main_cmd = config
+            .default_command() // take default command if it exists
+            .or(config.nodes().first().and_then(|node| node.command())) // take the first node command if there is no default command 
+            .ok_or(Err(OrchestratorError::InvalidConfig("Relaychain, either default_command or first node with a command needs to be set.".to_string())))?; // returns error if both case above didn't worked
 
         let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay)
             .set_chain_name(config.chain().as_str());

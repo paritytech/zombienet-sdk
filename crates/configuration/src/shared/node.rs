@@ -10,10 +10,10 @@ use super::{
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext, U128},
 };
-use crate::shared::{
+use crate::{shared::{
     resources::Resources,
     types::{Arg, Port},
-};
+}, utils::default_as_true};
 
 /// An environment variable with a name and a value.
 /// It can be constructed from a `(&str, &str)`.
@@ -59,9 +59,9 @@ pub struct NodeConfig {
     pub(crate) command: Option<Command>,
     #[serde(default)]
     args: Vec<Arg>,
-    #[serde(alias = "validator")]
+    #[serde(alias = "validator", default = "default_as_true")]
     pub(crate) is_validator: bool,
-    #[serde(alias = "invulnerable")]
+    #[serde(alias = "invulnerable", default = "default_as_true")]
     pub(crate) is_invulnerable: bool,
     #[serde(alias = "bootnode")]
     pub(crate) is_bootnode: bool,

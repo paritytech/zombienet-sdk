@@ -1089,6 +1089,7 @@ mod tests {
                         collator
                             .with_name("charles")
                             .bootnode(true)
+                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
@@ -1096,6 +1097,7 @@ mod tests {
                         collator
                             .with_name("frank")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
                     })
@@ -1117,6 +1119,7 @@ mod tests {
                         collator
                             .with_name("georges")
                             .bootnode(true)
+                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
@@ -1124,6 +1127,7 @@ mod tests {
                         collator
                             .with_name("victor")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
                     })
@@ -1324,6 +1328,7 @@ mod tests {
                         collator
                             .with_name("charles")
                             .bootnode(true)
+                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })

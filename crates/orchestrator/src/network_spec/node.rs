@@ -115,7 +115,6 @@ impl NodeSpec {
         let accounts = generators::key::generate_for_node(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
-        //
         Ok(Self {
             name: node_config.name().to_string(),
             key,

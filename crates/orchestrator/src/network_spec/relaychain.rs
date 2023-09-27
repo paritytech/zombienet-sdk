@@ -89,13 +89,17 @@ impl RelaychainSpec {
         // We want to track the errors for all the nodes and report them ones
         let mut errs: Vec<OrchestratorError> = Default::default();
 
-        let mut nodes: Vec<NodeSpec> = Default::default();
-        config.nodes().iter().for_each(|node_config| {
-            match NodeSpec::from_config(node_config, &chain_context) {
-                Ok(node) => nodes.push(node),
-                Err(err) => errs.push(err),
-            }
-        });
+        let (nodes, errs) = config
+            .nodes()
+            .iter()
+            .map(|node_config| NodeSpec::from_config(node_config, &chain_context))
+            .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
+                match result {
+                    Ok(node) => nodes.push(node),
+                    Err(err) => errs.push(err),
+                }
+                (nodes, errs)
+            });
 
         if !errs.is_empty() {
             // TODO: merge errs

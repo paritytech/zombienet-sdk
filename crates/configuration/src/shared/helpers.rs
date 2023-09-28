@@ -64,7 +64,7 @@ pub fn ensure_parachain_id_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .expect("must be borrowable as mutable, this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues");
+        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
 
     if !context.used_parachain_ids.contains(&id) {
         context.used_parachain_ids.push(id);

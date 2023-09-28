@@ -67,16 +67,16 @@ mod tests {
     #[test]
     fn generate_pair_invalid_should_fail() {
         let s = "Alice";
-        let seed = format!("{}", s);
+        let seed = s.to_string();
 
         let pair = generate_pair::<sr25519::Pair>(&seed);
         assert!(pair.is_err());
     }
 
     #[test]
-    fn generate_invalid_sould_fail() {
+    fn generate_invalid_should_fail() {
         let s = "Alice";
-        let seed = format!("{}", s);
+        let seed = s.to_string();
 
         let pair = generate(&seed);
         assert!(pair.is_err());

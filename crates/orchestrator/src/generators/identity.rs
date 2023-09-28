@@ -4,8 +4,10 @@ use sha2::digest::Digest;
 
 use super::errors::GeneratorError;
 
-pub fn generate_for_node(name: &str) -> Result<(String, String), GeneratorError> {
-    let key = hex::encode(sha2::Sha256::digest(name));
+// Generate p2p identity for node
+// return `node-key` and `peerId`
+pub fn generate(node_name: &str) -> Result<(String, String), GeneratorError> {
+    let key = hex::encode(sha2::Sha256::digest(node_name));
 
     let bytes = <[u8; 32]>::from_hex(key.clone()).map_err(|_| {
         GeneratorError::IdentityGeneration("can not transform hex to [u8;32]".into())
@@ -26,7 +28,7 @@ mod tests {
     #[test]
     fn generate_for_alice() {
         let s = "alice";
-        let (key, peer_id) = generate_for_node(s).unwrap();
+        let (key, peer_id) = generate(s).unwrap();
         assert_eq!(
             &key,
             "2bd806c97f0e00af1a1fc3328fa763a9269723c8db8fac4f93af71db186d6e90"

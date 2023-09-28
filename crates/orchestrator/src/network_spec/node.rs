@@ -108,11 +108,11 @@ impl NodeSpec {
             node_config.args().into_iter().cloned().collect()
         };
 
-        let (key, peer_id) = generators::identity::generate_for_node(node_config.name())?;
+        let (key, peer_id) = generators::generate_node_identity(node_config.name())?;
 
         let mut name = node_config.name().to_string();
         let seed = format!("//{}{name}", name.remove(0).to_uppercase());
-        let accounts = generators::key::generate_for_node(&seed)?;
+        let accounts = generators::generate_node_keys(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
         Ok(Self {
@@ -136,10 +136,10 @@ impl NodeSpec {
             p2p_cert_hash: node_config.p2p_cert_hash().map(str::to_string),
             db_snapshot: node_config.db_snapshot().cloned(),
             accounts,
-            ws_port: generators::port::generate(node_config.ws_port())?,
-            rpc_port: generators::port::generate(node_config.rpc_port())?,
-            prometheus_port: generators::port::generate(node_config.prometheus_port())?,
-            p2p_port: generators::port::generate(node_config.p2p_port())?,
+            ws_port: generators::generate_node_port(node_config.ws_port())?,
+            rpc_port: generators::generate_node_port(node_config.rpc_port())?,
+            prometheus_port: generators::generate_node_port(node_config.prometheus_port())?,
+            p2p_port: generators::generate_node_port(node_config.p2p_port())?,
         })
     }
 
@@ -180,14 +180,14 @@ impl NodeSpec {
             options.args
         };
 
-        let (key, peer_id) = generators::identity::generate_for_node(&name)?;
+        let (key, peer_id) = generators::generate_node_identity(&name)?;
 
         let mut name_capitalized = name.clone();
         let seed = format!(
             "//{}{name_capitalized}",
             name_capitalized.remove(0).to_uppercase()
         );
-        let accounts = generators::key::generate_for_node(&seed)?;
+        let accounts = generators::generate_node_keys(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
         //
@@ -209,10 +209,10 @@ impl NodeSpec {
             db_snapshot: None,
             accounts,
             // should be deprecated now!
-            ws_port: generators::port::generate(None)?,
-            rpc_port: generators::port::generate(options.rpc_port)?,
-            prometheus_port: generators::port::generate(options.prometheus_port)?,
-            p2p_port: generators::port::generate(options.p2p_port)?,
+            ws_port: generators::generate_node_port(None)?,
+            rpc_port: generators::generate_node_port(options.rpc_port)?,
+            prometheus_port: generators::generate_node_port(options.prometheus_port)?,
+            p2p_port: generators::generate_node_port(options.p2p_port)?,
         })
     }
 }

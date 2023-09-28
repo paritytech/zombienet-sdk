@@ -238,7 +238,7 @@ where
         for node in futures::future::try_join_all(spawning_tasks).await? {
             bootnodes_addr.push(
                 // TODO: we just use localhost for now
-                generators::bootnode_addr::generate(
+                generators::generate_node_bootnode_addr(
                     &node.spec.peer_id,
                     &LOCALHOST,
                     node.spec.p2p_port.0,

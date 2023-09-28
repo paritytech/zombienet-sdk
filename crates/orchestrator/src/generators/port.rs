@@ -22,3 +22,24 @@ pub fn generate(port: Option<Port>) -> Result<ParkedPort, GeneratorError> {
         .port();
     Ok(ParkedPort::new(port, listener))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn generate_random() {
+        let port = generate(None).unwrap();
+        let listener = port.1.write().unwrap();
+
+        assert!(listener.is_some());
+    }
+
+    #[test]
+    fn generate_fixed_port() {
+        let port = generate(Some(33056)).unwrap();
+        let listener = port.1.write().unwrap();
+
+        assert!(listener.is_some());
+        assert_eq!(port.0, 33056);
+    }
+}

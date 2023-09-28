@@ -54,13 +54,10 @@ where
         } else {
             node.name.clone()
         };
-        let key_filenames = generators::keystore::generate_keystore(
-            &node.accounts,
-            &node_files_path,
-            ctx.scoped_fs,
-        )
-        .await
-        .unwrap();
+        let key_filenames =
+            generators::generate_node_keystore(&node.accounts, &node_files_path, ctx.scoped_fs)
+                .await
+                .unwrap();
 
         // Paths returned are relative to the base dir, we need to convert into
         // fullpaths to inject them in the nodes.
@@ -96,7 +93,7 @@ where
     let cfg_path = format!("{}/cfg", &base_dir);
     let data_path = format!("{}/data", &base_dir);
     let relay_data_path = format!("{}/relay-data", &base_dir);
-    let gen_opts = generators::command::GenCmdOptions {
+    let gen_opts = generators::GenCmdOptions {
         relay_chain_name: ctx.chain,
         cfg_path: &cfg_path,               // TODO: get from provider/ns
         data_path: &data_path,             // TODO: get from provider
@@ -111,12 +108,12 @@ where
 
             let maybe_para_id = ctx.parachain.map(|para| para.id);
 
-            generators::command::generate_for_node(node, gen_opts, maybe_para_id)
+            generators::generate_node_command(node, gen_opts, maybe_para_id)
         },
         ZombieRole::CumulusCollator => {
             let para = ctx.parachain.expect("parachain must be part of the context, this is a bug");
-            let full_p2p = generators::port::generate(None)?;
-            generators::command::generate_for_cumulus_node(node, gen_opts, para.id, full_p2p.0)
+            let full_p2p = generators::generate_node_port(None)?;
+            generators::generate_node_command_cumulus(node, gen_opts, para.id, full_p2p.0)
         }
         _ => unreachable!()
         // TODO: do we need those?

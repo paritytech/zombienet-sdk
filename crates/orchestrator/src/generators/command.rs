@@ -31,12 +31,13 @@ const FLAGS_ADDED_BY_US: [&str; 5] = [
     "--collator",
     "--",
 ];
-const OPS_ADDED_BY_US: [&str; 5] = [
+const OPS_ADDED_BY_US: [&str; 6] = [
     "--chain",
     "--name",
     "--rpc-cors",
     "--rpc-methods",
     "--parachain-id",
+    "--node-key",
 ];
 
 // TODO: can we abstract this and use only one fn (or at least split and reuse in small fns)

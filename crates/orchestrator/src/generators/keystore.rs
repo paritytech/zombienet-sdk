@@ -16,7 +16,7 @@ const PREFIXES: [&str; 11] = [
     "rate", // Equilibrium rate module
 ];
 
-pub async fn generate_keystore<'a, T>(
+pub async fn generate<'a, T>(
     acc: &NodeAccounts,
     node_files_path: impl AsRef<Path>,
     scoped_fs: &ScopedFilesystem<'a, T>,

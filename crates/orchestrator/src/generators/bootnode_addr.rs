@@ -76,6 +76,25 @@ mod tests {
     }
 
     #[test]
+    fn generate_for_alice_with_listen_addr_without_value_must_fail() {
+        // Should override the ip/port
+        let peer_id = "12D3KooWQCkBm1BYtkHpocxCwMgR8yjitEeHGx8spzcDLGt2gkBm"; // from alice as seed
+        let args: Vec<String> = [
+            "--some",
+            "other",
+            "--listen-addr",
+        ]
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
+        let bootnode_addr =
+            generate(peer_id, &LOCALHOST, 5678, args.iter().as_ref(), &None);
+
+        assert!(bootnode_addr.is_err());
+        assert!(matches!(bootnode_addr, Err(GeneratorError::BootnodeAddrGeneration(_))));
+    }
+
+    #[test]
     fn generate_for_alice_withcert() {
         let peer_id = "12D3KooWQCkBm1BYtkHpocxCwMgR8yjitEeHGx8spzcDLGt2gkBm"; // from alice as seed
         let args: Vec<&str> = vec![];

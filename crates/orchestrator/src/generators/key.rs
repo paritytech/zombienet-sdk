@@ -1,4 +1,4 @@
-use sp_core::{ecdsa, ed25519, sr25519, Pair, crypto::SecretStringError};
+use sp_core::{crypto::SecretStringError, ecdsa, ed25519, sr25519, Pair};
 
 use super::errors::GeneratorError;
 use crate::shared::types::{Accounts, NodeAccount};
@@ -28,7 +28,7 @@ pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
                     .map_err(|_| GeneratorError::KeyGeneration(scheme.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         accounts.insert(scheme.into(), NodeAccount::new(address, public_key));
     }
@@ -80,7 +80,7 @@ mod tests {
 
         let pair = generate(&seed);
         assert!(pair.is_err());
-        assert!(matches!(pair, Err( GeneratorError::KeyGeneration(_,_))));
+        assert!(matches!(pair, Err(GeneratorError::KeyGeneration(_, _))));
     }
 
     #[test]
@@ -92,8 +92,17 @@ mod tests {
         let sr = pair.get("sr").unwrap();
         let ed = pair.get("ed").unwrap();
         let ec = pair.get("ec").unwrap();
-        assert_eq!(sr.address, "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY");
-        assert_eq!(ed.address, "5FA9nQDVg267DEd8m1ZypXLBnvN7SFxYwV7ndqSYGiN9TTpu");
-        assert_eq!(format!("0x{}", ec.public_key), "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1");
+        assert_eq!(
+            sr.address,
+            "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+        );
+        assert_eq!(
+            ed.address,
+            "5FA9nQDVg267DEd8m1ZypXLBnvN7SFxYwV7ndqSYGiN9TTpu"
+        );
+        assert_eq!(
+            format!("0x{}", ec.public_key),
+            "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
+        );
     }
 }

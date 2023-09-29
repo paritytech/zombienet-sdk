@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, num::ParseFloatError};
 
 use pest::{
     Parser,
@@ -12,8 +12,9 @@ pub enum ParserError {
     ParseError(#[from] pest::error::Error<Rule>),
     #[error("root node should be valid: {0}")]
     ParseRootNodeError(String),
-    #[error("inner node should be valid: {0}")]
-    ParseInnerNodeError(String),
+    #[error("can't cast metric value as f64: {0}")]
+    CastValueError(#[from] ParseFloatError),
+
 
 }
 
@@ -59,18 +60,21 @@ pub fn parse<'a>(input: &'a str) -> Result<MetricMap, ParserError> {
                                         // noop
                                     }
                                     Rule::number => {
-                                        val = v.as_span().as_str().parse::<f64>().unwrap();
+                                        val = v.as_span().as_str().parse::<f64>()?;
                                     }
                                     Rule::labels => {
+                                        // SAFETY: use unwrap should be safe since we are just
+                                        // walking the parser struct and if are matching a label
+                                        // should have a key/vals
                                         for p in v.into_inner() {
                                             let mut inner = p.into_inner();
-                                            let key = inner.next().ok_or(ParserError::ParseInnerNodeError(inner.as_str().to_string()))?.as_span().as_str();
+                                            let key = inner.next().unwrap().as_span().as_str();
                                             let value = inner
                                                 .next()
-                                                .ok_or(ParserError::ParseInnerNodeError(inner.as_str().to_string()))?
+                                                .unwrap()
                                                 .into_inner()
                                                 .next()
-                                                .ok_or(ParserError::ParseInnerNodeError(inner.as_str().to_string()))?
+                                                .unwrap()
                                                 .as_span()
                                                 .as_str();
 
@@ -83,12 +87,12 @@ pub fn parse<'a>(input: &'a str) -> Result<MetricMap, ParserError> {
                                     }
                                 }
                             }
+
                             // we should store to make it compatible with zombienet v1:
                             // key_without_prefix
                             // key_without_prefix_and_without_chain
                             // key_with_prefix_with_chain
                             // key_with_prefix_and_without_chain
-
                             let key_with_out_prefix = key.split("_").collect::<Vec<&str>>()[1..].join("_");
                             let (labels_without_chain, labels_with_chain) = labels.iter().fold((vec![], vec![]), |mut acc, item| {
                                 if item.0.eq("chain") {
@@ -146,5 +150,21 @@ mod tests {
         // no prefix without chain
         assert_eq!(metrics.get("node_is_active_validator").unwrap(), &1_f64);
 
+    }
+
+    #[test]
+    fn parse_invalid_metrics_str_should_fail() {
+        let metrics_raw = r#"
+        # HELP polkadot_node_is_active_validator Tracks if the validator is in the active set. Updates at session boundary.
+        # TYPE polkadot_node_is_active_validator gauge
+        polkadot_node_is_active_validator{chain=} 1
+        "#;
+
+        let metrics = parse(&metrics_raw);
+        assert!(metrics.is_err());
+        assert!(matches!(
+            metrics,
+            Err(ParserError::ParseError(_))
+        ));
     }
 }

@@ -93,7 +93,7 @@ impl RelaychainSpec {
             });
 
         if !errs.is_empty() {
-            // TODO: merge errs
+            // TODO: merge errs, maybe return something like Result<Sometype, Vec<OrchestratorError>>
             return Err(errs.swap_remove(0));
         }
 

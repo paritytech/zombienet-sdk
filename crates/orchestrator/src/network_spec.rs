@@ -31,6 +31,7 @@ impl NetworkSpec {
         let relaychain = RelaychainSpec::from_config(network_config.relaychain())?;
         let mut parachains = vec![];
 
+        // TODO: move to `fold` or map+fold
         for para_config in network_config.parachains() {
             match ParachainSpec::from_config(para_config) {
                 Ok(para) => parachains.push(para),

@@ -340,6 +340,9 @@ where
 // but the FileSystem trait isn't object-safe so we can't pass around
 // as `dyn FileSystem`. We can refactor or using some `erase` techniques
 // to resolve this and remove this struct
+// TODO (Loris): Probably we could have a .scoped(base_dir) method on the
+// filesystem itself (the trait), so it will return this and we can move this
+// directly to the support crate, it can be useful in the future
 #[derive(Clone, Debug)]
 pub struct ScopedFilesystem<'a, FS: FileSystem> {
     fs: &'a FS,

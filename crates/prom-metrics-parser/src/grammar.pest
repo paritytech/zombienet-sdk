@@ -1,3 +1,5 @@
+// Grammar taken from https://github.com/mitghi/promerge/ with
+// some small modifications.
 alpha = _{'a'..'z' | 'A'..'Z'}
 alphanum = _{'a'..'z' | 'A'..'Z' | '0'..'9'}
 number = @{

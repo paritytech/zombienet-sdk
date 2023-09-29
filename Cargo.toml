@@ -7,7 +7,7 @@ members = [
   "crates/orchestrator",
   "crates/provider",
   "crates/test-runner",
-  "crates/prom-parser",
+  "crates/prom-metrics-parser",
 ]
 
 [workspace.dependencies]

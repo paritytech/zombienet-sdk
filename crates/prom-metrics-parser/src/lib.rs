@@ -43,7 +43,7 @@ pub fn parse<'a>(input: &'a str) -> Result<MetricMap, ParserError> {
                         Rule::typexpr |
                         Rule::helpexpr
                             => {
-                            // don't need to parse comments for now.
+                            // don't need to collect comments/types/helpers blocks.
                             continue;
 
                             },
@@ -57,7 +57,7 @@ pub fn parse<'a>(input: &'a str) -> Result<MetricMap, ParserError> {
                                         key = v.as_span().as_str();
                                     }
                                     Rule::NaN |  Rule::posInf | Rule::negInf => {
-                                        // noop
+                                        // noop (not used in substrate metrics)
                                     }
                                     Rule::number => {
                                         val = v.as_span().as_str().parse::<f64>()?;
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn parse_metrics_works() {
-        let metrics_raw = fs::read_to_string("./testing/m.txt").unwrap();
+        let metrics_raw = fs::read_to_string("./testing/metrics.txt").unwrap();
         let metrics = parse(&metrics_raw).unwrap();
 
         // full key

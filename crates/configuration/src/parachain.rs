@@ -122,6 +122,7 @@ pub struct ParachainConfig {
     is_cumulus_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
+    genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     collators: Vec<NodeConfig>,
 }
@@ -197,6 +198,11 @@ impl ParachainConfig {
         self.genesis_state_generator.as_ref()
     }
 
+    /// The genesis overrides as a JSON value.
+    pub fn genesis_overrides(&self) -> Option<&serde_json::Value> {
+        self.genesis_overrides.as_ref()
+    }
+
     /// The location of a pre-existing chain specification for the parachain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
@@ -250,6 +256,7 @@ impl Default for ParachainConfigBuilder<Initial> {
                 genesis_wasm_generator: None,
                 genesis_state_path: None,
                 genesis_state_generator: None,
+                genesis_overrides: None,
                 chain_spec_path: None,
                 is_cumulus_based: true,
                 bootnodes_addresses: vec![],
@@ -538,6 +545,18 @@ impl ParachainConfigBuilder<WithId> {
                 ),
             ),
         }
+    }
+
+    /// Set the genesis overrides as a JSON object.
+    pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                genesis_overrides: Some(genesis_overrides.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
     }
 
     /// Set the location of a pre-existing chain specification for the parachain.

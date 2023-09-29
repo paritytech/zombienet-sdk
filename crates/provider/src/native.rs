@@ -31,6 +31,7 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
+    constants::LOCALHOST,
     shared::constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     DynNamespace, DynNode, ExecutionResult, GenerateFileCommand, GenerateFilesOptions, Provider,
     ProviderCapabilities, ProviderError, ProviderNamespace, ProviderNode, RunCommandOptions,
@@ -59,6 +60,10 @@ impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
     pub fn new(filesystem: FS) -> Self {
         NativeProvider {
             capabilities: ProviderCapabilities::new(),
+            // NOTE: temp_dir in linux return `/tmp` but on mac something like
+            //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having
+            // one `trailing slash` and the other no can cause issues if
+            // you try to build a fullpath by concatenate. Use Pathbuf to prevent the issue.
             tmp_dir: std::env::temp_dir(),
             filesystem,
             inner: Arc::new(RwLock::new(NativeProviderInner {
@@ -94,7 +99,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
         let id = format!("zombie_{}", Uuid::new_v4());
         let mut inner = self.inner.write().await;
 
-        let base_dir = PathBuf::from(format!("{}/{}", self.tmp_dir.to_string_lossy(), &id));
+        let base_dir = PathBuf::from_iter([&self.tmp_dir, &PathBuf::from(&id)]);
         self.filesystem.create_dir(&base_dir).await?;
 
         let namespace = NativeNamespace {
@@ -169,22 +174,40 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
-        self.filesystem.create_dir(&base_dir).await?;
+        // NOTE: in native this base path already exist
+        self.filesystem.create_dir_all(&base_dir).await?;
         try_join!(
             self.filesystem.create_dir(&config_dir),
             self.filesystem.create_dir(&data_dir),
             self.filesystem.create_dir(&scripts_dir),
         )?;
 
+        // Created needed paths
+        let ops_fut: Vec<_> = options
+            .created_paths
+            .iter()
+            .map(|created_path| {
+                self.filesystem.create_dir_all(format!(
+                    "{}{}",
+                    &base_dir.to_string_lossy(),
+                    created_path.to_string_lossy()
+                ))
+            })
+            .collect();
+        try_join_all(ops_fut).await?;
+
         // copy injected files
-        let mut futures = vec![];
-        for file in options.injected_files {
-            futures.push(self.filesystem.copy(
-                file.local_path,
-                format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
-            ));
-        }
-        try_join_all(futures).await?;
+        let ops_fut: Vec<_> = options
+            .injected_files
+            .iter()
+            .map(|file| {
+                self.filesystem.copy(
+                    &file.local_path,
+                    format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
+                )
+            })
+            .collect();
+        try_join_all(ops_fut).await?;
 
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(
@@ -234,6 +257,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
                 args: vec!["-c".to_string(), "while :; do sleep 1; done".to_string()],
                 env: vec![],
                 injected_files: options.injected_files,
+                created_paths: vec![],
             })
             .await?;
 
@@ -244,6 +268,21 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             local_output_path,
         } in options.commands
         {
+            // TODO: move to logger
+            println!("{:#?}, {:#?}", command, args);
+            println!("{:#?}", self.base_dir.to_string_lossy());
+            println!("{:#?}", local_output_path.as_os_str());
+            let local_output_full_path = format!(
+                "{}{}{}",
+                self.base_dir.to_string_lossy(),
+                if local_output_path.starts_with("/") {
+                    ""
+                } else {
+                    "/"
+                },
+                local_output_path.to_string_lossy()
+            );
+
             match temp_node
                 .run_command(RunCommandOptions { command, args, env })
                 .await
@@ -251,14 +290,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             {
                 Ok(contents) => self
                     .filesystem
-                    .write(
-                        format!(
-                            "{}{}",
-                            self.base_dir.to_string_lossy(),
-                            local_output_path.to_string_lossy()
-                        ),
-                        contents,
-                    )
+                    .write(local_output_full_path, contents)
                     .await
                     .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
                 Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
@@ -318,6 +350,18 @@ struct NativeNodeInner {
 impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn command(&self) -> &str {
+        &self.command
+    }
+
+    fn args(&self) -> Vec<&String> {
+        self.args.iter().collect::<Vec<&String>>()
+    }
+
+    async fn ip(&self) -> Result<IpAddr, ProviderError> {
+        Ok(LOCALHOST)
     }
 
     fn base_dir(&self) -> &PathBuf {

@@ -169,11 +169,11 @@ mod tests {
 
     #[test]
     fn parse_invalid_metrics_str_should_fail() {
-        let metrics_raw = r#"
+        let metrics_raw = r"
         # HELP polkadot_node_is_active_validator Tracks if the validator is in the active set. Updates at session boundary.
         # TYPE polkadot_node_is_active_validator gauge
         polkadot_node_is_active_validator{chain=} 1
-        "#;
+        ";
 
         let metrics = parse(metrics_raw);
         assert!(metrics.is_err());

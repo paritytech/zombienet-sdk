@@ -753,15 +753,11 @@ mod tests {
                     .with_default_command("polkadot")
                     .with_default_image("docker.io/parity/polkadot:latest")
                     .with_default_args(vec![("-lparachain", "debug").into()])
-                    .with_node(|node| {
-                        node.with_name("alice")
-                            .validator(true)
-                            .invulnerable(true)
-                            .validator(true)
-                    })
+                    .with_node(|node| node.with_name("alice").validator(true))
                     .with_node(|node| {
                         node.with_name("bob")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_args(vec![("--database", "paritydb-experimental").into()])
                     })
@@ -822,6 +818,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("charles")
+                            .validator(false)
                             .bootnode(true)
                             .invulnerable(true)
                             .with_initial_balance(0)
@@ -830,6 +827,7 @@ mod tests {
                         collator
                             .with_name("frank")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
                     })
@@ -850,6 +848,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("georges")
+                            .validator(false)
                             .bootnode(true)
                             .invulnerable(true)
                             .with_initial_balance(0)
@@ -858,6 +857,7 @@ mod tests {
                         collator
                             .with_name("victor")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
                     })
@@ -947,6 +947,7 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("charles")
+                            .validator(false)
                             .bootnode(true)
                             .invulnerable(true)
                             .with_initial_balance(0)
@@ -1088,6 +1089,7 @@ mod tests {
                         collator
                             .with_name("charles")
                             .bootnode(true)
+                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
@@ -1095,6 +1097,7 @@ mod tests {
                         collator
                             .with_name("frank")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
                     })
@@ -1116,6 +1119,7 @@ mod tests {
                         collator
                             .with_name("georges")
                             .bootnode(true)
+                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
@@ -1123,6 +1127,7 @@ mod tests {
                         collator
                             .with_name("victor")
                             .validator(true)
+                            .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
                     })
@@ -1323,6 +1328,7 @@ mod tests {
                         collator
                             .with_name("charles")
                             .bootnode(true)
+                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })

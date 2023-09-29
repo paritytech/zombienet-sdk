@@ -217,7 +217,7 @@ impl Command {
 /// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
 /// let path_location: AssetLocation = PathBuf::from_str("/tmp/path/to/my/file").unwrap().into();
 /// let path_location2: AssetLocation = "/tmp/path/to/my/file".into();
-///        
+///
 /// assert!(matches!(url_location, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
 /// assert!(matches!(url_location2, AssetLocation::Url(value) if value.as_str() == "https://mycloudstorage.com/path/to/my/file.tgz"));
 /// assert!(matches!(path_location, AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/path/to/my/file"));

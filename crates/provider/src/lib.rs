@@ -24,8 +24,17 @@ pub enum ProviderError {
     #[error("Error running command '{0}': {1}")]
     RunCommandError(String, anyhow::Error),
 
+    #[error("Invalid network configuration field {0}")]
+    InvalidConfig(String),
+
+    #[error("Can recover node: {0} info, field: {1}")]
+    MissingNodeInfo(String, String),
+
     #[error("Duplicated node name: {0}")]
     DuplicatedNodeName(String),
+
+    #[error("File generation failed: {0}")]
+    FileGenerationFailed(anyhow::Error),
 
     #[error(transparent)]
     FileSystemError(#[from] FileSystemError),
@@ -35,9 +44,6 @@ pub enum ProviderError {
 
     #[error("Script with path {0} not found")]
     ScriptNotFound(PathBuf),
-
-    #[error("File generation failed: {0}")]
-    FileGenerationFailed(anyhow::Error),
 
     #[error("Failed to retrieve process ID for node '{0}'")]
     ProcessIdRetrievalFailed(String),
@@ -88,6 +94,12 @@ type ExecutionResult = Result<String, (ExitStatus, String)>;
 pub trait ProviderNode {
     fn name(&self) -> &str;
 
+    fn command(&self) -> &str;
+
+    fn args(&self) -> Vec<&String>;
+
+    async fn ip(&self) -> Result<IpAddr, ProviderError>;
+
     fn base_dir(&self) -> &PathBuf;
 
     fn config_dir(&self) -> &PathBuf;
@@ -130,3 +142,7 @@ pub trait ProviderNode {
 }
 
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
+
+// re-export
+pub use native::NativeProvider;
+pub use shared::{constants, types};

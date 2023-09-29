@@ -29,3 +29,8 @@ nix = "0.27"
 procfs = "0.15"
 pest = "2.7"
 pest_derive = "2.7"
+rand = "0.8"
+sha2 = { version = "0.10.2", default-features = false }
+hex = "0.4"
+sp-core = "22.0.0"
+libp2p = { version = "0.52" }

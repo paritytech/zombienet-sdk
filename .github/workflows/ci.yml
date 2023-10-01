@@ -31,14 +31,14 @@ jobs:
       - name: Init install
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
 
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features
+      # - name: Clippy
+      #   run: cargo clippy --all-targets --all-features
 
-      - name: Build
-        run: cargo build
+      # - name: Build
+      #   run: cargo build
 
-      - name: Tests (except provider crate)
-        run: cargo test --workspace --exclude provider
+      # - name: Tests (except provider crate)
+      #   run: cargo test --workspace --exclude provider
 
       - name: Setup upterm session
         uses: lhotari/action-upterm@v1

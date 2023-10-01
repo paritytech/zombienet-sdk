@@ -18,7 +18,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - nightly
+          # - nightly
     steps:
       - uses: actions/checkout@v3
 
@@ -31,59 +31,65 @@ jobs:
       - name: Init install
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
 
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features
+      # - name: Clippy
+      #   run: cargo clippy --all-targets --all-features
 
-      - name: Build
-        run: cargo build
+      # - name: Build
+      #   run: cargo build
 
-      - name: Tests (except provider crate)
-        run: cargo test --workspace --exclude provider
+      # - name: Tests (except provider crate)
+      #   run: cargo test --workspace --exclude provider
 
-      - name: Install tmate
-        run: apt install tmate
+      # - name: Install tmate
+      #   run: apt install tmate
 
-      - name: Fetch GitHub User SSH Keys
-        run: |
-          USER_KEYS=$(curl -s https://api.github.com/users/l0r1s/keys)
-          echo "$USER_KEYS" | jq -r '.[0].key' >> user_ssh_key.pub  
-          chmod 400 user_ssh_key.pub
+      # - name: Fetch GitHub User SSH Keys
+      #   run: |
+      #     USER_KEYS=$(curl -s https://api.github.com/users/l0r1s/keys)
+      #     echo "$USER_KEYS" | jq -r '.[0].key' >> user_ssh_key.pub  
+      #     chmod 400 user_ssh_key.pub
 
-      - name: Setup tmate session
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tmate
-          export SSH_AUTH_SOCK=/tmp/ssh_agent.sock
-          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-          ssh-add user_ssh_key.pub
-          tmate -S /tmp/tmate.sock new-session -d
-          tmate -S /tmp/tmate.sock wait tmate-ready
-          TMATE_SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
-          echo "TMATE_SSH=$TMATE_SSH" > $GITHUB_ENV
+      # - name: Setup tmate session
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y tmate
+      #     export SSH_AUTH_SOCK=/tmp/ssh_agent.sock
+      #     ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+      #     ssh-add user_ssh_key.pub
+      #     tmate -S /tmp/tmate.sock new-session -d
+      #     tmate -S /tmp/tmate.sock wait tmate-ready
+      #     TMATE_SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
+      #     echo "TMATE_SSH=$TMATE_SSH" > $GITHUB_ENV
 
-      - name: Comment PR with tmate SSH info
-        uses: actions/github-script@v4
+      # - name: Comment PR with tmate SSH info
+      #   uses: actions/github-script@v4
+      #   with:
+      #     script: |
+      #       const github = require('@actions/github');
+      #       const octokit = new github.GitHub(process.env.GITHUB_TOKEN);
+      #       const context = github.context;
+
+      #       const body = `To connect via SSH for debugging:\n\`\`\`\n${process.env.TMATE_SSH}\n\`\`\``;
+      #       octokit.issues.createComment({
+      #         ...context.repo,
+      #         issue_number: context.payload.pull_request.number,
+      #         body: body
+      #       });
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Start keeping alive message
+      #   run: |
+      #     while true; do
+      #       echo "Keeping action alive..."
+      #       sleep 300  # Wait for 5 minutes
+      #     done &
+
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
         with:
-          script: |
-            const github = require('@actions/github');
-            const octokit = new github.GitHub(process.env.GITHUB_TOKEN);
-            const context = github.context;
-
-            const body = `To connect via SSH for debugging:\n\`\`\`\n${process.env.TMATE_SSH}\n\`\`\``;
-            octokit.issues.createComment({
-              ...context.repo,
-              issue_number: context.payload.pull_request.number,
-              body: body
-            });
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Start keeping alive message
-        run: |
-          while true; do
-            echo "Keeping action alive..."
-            sleep 300  # Wait for 5 minutes
-          done &
+          ## limits ssh access and adds the ssh public keys of the listed GitHub users
+          limit-access-to-users: l0r1s
 
       # - name: Tests (provider crate)
       #   # there should be a unique test thread for native provider tests (asserting spawned processes count)

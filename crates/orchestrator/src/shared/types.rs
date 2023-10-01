@@ -5,10 +5,10 @@ use std::{
 };
 
 pub type Accounts = HashMap<String, NodeAccount>;
-use configuration::shared::{
+use configuration::{shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
-};
+}, types::AssetLocation};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
@@ -54,4 +54,16 @@ pub struct ChainDefaultContext<'a> {
     pub default_resources: Option<&'a Resources>,
     pub default_db_snapshot: Option<&'a AssetLocation>,
     pub default_args: Vec<&'a Arg>,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct RegisterParachainOptions {
+    para_id: u32,
+    wasm_path: AssetLocation,
+    state_path: AssetLocation,
+    api_url: AssetLocation,
+    onboard_as_para: bool,
+    seed: Option<String>,
+    finalization: bool
 }

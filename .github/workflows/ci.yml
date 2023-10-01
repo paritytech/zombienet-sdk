@@ -32,10 +32,10 @@ jobs:
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
 
       # - name: Clippy
-      #   run: cargo clippy --all-targets --all-features
+        # run: cargo clippy --all-targets --all-features
 
       # - name: Build
-      #   run: cargo build
+        # run: cargo build
 
       # - name: Tests (except provider crate)
       #   run: cargo test --workspace --exclude provider
@@ -46,8 +46,8 @@ jobs:
           limit-access-to-users: l0r1s
 
       # - name: Tests (provider crate)
-      #   # there should be a unique test thread for native provider tests (asserting spawned processes count)
-      #   run: cargo test -p provider -- --test-threads 1
+        # there should be a unique test thread for native provider tests (asserting spawned processes count)
+        # run: cargo test -p provider -- --test-threads 1
 
   # coverage:
   #   name: Zombienet SDK - coverage

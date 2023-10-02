@@ -1,0 +1,47 @@
+// Grammar taken from https://github.com/mitghi/promerge/ with
+// some small modifications.
+alpha = _{'a'..'z' | 'A'..'Z'}
+alphanum = _{'a'..'z' | 'A'..'Z' | '0'..'9'}
+number = @{
+    "-"?
+    ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*)
+    ~ ("." ~ ASCII_DIGIT*)?
+    ~ (^"e" ~ ("+" | "-")? ~ ASCII_DIGIT+)?
+}
+string = ${"\"" ~ inner ~ "\""}
+inner = @{char*}
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+whitespace_or_newline = _{(" "| "\n")*}
+hash = _{"#"}
+posInf = {"+Inf"}
+negInf = {"-Inf"}
+NaN = {"NaN"}
+lbrace = _{"{"}
+rbrace = _{"}"}
+typelit = _{"TYPE"}
+helplit = _{"HELP"}
+comma = _{","}
+countertype = {"counter"}
+gaugetype = {"gauge"}
+histogramtype = {"histogram"}
+summarytype = {"summary"}
+untyped = {"untyped"}
+ident = {alphanum+}
+key = @{ident ~ ("_" ~ ident)*}
+label = {key ~ "="  ~ string}
+labels = {label ~ (comma ~ label)*}
+helpkey = {key}
+helpval = {inner}
+typekey = {key}
+typeval = {countertype | gaugetype | histogramtype | summarytype | untyped}
+commentval = @{((ASCII_DIGIT| ASCII_NONZERO_DIGIT | ASCII_BIN_DIGIT | ASCII_OCT_DIGIT | ASCII_HEX_DIGIT | ASCII_ALPHA_LOWER | ASCII_ALPHA_UPPER | ASCII_ALPHA | ASCII_ALPHANUMERIC | !"\n" ~ ANY ))*}
+helpexpr = {hash ~ whitespace_or_newline ~ helplit ~ whitespace_or_newline ~ helpkey ~  whitespace_or_newline ~ commentval}
+typexpr = {hash ~ whitespace_or_newline ~ typelit ~ whitespace_or_newline ~ typekey ~ whitespace_or_newline ~ typeval }
+genericomment = {hash ~ whitespace_or_newline ~ commentval}
+promstmt = {key ~ (lbrace ~ (labels)* ~ rbrace){0,1} ~ whitespace_or_newline ~ ((posInf | negInf | NaN | number) ~ whitespace_or_newline ){1,2}}
+block = {((helpexpr | typexpr | genericomment)~ NEWLINE?)+ ~ (promstmt ~ NEWLINE?)+}
+statement = {SOI ~ block+ ~ EOI}

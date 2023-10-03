@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example of some opertions that you can do
     // with `nodes` (e.g pause, resume, restart)
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
     // Get a ref to the node
     let node = network.get_node("alice")?;

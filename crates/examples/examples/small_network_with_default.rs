@@ -37,17 +37,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: add check to ensure if unique
     network.add_node("new1", opts, None).await?;
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Example of some opertions that you can do
     // with `nodes` (e.g pause, resume, restart)
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // Get a ref to the node
+    let node = network.get_node("alice")?;
+
+    let is_10 = node.assert("block_height{status=\"best\"}", 10).await?;
+    println!("is_10: {is_10}");
+
+    let role = node.reports("node_roles").await?;
+    println!("Role is {role}");
+
     // pause the node
-    // network.pause_node("new1").await?;
+    // node.pause().await?;
     // println!("node new1 paused!");
 
-    // tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
-    // network.resume_node("new1").await?;
+    // node.resume().await?;
     // println!("node new1 resumed!");
 
     let col_opts = AddNodeOpts {

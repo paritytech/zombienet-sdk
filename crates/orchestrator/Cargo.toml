@@ -9,6 +9,7 @@ edition = "2021"
 configuration = { path = "../configuration" }
 support = { path = "../support" }
 provider = { path = "../provider" }
+prom-metrics-parser = { path = "../prom-metrics-parser" }
 tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
 # TODO: add logger in a new pr.
@@ -22,3 +23,4 @@ sha2 = { workspace = true, default-features = false }
 hex = { workspace = true }
 sp-core = { workspace = true }
 libp2p = { workspace = true }
+reqwest = { workspace = true }

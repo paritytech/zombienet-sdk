@@ -1,13 +1,9 @@
-use std::{
-    sync::Arc,
-    time::Duration,
-};
-
-use tokio::sync::RwLock;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
+use tokio::sync::RwLock;
 
 use crate::network_spec::node::NodeSpec;
 

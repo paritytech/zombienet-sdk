@@ -154,11 +154,11 @@ where
     );
     println!("🚀 {} : metrics link {prometheus_uri}", node.name);
     println!("\n");
-    Ok(NetworkNode {
-        inner: running_node,
-        spec: node.clone(),
-        name: node.name.clone(),
+    Ok(NetworkNode::new(
+        node.name.clone(),
         ws_uri,
         prometheus_uri,
-    })
+        node.clone(),
+        running_node,
+    ))
 }

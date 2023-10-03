@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use configuration::{NetworkConfig, RegistrationStrategy, types::AssetLocation};
+use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
@@ -21,7 +21,10 @@ use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 
-use crate::{generators::chain_spec::ParaGenesisConfig, spawner::SpawnNodeCtx, shared::types::RegisterParachainOptions};
+use crate::{
+    generators::chain_spec::ParaGenesisConfig, shared::types::RegisterParachainOptions,
+    spawner::SpawnNodeCtx,
+};
 
 pub struct Orchestrator<T, P>
 where
@@ -320,25 +323,28 @@ where
                 .map(|node| spawner::spawn_node(node, para_files_to_inject.clone(), &ctx_para));
             // TODO: Add para to Network instance
             for node in futures::future::try_join_all(spawning_tasks).await? {
-                let node_ws_url = node.ws_uri.clone();
+                // Is used in the register_para_options
+                // let node_ws_url = node.ws_uri.clone();
 
                 network.add_running_node(node, Some(para.id));
 
-                let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
-                    para_id: para.id,
-                    wasm_path: para.genesis_wasm.clone(),
-                    state_path: para.genesis_state.clone(),
-                    node_ws_url,
-                    onboard_as_para: para.onboard_as_parachain,
-                    seed: None,
-                    finalization: false,
-                };
+                // let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
+                //     para_id: para.id,
+                //     // This needs to resolve correctly
+                //     wasm_path: para.genesis_wasm.artifact_path().unwrap().to_path_buf(),
+                //     state_path: para.genesis_state.artifact_path().unwrap().to_path_buf(),
+                //     node_ws_url,
+                //     onboard_as_para: para.onboard_as_parachain,
+                //     seed: None,
+                //     finalization: false,
+                // };
 
-                println!("{:#?}", register_para_options);
+                // println!("{:#?}", register_para_options);
+
+                // registerParachain
+                // Parachain::register(parachain, register_para_options).await;
+
             }
-
-            // registerParachain
-            // Parachain::register(&mut self, para.genesis_wasm)
         }
 
         // TODO (future):

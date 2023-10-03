@@ -1,9 +1,18 @@
-use std::{path::{Path, PathBuf}, fs};
-use super::node::NetworkNode;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::shared::types::{RegisterParachainOptions, ParachainGenesisArgs};
-use subxt::{OnlineClient, SubstrateConfig, config::{polkadot, substrate}};
-use subxt_signer::sr25519::dev;
+use subxt::{
+    OnlineClient,
+    SubstrateConfig,
+    dynamic::Value
+};
+
+use subxt_signer::sr25519::Keypair;
+
+use super::node::NetworkNode;
+use crate::shared::types::{ParachainGenesisArgs, RegisterParachainOptions};
 
 #[derive(Debug)]
 pub struct Parachain {
@@ -39,47 +48,64 @@ impl Parachain {
         }
     }
 
-    pub async fn register(&mut self, options: RegisterParachainOptions) {
+    pub async fn register(
+        options: RegisterParachainOptions,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+
         println!("Registering parachain: {:?}", options);
+        // get the seed
+        let seed: [u8; 32];
+        if let Some(possible_seed) = options.seed {
+            seed = possible_seed;
+        } else {
+            seed = b"//Alice".to_vec().try_into().unwrap();
+        }
+        // get the sudo account for registering the parachain
+        let sudo = Keypair::from_seed(seed).unwrap();
 
-        // let wasm_data = fs::read_to_string(options.wasm_path.into()).unwrap();
-        // let genesis_state = fs::read_to_string(options.state_path.into()).expect("Should have been able to read the file");
+        let genesis_state = fs::read_to_string(options.state_path).unwrap();
+        let wasm_data = fs::read_to_string(options.wasm_path).unwrap();
 
-        // let parachain_genesis_args: ParachainGenesisArgs = ParachainGenesisArgs {
-        //     genesis_head: genesis_state,
-        //     validation_code: wasm_data,
-        //     parachain: options.onboard_as_para,
-        //   };
+        let parachain_genesis_value = Value::from_bytes(ParachainGenesisArgs {
+            genesis_head: genesis_state,
+            validation_code: wasm_data,
+            parachain: options.onboard_as_para,
+        });
 
-        // let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await.unwrap();
+
+        let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
+
+        // based on subXT docs: The public key bytes are equivalent to a Substrate `AccountId32`;
+        let account_id_value = Value::from_bytes(sudo.public_key());        
         
+        // get the nonce for the sudo account
+        let account_nonce_call = subxt::dynamic::runtime_api_call(
+            "AccountNonceApi",
+            "account_nonce",
+            vec![account_id_value.clone()],
+        );
+
+         let nonce = api
+            .runtime_api()
+            .at_latest()
+            .await?
+            .call(account_nonce_call)
+            .await?;
+
+        println!("Account nonce: {:#?}", nonce.to_value());
+
+        // 
+        let schedule_para = subxt::dynamic::runtime_api_call(
+            "ParasSudoWrapperCall",
+            "sudo_schedule_para_initialize",
+            vec![account_id_value, parachain_genesis_value],
+        ).into();
 
         
-        // TS code
-        // await api.tx.sudo
-        // .sudo(api.tx.parasSudoWrapper.sudoScheduleParaInitialize(id, genesis))
-        // .signAndSend(sudo, { nonce: nonce, era: 0 }, (result) => {
-        //   console.log(`Current status is ${result.status}`);
- 
-    //     // Build a balance transfer extrinsic.
-    // let dest = dev::bob().public_key().into();
-    // let balance_transfer_tx = polkadot::tx().balances().transfer_allow_death(dest, 10_000);
-
+        // TODO: uncomment below and fix the sign and submit (and follow afterwards until 
+        // finalized block) to register the parachain
+        let result = api.tx().sign_and_submit_then_watch_default(&schedule_para, &sudo).await?;
+        
+        Ok(())
     }
 }
-
-// #[derive(Debug, Clone)]
-// pub struct RegisterParachainOptions {
-//     para_id: u32,
-//     wasm_path: AssetLocation,
-//     state_path: AssetLocation,
-//     api_url: AssetLocation,
-//     onboard_as_para: bool,
-//     seed: Option<String>,
-//     finalization: bool
-// }
-
-// if (!parachain.addToGenesis && parachain.registerPara) {
-
-// addToGenesis  = false
-// registerPara  = true

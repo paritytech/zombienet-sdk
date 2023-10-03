@@ -1,16 +1,15 @@
 use std::{
     collections::HashMap,
     net::TcpListener,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock}, path::PathBuf, ops::Deref,
 };
 
-pub type Accounts = HashMap<String, NodeAccount>;
 use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
 };
 
-use crate::generators::para_artifact::ParaArtifact;
+pub type Accounts = HashMap<String, NodeAccount>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
@@ -58,20 +57,38 @@ pub struct ChainDefaultContext<'a> {
     pub default_args: Vec<&'a Arg>,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct RegisterParachainOptions {
     pub para_id: u32,
-    pub wasm_path: ParaArtifact,
-    pub state_path: ParaArtifact,
+    pub wasm_path: PathBuf,
+    pub state_path: PathBuf,
     pub node_ws_url: String,
     pub onboard_as_para: bool,
-    pub seed: Option<String>,
-    pub finalization: bool
+    pub seed: Option<[u8; 32]>,
+    pub finalization: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct ParachainGenesisArgs {
     pub genesis_head: String,
     pub validation_code: String,
     pub parachain: bool,
+}
+
+impl<T> AsRef<T> for ParachainGenesisArgs
+where
+    T: ?Sized,
+    <ParachainGenesisArgs as Deref>::Target: AsRef<T>,
+{
+    fn as_ref(&self) -> &T {
+        self.deref().as_ref()
+    }
+}
+
+impl Deref for ParachainGenesisArgs {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.genesis_head
+    }
 }

@@ -43,6 +43,9 @@ pub struct RelaychainSpec {
     /// Set the max nominators value (used with PoS networks).
     pub(crate) max_nominations: u8,
 
+    /// Genesis overrides as JSON value.
+    pub(crate) genesis_overrides: Option<serde_json::Value>,
+
     /// Nodes to run.
     pub(crate) nodes: Vec<NodeSpec>,
 }
@@ -107,6 +110,7 @@ impl RelaychainSpec {
             chain_spec,
             random_nominators_count: config.random_nominators_count().unwrap_or(0),
             max_nominations: config.max_nominations().unwrap_or(24),
+            genesis_overrides: config.genesis_overrides().cloned(),
             nodes,
         })
     }

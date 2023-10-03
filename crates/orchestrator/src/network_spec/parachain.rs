@@ -57,6 +57,9 @@ pub struct ParachainSpec {
     /// Genesis wasm to register the parachain
     pub(crate) genesis_wasm: ParaArtifact,
 
+    /// Genesis overrides as JSON value.
+    pub(crate) genesis_overrides: Option<serde_json::Value>,
+
     /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
 }
@@ -174,6 +177,7 @@ impl ParachainSpec {
             initial_balance: config.initial_balance(),
             genesis_state,
             genesis_wasm,
+            genesis_overrides: config.genesis_overrides().cloned(),
             collators,
         };
 

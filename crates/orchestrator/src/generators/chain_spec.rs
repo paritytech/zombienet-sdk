@@ -311,7 +311,13 @@ impl ChainSpec {
                 .map_err(GeneratorError::ChainSpecGeneration)?;
 
             // make genesis overrides first.
-            // override_genesis()
+            if let Some(overrides) = &para.genesis_overrides {
+                if let Some(genesis) = chain_spec_json.pointer_mut(&format!("{}/genesis", pointer))
+                {
+                    override_genesis(genesis, overrides);
+                }
+            }
+
             clear_authorities(&pointer, &mut chain_spec_json);
 
             // Get validators to add as authorities
@@ -381,7 +387,12 @@ impl ChainSpec {
                 .map_err(GeneratorError::ChainSpecGeneration)?;
 
             // make genesis overrides first.
-            // override_genesis()
+            if let Some(overrides) = &relaychain.genesis_overrides {
+                if let Some(genesis) = chain_spec_json.pointer_mut(&format!("{}/genesis", pointer))
+                {
+                    override_genesis(genesis, overrides);
+                }
+            }
 
             println!(
                 "{:#?}",
@@ -596,8 +607,29 @@ fn get_runtime_config_pointer(chain_spec_json: &serde_json::Value) -> Result<Str
 }
 
 // Override `genesis` key if present
-fn override_genesis() {
-    todo!()
+fn override_genesis(genesis: &mut serde_json::Value, overrides: &serde_json::Value) {
+    if let (Some(genesis_obj), Some(overrides_obj)) =
+        (genesis.as_object_mut(), overrides.as_object())
+    {
+        for overrides_key in overrides_obj.keys() {
+            // we only want to override keys present in the genesis object
+            if let Some(genesis_value) = genesis_obj.get_mut(overrides_key) {
+                match (&genesis_value, overrides_obj.get(overrides_key)) {
+                    // recurse if genesis value is an object
+                    (serde_json::Value::Object(_), Some(overrides_value))
+                        if overrides_value.is_object() =>
+                    {
+                        override_genesis(genesis_value, overrides_value);
+                    },
+                    // override if genesis value not an object
+                    (_, Some(overrides_value)) => {
+                        *genesis_value = overrides_value.clone();
+                    },
+                    _ => {},
+                }
+            }
+        }
+    }
 }
 
 fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json::Value) {

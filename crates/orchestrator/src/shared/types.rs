@@ -5,10 +5,12 @@ use std::{
 };
 
 pub type Accounts = HashMap<String, NodeAccount>;
-use configuration::{shared::{
+use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
-}, types::AssetLocation};
+};
+
+use crate::generators::para_artifact::ParaArtifact;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
@@ -59,11 +61,17 @@ pub struct ChainDefaultContext<'a> {
 
 #[derive(Debug, Clone)]
 pub struct RegisterParachainOptions {
-    para_id: u32,
-    wasm_path: AssetLocation,
-    state_path: AssetLocation,
-    api_url: AssetLocation,
-    onboard_as_para: bool,
-    seed: Option<String>,
-    finalization: bool
+    pub para_id: u32,
+    pub wasm_path: ParaArtifact,
+    pub state_path: ParaArtifact,
+    pub node_ws_url: String,
+    pub onboard_as_para: bool,
+    pub seed: Option<String>,
+    pub finalization: bool
+}
+
+pub struct ParachainGenesisArgs {
+    pub genesis_head: String,
+    pub validation_code: String,
+    pub parachain: bool,
 }

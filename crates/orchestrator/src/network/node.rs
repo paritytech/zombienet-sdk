@@ -1,7 +1,9 @@
 use std::{
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::Duration,
 };
+
+use tokio::sync::RwLock;
 
 use anyhow::anyhow;
 use prom_metrics_parser::MetricMap;
@@ -68,11 +70,8 @@ impl NetworkNode {
     pub async fn reports(&self, metric_name: impl Into<String>) -> Result<f64, anyhow::Error> {
         let metric_name = metric_name.into();
         // force cache reload
-        let _ = self.fetch_metrics().await?;
-        Ok(self.metric(&metric_name).await?)
-        // let metrics_map = self.metrics_cache.read().unwrap();
-        // let val = metrics_map.get(&metric_name).ok_or(anyhow!("metric '{}'not found!", &metric_name))?;
-        // Ok(val.clone())
+        self.fetch_metrics().await?;
+        self.metric(&metric_name).await
     }
 
     /// Assert on a metric value 'by name' from prometheus (exposed by the node)
@@ -104,24 +103,24 @@ impl NetworkNode {
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {
         let response = reqwest::get(&self.prometheus_uri).await?;
         let metrics = prom_metrics_parser::parse(&response.text().await?)?;
-        let mut cache = self.metrics_cache.write().unwrap();
+        let mut cache = self.metrics_cache.write().await;
         *cache = metrics;
         Ok(())
     }
 
     async fn metric(&self, metric_name: &str) -> Result<f64, anyhow::Error> {
-        let mut metrics_map = self.metrics_cache.read().unwrap();
+        let mut metrics_map = self.metrics_cache.read().await;
         if metrics_map.is_empty() {
             // reload metrics
             drop(metrics_map);
             self.fetch_metrics().await?;
-            metrics_map = self.metrics_cache.read().unwrap();
+            metrics_map = self.metrics_cache.read().await;
         }
 
         let val = metrics_map
             .get(metric_name)
             .ok_or(anyhow!("metric '{}'not found!", &metric_name))?;
-        Ok(val.clone())
+        Ok(*val)
     }
 }
 

@@ -2,7 +2,7 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::{collections::HashMap, path::PathBuf};
 
 use configuration::{
     shared::node::EnvVar,
@@ -181,36 +181,10 @@ impl<T: FileSystem> Network<T> {
     // deregister and stop the collator?
     // remove_parachain()
 
-    // Node actions
-    pub async fn pause_node(&self, node_name: impl Into<String>) -> Result<(), anyhow::Error> {
+    pub fn get_node(&self, node_name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
         let node_name = node_name.into();
         if let Some(node) = self.nodes_by_name.get(&node_name) {
-            node.inner.pause().await?;
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("can't find the node!"))
-        }
-    }
-
-    pub async fn resume_node(&self, node_name: impl Into<String>) -> Result<(), anyhow::Error> {
-        let node_name = node_name.into();
-        if let Some(node) = self.nodes_by_name.get(&node_name) {
-            node.inner.resume().await?;
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("can't find the node!"))
-        }
-    }
-
-    pub async fn restart_node(
-        &self,
-        node_name: impl Into<String>,
-        after: Option<Duration>,
-    ) -> Result<(), anyhow::Error> {
-        let node_name = node_name.into();
-        if let Some(node) = self.nodes_by_name.get(&node_name) {
-            node.inner.restart(after).await?;
-            Ok(())
+            Ok(node)
         } else {
             Err(anyhow::anyhow!("can't find the node!"))
         }

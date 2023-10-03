@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
     net::TcpListener,
-    sync::{Arc, RwLock}, path::PathBuf, ops::Deref,
+    ops::Deref,
+    path::PathBuf,
+    sync::{Arc, RwLock},
 };
 
 use configuration::shared::{

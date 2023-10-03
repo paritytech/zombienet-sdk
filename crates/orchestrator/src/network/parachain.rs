@@ -3,12 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use subxt::{
-    OnlineClient,
-    SubstrateConfig,
-    dynamic::Value
-};
-
+use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::sr25519::Keypair;
 
 use super::node::NetworkNode;
@@ -51,7 +46,6 @@ impl Parachain {
     pub async fn register(
         options: RegisterParachainOptions,
     ) -> Result<(), Box<dyn std::error::Error>> {
-
         println!("Registering parachain: {:?}", options);
         // get the seed
         let seed: [u8; 32];
@@ -72,12 +66,11 @@ impl Parachain {
             parachain: options.onboard_as_para,
         });
 
-
         let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
 
         // based on subXT docs: The public key bytes are equivalent to a Substrate `AccountId32`;
-        let account_id_value = Value::from_bytes(sudo.public_key());        
-        
+        let account_id_value = Value::from_bytes(sudo.public_key());
+
         // get the nonce for the sudo account
         let account_nonce_call = subxt::dynamic::runtime_api_call(
             "AccountNonceApi",
@@ -85,7 +78,7 @@ impl Parachain {
             vec![account_id_value.clone()],
         );
 
-         let nonce = api
+        let nonce = api
             .runtime_api()
             .at_latest()
             .await?
@@ -94,18 +87,21 @@ impl Parachain {
 
         println!("Account nonce: {:#?}", nonce.to_value());
 
-        // 
+        //
         let schedule_para = subxt::dynamic::runtime_api_call(
             "ParasSudoWrapperCall",
             "sudo_schedule_para_initialize",
             vec![account_id_value, parachain_genesis_value],
-        ).into();
+        )
+        .into();
 
-        
-        // TODO: uncomment below and fix the sign and submit (and follow afterwards until 
+        // TODO: uncomment below and fix the sign and submit (and follow afterwards until
         // finalized block) to register the parachain
-        let result = api.tx().sign_and_submit_then_watch_default(&schedule_para, &sudo).await?;
-        
+        let result = api
+            .tx()
+            .sign_and_submit_then_watch_default(&schedule_para, &sudo)
+            .await?;
+
         Ok(())
     }
 }

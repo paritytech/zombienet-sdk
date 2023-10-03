@@ -343,7 +343,6 @@ where
 
                 // registerParachain
                 // Parachain::register(parachain, register_para_options).await;
-
             }
         }
 

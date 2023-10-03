@@ -87,13 +87,11 @@ impl Parachain {
 
         println!("Account nonce: {:#?}", nonce.to_value());
 
-        //
-        let schedule_para = subxt::dynamic::runtime_api_call(
+        let schedule_para = subxt::dynamic::tx(
             "ParasSudoWrapperCall",
             "sudo_schedule_para_initialize",
             vec![account_id_value, parachain_genesis_value],
-        )
-        .into();
+        );
 
         // TODO: uncomment below and fix the sign and submit (and follow afterwards until
         // finalized block) to register the parachain
@@ -102,6 +100,7 @@ impl Parachain {
             .sign_and_submit_then_watch_default(&schedule_para, &sudo)
             .await?;
 
+        println!("{:#?}", result);
         Ok(())
     }
 }

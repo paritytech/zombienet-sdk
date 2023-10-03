@@ -324,25 +324,25 @@ where
             // TODO: Add para to Network instance
             for node in futures::future::try_join_all(spawning_tasks).await? {
                 // Is used in the register_para_options
-                // let node_ws_url = node.ws_uri.clone();
+                let node_ws_url = node.ws_uri.clone();
 
                 network.add_running_node(node, Some(para.id));
 
-                // let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
-                //     para_id: para.id,
-                //     // This needs to resolve correctly
-                //     wasm_path: para.genesis_wasm.artifact_path().unwrap().to_path_buf(),
-                //     state_path: para.genesis_state.artifact_path().unwrap().to_path_buf(),
-                //     node_ws_url,
-                //     onboard_as_para: para.onboard_as_parachain,
-                //     seed: None,
-                //     finalization: false,
-                // };
+                let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
+                    para_id: para.id,
+                    // This needs to resolve correctly
+                    wasm_path: para.genesis_wasm.artifact_path().unwrap().to_path_buf(),
+                    state_path: para.genesis_state.artifact_path().unwrap().to_path_buf(),
+                    node_ws_url,
+                    onboard_as_para: para.onboard_as_parachain,
+                    seed: None,
+                    finalization: false,
+                };
 
-                // println!("{:#?}", register_para_options);
+                println!("{:#?}", register_para_options);
 
                 // registerParachain
-                // Parachain::register(parachain, register_para_options).await;
+                let _ = Parachain::register(register_para_options).await;
             }
         }
 

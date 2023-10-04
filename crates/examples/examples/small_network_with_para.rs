@@ -1,10 +1,9 @@
 use std::time::Duration;
 
-use configuration::NetworkConfigBuilder;
+use configuration::{NetworkConfigBuilder, RegistrationStrategy};
 use orchestrator::{AddNodeOpts, Orchestrator};
 use provider::NativeProvider;
 use support::fs::local::LocalFileSystem;
-use configuration::RegistrationStrategy;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

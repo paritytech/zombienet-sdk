@@ -1,11 +1,9 @@
 use std::{
     collections::HashMap,
     net::TcpListener,
-    ops::Deref,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-
 use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
@@ -75,25 +73,17 @@ pub struct ParachainGenesisArgs {
     pub genesis_head: String,
     pub validation_code: String,
     pub parachain: bool,
-    // TODO: this is probably not correct - just a workaround for now
-    pub encoded: Vec<u8>,
 }
 
-impl<T> AsRef<T> for ParachainGenesisArgs
-where
-    T: ?Sized,
-    [u8]: AsRef<T>,
-{
-    fn as_ref(&self) -> &T {
-        self.deref().as_ref()
+impl ParachainGenesisArgs {
+    fn as_bytes_ref(&self) -> &[u8] {
+        &self.as_ref()
     }
 }
 
-impl Deref for ParachainGenesisArgs {
-    type Target = [u8];
 
-    fn deref(&self) -> &Self::Target {
-        // TODO: this is probably not correct - just a workaround for now
-        &self.encoded
+impl AsRef<[u8]> for ParachainGenesisArgs {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes_ref()
     }
 }

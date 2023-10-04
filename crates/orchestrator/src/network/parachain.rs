@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
-use subxt_signer::sr25519::Keypair;
+use subxt_signer::{ bip39::Mnemonic, sr25519::Keypair };
+
 use support::fs::FileSystem;
 
 // use crate::generators::key::generate_pair;
@@ -52,18 +53,14 @@ impl Parachain {
     ) -> Result<(), anyhow::Error> {
         println!("Registering parachain: {:?}", options);
         // get the seed
-        let seed: [u8; 32];
-
+        let sudo: Keypair;
         if let Some(possible_seed) = options.seed {
-            seed = possible_seed;
+            sudo = Keypair::from_seed(possible_seed).expect("seed should return a Keypair.");
         } else {
-            seed = b"//Alice"
-                .to_vec()
-                .try_into()
-                .expect("Alice seed should be ok at this point.")
+            let phrase = "bottom drive obey lake curtain smoke basket hold race lonely fit walk";
+            let mnemonic = Mnemonic::parse(phrase)?;
+            sudo = Keypair::from_phrase(&mnemonic, None)?;
         }
-        // TODO: the Keypair should come from the generators instead of the subxt-signer
-        let sudo = Keypair::from_seed(seed).expect("seed should return a Keypair.");
 
         let genesis_state = scoped_fs
             .read_to_string(options.state_path)
@@ -78,9 +75,6 @@ impl Parachain {
             genesis_head: genesis_state,
             validation_code: wasm_data,
             parachain: options.onboard_as_para,
-            // TODO: this is probably not correct - just a workaround for now
-            // it is intenionally empty as a workaround for AsRef and Deref
-            encoded: vec![],
         };
 
         let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;

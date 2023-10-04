@@ -61,7 +61,7 @@ pub struct ChainDefaultContext<'a> {
 
 #[derive(Debug, Clone)]
 pub struct RegisterParachainOptions {
-    pub para_id: u32,
+    pub id: u32,
     pub wasm_path: PathBuf,
     pub state_path: PathBuf,
     pub node_ws_url: String,

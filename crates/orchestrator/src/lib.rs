@@ -143,14 +143,13 @@ where
                 .await?;
         }
 
-        let para_to_register_in_genesis: Vec<&ParachainSpec> = network_spec
-            .parachains
-            .iter()
-            .filter(|para| match &para.registration_strategy {
-                RegistrationStrategy::InGenesis => true,
-                RegistrationStrategy::UsingExtrinsic => false,
-            })
-            .collect();
+        // Gather the parachains to register in genesis and the ones to register with extrinsic
+        let (para_to_register_in_genesis, para_to_register_with_extrinsic): (
+            Vec<&ParachainSpec>,
+            Vec<&ParachainSpec>,
+        ) = network_spec.parachains.iter().partition(|para| {
+            matches!(para.registration_strategy, RegistrationStrategy::InGenesis)
+        });
 
         let mut para_artifacts = vec![];
         for para in para_to_register_in_genesis {
@@ -255,11 +254,17 @@ where
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
+        // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
+        let mut node_ws_url: String = "".to_string();
+
         // spawn the rest of the nodes (TODO: in batches)
         let spawning_tasks = relaynodes
             .iter()
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
         for node in futures::future::try_join_all(spawning_tasks).await? {
+            // Is used in the register_para_options (We need to get this from the relay and not the collators)
+            node_ws_url = node.ws_uri.clone();
+
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
         }
@@ -323,27 +328,37 @@ where
                 .map(|node| spawner::spawn_node(node, para_files_to_inject.clone(), &ctx_para));
             // TODO: Add para to Network instance
             for node in futures::future::try_join_all(spawning_tasks).await? {
-                // Is used in the register_para_options
-                let node_ws_url = node.ws_uri.clone();
-
                 network.add_running_node(node, Some(para.id));
-
-                let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
-                    para_id: para.id,
-                    // This needs to resolve correctly
-                    wasm_path: para.genesis_wasm.artifact_path().unwrap().to_path_buf(),
-                    state_path: para.genesis_state.artifact_path().unwrap().to_path_buf(),
-                    node_ws_url,
-                    onboard_as_para: para.onboard_as_parachain,
-                    seed: None,
-                    finalization: false,
-                };
-
-                println!("{:#?}", register_para_options);
-
-                // registerParachain
-                let _ = Parachain::register(register_para_options).await;
             }
+        }
+
+        // Now we need to register the paras with extrinsic from the Vec collected before;
+        for para in para_to_register_with_extrinsic {
+            let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
+                id: para.id,
+                // This needs to resolve correctly
+                wasm_path: para
+                    .genesis_wasm
+                    .artifact_path()
+                    .ok_or(OrchestratorError::InvariantError(
+                        "artifact path for wasm must be set at this point",
+                    ))?
+                    .to_path_buf(),
+                state_path: para
+                    .genesis_state
+                    .artifact_path()
+                    .ok_or(OrchestratorError::InvariantError(
+                        "artifact path for state must be set at this point",
+                    ))?
+                    .to_path_buf(),
+                node_ws_url: node_ws_url.clone(),
+                onboard_as_para: para.onboard_as_parachain,
+                seed: None,          // TODO: Seed is passed by?
+                finalization: false, // TODO: Seed is passed by?
+            };
+
+            println!("{:#?}", register_para_options);
+            let _ = Parachain::register(register_para_options).await;
         }
 
         // TODO (future):

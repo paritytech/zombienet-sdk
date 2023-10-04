@@ -6,6 +6,8 @@ use std::{
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::sr25519::Keypair;
 
+// use crate::generators::key::generate_pair;
+// use sp_core::{sr25519, Pair};
 use super::node::NetworkNode;
 use crate::shared::types::{ParachainGenesisArgs, RegisterParachainOptions};
 
@@ -43,54 +45,46 @@ impl Parachain {
         }
     }
 
-    pub async fn register(
-        options: RegisterParachainOptions,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn register(options: RegisterParachainOptions) -> Result<(), anyhow::Error> {
         println!("Registering parachain: {:?}", options);
         // get the seed
         let seed: [u8; 32];
         if let Some(possible_seed) = options.seed {
             seed = possible_seed;
         } else {
-            seed = b"//Alice".to_vec().try_into().unwrap();
+            seed = b"//Alice"
+                .to_vec()
+                .try_into()
+                .expect("Alice seed should be ok at this point.")
+            // seed = "//Alice".to_string();
         }
         // get the sudo account for registering the parachain
-        let sudo = Keypair::from_seed(seed).unwrap();
+        let sudo = Keypair::from_seed(seed).expect("seed should return a Keypair.");
 
-        let genesis_state = fs::read_to_string(options.state_path).unwrap();
-        let wasm_data = fs::read_to_string(options.wasm_path).unwrap();
+        // TODO: pass the fs as we do in other places as well
+        let genesis_state =
+            fs::read_to_string(options.state_path).expect("State Path should be ok by this point.");
+        let wasm_data =
+            fs::read_to_string(options.wasm_path).expect("Wasm Path should be ok by this point.");
 
-        let parachain_genesis_value = Value::from_bytes(ParachainGenesisArgs {
+        let parachain_genesis_value = ParachainGenesisArgs {
             genesis_head: genesis_state,
             validation_code: wasm_data,
             parachain: options.onboard_as_para,
-        });
+        };
 
         let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
 
-        // based on subXT docs: The public key bytes are equivalent to a Substrate `AccountId32`;
-        let account_id_value = Value::from_bytes(sudo.public_key());
-
-        // get the nonce for the sudo account
-        let account_nonce_call = subxt::dynamic::runtime_api_call(
-            "AccountNonceApi",
-            "account_nonce",
-            vec![account_id_value.clone()],
-        );
-
-        let nonce = api
-            .runtime_api()
-            .at_latest()
-            .await?
-            .call(account_nonce_call)
-            .await?;
-
-        println!("Account nonce: {:#?}", nonce.to_value());
+        // // based on subXT docs: The public key bytes are equivalent to a Substrate `AccountId32`;
+        let account_id = sudo.public_key();
 
         let schedule_para = subxt::dynamic::tx(
             "ParasSudoWrapperCall",
             "sudo_schedule_para_initialize",
-            vec![account_id_value, parachain_genesis_value],
+            vec![
+                Value::from_bytes(account_id),
+                Value::from_bytes(parachain_genesis_value),
+            ],
         );
 
         // TODO: uncomment below and fix the sign and submit (and follow afterwards until

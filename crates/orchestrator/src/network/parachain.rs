@@ -1,15 +1,16 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::sr25519::Keypair;
+use support::fs::FileSystem;
 
 // use crate::generators::key::generate_pair;
 // use sp_core::{sr25519, Pair};
 use super::node::NetworkNode;
-use crate::shared::types::{ParachainGenesisArgs, RegisterParachainOptions};
+use crate::{
+    shared::types::{ParachainGenesisArgs, RegisterParachainOptions},
+    ScopedFilesystem,
+};
 
 #[derive(Debug)]
 pub struct Parachain {
@@ -45,10 +46,14 @@ impl Parachain {
         }
     }
 
-    pub async fn register(options: RegisterParachainOptions) -> Result<(), anyhow::Error> {
+    pub async fn register<'a, T>(
+        options: RegisterParachainOptions,
+        scoped_fs: &ScopedFilesystem<'a, impl FileSystem>,
+    ) -> Result<(), anyhow::Error> {
         println!("Registering parachain: {:?}", options);
         // get the seed
         let seed: [u8; 32];
+
         if let Some(possible_seed) = options.seed {
             seed = possible_seed;
         } else {
@@ -56,21 +61,26 @@ impl Parachain {
                 .to_vec()
                 .try_into()
                 .expect("Alice seed should be ok at this point.")
-            // seed = "//Alice".to_string();
         }
-        // get the sudo account for registering the parachain
+        // TODO: the Keypair should come from the generators instead of the subxt-signer
         let sudo = Keypair::from_seed(seed).expect("seed should return a Keypair.");
 
-        // TODO: pass the fs as we do in other places as well
-        let genesis_state =
-            fs::read_to_string(options.state_path).expect("State Path should be ok by this point.");
-        let wasm_data =
-            fs::read_to_string(options.wasm_path).expect("Wasm Path should be ok by this point.");
+        let genesis_state = scoped_fs
+            .read_to_string(options.state_path)
+            .await
+            .expect("State Path should be ok by this point.");
+        let wasm_data = scoped_fs
+            .read_to_string(options.wasm_path)
+            .await
+            .expect("Wasm Path should be ok by this point.");
 
-        let parachain_genesis_value = ParachainGenesisArgs {
+        let parachain_genesis_value: ParachainGenesisArgs = ParachainGenesisArgs {
             genesis_head: genesis_state,
             validation_code: wasm_data,
             parachain: options.onboard_as_para,
+            // TODO: this is probably not correct - just a workaround for now
+            // it is intenionally empty as a workaround for AsRef and Deref
+            encoded: vec![],
         };
 
         let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;

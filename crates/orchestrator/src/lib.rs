@@ -358,7 +358,7 @@ where
             };
 
             println!("{:#?}", register_para_options);
-            let _ = Parachain::register(register_para_options).await;
+            let _ = Parachain::register::<T>(register_para_options, &scoped_fs).await?;
         }
 
         // TODO (future):

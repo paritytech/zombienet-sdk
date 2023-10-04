@@ -75,12 +75,14 @@ pub struct ParachainGenesisArgs {
     pub genesis_head: String,
     pub validation_code: String,
     pub parachain: bool,
+    // TODO: this is probably not correct - just a workaround for now
+    pub encoded: Vec<u8>,
 }
 
 impl<T> AsRef<T> for ParachainGenesisArgs
 where
     T: ?Sized,
-    <ParachainGenesisArgs as Deref>::Target: AsRef<T>,
+    [u8]: AsRef<T>,
 {
     fn as_ref(&self) -> &T {
         self.deref().as_ref()
@@ -88,9 +90,10 @@ where
 }
 
 impl Deref for ParachainGenesisArgs {
-    type Target = String;
+    type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.genesis_head
+        // TODO: this is probably not correct - just a workaround for now
+        &self.encoded
     }
 }

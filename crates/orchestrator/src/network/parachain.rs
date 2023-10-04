@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
+use subxt::{dynamic::Value, OnlineClient, SubstrateConfig, subxt};
 use subxt_signer::{ bip39::Mnemonic, sr25519::Keypair };
 
 use support::fs::FileSystem;
@@ -12,6 +12,10 @@ use crate::{
     shared::types::{ParachainGenesisArgs, RegisterParachainOptions},
     ScopedFilesystem,
 };
+
+// Generate an interface that we can use from the node's metadata.
+#[subxt(runtime_metadata_path = "src/metadata.scale")]
+pub mod polkadot {}
 
 #[derive(Debug)]
 pub struct Parachain {
@@ -82,14 +86,19 @@ impl Parachain {
         // // based on subXT docs: The public key bytes are equivalent to a Substrate `AccountId32`;
         let account_id = sudo.public_key();
 
-        let schedule_para = subxt::dynamic::tx(
-            "ParasSudoWrapperCall",
-            "sudo_schedule_para_initialize",
-            vec![
-                Value::from_bytes(account_id),
-                Value::from_bytes(parachain_genesis_value),
-            ],
+        let schedule_para = polkadot::sudo_schedule_para_initialize(
+            Value::from_bytes(account_id),
+            Value::from_bytes(parachain_genesis_value),
         );
+
+        // let schedule_para = subxt::dynamic::tx(
+        //     "ParasSudoWrapperCall",
+        //     "sudo_schedule_para_initialize",
+        //     vec![
+        //         Value::from_bytes(account_id),
+        //         Value::from_bytes(parachain_genesis_value),
+        //     ],
+        // );
 
         // TODO: uncomment below and fix the sign and submit (and follow afterwards until
         // finalized block) to register the parachain

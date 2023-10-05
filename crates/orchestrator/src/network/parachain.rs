@@ -1,18 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
-use subxt_signer::{sr25519::Keypair, SecretUri };
-use std::str::FromStr;
-
+use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::fs::FileSystem;
 
 // use crate::generators::key::generate_pair;
 // use sp_core::{sr25519, Pair};
 use super::node::NetworkNode;
-use crate::{
-    shared::types::RegisterParachainOptions,
-    ScopedFilesystem,
-};
+use crate::{shared::types::RegisterParachainOptions, ScopedFilesystem};
 
 #[derive(Debug)]
 pub struct Parachain {
@@ -48,9 +46,9 @@ impl Parachain {
         }
     }
 
-    pub async fn register<'a, T>(
+    pub async fn register(
         options: RegisterParachainOptions,
-        scoped_fs: &ScopedFilesystem<'a, impl FileSystem>,
+        scoped_fs: &ScopedFilesystem<'_, impl FileSystem>,
     ) -> Result<(), anyhow::Error> {
         println!("Registering parachain: {:?}", options);
         // get the seed
@@ -71,7 +69,6 @@ impl Parachain {
             .await
             .expect("Wasm Path should be ok by this point.");
 
-
         let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
 
         let schedule_para = subxt::dynamic::tx(
@@ -80,21 +77,20 @@ impl Parachain {
             vec![
                 Value::primitive(options.id.into()),
                 Value::named_composite([
-                    ("genesis_head", Value::from_bytes(hex::decode(&genesis_state[2..])?)),
-                    ("validation_code", Value::from_bytes(hex::decode(&wasm_data[2..])?)),
+                    (
+                        "genesis_head",
+                        Value::from_bytes(hex::decode(&genesis_state[2..])?),
+                    ),
+                    (
+                        "validation_code",
+                        Value::from_bytes(hex::decode(&wasm_data[2..])?),
+                    ),
                     ("para_kind", Value::bool(true)),
-                ])
+                ]),
             ],
         );
 
-
-
-        let sudo_call = subxt::dynamic::tx(
-            "Sudo",
-            "sudo",
-            vec![schedule_para.into_value()]
-        );
-
+        let sudo_call = subxt::dynamic::tx("Sudo", "sudo", vec![schedule_para.into_value()]);
 
         // TODO: uncomment below and fix the sign and submit (and follow afterwards until
         // finalized block) to register the parachain
@@ -102,7 +98,6 @@ impl Parachain {
             .tx()
             .sign_and_submit_then_watch_default(&sudo_call, &sudo)
             .await?;
-
 
         let result = result.wait_for_in_block().await?;
         println!("In block: {:#?}", result.block_hash());

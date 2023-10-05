@@ -4,6 +4,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, RwLock},
 };
+
 use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
@@ -73,17 +74,4 @@ pub struct ParachainGenesisArgs {
     pub genesis_head: String,
     pub validation_code: String,
     pub parachain: bool,
-}
-
-impl ParachainGenesisArgs {
-    fn as_bytes_ref(&self) -> &[u8] {
-        &self.as_ref()
-    }
-}
-
-
-impl AsRef<[u8]> for ParachainGenesisArgs {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes_ref()
-    }
 }

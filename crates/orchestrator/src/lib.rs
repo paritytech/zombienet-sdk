@@ -253,7 +253,9 @@ where
             );
 
             // Is used in the register_para_options (We need to get this from the relay and not the collators)
-            if node_ws_url.is_empty() { node_ws_url = node.ws_uri.clone() }
+            if node_ws_url.is_empty() {
+                node_ws_url = node.ws_uri.clone()
+            }
 
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
@@ -363,7 +365,7 @@ where
                 finalization: false, // TODO: Seed is passed by?
             };
 
-            let _ = Parachain::register::<T>(register_para_options, &scoped_fs).await?;
+            Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
         // TODO (future):

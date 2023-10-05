@@ -21,7 +21,10 @@ use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 
-use crate::{generators::chain_spec::ParaGenesisConfig, spawner::SpawnNodeCtx};
+use crate::{
+    generators::chain_spec::ParaGenesisConfig, shared::types::RegisterParachainOptions,
+    spawner::SpawnNodeCtx,
+};
 
 pub struct Orchestrator<T, P>
 where
@@ -141,14 +144,13 @@ where
                 .await?;
         }
 
-        let para_to_register_in_genesis: Vec<&ParachainSpec> = network_spec
-            .parachains
-            .iter()
-            .filter(|para| match &para.registration_strategy {
-                RegistrationStrategy::InGenesis => true,
-                RegistrationStrategy::UsingExtrinsic => false,
-            })
-            .collect();
+        // Gather the parachains to register in genesis and the ones to register with extrinsic
+        let (para_to_register_in_genesis, para_to_register_with_extrinsic): (
+            Vec<&ParachainSpec>,
+            Vec<&ParachainSpec>,
+        ) = network_spec.parachains.iter().partition(|para| {
+            matches!(para.registration_strategy, RegistrationStrategy::InGenesis)
+        });
 
         let mut para_artifacts = vec![];
         for para in para_to_register_in_genesis {
@@ -233,6 +235,9 @@ where
             .iter_mut()
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
+        // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
+        let mut node_ws_url: String = "".to_string();
+
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
         for node in futures::future::try_join_all(spawning_tasks).await? {
@@ -246,6 +251,12 @@ where
                     &node.spec.p2p_cert_hash,
                 )?,
             );
+
+            // Is used in the register_para_options (We need to get this from the relay and not the collators)
+            if node_ws_url.is_empty() {
+                node_ws_url = node.ws_uri.clone()
+            }
+
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
         }
@@ -256,6 +267,7 @@ where
         let spawning_tasks = relaynodes
             .iter()
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
+
         for node in futures::future::try_join_all(spawning_tasks).await? {
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
@@ -322,6 +334,38 @@ where
             for node in futures::future::try_join_all(spawning_tasks).await? {
                 network.add_running_node(node, Some(para.id));
             }
+        }
+
+        // TODO: we should wait until node is ready!
+        if !para_to_register_with_extrinsic.is_empty() {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+        // Now we need to register the paras with extrinsic from the Vec collected before;
+        for para in para_to_register_with_extrinsic {
+            let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
+                id: para.id,
+                // This needs to resolve correctly
+                wasm_path: para
+                    .genesis_wasm
+                    .artifact_path()
+                    .ok_or(OrchestratorError::InvariantError(
+                        "artifact path for wasm must be set at this point",
+                    ))?
+                    .to_path_buf(),
+                state_path: para
+                    .genesis_state
+                    .artifact_path()
+                    .ok_or(OrchestratorError::InvariantError(
+                        "artifact path for state must be set at this point",
+                    ))?
+                    .to_path_buf(),
+                node_ws_url: node_ws_url.clone(),
+                onboard_as_para: para.onboard_as_parachain,
+                seed: None,          // TODO: Seed is passed by?
+                finalization: false, // TODO: Seed is passed by?
+            };
+
+            Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
         // TODO (future):

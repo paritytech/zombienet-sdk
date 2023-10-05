@@ -1,11 +1,11 @@
 pub mod chain_spec;
 pub mod errors;
+pub mod key;
 pub mod para_artifact;
 
 mod bootnode_addr;
 mod command;
 mod identity;
-mod key;
 mod keystore;
 mod port;
 

@@ -1,14 +1,16 @@
 use std::{
     collections::HashMap,
     net::TcpListener,
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 
-pub type Accounts = HashMap<String, NodeAccount>;
 use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
 };
+
+pub type Accounts = HashMap<String, NodeAccount>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAccount {
@@ -54,4 +56,22 @@ pub struct ChainDefaultContext<'a> {
     pub default_resources: Option<&'a Resources>,
     pub default_db_snapshot: Option<&'a AssetLocation>,
     pub default_args: Vec<&'a Arg>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisterParachainOptions {
+    pub id: u32,
+    pub wasm_path: PathBuf,
+    pub state_path: PathBuf,
+    pub node_ws_url: String,
+    pub onboard_as_para: bool,
+    pub seed: Option<[u8; 32]>,
+    pub finalization: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParachainGenesisArgs {
+    pub genesis_head: String,
+    pub validation_code: String,
+    pub parachain: bool,
 }

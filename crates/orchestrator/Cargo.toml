@@ -23,4 +23,6 @@ sha2 = { workspace = true, default-features = false }
 hex = { workspace = true }
 sp-core = { workspace = true }
 libp2p = { workspace = true }
+subxt = { workspace = true }
+subxt-signer = { workspace = true }
 reqwest = { workspace = true }

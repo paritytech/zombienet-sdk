@@ -396,17 +396,19 @@ impl ChainSpec {
                 }
             }
 
-            println!(
-                "{:#?}",
-                chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
-            );
+            // TODO: move to logger
+            // println!(
+            //     "{:#?}",
+            //     chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
+            // );
             // Clear authorities
             clear_authorities(&pointer, &mut chain_spec_json);
 
-            println!(
-                "{:#?}",
-                chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
-            );
+            // TODO: move to logger
+            // println!(
+            //     "{:#?}",
+            //     chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
+            // );
 
             // TODO: add to logger
             // println!("BALANCES");
@@ -414,10 +416,11 @@ impl ChainSpec {
             // add balances
             add_balances(&pointer, &mut chain_spec_json, &relaychain.nodes, 0);
 
-            println!(
-                "{:#?}",
-                chain_spec_json.pointer(format!("{}/balances", pointer).as_str())
-            );
+            // TODO: move to logger
+            // println!(
+            //     "{:#?}",
+            //     chain_spec_json.pointer(format!("{}/balances", pointer).as_str())
+            // );
 
             // Get validators to add as authorities
             let validators: Vec<&NodeSpec> = relaychain
@@ -543,9 +546,6 @@ where
     T: FileSystem,
     U: AsRef<Path>,
 {
-    println!("es:");
-    println!("{:?}", para_genesis_config.state_path.as_ref());
-    println!("{:?}", para_genesis_config.wasm_path.as_ref());
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let paras_pointer = if val.get("paras").is_some() {
             "/paras/paras"
@@ -557,8 +557,6 @@ where
             val["paras"] = json!({ "paras": [] });
             "/paras/paras"
         };
-
-        println!("{:#?}", paras_pointer);
 
         let paras = val.pointer_mut(paras_pointer).ok_or(anyhow!(
             "paras pointer should be valid {:?} ",
@@ -743,7 +741,6 @@ fn add_authorities(
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<GenesisNodeKey> = nodes.iter().map(|node| get_node_keys(node)).collect();
-        println!("{:#?}", keys);
         val["session"]["keys"] = json!(keys);
     } else {
         unreachable!("pointer to runtime config should be valid!")
@@ -779,7 +776,6 @@ fn add_aura_authorities(
                     .clone()
             })
             .collect();
-        println!("{:#?}", keys);
         val["aura"]["authorities"] = json!(keys);
     } else {
         unreachable!("pointer to runtime config should be valid!")
@@ -825,7 +821,6 @@ fn add_collator_selection(
                     .clone()
             })
             .collect();
-        println!("{:#?}", keys);
         // collatorSelection.invulnerables
         if let Some(invulnerables) = val.pointer_mut("collatorSelection/invulnerables") {
             *invulnerables = json!(keys);

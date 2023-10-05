@@ -269,9 +269,9 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         } in options.commands
         {
             // TODO: move to logger
-            println!("{:#?}, {:#?}", command, args);
-            println!("{:#?}", self.base_dir.to_string_lossy());
-            println!("{:#?}", local_output_path.as_os_str());
+            // println!("{:#?}, {:#?}", command, args);
+            // println!("{:#?}", self.base_dir.to_string_lossy());
+            // println!("{:#?}", local_output_path.as_os_str());
             let local_output_full_path = format!(
                 "{}{}{}",
                 self.base_dir.to_string_lossy(),

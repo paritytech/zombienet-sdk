@@ -64,7 +64,8 @@ where
         mut network_spec: NetworkSpec,
     ) -> Result<Network<T>, OrchestratorError> {
         // main driver for spawn the network
-        println!("{:#?}", network_spec);
+        // TODO: move to logger
+        // println!("{:#?}", network_spec);
 
         // create namespace
         let ns = self.provider.create_namespace().await?;
@@ -182,7 +183,6 @@ where
 
         // Build raw version
         network_spec.relaychain.chain_spec.build_raw(&ns).await?;
-        println!("{:#?}", network_spec.relaychain.chain_spec);
 
         // get the bootnodes to spawn first and calculate the bootnode string for use later
         let mut bootnodes = vec![];

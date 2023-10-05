@@ -28,6 +28,7 @@ pub struct RelaychainConfig {
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<NodeConfig>,
     genesis_overrides: Option<serde_json::Value>,
+    command: Option<Command>,
 }
 
 impl RelaychainConfig {
@@ -65,6 +66,12 @@ impl RelaychainConfig {
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
     }
+
+    /// The non-default command used for nodes.
+    pub fn command(&self) -> Option<&Command> {
+        self.command.as_ref()
+    }
+
 
     /// The number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn random_nominators_count(&self) -> Option<u32> {
@@ -118,6 +125,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_db_snapshot: None,
                 default_args: vec![],
                 chain_spec_path: None,
+                command: None,
                 random_nominators_count: None,
                 max_nominations: None,
                 genesis_overrides: None,

@@ -85,7 +85,7 @@ impl Parachain {
                         "validation_code",
                         Value::from_bytes(hex::decode(&wasm_data[2..])?),
                     ),
-                    ("para_kind", Value::bool(true)),
+                    ("para_kind", Value::bool(options.onboard_as_para)),
                 ]),
             ],
         );

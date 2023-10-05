@@ -235,6 +235,9 @@ where
             .iter_mut()
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
+        // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
+        let mut node_ws_url: String = "".to_string();
+
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
         for node in futures::future::try_join_all(spawning_tasks).await? {
@@ -248,23 +251,22 @@ where
                     &node.spec.p2p_cert_hash,
                 )?,
             );
+
+            // Is used in the register_para_options (We need to get this from the relay and not the collators)
+            if node_ws_url.is_empty() { node_ws_url = node.ws_uri.clone() }
+
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
         }
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
-        // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
-        let mut node_ws_url: String = "".to_string();
-
         // spawn the rest of the nodes (TODO: in batches)
         let spawning_tasks = relaynodes
             .iter()
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
-        for node in futures::future::try_join_all(spawning_tasks).await? {
-            // Is used in the register_para_options (We need to get this from the relay and not the collators)
-            node_ws_url = node.ws_uri.clone();
 
+        for node in futures::future::try_join_all(spawning_tasks).await? {
             // Add the node to the `Network` instance
             network.add_running_node(node, None);
         }
@@ -332,6 +334,10 @@ where
             }
         }
 
+        // TODO: we should wait until node is ready!
+        if !para_to_register_with_extrinsic.is_empty() {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
             let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
@@ -357,7 +363,6 @@ where
                 finalization: false, // TODO: Seed is passed by?
             };
 
-            println!("{:#?}", register_para_options);
             let _ = Parachain::register::<T>(register_para_options, &scoped_fs).await?;
         }
 

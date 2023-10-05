@@ -135,8 +135,10 @@ impl ChainSpec {
             let cmd = self.command.as_ref().unwrap();
             let mut args: Vec<String> = vec!["build-spec".into()];
             if let Some(chain_name) = self.chain_name.as_ref() {
-                args.push("--chain".into());
-                args.push(chain_name.clone());
+                if !chain_name.is_empty() {
+                    args.push("--chain".into());
+                    args.push(chain_name.clone());
+                }
             }
             args.push("--disable-default-bootnode".into());
 

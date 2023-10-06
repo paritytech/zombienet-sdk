@@ -17,13 +17,9 @@ pub struct GlobalSettings {
     // TODO: parse both case in zombienet node version to avoid renamed ?
     #[serde(rename = "timeout")]
     network_spawn_timeout: Duration,
-    #[serde(default = "default_node_spawn_timeout")]
+    #[serde(default)]
     node_spawn_timeout: Duration,
     local_ip: Option<IpAddr>,
-}
-
-fn default_node_spawn_timeout() -> Duration {
-    300
 }
 
 impl GlobalSettings {

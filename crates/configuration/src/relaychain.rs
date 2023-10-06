@@ -12,10 +12,13 @@ use crate::shared::{
     types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext},
 };
 
+use crate::utils::default_command_polkadot;
+
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelaychainConfig {
     chain: Chain,
+    #[serde(default = "default_command_polkadot")]
     default_command: Option<Command>,
     default_image: Option<Image>,
     default_resources: Option<Resources>,

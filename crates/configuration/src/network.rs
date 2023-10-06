@@ -81,12 +81,9 @@ impl NetworkConfig {
         }
 
         // retrieve the defaults relaychain for assigning to nodes if needed
-        let mut relaychain_default_command: Option<Command> =
+        let relaychain_default_command: Option<Command> =
             network_config.relaychain().default_command().cloned();
 
-        if relaychain_default_command.is_none() {
-            relaychain_default_command = network_config.relaychain().command().cloned();
-        }
         let relaychain_default_image: Option<Image> =
             network_config.relaychain().default_image().cloned();
 
@@ -106,6 +103,14 @@ impl NetworkConfig {
             .into_iter()
             .cloned()
             .collect();
+
+        
+        let mut parachains: Vec<ParachainConfig> = network_config
+            .parachains()
+            .into_iter()
+            .cloned()
+            .collect();
+
 
         // Validation checks for relay
         TryInto::<Chain>::try_into(network_config.relaychain().chain().as_str())?;
@@ -139,6 +144,47 @@ impl NetworkConfig {
             }
         }
 
+        for para in parachains.iter_mut() {
+            // retrieve the defaults parachain for assigning to collators if needed
+            let parachain_default_command: Option<Command> = para.default_command().cloned();
+
+            let parachain_default_image: Option<Image> = para.default_image().cloned();
+
+            let parachain_default_db_snapshot: Option<AssetLocation> =
+                para.default_db_snapshot().cloned();
+
+            let default_args: Vec<Arg> = para
+                .default_args()
+                .into_iter()
+                .cloned()
+                .collect();
+
+            let mut collators: Vec<NodeConfig> = para.collators().into_iter().cloned().collect();
+
+            for collator in collators.iter_mut() {
+                if parachain_default_command.is_some() {
+                    // we modify only nodes which don't already have a command
+                    if collator.command.is_none() {
+                        collator.command = parachain_default_command.clone();
+                    }
+                }
+
+                if parachain_default_image.is_some() && collator.image.is_none() {
+                    collator.image = parachain_default_image.clone();
+                }
+
+                if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
+                    collator.db_snapshot = parachain_default_db_snapshot.clone();
+                }
+
+                if !default_args.is_empty() && collator.args().is_empty() {
+                    collator.set_args(default_args.clone());
+                }
+            }
+
+            para.collators = collators;
+        }
+
         network_config
             .relaychain
             .as_mut()
@@ -154,6 +200,8 @@ impl NetworkConfig {
                 let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
             }
         });
+
+        
 
         Ok(network_config)
     }

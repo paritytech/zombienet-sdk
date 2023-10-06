@@ -9,6 +9,8 @@ use crate::shared::{
     types::Duration,
 };
 
+use crate::utils::default_node_spawn_timeout;
+
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalSettings {
@@ -17,7 +19,7 @@ pub struct GlobalSettings {
     // TODO: parse both case in zombienet node version to avoid renamed ?
     #[serde(rename = "timeout")]
     network_spawn_timeout: Duration,
-    #[serde(default)]
+    #[serde(default = "default_node_spawn_timeout")]
     node_spawn_timeout: Duration,
     local_ip: Option<IpAddr>,
 }

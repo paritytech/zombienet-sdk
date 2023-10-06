@@ -15,7 +15,7 @@ use crate::{
         resources::Resources,
         types::{Arg, Port},
     },
-    utils::default_as_true,
+    utils::{default_as_true, default_initial_balance}
 };
 
 /// An environment variable with a name and a value.
@@ -69,7 +69,7 @@ pub struct NodeConfig {
     #[serde(alias = "bootnode", default)]
     pub(crate) is_bootnode: bool,
     #[serde(alias = "balance")]
-    #[serde(default)]
+    #[serde(default = "default_initial_balance")]
     initial_balance: U128,
     #[serde(default)]
     env: Vec<EnvVar>,

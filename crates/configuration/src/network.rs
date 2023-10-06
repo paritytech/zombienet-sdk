@@ -1008,7 +1008,7 @@ mod tests {
                     .with_chain("rococo-local")
                     .with_default_command("polkadot")
                     .with_default_image("docker.io/parity/polkadot:latest")
-                    .with_default_args(vec![("-lparachain", "debug").into()])
+                    .with_default_args(vec![("-lparachain=debug").into()])
                     .with_node(|node| {
                         node.with_name("alice")
                             .validator(true)

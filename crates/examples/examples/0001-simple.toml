@@ -4,8 +4,8 @@ node_spawn_timeout = 1000
 
 [relaychain]
 default_image = "docker.io/parity/polkadot-sdk:latest"
+command = "polkadot"
 chain = "rococo-local"
-default_command = "polkadot"
 
   [[relaychain.nodes]]
   name = "alice"

@@ -118,8 +118,8 @@ pub struct ParachainConfig {
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<Command>,
     chain_spec_path: Option<AssetLocation>,
-    #[serde(rename = "cumulus_based")]
-    is_cumulus_based: Option<bool>,
+    #[serde(rename = "cumulus_based", default = "default_as_true")]
+    is_cumulus_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
     genesis_overrides: Option<serde_json::Value>,
@@ -210,11 +210,7 @@ impl ParachainConfig {
 
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
-        if let Some(true) = self.is_cumulus_based {
-            true
-        } else {
-            false
-        }
+        self.is_cumulus_based
     }
 
     /// The bootnodes addresses the collators will connect to.
@@ -262,7 +258,7 @@ impl Default for ParachainConfigBuilder<Initial> {
                 genesis_state_generator: None,
                 genesis_overrides: None,
                 chain_spec_path: None,
-                is_cumulus_based: Some(true),
+                is_cumulus_based: true,
                 bootnodes_addresses: vec![],
                 collators: vec![],
             },
@@ -579,7 +575,7 @@ impl ParachainConfigBuilder<WithId> {
     pub fn cumulus_based(self, choice: bool) -> Self {
         Self::transition(
             ParachainConfig {
-                is_cumulus_based: Some(choice),
+                is_cumulus_based: choice,
                 ..self.config
             },
             self.validation_context,

@@ -72,7 +72,6 @@ impl RelaychainConfig {
         self.command.as_ref()
     }
 
-
     /// The number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn random_nominators_count(&self) -> Option<u32> {
         self.random_nominators_count

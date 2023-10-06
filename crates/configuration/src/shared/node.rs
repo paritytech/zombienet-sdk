@@ -66,7 +66,7 @@ pub struct NodeConfig {
     pub(crate) is_validator: bool,
     #[serde(alias = "invulnerable", default = "default_as_true")]
     pub(crate) is_invulnerable: bool,
-    #[serde(alias = "bootnode")]
+    #[serde(alias = "bootnode", default)]
     pub(crate) is_bootnode: bool,
     #[serde(alias = "balance")]
     #[serde(default)]

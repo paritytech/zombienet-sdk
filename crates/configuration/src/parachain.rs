@@ -105,7 +105,7 @@ pub struct ParachainConfig {
         default = "default_as_true"
     )]
     onboard_as_parachain: bool,
-    #[serde(rename = "balance")]
+    #[serde(rename = "balance", default)]
     initial_balance: U128,
     default_command: Option<Command>,
     default_image: Option<Image>,
@@ -118,7 +118,7 @@ pub struct ParachainConfig {
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<Command>,
     chain_spec_path: Option<AssetLocation>,
-    #[serde(rename = "cumulus_based")]
+    #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,

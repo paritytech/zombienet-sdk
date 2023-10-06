@@ -17,8 +17,13 @@ pub struct GlobalSettings {
     // TODO: parse both case in zombienet node version to avoid renamed ?
     #[serde(rename = "timeout")]
     network_spawn_timeout: Duration,
+    #[serde(default = "default_node_spawn_timeout")]
     node_spawn_timeout: Duration,
     local_ip: Option<IpAddr>,
+}
+
+fn default_node_spawn_timeout() -> Duration {
+    300
 }
 
 impl GlobalSettings {
@@ -179,6 +184,38 @@ mod tests {
         );
         assert_eq!(global_settings_config.network_spawn_timeout(), 600);
         assert_eq!(global_settings_config.node_spawn_timeout(), 120);
+        assert_eq!(
+            global_settings_config
+                .local_ip()
+                .unwrap()
+                .to_string()
+                .as_str(),
+            "10.0.0.1"
+        );
+    }
+
+    #[test]
+    fn global_settings_config_builder_should_succeeds_when_node_spawn_timeout_is_missing() {
+        let global_settings_config = GlobalSettingsBuilder::new()
+            .with_bootnodes_addresses(vec![
+                "/ip4/10.41.122.55/tcp/45421",
+                "/ip4/51.144.222.10/tcp/2333",
+            ])
+            .with_network_spawn_timeout(600)
+            .with_local_ip("10.0.0.1")
+            .build()
+            .unwrap();
+
+        let bootnodes_addresses: Vec<Multiaddr> = vec![
+            "/ip4/10.41.122.55/tcp/45421".try_into().unwrap(),
+            "/ip4/51.144.222.10/tcp/2333".try_into().unwrap(),
+        ];
+        assert_eq!(
+            global_settings_config.bootnodes_addresses(),
+            bootnodes_addresses.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(global_settings_config.network_spawn_timeout(), 600);
+        assert_eq!(global_settings_config.node_spawn_timeout(), 300);
         assert_eq!(
             global_settings_config
                 .local_ip()

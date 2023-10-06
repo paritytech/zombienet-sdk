@@ -1,4 +1,4 @@
-use std::time::Duration;
+// use std::time::Duration;
 
 use configuration::NetworkConfig;
 use orchestrator::Orchestrator;
@@ -7,7 +7,8 @@ use support::fs::local::LocalFileSystem;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = NetworkConfig::load_from_toml("./crates/examples/examples/0001-simple.toml").expect("errored?");
+    let config = NetworkConfig::load_from_toml("./crates/examples/examples/0001-simple.toml")
+        .expect("errored?");
 
     let fs = LocalFileSystem;
     let provider = NativeProvider::new(fs.clone());
@@ -19,5 +20,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {}
 
     // Ok(())
-
+    
 }

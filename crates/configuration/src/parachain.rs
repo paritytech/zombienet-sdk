@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    utils::{default_as_true, default_command_polkadot, default_initial_balance},
+    utils::{default_as_true, default_initial_balance},
 };
 
 #[derive(Debug, Clone, PartialEq)]

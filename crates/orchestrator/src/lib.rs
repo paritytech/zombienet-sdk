@@ -4,6 +4,7 @@
 mod errors;
 mod generators;
 mod network;
+mod network_helper;
 mod network_spec;
 mod shared;
 mod spawner;
@@ -73,8 +74,9 @@ where
         // create namespace
         let ns = self.provider.create_namespace().await?;
 
-        println!("ns: {:#?}", ns.id());
-        println!("base_dir: {:#?}", ns.base_dir());
+        println!("\n\n");
+        println!("🧰 ns: {:#?}", ns.id());
+        println!("🧰 base_dir: {:#?}", ns.base_dir());
 
         // TODO: noop for native
         // Static setup
@@ -211,6 +213,7 @@ where
             scoped_fs: &scoped_fs,
             parachain: None,
             bootnodes_addr: &vec![],
+            wait_ready: false,
         };
 
         let global_files_to_inject = vec![TransferedFile {
@@ -372,7 +375,8 @@ where
 
         // - add-ons (introspector/tracing/etc)
 
-        // - verify nodes (clean metrics cache?)
+        // verify nodes
+        network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // - write zombie.json state file (we should defined in a way we can load later)
 

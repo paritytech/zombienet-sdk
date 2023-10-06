@@ -81,9 +81,12 @@ impl NetworkConfig {
         }
 
         // retrieve the defaults relaychain for assigning to nodes if needed
-        let relaychain_default_command: Option<Command> =
+        let mut relaychain_default_command: Option<Command> =
             network_config.relaychain().default_command().cloned();
 
+        if relaychain_default_command.is_none() {
+            relaychain_default_command = network_config.relaychain().command().cloned();
+        }
         let relaychain_default_image: Option<Image> =
             network_config.relaychain().default_image().cloned();
 

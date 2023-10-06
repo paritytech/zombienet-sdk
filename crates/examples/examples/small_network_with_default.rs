@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use configuration::NetworkConfigBuilder;
 use orchestrator::{AddNodeOpts, Orchestrator};
 use provider::NativeProvider;
@@ -37,12 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: add check to ensure if unique
     network.add_node("new1", opts, None).await?;
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
     // Example of some opertions that you can do
     // with `nodes` (e.g pause, resume, restart)
-
-    tokio::time::sleep(Duration::from_secs(10)).await;
 
     // Get a ref to the node
     let node = network.get_node("alice")?;
@@ -56,8 +50,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // pause the node
     // node.pause().await?;
     // println!("node new1 paused!");
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // node.resume().await?;
     // println!("node new1 resumed!");

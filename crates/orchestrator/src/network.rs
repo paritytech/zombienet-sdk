@@ -142,6 +142,7 @@ impl<T: FileSystem> Network<T> {
             scoped_fs: &scoped_fs,
             parachain: para_spec,
             bootnodes_addr: &vec![],
+            wait_ready: true,
         };
 
         let mut global_files_to_inject = vec![TransferedFile {
@@ -188,6 +189,10 @@ impl<T: FileSystem> Network<T> {
         } else {
             Err(anyhow::anyhow!("can't find the node!"))
         }
+    }
+
+    pub fn nodes(&self) -> Vec<&NetworkNode> {
+        self.nodes_by_name.values().collect::<Vec<&NetworkNode>>()
     }
 
     // Internal API

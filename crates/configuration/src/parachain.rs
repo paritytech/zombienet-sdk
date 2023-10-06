@@ -105,7 +105,7 @@ pub struct ParachainConfig {
         default = "default_as_true"
     )]
     onboard_as_parachain: bool,
-    #[serde(default = "default_initial_balance")]
+    #[serde(rename = "balance", default = "default_initial_balance")]
     initial_balance: U128,
     default_command: Option<Command>,
     default_image: Option<Image>,

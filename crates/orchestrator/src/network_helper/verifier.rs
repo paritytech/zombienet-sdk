@@ -10,6 +10,8 @@ pub async fn verify_nodes(nodes: &[&NetworkNode]) -> Result<(), anyhow::Error> {
         .map_err(|_| anyhow::anyhow!("one or more nodes are not ready!"))
 }
 
+// TODO: we should inject in someway the logic to make the request
+// in order to allow us to `mock` and easily test this.
 async fn check_nodes(nodes: &[&NetworkNode]) {
     loop {
         let tasks: Vec<_> = nodes

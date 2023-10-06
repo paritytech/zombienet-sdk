@@ -3,10 +3,13 @@ use std::{error::Error, fmt::Display, net::IpAddr, str::FromStr};
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 
-use crate::shared::{
-    errors::{ConfigError, FieldError},
-    helpers::{merge_errors, merge_errors_vecs},
-    types::Duration,
+use crate::{
+    shared::{
+        errors::{ConfigError, FieldError},
+        helpers::{merge_errors, merge_errors_vecs},
+        types::Duration,
+    },
+    utils::default_node_spawn_timeout,
 };
 
 /// Global settings applied to an entire network.
@@ -17,7 +20,7 @@ pub struct GlobalSettings {
     // TODO: parse both case in zombienet node version to avoid renamed ?
     #[serde(rename = "timeout")]
     network_spawn_timeout: Duration,
-    #[serde(default)]
+    #[serde(default = "default_node_spawn_timeout")]
     node_spawn_timeout: Duration,
     local_ip: Option<IpAddr>,
 }

@@ -107,6 +107,9 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
+        let mut parachains: Vec<ParachainConfig> =
+            network_config.parachains().into_iter().cloned().collect();
+
         // Validation checks for relay
         TryInto::<Chain>::try_into(network_config.relaychain().chain().as_str())?;
         if relaychain_default_image.is_some() {
@@ -137,6 +140,43 @@ impl NetworkConfig {
             if !default_args.is_empty() && node.args().is_empty() {
                 node.set_args(default_args.clone());
             }
+        }
+
+        for para in parachains.iter_mut() {
+            // retrieve the defaults parachain for assigning to collators if needed
+            let parachain_default_command: Option<Command> = para.default_command().cloned();
+
+            let parachain_default_image: Option<Image> = para.default_image().cloned();
+
+            let parachain_default_db_snapshot: Option<AssetLocation> =
+                para.default_db_snapshot().cloned();
+
+            let default_args: Vec<Arg> = para.default_args().into_iter().cloned().collect();
+
+            let mut collators: Vec<NodeConfig> = para.collators().into_iter().cloned().collect();
+
+            for collator in collators.iter_mut() {
+                if parachain_default_command.is_some() {
+                    // we modify only nodes which don't already have a command
+                    if collator.command.is_none() {
+                        collator.command = parachain_default_command.clone();
+                    }
+                }
+
+                if parachain_default_image.is_some() && collator.image.is_none() {
+                    collator.image = parachain_default_image.clone();
+                }
+
+                if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
+                    collator.db_snapshot = parachain_default_db_snapshot.clone();
+                }
+
+                if !default_args.is_empty() && collator.args().is_empty() {
+                    collator.set_args(default_args.clone());
+                }
+            }
+
+            para.collators = collators;
         }
 
         network_config
@@ -968,7 +1008,7 @@ mod tests {
                     .with_chain("rococo-local")
                     .with_default_command("polkadot")
                     .with_default_image("docker.io/parity/polkadot:latest")
-                    .with_default_args(vec![("-lparachain", "debug").into()])
+                    .with_default_args(vec![("-lparachain=debug").into()])
                     .with_node(|node| {
                         node.with_name("alice")
                             .validator(true)

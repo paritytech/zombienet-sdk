@@ -355,9 +355,13 @@ impl<'de> de::Visitor<'de> for ArgVisitor {
     where
         E: de::Error,
     {
+        // covers the "-lruntime=debug,parachain=trace" case
+        // TODO: Make this more generic by adding the scenario in the regex below
+        if v.starts_with("-l") || v.starts_with("-log") {
+            return Ok(Arg::Flag(v.to_string()));
+        }
         let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
         let captures = re.captures(v);
-
         if let Some(captures) = captures {
             if let Some(value) = captures.name("value") {
                 return Ok(Arg::Option(
@@ -369,7 +373,6 @@ impl<'de> de::Visitor<'de> for ArgVisitor {
                     value.as_str().to_string(),
                 ));
             }
-
             if let Some(name_prefix) = captures.name("name_prefix") {
                 return Ok(Arg::Flag(name_prefix.as_str().to_string()));
             }

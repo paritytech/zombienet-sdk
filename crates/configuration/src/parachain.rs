@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    utils::default_as_true,
+    utils::{default_as_true, default_initial_balance},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,8 +61,8 @@ impl<'de> Visitor<'de> for RegistrationStrategyVisitor {
 
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                "add_to_genesis" => add_to_genesis = map.next_value()?,
-                "register_para" => register_para = map.next_value()?,
+                "addToGenesis" | "add_to_genesis" => add_to_genesis = map.next_value()?,
+                "registerPara" | "register_para" => register_para = map.next_value()?,
                 _ => {
                     return Err(de::Error::unknown_field(
                         &key,
@@ -105,7 +105,7 @@ pub struct ParachainConfig {
         default = "default_as_true"
     )]
     onboard_as_parachain: bool,
-    #[serde(rename = "balance", default)]
+    #[serde(rename = "balance", default = "default_initial_balance")]
     initial_balance: U128,
     default_command: Option<Command>,
     default_image: Option<Image>,
@@ -124,7 +124,7 @@ pub struct ParachainConfig {
     bootnodes_addresses: Vec<Multiaddr>,
     genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
-    collators: Vec<NodeConfig>,
+    pub collators: Vec<NodeConfig>,
 }
 
 impl ParachainConfig {

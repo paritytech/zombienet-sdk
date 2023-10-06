@@ -32,6 +32,9 @@ pub struct SpawnNodeCtx<'a, T: FileSystem> {
     pub(crate) parachain: Option<&'a ParachainSpec>,
     /// The string represenation of the bootnode addres to pass to nodes
     pub(crate) bootnodes_addr: &'a Vec<String>,
+    /// Flag to wait node is ready or not
+    /// Ready state means we can query prometheus internal server
+    pub(crate) wait_ready: bool,
 }
 
 pub async fn spawn_node<'a, T>(
@@ -153,6 +156,7 @@ where
         node.name
     );
     println!("🚀 {} : metrics link {prometheus_uri}", node.name);
+    println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     println!("\n");
     Ok(NetworkNode::new(
         node.name.clone(),

@@ -67,7 +67,7 @@ pub struct NodeConfig {
     #[serde(alias = "invulnerable", default = "default_as_true")]
     pub(crate) is_invulnerable: bool,
     #[serde(alias = "bootnode")]
-    pub(crate) is_bootnode: bool,
+    pub(crate) is_bootnode: Option<bool>,
     #[serde(alias = "balance")]
     #[serde(default)]
     initial_balance: U128,
@@ -191,7 +191,7 @@ impl NodeConfig {
 
     /// Whether the node is a bootnode.
     pub fn is_bootnode(&self) -> bool {
-        self.is_bootnode
+        self.is_bootnode.is_some()
     }
 
     /// Node initial balance present in genesis.
@@ -268,7 +268,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 args: vec![],
                 is_validator: true,
                 is_invulnerable: true,
-                is_bootnode: false,
+                is_bootnode: Some(false),
                 initial_balance: 2_000_000_000_000.into(),
                 env: vec![],
                 bootnodes_addresses: vec![],
@@ -434,7 +434,7 @@ impl NodeConfigBuilder<Buildable> {
     pub fn bootnode(self, choice: bool) -> Self {
         Self::transition(
             NodeConfig {
-                is_bootnode: choice,
+                is_bootnode: Some(choice),
                 ..self.config
             },
             self.validation_context,

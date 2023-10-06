@@ -10,12 +10,10 @@ chain = "rococo-local"
   [[relaychain.nodes]]
   name = "alice"
   args = [ "--alice", "-lruntime=debug,parachain=trace" ]
-  is_bootnode = true
 
   [[relaychain.nodes]]
   name = "bob"
   args = [ "--bob", "-lruntime=debug,parachain=trace" ]
-  is_bootnode = true
 
 [[parachains]]
 id = 100

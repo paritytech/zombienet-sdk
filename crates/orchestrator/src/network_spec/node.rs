@@ -43,7 +43,7 @@ pub struct NodeSpec {
     pub(crate) is_invulnerable: bool,
 
     /// Whether the node is a bootnode.
-    pub(crate) is_bootnode: bool,
+    pub(crate) is_bootnode: Option<bool>,
 
     /// Node initial balance present in genesis.
     pub(crate) initial_balance: u128,
@@ -124,7 +124,7 @@ impl NodeSpec {
             args,
             is_validator: node_config.is_validator(),
             is_invulnerable: node_config.is_invulnerable(),
-            is_bootnode: node_config.is_bootnode(),
+            is_bootnode: Some(node_config.is_bootnode()),
             initial_balance: node_config.initial_balance(),
             env: node_config.env().into_iter().cloned().collect(),
             bootnodes_addresses: node_config
@@ -200,7 +200,7 @@ impl NodeSpec {
             args,
             is_validator: options.is_validator,
             is_invulnerable: false,
-            is_bootnode: false,
+            is_bootnode: Some(false),
             initial_balance: 0,
             env: options.env,
             bootnodes_addresses: vec![],

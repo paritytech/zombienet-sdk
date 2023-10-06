@@ -190,7 +190,7 @@ where
         let mut bootnodes = vec![];
         let mut relaynodes = vec![];
         network_spec.relaychain.nodes.iter().for_each(|node| {
-            if node.is_bootnode {
+            if node.is_bootnode.is_some() {
                 bootnodes.push(node)
             } else {
                 relaynodes.push(node)

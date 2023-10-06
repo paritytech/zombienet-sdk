@@ -357,7 +357,7 @@ impl<'de> de::Visitor<'de> for ArgVisitor {
     {
         // covers the "-lruntime=debug,parachain=trace" case
         // TODO: Make this more generic by adding the scenario in the regex below
-        if (v.starts_with("-l") || v.starts_with("-log")) && v.contains(",") {
+        if (v.starts_with("-l") || v.starts_with("-log")) && v.contains(',') {
             return Ok(Arg::Flag(v.to_string()));
         }
         let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();

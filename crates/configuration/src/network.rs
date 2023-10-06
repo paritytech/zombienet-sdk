@@ -147,14 +147,6 @@ impl NetworkConfig {
 
         // Validation checks for parachains
         network_config.parachains().iter().for_each(|parachain| {
-            let _ = TryInto::<Chain>::try_into(
-                parachain
-                    .chain()
-                    .ok_or("chain name must exist")
-                    .unwrap()
-                    .as_str(),
-            );
-
             if parachain.default_image().is_some() {
                 let _ = TryInto::<Image>::try_into(parachain.default_image().unwrap().as_str());
             }

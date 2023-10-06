@@ -12,6 +12,7 @@ pub async fn verify_nodes(nodes: &[&NetworkNode]) -> Result<(), anyhow::Error> {
 
 // TODO: we should inject in someway the logic to make the request
 // in order to allow us to `mock` and easily test this.
+// maybe moved to the provider with a NodeStatus, and some helpers like wait_running, wait_ready, etc... ? to be discussed
 async fn check_nodes(nodes: &[&NetworkNode]) {
     loop {
         let tasks: Vec<_> = nodes

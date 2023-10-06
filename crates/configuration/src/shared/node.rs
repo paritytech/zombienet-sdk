@@ -15,7 +15,7 @@ use crate::{
         resources::Resources,
         types::{Arg, Port},
     },
-    utils::{default_as_true, default_initial_balance}
+    utils::{default_as_true, default_initial_balance},
 };
 
 /// An environment variable with a name and a value.

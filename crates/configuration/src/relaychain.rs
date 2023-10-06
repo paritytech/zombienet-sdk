@@ -2,17 +2,20 @@ use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
 
 use serde::{Deserialize, Serialize};
 
-use crate::shared::{
-    constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG},
-    errors::{ConfigError, FieldError},
-    helpers::{merge_errors, merge_errors_vecs},
-    macros::states,
-    node::{self, NodeConfig, NodeConfigBuilder},
-    resources::{Resources, ResourcesBuilder},
-    types::{Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext},
+use crate::{
+    shared::{
+        constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG},
+        errors::{ConfigError, FieldError},
+        helpers::{merge_errors, merge_errors_vecs},
+        macros::states,
+        node::{self, NodeConfig, NodeConfigBuilder},
+        resources::{Resources, ResourcesBuilder},
+        types::{
+            Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
+        },
+    },
+    utils::default_command_polkadot,
 };
-
-use crate::utils::default_command_polkadot;
 
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

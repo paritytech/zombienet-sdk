@@ -107,13 +107,8 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
-        
-        let mut parachains: Vec<ParachainConfig> = network_config
-            .parachains()
-            .into_iter()
-            .cloned()
-            .collect();
-
+        let mut parachains: Vec<ParachainConfig> =
+            network_config.parachains().into_iter().cloned().collect();
 
         // Validation checks for relay
         TryInto::<Chain>::try_into(network_config.relaychain().chain().as_str())?;
@@ -156,11 +151,7 @@ impl NetworkConfig {
             let parachain_default_db_snapshot: Option<AssetLocation> =
                 para.default_db_snapshot().cloned();
 
-            let default_args: Vec<Arg> = para
-                .default_args()
-                .into_iter()
-                .cloned()
-                .collect();
+            let default_args: Vec<Arg> = para.default_args().into_iter().cloned().collect();
 
             let mut collators: Vec<NodeConfig> = para.collators().into_iter().cloned().collect();
 
@@ -203,8 +194,6 @@ impl NetworkConfig {
                 let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
             }
         });
-
-        
 
         Ok(network_config)
     }

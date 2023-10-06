@@ -3,13 +3,14 @@ use std::{error::Error, fmt::Display, net::IpAddr, str::FromStr};
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 
-use crate::shared::{
-    errors::{ConfigError, FieldError},
-    helpers::{merge_errors, merge_errors_vecs},
-    types::Duration,
+use crate::{
+    shared::{
+        errors::{ConfigError, FieldError},
+        helpers::{merge_errors, merge_errors_vecs},
+        types::Duration,
+    },
+    utils::default_node_spawn_timeout,
 };
-
-use crate::utils::default_node_spawn_timeout;
 
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

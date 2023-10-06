@@ -35,8 +35,8 @@ impl Serialize for RegistrationStrategy {
         let mut state = serializer.serialize_struct("RegistrationStrategy", 1)?;
 
         match self {
-            Self::InGenesis => state.serialize_field("addToGenesis", &true)?,
-            Self::UsingExtrinsic => state.serialize_field("registerPara", &true)?,
+            Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
+            Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
         }
 
         state.end()
@@ -61,12 +61,12 @@ impl<'de> Visitor<'de> for RegistrationStrategyVisitor {
 
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                "addToGenesis" => add_to_genesis = map.next_value()?,
-                "registerPara" => register_para = map.next_value()?,
+                "addToGenesis" | "add_to_genesis" => add_to_genesis = map.next_value()?,
+                "registerPara" | "register_para" => register_para = map.next_value()?,
                 _ => {
                     return Err(de::Error::unknown_field(
                         &key,
-                        &["addToGenesis", "registerPara"],
+                        &["add_to_genesis", "register_para"],
                     ))
                 },
             }
@@ -75,7 +75,7 @@ impl<'de> Visitor<'de> for RegistrationStrategyVisitor {
         match (add_to_genesis, register_para) {
             (true, false) => Ok(RegistrationStrategy::InGenesis),
             (false, true) => Ok(RegistrationStrategy::UsingExtrinsic),
-            _ => Err(de::Error::missing_field("addToGenesis or registerPara")),
+            _ => Err(de::Error::missing_field("add_to_genesis or register_para")),
         }
     }
 }
@@ -87,7 +87,7 @@ impl<'de> Deserialize<'de> for RegistrationStrategy {
     {
         deserializer.deserialize_struct(
             "RegistrationStrategy",
-            &["addToGenesis", "registerPara"],
+            &["add_to_genesis", "register_para"],
             RegistrationStrategyVisitor,
         )
     }

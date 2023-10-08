@@ -6,6 +6,8 @@ use support::fs::FileSystem;
 
 use crate::{shared::types::RegisterParachainOptions, ScopedFilesystem};
 
+#[subxt::subxt(runtime_metadata_path = "src/metadata.scale")]
+pub mod substrate{}
 
 pub async fn register(
     options: RegisterParachainOptions,
@@ -32,9 +34,7 @@ pub async fn register(
 
     let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
 
-    let schedule_para = subxt::dynamic::tx(
-        "ParasSudoWrapper",
-        "sudo_schedule_para_initialize",
+    let schedule_para = substrate::ParasSudoWrapper::sudo_schedule_para_initialize(
         vec![
             Value::primitive(options.id.into()),
             Value::named_composite([
@@ -51,7 +51,7 @@ pub async fn register(
         ],
     );
 
-    let sudo_call = subxt::dynamic::tx("Sudo", "sudo", vec![schedule_para.into_value()]);
+    let sudo_call = substrate::Sudo::sudo(schedule_para.into_value());
 
     // TODO: uncomment below and fix the sign and submit (and follow afterwards until
     // finalized block) to register the parachain

@@ -3,35 +3,26 @@ use std::str::FromStr;
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 
+#[subxt::subxt(runtime_metadata_path = "src/metadata.scale")]
+pub mod substrate{}
 
 pub async fn register(
     validator_ids: Vec<String>,
     node_ws_url: &str,
 ) -> Result<(), anyhow::Error> {
     println!("Registering validators: {:?}", validator_ids);
-    // get the seed
-    // let sudo: Keypair;
-    // if let Some(possible_seed) = options.seed {
-    //     sudo = Keypair::from_seed(possible_seed).expect("seed should return a Keypair.");
-    // } else {
-        let uri = SecretUri::from_str("//Alice")?;
-        let sudo = Keypair::from_uri(&uri)?;
-    // }
+    let uri = SecretUri::from_str("//Alice")?;
+    let sudo = Keypair::from_uri(&uri)?;
 
     println!("pse");
     let api = OnlineClient::<SubstrateConfig>::from_url(node_ws_url).await?;
     println!("pse connected");
 
-    // let bytes: Vec<Value> = validator_ids.iter().map(|id| Value::from_bytes(id)).collect();
-    // println!("{:?}", bytes);
-
-    let register_call = subxt::dynamic::tx(
-        "ValidatorManager",
-        "register_validators",
+    let register_call = substrate::ValidatorManager::register_validators(
         vec![Value::unnamed_composite(vec![Value::from_bytes(validator_ids.first().unwrap().as_bytes())])],
     );
 
-    let sudo_call = subxt::dynamic::tx("Sudo", "sudo", vec![register_call.into_value()]);
+    let sudo_call = substrate::Sudo::sudo(register_call.into_value());
 
     println!("pse1");
     // TODO: uncomment below and fix the sign and submit (and follow afterwards until

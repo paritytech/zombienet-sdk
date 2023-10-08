@@ -3,15 +3,15 @@ use std::{
     str::FromStr,
 };
 
-use subxt::{subxt, dynamic::Value, OnlineClient, SubstrateConfig};
+use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::fs::FileSystem;
 
 use super::node::NetworkNode;
 use crate::{shared::types::RegisterParachainOptions, ScopedFilesystem};
 
-#[subxt(runtime_metadata_path = "src/metadata.scale")]
-pub mod substrate{}
+#[subxt::subxt(runtime_metadata_path = "src/metadata.scale")]
+pub mod substrate {}
 
 #[derive(Debug)]
 pub struct Parachain {

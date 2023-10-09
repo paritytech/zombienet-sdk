@@ -19,31 +19,42 @@ pub type FileSystemResult<T> = Result<T, FileSystemError>;
 
 #[async_trait]
 pub trait FileSystem {
-    async fn create_dir(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()>;
+    async fn create_dir<P>(&self, path: P) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send;
 
-    async fn create_dir_all(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()>;
+    async fn create_dir_all<P>(&self, path: P) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send;
 
-    async fn read(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<Vec<u8>>;
+    async fn read<P>(&self, path: P) -> FileSystemResult<Vec<u8>>
+    where
+        P: AsRef<Path> + Send;
 
-    async fn read_to_string(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<String>;
+    async fn read_to_string<P>(&self, path: P) -> FileSystemResult<String>
+    where
+        P: AsRef<Path> + Send;
 
-    async fn write(
-        &self,
-        path: impl AsRef<Path> + Send,
-        contents: impl AsRef<[u8]> + Send,
-    ) -> FileSystemResult<()>;
+    async fn write<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+        C: AsRef<[u8]> + Send;
 
-    async fn append(
-        &self,
-        path: impl AsRef<Path> + Send,
-        contents: impl AsRef<[u8]> + Send,
-    ) -> FileSystemResult<()>;
+    async fn append<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+        C: AsRef<[u8]> + Send;
 
-    async fn copy(
-        &self,
-        from: impl AsRef<Path> + Send,
-        to: impl AsRef<Path> + Send,
-    ) -> FileSystemResult<()>;
+    async fn copy<P1, P2>(&self, from: P1, to: P2) -> FileSystemResult<()>
+    where
+        P1: AsRef<Path> + Send,
+        P2: AsRef<Path> + Send;
 
-    async fn set_mode(&self, path: impl AsRef<Path> + Send, perm: u32) -> FileSystemResult<()>;
+    async fn set_mode<P>(&self, path: P, perm: u32) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send;
+
+    async fn exists<P>(&self, path: P) -> bool
+    where
+        P: AsRef<Path> + Send;
 }

@@ -1,11 +1,4 @@
-use std::{
-    collections::HashMap,
-    ffi::OsString,
-    fs::{self, Permissions},
-    os::unix::prelude::PermissionsExt,
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashMap, ffi::OsString, path::Path, sync::Arc};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -15,14 +8,8 @@ use super::{FileSystem, FileSystemResult};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InMemoryFile {
-    File {
-        mode: u32,
-        contents: Vec<u8>,
-        mirror: bool,
-    },
-    Directory {
-        mode: u32,
-    },
+    File { mode: u32, contents: Vec<u8> },
+    Directory { mode: u32 },
 }
 
 impl InMemoryFile {
@@ -40,31 +27,6 @@ impl InMemoryFile {
         Self::File {
             mode: 0o664,
             contents: contents.as_ref().to_vec(),
-            mirror: false,
-        }
-    }
-
-    pub fn mirror<P, C>(path: P, contents: C) -> Self
-    where
-        P: AsRef<Path>,
-        C: AsRef<str>,
-    {
-        Self::mirror_raw(path, contents.as_ref())
-    }
-
-    pub fn mirror_raw<P, C>(path: P, contents: C) -> Self
-    where
-        P: AsRef<Path>,
-        C: AsRef<[u8]>,
-    {
-        // mirror file to local filesystem
-        fs::create_dir_all(path.as_ref().parent().unwrap()).unwrap();
-        fs::write(path, contents.as_ref()).unwrap();
-
-        Self::File {
-            mode: 0o664,
-            contents: contents.as_ref().to_vec(),
-            mirror: true,
         }
     }
 
@@ -96,12 +58,6 @@ impl InMemoryFile {
             Self::Directory { .. } => None,
         }
     }
-
-    pub fn set_mirror(&mut self) {
-        if let Self::File { mirror, .. } = self {
-            *mirror = true;
-        };
-    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -119,7 +75,10 @@ impl InMemoryFileSystem {
 
 #[async_trait]
 impl FileSystem for InMemoryFileSystem {
-    async fn create_dir(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()> {
+    async fn create_dir<P>(&self, path: P) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+    {
         let path = path.as_ref();
         let os_path = path.as_os_str();
 
@@ -152,7 +111,10 @@ impl FileSystem for InMemoryFileSystem {
         Ok(())
     }
 
-    async fn create_dir_all(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()> {
+    async fn create_dir_all<P>(&self, path: P) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+    {
         let path = path.as_ref();
         let mut files = self.files.write().await;
         let ancestors = path
@@ -176,7 +138,10 @@ impl FileSystem for InMemoryFileSystem {
         Ok(())
     }
 
-    async fn read(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<Vec<u8>> {
+    async fn read<P>(&self, path: P) -> FileSystemResult<Vec<u8>>
+    where
+        P: AsRef<Path> + Send,
+    {
         let os_path = path.as_ref().as_os_str();
 
         match self.files.read().await.get(os_path) {
@@ -188,7 +153,10 @@ impl FileSystem for InMemoryFileSystem {
         }
     }
 
-    async fn read_to_string(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<String> {
+    async fn read_to_string<P>(&self, path: P) -> FileSystemResult<String>
+    where
+        P: AsRef<Path> + Send,
+    {
         let os_path = path.as_ref().as_os_str().to_owned();
         let content = self.read(path).await?;
 
@@ -196,11 +164,11 @@ impl FileSystem for InMemoryFileSystem {
             .map_err(|_| anyhow!("invalid utf-8 encoding for file {:?}", os_path).into())
     }
 
-    async fn write(
-        &self,
-        path: impl AsRef<Path> + Send,
-        contents: impl AsRef<[u8]> + Send,
-    ) -> FileSystemResult<()> {
+    async fn write<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+        C: AsRef<[u8]> + Send,
+    {
         let path = path.as_ref();
         let os_path = path.as_os_str();
         let mut files = self.files.write().await;
@@ -225,11 +193,11 @@ impl FileSystem for InMemoryFileSystem {
         Ok(())
     }
 
-    async fn append(
-        &self,
-        path: impl AsRef<Path> + Send,
-        contents: impl AsRef<[u8]> + Send,
-    ) -> FileSystemResult<()> {
+    async fn append<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+        C: AsRef<[u8]> + Send,
+    {
         let path = path.as_ref();
         let mut existing_contents = match self.read(path).await {
             Ok(existing_contents) => existing_contents,
@@ -243,50 +211,27 @@ impl FileSystem for InMemoryFileSystem {
         self.write(path, existing_contents).await
     }
 
-    async fn copy(
-        &self,
-        from: impl AsRef<Path> + Send,
-        to: impl AsRef<Path> + Send,
-    ) -> FileSystemResult<()> {
+    async fn copy<P1, P2>(&self, from: P1, to: P2) -> FileSystemResult<()>
+    where
+        P1: AsRef<Path> + Send,
+        P2: AsRef<Path> + Send,
+    {
         let from_ref = from.as_ref();
         let to_ref = to.as_ref();
         let content = self.read(from_ref).await?;
-        self.write(to_ref, content).await?;
 
-        // handle mirror file
-        let mut files = self.files.write().await;
-        let file = files.get(from_ref.as_os_str()).unwrap();
-        if let InMemoryFile::File {
-            mode,
-            contents,
-            mirror,
-        } = file
-        {
-            if *mirror {
-                fs::create_dir_all(to_ref.parent().unwrap()).unwrap();
-                fs::write(to_ref, contents).unwrap();
-                fs::set_permissions(to_ref, Permissions::from_mode(*mode)).unwrap();
-                files.get_mut(to_ref.as_os_str()).unwrap().set_mirror();
-            }
-        }
-
-        Ok(())
+        self.write(to_ref, content).await
     }
 
-    async fn set_mode(&self, path: impl AsRef<Path> + Send, mode: u32) -> FileSystemResult<()> {
+    async fn set_mode<P>(&self, path: P, mode: u32) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+    {
         let os_path = path.as_ref().as_os_str();
         if let Some(file) = self.files.write().await.get_mut(os_path) {
             match file {
-                InMemoryFile::File {
-                    mode: old_mode,
-                    mirror,
-                    ..
-                } => {
+                InMemoryFile::File { mode: old_mode, .. } => {
                     *old_mode = mode;
-
-                    if *mirror {
-                        fs::set_permissions(os_path, Permissions::from_mode(mode)).unwrap();
-                    }
                 },
                 InMemoryFile::Directory { mode: old_mode, .. } => {
                     *old_mode = mode;
@@ -296,6 +241,16 @@ impl FileSystem for InMemoryFileSystem {
         } else {
             Err(anyhow!("file {:?} not found", os_path).into())
         }
+    }
+
+    async fn exists<P>(&self, path: P) -> bool
+    where
+        P: AsRef<Path> + Send,
+    {
+        self.files
+            .read()
+            .await
+            .contains_key(path.as_ref().as_os_str())
     }
 }
 

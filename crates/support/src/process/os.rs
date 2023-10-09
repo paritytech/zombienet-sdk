@@ -3,9 +3,8 @@ use std::{io, sync::Arc};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::process::{Command, DynProcess, Process, ProcessManager};
-
 use super::DynAsyncRead;
+use crate::process::{Command, DynProcess, Process, ProcessManager};
 
 #[derive(Debug)]
 struct OsProcess {

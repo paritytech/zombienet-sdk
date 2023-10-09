@@ -619,7 +619,7 @@ async fn retrieve_pid_from_process(
                 node_name.to_string(),
             ))?
             .try_into()
-            .unwrap(), // .map_err(|_| ProviderError::ProcessIdRetrievalFailed(node_name.to_string()))?,
+            .map_err(|_| ProviderError::ProcessIdRetrievalFailed(node_name.to_string()))?,
     ))
 }
 

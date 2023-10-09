@@ -1,5 +1,3 @@
-use nix::sys::signal::Signal;
-use rand;
 use std::{
     collections::HashMap,
     ffi::OsString,
@@ -7,9 +5,11 @@ use std::{
     process::ExitStatus,
     sync::{Arc, RwLock},
 };
-use tokio::{io::AsyncRead, sync::mpsc};
 
 use async_trait::async_trait;
+use nix::sys::signal::Signal;
+use rand;
+use tokio::{io::AsyncRead, sync::mpsc};
 
 use super::{Command, DynAsyncRead, DynProcess, Process, ProcessManager};
 

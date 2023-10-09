@@ -105,7 +105,7 @@ where
         bootnode_addr: ctx.bootnodes_addr.clone(),
     };
 
-    let (cmd, args) = match ctx.role {
+    let (program, args) = match ctx.role {
         // Collator should be `non-cumulus` one (e.g adder/undying)
         ZombieRole::Node | ZombieRole::Collator => {
 
@@ -126,11 +126,11 @@ where
 
     println!("\n");
     println!("🚀 {}, spawning.... with command:", node.name);
-    println!("{cmd} {}", args.join(" "));
+    println!("{program} {}", args.join(" "));
 
     let spawn_ops = SpawnNodeOptions {
         name: node.name.clone(),
-        command: cmd,
+        program,
         args,
         env: node
             .env

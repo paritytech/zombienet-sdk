@@ -1083,9 +1083,7 @@ mod tests {
             (
                 OsString::from_str("echo").unwrap(),
                 vec![StreamValue::DynamicStdout(DynamicStreamValue::new(
-                    |_, args, _| {
-                        format!("{}\n", args.first().unwrap().to_string_lossy().to_string())
-                    },
+                    |_, args, _| format!("{}\n", args.first().unwrap().to_string_lossy()),
                 ))],
             ),
             (
@@ -1307,12 +1305,7 @@ mod tests {
             (
                 OsString::from_str("sh").unwrap(),
                 vec![StreamValue::DynamicStdout(DynamicStreamValue::new(
-                    |_, _, envs| {
-                        format!(
-                            "{}\n",
-                            envs.first().unwrap().1.to_string_lossy().to_string()
-                        )
-                    },
+                    |_, _, envs| format!("{}\n", envs.first().unwrap().1.to_string_lossy()),
                 ))],
             ),
         ]));

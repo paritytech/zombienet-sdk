@@ -728,7 +728,6 @@ where
 mod tests {
     use std::{ffi::OsString, os::unix::process::ExitStatusExt, process::ExitStatus, str::FromStr};
 
-    use procfs::process::Process;
     use support::{
         fs::in_memory::{InMemoryFile, InMemoryFileSystem},
         process::fake::{DynamicStreamValue, FakeProcessManager, FakeProcessState, StreamValue},
@@ -1153,17 +1152,24 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let pm = FakeProcessManager::new(HashMap::new());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
         let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn 2 dummy nodes to populate namespace
         namespace
-            .spawn_node(SpawnNodeOptions::new("mynode1", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode1", "/path/to/my/node_binary"))
             .await
             .unwrap();
         namespace
-            .spawn_node(SpawnNodeOptions::new("mynode2", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode2", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -1175,11 +1181,8 @@ mod tests {
         // ensure nodes are destroyed
         assert_eq!(namespace.nodes().await.len(), 0);
 
-        // retrieve running process
-        let processes = get_processes_by_name("dummy_node").await;
-
         // ensure no running process exists
-        assert_eq!(processes.len(), 0);
+        assert_eq!(pm.processes().await.len(), 0);
 
         // ensure namespace is destroyed
         assert_eq!(provider.namespaces().await.len(), 0);
@@ -2180,22 +2183,5 @@ mod tests {
         let err = node.destroy().await.unwrap_err();
 
         assert_eq!(err.to_string(), "Failed to kill node 'mynode'");
-    }
-
-    async fn get_processes_by_name(name: &str) -> Vec<Process> {
-        procfs::process::all_processes()
-            .unwrap()
-            .filter_map(|process| {
-                if let Ok(process) = process {
-                    process
-                        .cmdline()
-                        .iter()
-                        .any(|args| args.iter().any(|arg| arg.contains(name)))
-                        .then_some(process)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Process>>()
     }
 }

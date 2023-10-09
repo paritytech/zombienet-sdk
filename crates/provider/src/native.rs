@@ -1,7 +1,6 @@
 use std::{
     self,
     collections::HashMap,
-    fmt::Debug,
     io::Error,
     net::IpAddr,
     path::PathBuf,
@@ -13,14 +12,13 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::Port;
 use futures::{future::try_join_all, try_join};
-use nix::{
-    sys::signal::{kill, Signal},
-    unistd::Pid,
+use nix::{sys::signal::Signal, unistd::Pid};
+use support::{
+    fs::FileSystem,
+    process::{Command, DynProcess, ProcessManager},
 };
-use support::fs::FileSystem;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, BufReader},
-    process::{Child, Command},
     sync::{
         mpsc::{self, Receiver, Sender},
         RwLock,
@@ -38,26 +36,42 @@ use crate::{
     RunScriptOptions, SpawnNodeOptions,
 };
 
-#[derive(Debug, Clone)]
-pub struct NativeProvider<FS: FileSystem + Send + Sync + Clone> {
+#[derive(Clone)]
+pub struct NativeProvider<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
     capabilities: ProviderCapabilities,
     tmp_dir: PathBuf,
     filesystem: FS,
-    inner: Arc<RwLock<NativeProviderInner<FS>>>,
+    process_manager: PM,
+    inner: Arc<RwLock<NativeProviderInner<FS, PM>>>,
 }
 
-#[derive(Debug)]
-struct NativeProviderInner<FS: FileSystem + Send + Sync + Clone> {
-    namespaces: HashMap<String, NativeNamespace<FS>>,
+struct NativeProviderInner<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
+    namespaces: HashMap<String, NativeNamespace<FS, PM>>,
 }
 
-#[derive(Debug, Clone)]
-struct WeakNativeProvider<FS: FileSystem + Send + Sync + Clone> {
-    inner: Weak<RwLock<NativeProviderInner<FS>>>,
+#[derive(Clone)]
+struct WeakNativeProvider<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
+    inner: Weak<RwLock<NativeProviderInner<FS, PM>>>,
 }
 
-impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
-    pub fn new(filesystem: FS) -> Self {
+impl<FS, PM> NativeProvider<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
+    pub fn new(filesystem: FS, process_manager: PM) -> Self {
         NativeProvider {
             capabilities: ProviderCapabilities::new(),
             // NOTE: temp_dir in linux return `/tmp` but on mac something like
@@ -66,6 +80,7 @@ impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
             // you try to build a fullpath by concatenate. Use Pathbuf to prevent the issue.
             tmp_dir: std::env::temp_dir(),
             filesystem,
+            process_manager,
             inner: Arc::new(RwLock::new(NativeProviderInner {
                 namespaces: Default::default(),
             })),
@@ -79,7 +94,11 @@ impl<FS: FileSystem + Send + Sync + Clone> NativeProvider<FS> {
 }
 
 #[async_trait]
-impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider<FS> {
+impl<FS, PM> Provider for NativeProvider<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+    PM: ProcessManager + Send + Sync + Clone + 'static,
+{
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
     }
@@ -106,6 +125,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
             id: id.clone(),
             base_dir,
             filesystem: self.filesystem.clone(),
+            process_manager: self.process_manager.clone(),
             provider: WeakNativeProvider {
                 inner: Arc::downgrade(&self.inner),
             },
@@ -120,27 +140,43 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> Provider for NativeProvider
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct NativeNamespace<FS: FileSystem + Send + Sync + Clone> {
+#[derive(Clone)]
+pub struct NativeNamespace<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
     id: String,
     base_dir: PathBuf,
-    inner: Arc<RwLock<NativeNamespaceInner<FS>>>,
+    inner: Arc<RwLock<NativeNamespaceInner<FS, PM>>>,
     filesystem: FS,
-    provider: WeakNativeProvider<FS>,
+    process_manager: PM,
+    provider: WeakNativeProvider<FS, PM>,
 }
 
-#[derive(Debug)]
-struct NativeNamespaceInner<FS: FileSystem + Send + Sync + Clone> {
-    nodes: HashMap<String, NativeNode<FS>>,
+struct NativeNamespaceInner<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
+    nodes: HashMap<String, NativeNode<FS, PM>>,
 }
 
-#[derive(Debug, Clone)]
-struct WeakNativeNamespace<FS: FileSystem + Send + Sync + Clone> {
-    inner: Weak<RwLock<NativeNamespaceInner<FS>>>,
+#[derive(Clone)]
+struct WeakNativeNamespace<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
+    inner: Weak<RwLock<NativeNamespaceInner<FS, PM>>>,
 }
 
 #[async_trait]
-impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for NativeNamespace<FS> {
+impl<FS, PM> ProviderNamespace for NativeNamespace<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+    PM: ProcessManager + Send + Sync + Clone + 'static,
+{
     fn id(&self) -> &str {
         &self.id
     }
@@ -212,17 +248,19 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
             create_process_with_log_tasks(
                 &options.name,
-                &options.command,
+                &options.program,
                 &options.args,
                 &options.env,
                 &log_path,
                 self.filesystem.clone(),
-            )?;
+                self.process_manager.clone(),
+            )
+            .await?;
 
         // create node structure holding state
         let node = NativeNode {
             name: options.name.clone(),
-            command: options.command,
+            command: options.program,
             args: options.args,
             env: options.env,
             base_dir,
@@ -231,6 +269,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             scripts_dir,
             log_path,
             filesystem: self.filesystem.clone(),
+            process_manager: self.process_manager.clone(),
             namespace: WeakNativeNamespace {
                 inner: Arc::downgrade(&self.inner),
             },
@@ -253,7 +292,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
         let temp_node = self
             .spawn_node(SpawnNodeOptions {
                 name: format!("temp_{}", Uuid::new_v4()),
-                command: "bash".to_string(),
+                program: "bash".to_string(),
                 args: vec!["-c".to_string(), "while :; do sleep 1; done".to_string()],
                 env: vec![],
                 injected_files: options.injected_files,
@@ -262,7 +301,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             .await?;
 
         for GenerateFileCommand {
-            command,
+            program,
             args,
             env,
             local_output_path,
@@ -284,7 +323,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
             );
 
             match temp_node
-                .run_command(RunCommandOptions { command, args, env })
+                .run_command(RunCommandOptions { program, args, env })
                 .await
                 .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
             {
@@ -308,7 +347,8 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
     async fn destroy(&self) -> Result<(), ProviderError> {
         // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
         // method acquiring a lock the namespace to remove the node from the nodes hashmap.
-        let nodes: Vec<NativeNode<FS>> = self.inner.write().await.nodes.values().cloned().collect();
+        let nodes: Vec<NativeNode<FS, PM>> =
+            self.inner.write().await.nodes.values().cloned().collect();
         for node in nodes.iter() {
             node.destroy().await?;
         }
@@ -322,8 +362,12 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNamespace for Nativ
     }
 }
 
-#[derive(Debug, Clone)]
-struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
+#[derive(Clone)]
+struct NativeNode<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone,
+    PM: ProcessManager + Send + Sync + Clone,
+{
     name: String,
     command: String,
     args: Vec<String>,
@@ -335,19 +379,23 @@ struct NativeNode<FS: FileSystem + Send + Sync + Clone> {
     log_path: PathBuf,
     inner: Arc<RwLock<NativeNodeInner>>,
     filesystem: FS,
-    namespace: WeakNativeNamespace<FS>,
+    process_manager: PM,
+    namespace: WeakNativeNamespace<FS, PM>,
 }
 
-#[derive(Debug)]
 struct NativeNodeInner {
-    process: Child,
+    process: DynProcess,
     stdout_reading_handle: JoinHandle<()>,
     stderr_reading_handle: JoinHandle<()>,
     log_writing_handle: JoinHandle<()>,
 }
 
 #[async_trait]
-impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode<FS> {
+impl<FS, PM> ProviderNode for NativeNode<FS, PM>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+    PM: ProcessManager + Send + Sync + Clone + 'static,
+{
     fn name(&self) -> &str {
         &self.name
     }
@@ -404,12 +452,15 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        let result = Command::new(options.command.clone())
-            .args(options.args)
-            .envs(options.env)
-            .output()
+        let result = self
+            .process_manager
+            .output(
+                Command::new(options.program.clone())
+                    .args(options.args)
+                    .envs(options.env),
+            )
             .await
-            .map_err(|err| ProviderError::RunCommandError(options.command, err.into()))?;
+            .map_err(|err| ProviderError::RunCommandError(options.program, err.into()))?;
 
         if result.status.success() {
             Ok(Ok(String::from_utf8_lossy(&result.stdout).to_string()))
@@ -427,10 +478,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     ) -> Result<ExecutionResult, ProviderError> {
         let local_script_path = PathBuf::from(&options.local_script_path);
 
-        if !local_script_path
-            .try_exists()
-            .map_err(|err| ProviderError::InvalidScriptPath(err.into()))?
-        {
+        if !self.filesystem.exists(&local_script_path).await {
             return Err(ProviderError::ScriptNotFound(local_script_path));
         }
 
@@ -456,7 +504,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
         // execute script
         self.run_command(RunCommandOptions {
-            command: remote_script_path,
+            program: remote_script_path,
             args: options.args,
             env: options.env,
         })
@@ -480,9 +528,10 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
     async fn pause(&self) -> Result<(), ProviderError> {
         let inner = self.inner.write().await;
-        let pid = retrieve_pid_from_process(&inner.process, &self.name)?;
+        let pid = retrieve_pid_from_process(&inner.process, &self.name).await?;
 
-        kill(pid, Signal::SIGSTOP)
+        self.process_manager
+            .kill(pid, Signal::SIGSTOP)
             .map_err(|_| ProviderError::PauseNodeFailed(self.name.clone()))?;
 
         Ok(())
@@ -490,9 +539,10 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
 
     async fn resume(&self) -> Result<(), ProviderError> {
         let inner = self.inner.write().await;
-        let pid = retrieve_pid_from_process(&inner.process, &self.name)?;
+        let pid = retrieve_pid_from_process(&inner.process, &self.name).await?;
 
-        kill(pid, Signal::SIGCONT)
+        self.process_manager
+            .kill(pid, Signal::SIGCONT)
             .map_err(|_| ProviderError::ResumeNodeFaied(self.name.clone()))?;
 
         Ok(())
@@ -524,7 +574,9 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
                 &self.env,
                 &self.log_path,
                 self.filesystem.clone(),
-            )?;
+                self.process_manager.clone(),
+            )
+            .await?;
 
         // update node process and handlers
         inner.process = process;
@@ -536,7 +588,7 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        let mut inner = self.inner.write().await;
+        let inner = self.inner.write().await;
 
         inner.log_writing_handle.abort();
         inner.stdout_reading_handle.abort();
@@ -555,22 +607,26 @@ impl<FS: FileSystem + Send + Sync + Clone + 'static> ProviderNode for NativeNode
     }
 }
 
-fn retrieve_pid_from_process(process: &Child, node_name: &str) -> Result<Pid, ProviderError> {
+async fn retrieve_pid_from_process(
+    process: &DynProcess,
+    node_name: &str,
+) -> Result<Pid, ProviderError> {
     Ok(Pid::from_raw(
         process
             .id()
+            .await
             .ok_or(ProviderError::ProcessIdRetrievalFailed(
                 node_name.to_string(),
             ))?
             .try_into()
-            .map_err(|_| ProviderError::ProcessIdRetrievalFailed(node_name.to_string()))?,
+            .unwrap(), // .map_err(|_| ProviderError::ProcessIdRetrievalFailed(node_name.to_string()))?,
     ))
 }
 
-fn create_stream_polling_task(
-    stream: impl AsyncRead + Unpin + Send + 'static,
-    tx: Sender<Result<Vec<u8>, Error>>,
-) -> JoinHandle<()> {
+fn create_stream_polling_task<S>(stream: S, tx: Sender<Result<Vec<u8>, Error>>) -> JoinHandle<()>
+where
+    S: AsyncRead + Unpin + Send + 'static,
+{
     tokio::spawn(async move {
         let mut reader = BufReader::new(stream);
         let mut buffer = vec![0u8; 1024];
@@ -593,44 +649,62 @@ fn create_stream_polling_task(
     })
 }
 
-fn create_log_writing_task(
+fn create_log_writing_task<FS>(
     mut rx: Receiver<Result<Vec<u8>, Error>>,
-    filesystem: impl FileSystem + Send + Sync + 'static,
+    filesystem: FS,
     log_path: PathBuf,
-) -> JoinHandle<()> {
+) -> JoinHandle<()>
+where
+    FS: FileSystem + Send + Sync + 'static,
+{
     tokio::spawn(async move {
         loop {
-            sleep(Duration::from_millis(250)).await;
             while let Some(Ok(data)) = rx.recv().await {
                 // TODO: find a better way instead of ignoring error ?
                 let _ = filesystem.append(&log_path, data).await;
             }
+            sleep(Duration::from_millis(250)).await;
         }
     })
 }
 
-type CreateProcessOutput = (Child, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>);
+type CreateProcessOutput = (DynProcess, JoinHandle<()>, JoinHandle<()>, JoinHandle<()>);
 
-fn create_process_with_log_tasks(
+async fn create_process_with_log_tasks<FS, PM>(
     name: &str,
-    command: &str,
+    program: &str,
     args: &Vec<String>,
     env: &Vec<(String, String)>,
     log_path: &PathBuf,
-    filesystem: impl FileSystem + Send + Sync + 'static,
-) -> Result<CreateProcessOutput, ProviderError> {
+    filesystem: FS,
+    process_manager: PM,
+) -> Result<CreateProcessOutput, ProviderError>
+where
+    FS: FileSystem + Send + Sync + 'static,
+    PM: ProcessManager + Send + Sync + 'static,
+{
     // create process
-    let mut process = Command::new(command)
-        .args(args)
-        .envs(env.to_owned())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
+    let process = process_manager
+        .spawn(
+            Command::new(program)
+                .args(args)
+                .envs(env.to_owned())
+                .args(args)
+                .envs(env.to_owned())
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true),
+        )
         .map_err(|err| ProviderError::NodeSpawningFailed(name.to_string(), err.into()))?;
-    let stdout = process.stdout.take().expect("infaillible, stdout is piped");
-    let stderr = process.stderr.take().expect("Infaillible, stderr is piped");
+    let stdout = process
+        .take_stdout()
+        .await
+        .expect("infaillible, stdout is piped");
+    let stderr = process
+        .take_stderr()
+        .await
+        .expect("Infaillible, stderr is piped");
 
     // create additionnal long-running tasks for logs
     let (stdout_tx, rx) = mpsc::channel(10);
@@ -649,10 +723,13 @@ fn create_process_with_log_tasks(
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, fs, str::FromStr};
+    use std::{ffi::OsString, os::unix::process::ExitStatusExt, process::ExitStatus, str::FromStr};
 
     use procfs::process::Process;
-    use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
+    use support::{
+        fs::in_memory::{InMemoryFile, InMemoryFileSystem},
+        process::fake::{DynamicStreamValue, FakeProcessManager, FakeProcessState, StreamValue},
+    };
     use tokio::time::timeout;
 
     use super::*;
@@ -661,7 +738,8 @@ mod tests {
     #[test]
     fn provider_capabilities_method_should_return_provider_capabilities() {
         let fs = InMemoryFileSystem::default();
-        let provider = NativeProvider::new(fs);
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs, pm);
 
         let capabilities = provider.capabilities();
 
@@ -682,7 +760,8 @@ mod tests {
                 InMemoryFile::dir(),
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone()).tmp_dir("/someotherdir");
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/someotherdir");
 
         // we create a namespace to ensure tmp dir will be used to store namespace
         let namespace = provider.create_namespace().await.unwrap();
@@ -696,7 +775,8 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
 
         let namespace = provider.create_namespace().await.unwrap();
 
@@ -721,7 +801,8 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
 
         assert_eq!(provider.namespaces().await.len(), 0);
     }
@@ -733,7 +814,8 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
 
         let namespace = provider.create_namespace().await.unwrap();
 
@@ -748,7 +830,8 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm);
 
         let namespace1 = provider.create_namespace().await.unwrap();
         let namespace2 = provider.create_namespace().await.unwrap();
@@ -772,12 +855,20 @@ mod tests {
                 InMemoryFile::file("My file 2"),
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         let node = namespace
             .spawn_node(
-                SpawnNodeOptions::new("mynode", "./testing/dummy_node")
+                SpawnNodeOptions::new("mynode", "/path/to/my/node_binary")
                     .args(vec![
                         "-flag1",
                         "--flag2",
@@ -849,68 +940,77 @@ mod tests {
             "My file 2"
         );
 
-        // retrieve running process
-        let processes = get_processes_by_name("dummy_node").await;
+        // ensure only one process exists
+        assert_eq!(pm.count(), 1);
 
-        // ensure only one dummy process exists
-        assert_eq!(processes.len(), 1);
-        let node_process = processes.first().unwrap();
+        // retrieve the process
+        let processes = pm.processes();
+        let process = processes.first().unwrap();
 
         // ensure process has correct state
-        assert!(matches!(
-            node_process.stat().unwrap().state().unwrap(),
-            // process can be running or sleeping because we sleep between echo calls
-            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
-        ));
+        assert!(matches!(process.state().await, FakeProcessState::Running));
 
         // ensure process is passed correct args
-        let node_args = node_process.cmdline().unwrap();
-        assert!(node_args.contains(&"-flag1".to_string()));
-        assert!(node_args.contains(&"--flag2".to_string()));
-        assert!(node_args.contains(&"--option1=value1".to_string()));
-        assert!(node_args.contains(&"-option2=value2".to_string()));
-        assert!(node_args.contains(&"--option3 value3".to_string()));
-        assert!(node_args.contains(&"-option4 value4".to_string()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("-flag1").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("--flag2").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("--option1=value1").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("-option2=value2").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("--option3 value3").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("-option4 value4").unwrap()));
 
         // ensure process has correct environment
-        let node_env = node_process.environ().unwrap();
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_1").unwrap())
-                .unwrap(),
-            "MY_VALUE_1"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_2").unwrap())
-                .unwrap(),
-            "MY_VALUE_2"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_3").unwrap())
-                .unwrap(),
-            "MY_VALUE_3"
-        );
+        assert!(process.envs.contains(&(
+            OsString::from_str("MY_VAR_1").unwrap(),
+            OsString::from_str("MY_VALUE_1").unwrap()
+        )));
+        assert!(process.envs.contains(&(
+            OsString::from_str("MY_VAR_2").unwrap(),
+            OsString::from_str("MY_VALUE_2").unwrap()
+        )));
+        assert!(process.envs.contains(&(
+            OsString::from_str("MY_VAR_3").unwrap(),
+            OsString::from_str("MY_VALUE_3").unwrap()
+        )));
 
         // ensure log file is created and logs are written and keep being written for some time
-        timeout(Duration::from_secs(30), async {
-            let mut expected_logs_line_count = 2;
-
+        pm.advance_by(1).await;
+        let expected = ["Line 1\n", "Line 1\nLine 2\n", "Line 1\nLine 2\nLine 3\n"];
+        let mut index = 0;
+        timeout(Duration::from_secs(3), async {
             loop {
-                sleep(Duration::from_millis(200)).await;
+                // if we reach the expected len, all logs have been emited correctly in order
+                if index == expected.len() {
+                    break;
+                }
 
-                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
-                    if let Some(contents) = file.contents() {
-                        if contents.lines().count() >= expected_logs_line_count {
-                            if expected_logs_line_count >= 6 {
-                                return;
-                            } else {
-                                expected_logs_line_count += 2;
-                            }
-                        }
+                // check if there is some existing file with contents
+                if let Some(contents) = fs
+                    .files
+                    .read()
+                    .await
+                    .get(node.log_path().as_os_str())
+                    .map(|file| file.contents().unwrap())
+                {
+                    // if the contents correspond to what we expect, we continue to check the next expected thing and simulate cpu cycle
+                    if contents == expected[index] {
+                        index += 1;
+                        pm.advance_by(1).await;
                     }
                 }
+
+                sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -928,7 +1028,8 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm);
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
@@ -942,8 +1043,32 @@ mod tests {
 
         // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
         match result {
-            Ok(_) => panic!("expected result to be an error"),
+            Ok(_) => unreachable!(),
             Err(err) => assert_eq!(err.to_string(), "Duplicated node name: mynode"),
+        };
+    }
+
+    #[tokio::test]
+    async fn namespace_spawn_node_method_should_returns_an_error_spawning_process_failed() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // force error
+        pm.spawn_should_error(std::io::ErrorKind::TimedOut);
+
+        let result = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .await;
+
+        // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
+        match result {
+            Ok(_) => unreachable!(),
+            Err(err) => assert_eq!(err.to_string(), "Failed to spawn node 'mynode': timed out"),
         };
     }
 
@@ -954,7 +1079,23 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([
+            (
+                OsString::from_str("echo").unwrap(),
+                vec![StreamValue::DynamicStdout(DynamicStreamValue::new(
+                    |_, args, _| {
+                        format!("{}\n", args.first().unwrap().to_string_lossy().to_string())
+                    },
+                ))],
+            ),
+            (
+                OsString::from_str("sh").unwrap(),
+                vec![StreamValue::DynamicStdout(DynamicStreamValue::new(
+                    |_, _, envs| envs.first().unwrap().1.to_string_lossy().to_string(),
+                ))],
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone(), pm);
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
@@ -1011,7 +1152,8 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::new());
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn 2 dummy nodes to populate namespace
@@ -1048,28 +1190,43 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
-        // wait some time for node to write logs
-        sleep(Duration::from_secs(5)).await;
+        // simulate logs process manager output
+        pm.advance_by(3).await;
 
-        assert_eq!(
-            fs.files
-                .read()
-                .await
-                .get(node.log_path().as_os_str())
-                .unwrap()
-                .contents()
-                .unwrap(),
-            node.logs().await.unwrap()
-        );
+        // ensure logs are correct after some time or timeout
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 3)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\nLine 3\n");
     }
 
     #[tokio::test]
@@ -1078,35 +1235,57 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
-        // wait some time for node to write logs
-        sleep(Duration::from_secs(5)).await;
+        // simulate logs process manager output
+        pm.advance_by(3).await;
 
+        // ensure logs are correct after some time or timeout
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 3)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        // dump logs
         node.dump_logs(PathBuf::from("/tmp/my_log_file"))
             .await
             .unwrap();
 
-        let files = fs.files.read().await;
-
         assert_eq!(
-            files
-                .get(node.log_path().as_os_str())
-                .unwrap()
-                .contents()
-                .unwrap(),
-            files
+            fs.files
+                .read()
+                .await
                 .get(&OsString::from_str("/tmp/my_log_file").unwrap())
                 .unwrap()
                 .contents()
                 .unwrap(),
+            "Line 1\nLine 2\nLine 3\n"
         );
     }
 
@@ -1116,14 +1295,37 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([
+            (
+                OsString::from_str("/path/to/my/node_binary").unwrap(),
+                vec![
+                    StreamValue::Stdout("Line 1\n".to_string()),
+                    StreamValue::Stdout("Line 2\n".to_string()),
+                    StreamValue::Stdout("Line 3\n".to_string()),
+                ],
+            ),
+            (
+                OsString::from_str("sh").unwrap(),
+                vec![StreamValue::DynamicStdout(DynamicStreamValue::new(
+                    |_, _, envs| {
+                        format!(
+                            "{}\n",
+                            envs.first().unwrap().1.to_string_lossy().to_string()
+                        )
+                    },
+                ))],
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
+
+        pm.advance_by(3).await;
 
         let result = node
             .run_command(
@@ -1143,21 +1345,38 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([
+            (
+                OsString::from_str("/path/to/my/node_binary").unwrap(),
+                vec![
+                    StreamValue::Stdout("Line 1\n".to_string()),
+                    StreamValue::Stdout("Line 2\n".to_string()),
+                    StreamValue::Stdout("Line 3\n".to_string()),
+                ],
+            ),
+            (
+                OsString::from_str("sh").unwrap(),
+                vec![StreamValue::Stderr("Some error happened".to_string())],
+            ),
+        ]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
+
+        // force error
+        pm.output_should_fail(ExitStatus::from_raw(1));
 
         let result = node
             .run_command(RunCommandOptions::new("sh").args(vec!["-fakeargs"]))
             .await;
 
         assert!(
-            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && !stderr.is_empty())
+            matches!(result, Ok(Err((exit_code, stderr))) if !exit_code.success() && stderr == "Some error happened")
         );
     }
 
@@ -1167,14 +1386,25 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
+
+        // force error
+        pm.output_should_error(std::io::ErrorKind::NotFound);
 
         let err = node
             .run_command(RunCommandOptions::new("myrandomprogram"))
@@ -1183,7 +1413,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            "Error running command 'myrandomprogram': No such file or directory (os error 2)"
+            "Error running command 'myrandomprogram': entity not found"
         );
     }
 
@@ -1192,26 +1422,60 @@ mod tests {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/path").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/path/to").unwrap(), InMemoryFile::dir()),
             (
-                OsString::from_str("/tmp/dummy_script").unwrap(),
-                InMemoryFile::mirror(
-                    "/tmp/dummy_script",
-                    fs::read_to_string("./testing/dummy_script").unwrap(),
-                ),
+                OsString::from_str("/path/to/my").unwrap(),
+                InMemoryFile::dir(),
+            ),
+            (
+                OsString::from_str("/path/to/my/script").unwrap(),
+                InMemoryFile::file("some script"),
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
+        // we need to push stream after node spawn because the final script path is determined by the node local path
+        pm.push_stream(
+            format!("{}/script", node.scripts_dir().to_string_lossy()).into(),
+            vec![
+                StreamValue::Stdout("My script\n".to_string()),
+                StreamValue::DynamicStdout(DynamicStreamValue::new(|_, _, envs| {
+                    format!(
+                        "{}\n",
+                        envs.first().unwrap().1.to_string_lossy().to_string()
+                    )
+                })),
+                StreamValue::DynamicStdout(DynamicStreamValue::new(|_, args, _| {
+                    if args.first().is_some_and(|arg| arg == "-c") {
+                        "With args\n".to_string()
+                    } else {
+                        String::new()
+                    }
+                })),
+            ],
+        );
+
+        pm.advance_by(3).await;
+
         let result = node
             .run_script(
-                RunScriptOptions::new("/tmp/dummy_script")
+                RunScriptOptions::new("/path/to/my/script")
                     .args(vec!["-c"])
                     .env(vec![("MY_ENV_VAR", "With env")]),
             )
@@ -1221,22 +1485,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_script_method_should_fails_if_script_doesnt_exists_locally() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .await
+            .unwrap();
+
+        // simulate process advancing
+        pm.advance_by(3).await;
+
+        let err = node
+            .run_script(
+                RunScriptOptions::new("/path/to/my/script")
+                    .args(vec!["-c"])
+                    .env(vec![("MY_ENV_VAR", "With env")]),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Script with path /path/to/my/script not found"
+        );
+    }
+
+    #[tokio::test]
     async fn node_copy_file_from_node_method_should_copy_node_remote_file_to_local_path() {
         let fs = InMemoryFileSystem::new(HashMap::from([
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
-        // wait 3s for node to start writing logs
-        sleep(Duration::from_secs(3)).await;
+        pm.advance_by(3).await;
+
+        // wait for logs to be written
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 3)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
 
         node.copy_file_from_node(
             PathBuf::from("/mynode.log"),
@@ -1260,48 +1589,131 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+                StreamValue::Stdout("Line 4\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
-        // wait 2s for node to spawn
-        sleep(Duration::from_secs(2)).await;
+        {
+            // retrieve running process
+            let processes = pm.processes();
+            assert_eq!(processes.len(), 1);
+            let node_process = processes.first().unwrap();
 
-        // retrieve running process
-        let processes = get_processes_by_name("dummy_node").await;
-        let node_process = processes.first().unwrap();
+            // ensure process has correct state pre-pause
+            assert!(matches!(
+                node_process.state().await,
+                FakeProcessState::Running
+            ));
 
-        // ensure process has correct state pre-pause
-        assert!(matches!(
-            node_process.stat().unwrap().state().unwrap(),
-            // process can be running or sleeping because we sleep between echo calls
-            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
-        ));
+            // simulate logs process manager output
+            pm.advance_by(2).await;
+        }
 
-        node.pause().await.unwrap();
-
-        // wait node 1s to stop writing logs
-        sleep(Duration::from_secs(1)).await;
-        let logs = node.logs().await.unwrap();
-
-        // ensure process has been paused for 10sec and logs stopped writing
-        let _ = timeout(Duration::from_secs(10), async {
+        // ensure logs are correct after some time or timeout
+        timeout(Duration::from_secs(3), async {
             loop {
-                sleep(Duration::from_millis(200)).await;
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 2)
+                {
+                    return;
+                }
 
-                assert!(matches!(
-                    node_process.stat().unwrap().state().unwrap(),
-                    procfs::process::ProcState::Stopped
-                ));
-                assert_eq!(logs, node.logs().await.unwrap());
+                sleep(Duration::from_millis(10)).await;
             }
         })
-        .await;
+        .await
+        .unwrap();
+
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+
+        // pause the node
+        node.pause().await.unwrap();
+
+        // simulate process manager advancing process when process paused
+        {
+            // retrieve running process
+            let processes = pm.processes();
+            assert_eq!(processes.len(), 1);
+            let node_process = processes.first().unwrap();
+
+            // ensure process has correct state post-pause
+            assert!(matches!(
+                node_process.state().await,
+                FakeProcessState::Stopped
+            ));
+
+            pm.advance_by(2).await;
+        }
+
+        // ensure logs didn't change after some time or timeout
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 2)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+    }
+
+    #[tokio::test]
+    async fn node_pause_method_should_fails_if_some_error_happened() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .await
+            .unwrap();
+
+        // simulate processes advancing
+        pm.advance_by(3).await;
+
+        // force error
+        pm.kill_should_error(nix::errno::Errno::EPERM);
+
+        // pause the node where some error would happen
+        let err = node.pause().await.unwrap_err();
+
+        assert_eq!(err.to_string(), "Failed to pause node 'mynode'");
     }
 
     #[tokio::test]
@@ -1310,76 +1722,158 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+                StreamValue::Stdout("Line 4\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
-        // wait 2s for node to spawn
-        sleep(Duration::from_secs(2)).await;
+        {
+            // retrieve running process
+            let processes = pm.processes();
+            assert_eq!(processes.len(), 1);
+            let node_process = processes.first().unwrap();
 
-        // retrieve running process
-        let processes = get_processes_by_name("dummy_node").await;
-        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
-        let node_process = processes.first().unwrap();
+            // ensure process has correct state pre-pause
+            assert!(matches!(
+                node_process.state().await,
+                FakeProcessState::Running
+            ));
 
-        node.pause().await.unwrap();
+            // simulate logs process manager output
+            pm.advance_by(2).await;
+        }
 
-        // ensure process has been paused for 5sec
-        let _ = timeout(Duration::from_secs(5), async {
+        // ensure logs are correct after some time or timeout
+        timeout(Duration::from_secs(3), async {
             loop {
-                sleep(Duration::from_millis(200)).await;
-
-                assert!(matches!(
-                    node_process.stat().unwrap().state().unwrap(),
-                    procfs::process::ProcState::Stopped
-                ));
-            }
-        })
-        .await;
-
-        node.resume().await.unwrap();
-
-        // ensure process has been resumed for 10sec
-        let _ = timeout(Duration::from_secs(10), async {
-            loop {
-                sleep(Duration::from_millis(200)).await;
-
-                assert!(matches!(
-                    node_process.stat().unwrap().state().unwrap(),
-                    // process can be running or sleeping because we sleep between echo calls
-                    procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
-                ));
-            }
-        })
-        .await;
-
-        // ensure logs continue being written for some time
-        timeout(Duration::from_secs(30), async {
-            let mut expected_logs_line_count = 2;
-
-            loop {
-                sleep(Duration::from_millis(200)).await;
-
-                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
-                    if let Some(contents) = file.contents() {
-                        if contents.lines().count() >= expected_logs_line_count {
-                            if expected_logs_line_count >= 6 {
-                                return;
-                            } else {
-                                expected_logs_line_count += 2;
-                            }
-                        }
-                    }
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 2)
+                {
+                    return;
                 }
+
+                sleep(Duration::from_millis(10)).await;
             }
         })
         .await
         .unwrap();
+
+        // ensure logs are correct after some time
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+
+        node.pause().await.unwrap();
+
+        {
+            // retrieve running process
+            let processes = pm.processes();
+            assert_eq!(processes.len(), 1);
+            let node_process = processes.first().unwrap();
+
+            // ensure process has correct state post-pause / pre-resume
+            assert!(matches!(
+                node_process.state().await,
+                FakeProcessState::Stopped
+            ));
+
+            // simulate logs process manager output
+            pm.advance_by(2).await;
+        }
+
+        // ensure logs are not written when process is paused
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+
+        node.resume().await.unwrap();
+
+        {
+            // retrieve running process
+            let processes = pm.processes();
+            assert_eq!(processes.len(), 1);
+            let node_process = processes.first().unwrap();
+
+            // ensure process has correct state post-resume
+            assert!(matches!(
+                node_process.state().await,
+                FakeProcessState::Running
+            ));
+
+            // simulate logs process manager output
+            pm.advance_by(2).await;
+        }
+
+        // ensure logs are correct after some time or timeout
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 4)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        // ensure logs are written and correct after process is resumed
+        assert_eq!(
+            node.logs().await.unwrap(),
+            "Line 1\nLine 2\nLine 3\nLine 4\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn node_resume_method_should_fails_if_some_error_happened() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .await
+            .unwrap();
+
+        // simulate processes advancing
+        pm.advance_by(3).await;
+
+        // pause the node
+        node.pause().await.unwrap();
+
+        // force error
+        pm.kill_should_error(nix::errno::Errno::EPERM);
+
+        let err = node.resume().await.unwrap_err();
+
+        assert_eq!(err.to_string(), "Failed to resume node 'mynode'");
     }
 
     #[tokio::test]
@@ -1396,12 +1890,21 @@ mod tests {
                 InMemoryFile::file("My file 2"),
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+                StreamValue::Stdout("Line 4\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         let node = namespace
             .spawn_node(
-                SpawnNodeOptions::new("mynode", "./testing/dummy_node")
+                SpawnNodeOptions::new("mynode", "/path/to/my/node_binary")
                     .args(vec![
                         "-flag1",
                         "--flag2",
@@ -1423,89 +1926,153 @@ mod tests {
             .await
             .unwrap();
 
-        // wait 3s for node to spawn and start writing logs
-        sleep(Duration::from_secs(3)).await;
+        let old_process_id = {
+            // retrieve running process
+            let processes = pm.processes();
+            assert_eq!(processes.len(), 1);
+            let node_process = processes.first().unwrap();
 
-        let processes = get_processes_by_name("dummy_node").await;
-        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
-        let old_process_id = processes.first().unwrap().pid();
-        let old_logs_count = node.logs().await.unwrap().lines().count();
+            // ensure process has correct state post-pause / pre-resume
+            assert!(matches!(
+                node_process.state().await,
+                FakeProcessState::Running
+            ));
 
-        node.restart(None).await.unwrap();
+            // simulate process advance and logs writting
+            pm.advance_by(2).await;
 
-        // wait 3s for node to restart and restart writing logs
-        sleep(Duration::from_secs(3)).await;
+            node_process.id
+        };
 
-        let processes = get_processes_by_name("dummy_node").await;
-        assert_eq!(processes.len(), 1); // needed to avoid test run in parallel and false results
-        let node_process = processes.first().unwrap();
-
-        // ensure process has correct state
-        assert!(matches!(
-            node_process.stat().unwrap().state().unwrap(),
-            // process can be running or sleeping because we sleep between echo calls
-            procfs::process::ProcState::Running | procfs::process::ProcState::Sleeping
-        ));
-
-        // ensure PID changed
-        assert_ne!(old_process_id, node_process.pid());
-
-        // ensure process restarted with correct args
-        let node_args = node_process.cmdline().unwrap();
-        assert!(node_args.contains(&"-flag1".to_string()));
-        assert!(node_args.contains(&"--flag2".to_string()));
-        assert!(node_args.contains(&"--option1=value1".to_string()));
-        assert!(node_args.contains(&"-option2=value2".to_string()));
-        assert!(node_args.contains(&"--option3 value3".to_string()));
-        assert!(node_args.contains(&"-option4 value4".to_string()));
-
-        // ensure process restarted with correct environment
-        let node_env = node_process.environ().unwrap();
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_1").unwrap())
-                .unwrap(),
-            "MY_VALUE_1"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_2").unwrap())
-                .unwrap(),
-            "MY_VALUE_2"
-        );
-        assert_eq!(
-            node_env
-                .get(&OsString::from_str("MY_VAR_3").unwrap())
-                .unwrap(),
-            "MY_VALUE_3"
-        );
-
-        // ensure log writing restarted and they keep being written for some time
-        timeout(Duration::from_secs(30), async {
-            let mut expected_logs_line_count = old_logs_count;
-
+        // ensure logs are correct after some time or timeout
+        timeout(Duration::from_secs(3), async {
             loop {
-                sleep(Duration::from_millis(200)).await;
-
-                if let Some(file) = fs.files.read().await.get(node.log_path().as_os_str()) {
-                    if let Some(contents) = file.contents() {
-                        if contents.lines().count() >= expected_logs_line_count {
-                            if expected_logs_line_count >= old_logs_count + 6 {
-                                return;
-                            } else {
-                                expected_logs_line_count += 2;
-                            }
-                        }
-                    }
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 2)
+                {
+                    return;
                 }
+
+                sleep(Duration::from_millis(10)).await;
             }
         })
         .await
         .unwrap();
 
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+
+        // restart node
+        node.restart(None).await.unwrap();
+
+        // retrieve running process
+        let processes = pm.processes();
+        assert_eq!(processes.len(), 1);
+        let process = processes.first().unwrap();
+
+        // ensure process has correct state post-restart
+        assert!(matches!(process.state().await, FakeProcessState::Running));
+
+        // simulate process advance and logs writting
+        pm.advance_by(2).await;
+
+        // ensure pid changed
+        assert_ne!(old_process_id, process.id);
+
+        // ensure process is passed correct args after restart
+        assert!(process
+            .args
+            .contains(&OsString::from_str("-flag1").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("--flag2").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("--option1=value1").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("-option2=value2").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("--option3 value3").unwrap()));
+        assert!(process
+            .args
+            .contains(&OsString::from_str("-option4 value4").unwrap()));
+
+        // ensure process has correct environment after restart
+        assert!(process.envs.contains(&(
+            OsString::from_str("MY_VAR_1").unwrap(),
+            OsString::from_str("MY_VALUE_1").unwrap()
+        )));
+        assert!(process.envs.contains(&(
+            OsString::from_str("MY_VAR_2").unwrap(),
+            OsString::from_str("MY_VALUE_2").unwrap()
+        )));
+        assert!(process.envs.contains(&(
+            OsString::from_str("MY_VAR_3").unwrap(),
+            OsString::from_str("MY_VALUE_3").unwrap()
+        )));
+
+        // ensure logs are correct after restart, appending to old logs or timeout
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 4)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            node.logs().await.unwrap(),
+            "Line 1\nLine 2\nLine 1\nLine 2\n"
+        );
+
         // ensure node is present in namespace
         assert_eq!(namespace.nodes().await.len(), 1);
         assert!(namespace.nodes().await.get(node.name()).is_some());
+    }
+
+    #[tokio::test]
+    async fn node_restart_method_should_fails_if_some_error_happened() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .await
+            .unwrap();
+
+        // simulate processes advancing
+        pm.advance_by(3).await;
+
+        // force error
+        pm.node_kill_should_error(nix::errno::Errno::EPERM);
+
+        let err = node.restart(None).await.unwrap_err();
+
+        assert_eq!(err.to_string(), "Failed to kill node 'mynode'");
     }
 
     #[tokio::test]
@@ -1515,40 +2082,110 @@ mod tests {
             (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
-        let provider = NativeProvider::new(fs.clone());
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+                StreamValue::Stdout("Line 4\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
-        // wait 3s for node to start and begin writing logs
-        sleep(Duration::from_secs(3)).await;
+        // simulate process advancing
+        pm.advance_by(2).await;
 
-        node.destroy().await.unwrap();
-
-        // wait node 1s to be killed and stop writing logs
-        sleep(Duration::from_secs(1)).await;
-        let logs = node.logs().await.unwrap();
-
-        // ensure process is not running anymore
-        let processes = get_processes_by_name("dummy_node").await;
-        assert_eq!(processes.len(), 0);
-
-        // ensure logs are not being written anymore
-        let _ = timeout(Duration::from_secs(10), async {
+        // ensure logs are correct, waiting some time or timeout
+        timeout(Duration::from_secs(3), async {
             loop {
-                sleep(Duration::from_millis(200)).await;
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 2)
+                {
+                    return;
+                }
 
-                assert_eq!(logs, node.logs().await.unwrap());
+                sleep(Duration::from_millis(10)).await;
             }
         })
-        .await;
+        .await
+        .unwrap();
+
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+
+        // destroy the node
+        node.destroy().await.unwrap();
+
+        // simulate processes advancing
+        pm.advance_by(2).await;
+
+        // ensure logs are not being written anymore, waiting some time or timeout
+        timeout(Duration::from_secs(3), async {
+            loop {
+                if node
+                    .logs()
+                    .await
+                    .is_ok_and(|logs| logs.lines().count() == 2)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
+
+        // ensure process is not running anymore
+        assert_eq!(pm.processes().len(), 0);
 
         // ensure node doesn't exists anymore in namespace
         assert_eq!(namespace.nodes().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn node_destroy_method_should_fails_if_some_error_happened() {
+        let fs = InMemoryFileSystem::new(HashMap::from([
+            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
+            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
+        ]));
+        let pm = FakeProcessManager::new(HashMap::from([(
+            OsString::from_str("/path/to/my/node_binary").unwrap(),
+            vec![
+                StreamValue::Stdout("Line 1\n".to_string()),
+                StreamValue::Stdout("Line 2\n".to_string()),
+                StreamValue::Stdout("Line 3\n".to_string()),
+            ],
+        )]));
+        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let namespace = provider.create_namespace().await.unwrap();
+
+        // spawn dummy node
+        let node = namespace
+            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .await
+            .unwrap();
+
+        // simulate processes advancing
+        pm.advance_by(3).await;
+
+        // force error
+        pm.node_kill_should_error(nix::errno::Errno::EPERM);
+
+        let err = node.destroy().await.unwrap_err();
+
+        assert_eq!(err.to_string(), "Failed to kill node 'mynode'");
     }
 
     async fn get_processes_by_name(name: &str) -> Vec<Process> {

@@ -532,6 +532,7 @@ where
 
         self.process_manager
             .kill(pid, Signal::SIGSTOP)
+            .await
             .map_err(|_| ProviderError::PauseNodeFailed(self.name.clone()))?;
 
         Ok(())
@@ -543,6 +544,7 @@ where
 
         self.process_manager
             .kill(pid, Signal::SIGCONT)
+            .await
             .map_err(|_| ProviderError::ResumeNodeFaied(self.name.clone()))?;
 
         Ok(())
@@ -696,6 +698,7 @@ where
                 .stderr(Stdio::piped())
                 .kill_on_drop(true),
         )
+        .await
         .map_err(|err| ProviderError::NodeSpawningFailed(name.to_string(), err.into()))?;
     let stdout = process
         .take_stdout()
@@ -941,10 +944,10 @@ mod tests {
         );
 
         // ensure only one process exists
-        assert_eq!(pm.count(), 1);
+        assert_eq!(pm.count().await, 1);
 
         // retrieve the process
-        let processes = pm.processes();
+        let processes = pm.processes().await;
         let process = processes.first().unwrap();
 
         // ensure process has correct state
@@ -1059,7 +1062,7 @@ mod tests {
         let namespace = provider.create_namespace().await.unwrap();
 
         // force error
-        pm.spawn_should_error(std::io::ErrorKind::TimedOut);
+        pm.spawn_should_error(std::io::ErrorKind::TimedOut).await;
 
         let result = namespace
             .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
@@ -1362,7 +1365,7 @@ mod tests {
             .unwrap();
 
         // force error
-        pm.output_should_fail(ExitStatus::from_raw(1));
+        pm.output_should_fail(ExitStatus::from_raw(1)).await;
 
         let result = node
             .run_command(RunCommandOptions::new("sh").args(vec!["-fakeargs"]))
@@ -1397,7 +1400,7 @@ mod tests {
             .unwrap();
 
         // force error
-        pm.output_should_error(std::io::ErrorKind::NotFound);
+        pm.output_should_error(std::io::ErrorKind::NotFound).await;
 
         let err = node
             .run_command(RunCommandOptions::new("myrandomprogram"))
@@ -1449,10 +1452,7 @@ mod tests {
             vec![
                 StreamValue::Stdout("My script\n".to_string()),
                 StreamValue::DynamicStdout(DynamicStreamValue::new(|_, _, envs| {
-                    format!(
-                        "{}\n",
-                        envs.first().unwrap().1.to_string_lossy().to_string()
-                    )
+                    format!("{}\n", envs.first().unwrap().1.to_string_lossy())
                 })),
                 StreamValue::DynamicStdout(DynamicStreamValue::new(|_, args, _| {
                     if args.first().is_some_and(|arg| arg == "-c") {
@@ -1462,7 +1462,8 @@ mod tests {
                     }
                 })),
             ],
-        );
+        )
+        .await;
 
         pm.advance_by(3).await;
 
@@ -1602,7 +1603,7 @@ mod tests {
 
         {
             // retrieve running process
-            let processes = pm.processes();
+            let processes = pm.processes().await;
             assert_eq!(processes.len(), 1);
             let node_process = processes.first().unwrap();
 
@@ -1641,7 +1642,7 @@ mod tests {
         // simulate process manager advancing process when process paused
         {
             // retrieve running process
-            let processes = pm.processes();
+            let processes = pm.processes().await;
             assert_eq!(processes.len(), 1);
             let node_process = processes.first().unwrap();
 
@@ -1701,7 +1702,7 @@ mod tests {
         pm.advance_by(3).await;
 
         // force error
-        pm.kill_should_error(nix::errno::Errno::EPERM);
+        pm.kill_should_error(nix::errno::Errno::EPERM).await;
 
         // pause the node where some error would happen
         let err = node.pause().await.unwrap_err();
@@ -1735,7 +1736,7 @@ mod tests {
 
         {
             // retrieve running process
-            let processes = pm.processes();
+            let processes = pm.processes().await;
             assert_eq!(processes.len(), 1);
             let node_process = processes.first().unwrap();
 
@@ -1773,7 +1774,7 @@ mod tests {
 
         {
             // retrieve running process
-            let processes = pm.processes();
+            let processes = pm.processes().await;
             assert_eq!(processes.len(), 1);
             let node_process = processes.first().unwrap();
 
@@ -1794,7 +1795,7 @@ mod tests {
 
         {
             // retrieve running process
-            let processes = pm.processes();
+            let processes = pm.processes().await;
             assert_eq!(processes.len(), 1);
             let node_process = processes.first().unwrap();
 
@@ -1862,7 +1863,7 @@ mod tests {
         node.pause().await.unwrap();
 
         // force error
-        pm.kill_should_error(nix::errno::Errno::EPERM);
+        pm.kill_should_error(nix::errno::Errno::EPERM).await;
 
         let err = node.resume().await.unwrap_err();
 
@@ -1921,7 +1922,7 @@ mod tests {
 
         let old_process_id = {
             // retrieve running process
-            let processes = pm.processes();
+            let processes = pm.processes().await;
             assert_eq!(processes.len(), 1);
             let node_process = processes.first().unwrap();
 
@@ -1960,7 +1961,7 @@ mod tests {
         node.restart(None).await.unwrap();
 
         // retrieve running process
-        let processes = pm.processes();
+        let processes = pm.processes().await;
         assert_eq!(processes.len(), 1);
         let process = processes.first().unwrap();
 
@@ -2061,7 +2062,7 @@ mod tests {
         pm.advance_by(3).await;
 
         // force error
-        pm.node_kill_should_error(nix::errno::Errno::EPERM);
+        pm.node_kill_should_error(nix::errno::Errno::EPERM).await;
 
         let err = node.restart(None).await.unwrap_err();
 
@@ -2141,7 +2142,7 @@ mod tests {
         assert_eq!(node.logs().await.unwrap(), "Line 1\nLine 2\n");
 
         // ensure process is not running anymore
-        assert_eq!(pm.processes().len(), 0);
+        assert_eq!(pm.processes().await.len(), 0);
 
         // ensure node doesn't exists anymore in namespace
         assert_eq!(namespace.nodes().await.len(), 0);
@@ -2174,7 +2175,7 @@ mod tests {
         pm.advance_by(3).await;
 
         // force error
-        pm.node_kill_should_error(nix::errno::Errno::EPERM);
+        pm.node_kill_should_error(nix::errno::Errno::EPERM).await;
 
         let err = node.destroy().await.unwrap_err();
 

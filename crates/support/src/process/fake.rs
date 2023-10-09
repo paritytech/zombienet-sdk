@@ -1,15 +1,15 @@
 use std::{
-    collections::HashMap,
-    ffi::OsString,
-    os::unix::process::ExitStatusExt,
-    process::ExitStatus,
-    sync::{Arc, RwLock},
+    collections::HashMap, ffi::OsString, os::unix::process::ExitStatusExt, process::ExitStatus,
+    sync::Arc,
 };
 
 use async_trait::async_trait;
 use nix::sys::signal::Signal;
 use rand;
-use tokio::{io::AsyncRead, sync::mpsc};
+use tokio::{
+    io::AsyncRead,
+    sync::{mpsc, RwLock},
+};
 
 use super::{Command, DynAsyncRead, DynProcess, Process, ProcessManager};
 
@@ -56,7 +56,7 @@ pub struct FakeProcess {
 
 impl FakeProcess {
     pub async fn state(&self) -> FakeProcessState {
-        self.inner.read().unwrap().state.clone()
+        self.inner.read().await.state.clone()
     }
 }
 
@@ -79,7 +79,7 @@ impl Process for FakeProcess {
     async fn take_stdout(&self) -> Option<DynAsyncRead> {
         self.inner
             .write()
-            .unwrap()
+            .await
             .stdout
             .take()
             .map(|stdout| Box::new(stdout) as DynAsyncRead)
@@ -88,14 +88,14 @@ impl Process for FakeProcess {
     async fn take_stderr(&self) -> Option<super::DynAsyncRead> {
         self.inner
             .write()
-            .unwrap()
+            .await
             .stderr
             .take()
             .map(|stderr| Box::new(stderr) as DynAsyncRead)
     }
 
     async fn kill(&self) -> std::io::Result<()> {
-        let mut pm_inner = self.process_manager.inner.write().unwrap();
+        let mut pm_inner = self.process_manager.inner.write().await;
 
         if let Some(errno) = pm_inner.node_kill_should_error {
             return Err(errno.into());
@@ -109,10 +109,11 @@ impl Process for FakeProcess {
     }
 }
 
+pub type StreamValueGeneratorFn =
+    Arc<dyn Fn(OsString, Vec<OsString>, Vec<(OsString, OsString)>) -> String + Send + Sync>;
+
 #[derive(Clone)]
-pub struct DynamicStreamValue(
-    Arc<dyn Fn(OsString, Vec<OsString>, Vec<(OsString, OsString)>) -> String + Send + Sync>,
-);
+pub struct DynamicStreamValue(StreamValueGeneratorFn);
 
 impl DynamicStreamValue {
     pub fn new<F>(f: F) -> Self
@@ -171,52 +172,52 @@ impl FakeProcessManager {
         }
     }
 
-    pub fn spawn_should_error(&self, err_kind: std::io::ErrorKind) {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn spawn_should_error(&self, err_kind: std::io::ErrorKind) {
+        let mut inner = self.inner.write().await;
         inner.spawn_should_error = Some(err_kind);
     }
 
-    pub fn output_should_error(&self, err_kind: std::io::ErrorKind) {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn output_should_error(&self, err_kind: std::io::ErrorKind) {
+        let mut inner = self.inner.write().await;
         inner.output_should_error = Some(err_kind);
     }
 
-    pub fn output_should_fail(&self, exit_code: ExitStatus) {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn output_should_fail(&self, exit_code: ExitStatus) {
+        let mut inner = self.inner.write().await;
         inner.output_should_fail = Some(exit_code);
     }
 
-    pub fn kill_should_error(&self, errno: nix::errno::Errno) {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn kill_should_error(&self, errno: nix::errno::Errno) {
+        let mut inner = self.inner.write().await;
         inner.kill_should_error = Some(errno);
     }
 
-    pub fn node_kill_should_error(&self, errno: nix::errno::Errno) {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn node_kill_should_error(&self, errno: nix::errno::Errno) {
+        let mut inner = self.inner.write().await;
         inner.node_kill_should_error = Some(errno);
     }
 
-    pub fn push_stream(&self, program: OsString, values: Vec<StreamValue>) {
-        self.inner.write().unwrap().streams.insert(program, values);
+    pub async fn push_stream(&self, program: OsString, values: Vec<StreamValue>) {
+        self.inner.write().await.streams.insert(program, values);
     }
 
-    pub fn processes(&self) -> Vec<Arc<FakeProcess>> {
+    pub async fn processes(&self) -> Vec<Arc<FakeProcess>> {
         self.inner
             .write()
-            .unwrap()
+            .await
             .processes
-            .iter()
-            .map(|(_, process)| Arc::clone(process))
+            .values()
+            .map(Arc::clone)
             .collect()
     }
 
-    pub fn count(&self) -> usize {
-        self.inner.read().unwrap().processes.len()
+    pub async fn count(&self) -> usize {
+        self.inner.read().await.processes.len()
     }
 
     pub async fn advance_by(&self, cycles: usize) {
-        for (_, process) in self.inner.write().unwrap().processes.iter() {
-            let mut inner = process.inner.write().unwrap();
+        for (_, process) in self.inner.write().await.processes.iter() {
+            let mut inner = process.inner.write().await;
 
             for _ in 0..cycles {
                 if !inner.stream_values.is_empty()
@@ -257,12 +258,12 @@ impl FakeProcessManager {
 
 #[async_trait]
 impl ProcessManager for FakeProcessManager {
-    fn spawn(&self, command: Command) -> std::io::Result<DynProcess> {
-        if let Some(err_kind) = self.inner.read().unwrap().spawn_should_error {
+    async fn spawn(&self, command: Command) -> std::io::Result<DynProcess> {
+        if let Some(err_kind) = self.inner.read().await.spawn_should_error {
             return Err(err_kind.into());
         }
 
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().await;
         let stream_values = inner
             .streams
             .get(&command.program)
@@ -293,14 +294,14 @@ impl ProcessManager for FakeProcessManager {
     }
 
     async fn output(&self, command: Command) -> std::io::Result<std::process::Output> {
-        if let Some(err_kind) = self.inner.read().unwrap().output_should_error {
+        if let Some(err_kind) = self.inner.read().await.output_should_error {
             return Err(err_kind.into());
         }
 
         let stream_values = self
             .inner
             .read()
-            .unwrap()
+            .await
             .streams
             .get(&command.program)
             .cloned()
@@ -331,7 +332,7 @@ impl ProcessManager for FakeProcessManager {
             status: self
                 .inner
                 .read()
-                .unwrap()
+                .await
                 .output_should_fail
                 .unwrap_or(ExitStatus::from_raw(0)),
             stdout: stdout.as_bytes().to_vec(),
@@ -339,17 +340,17 @@ impl ProcessManager for FakeProcessManager {
         })
     }
 
-    fn kill<T>(&self, pid: nix::unistd::Pid, signal: T) -> nix::Result<()>
+    async fn kill<T>(&self, pid: nix::unistd::Pid, signal: T) -> nix::Result<()>
     where
-        T: Into<Option<Signal>>,
+        T: Into<Option<Signal>> + Send,
     {
-        if let Some(errno) = self.inner.read().unwrap().kill_should_error {
+        if let Some(errno) = self.inner.read().await.kill_should_error {
             return Err(errno);
         }
 
         let pid = pid.as_raw().try_into().unwrap();
-        let processes = &self.inner.write().unwrap().processes;
-        let process_state = &mut processes.get(&pid).unwrap().inner.write().unwrap().state;
+        let processes = &self.inner.write().await.processes;
+        let process_state = &mut processes.get(&pid).unwrap().inner.write().await.state;
 
         match (process_state.clone(), signal.into()) {
             (FakeProcessState::Running, Some(Signal::SIGSTOP)) => {

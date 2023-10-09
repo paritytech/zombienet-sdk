@@ -107,13 +107,13 @@ pub type DynProcess = Arc<dyn Process + Send + Sync>;
 
 #[async_trait]
 pub trait ProcessManager {
-    fn spawn(&self, command: Command) -> io::Result<DynProcess>;
+    async fn spawn(&self, command: Command) -> io::Result<DynProcess>;
 
     async fn output(&self, command: Command) -> io::Result<std::process::Output>;
 
-    fn kill<T>(&self, pid: nix::unistd::Pid, signal: T) -> nix::Result<()>
+    async fn kill<T>(&self, pid: nix::unistd::Pid, signal: T) -> nix::Result<()>
     where
-        T: Into<Option<nix::sys::signal::Signal>>;
+        T: Into<Option<nix::sys::signal::Signal>> + Send;
 }
 
 pub type DynProcessManager = Arc<dyn Process + Send + Sync>;

@@ -73,7 +73,7 @@ impl OsProcessManager {
 
 #[async_trait]
 impl ProcessManager for OsProcessManager {
-    fn spawn(&self, command: Command) -> io::Result<DynProcess> {
+    async fn spawn(&self, command: Command) -> io::Result<DynProcess> {
         let kill_on_drop = command.kill_on_drop;
         let mut base_command = OsProcessManager::create_base_command(command);
 
@@ -94,9 +94,9 @@ impl ProcessManager for OsProcessManager {
         Ok(base_command.output().await?)
     }
 
-    fn kill<T>(&self, pid: nix::unistd::Pid, signal: T) -> nix::Result<()>
+    async fn kill<T>(&self, pid: nix::unistd::Pid, signal: T) -> nix::Result<()>
     where
-        T: Into<Option<nix::sys::signal::Signal>>,
+        T: Into<Option<nix::sys::signal::Signal>> + Send,
     {
         nix::sys::signal::kill(pid, signal)
     }

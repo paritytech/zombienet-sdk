@@ -691,8 +691,6 @@ where
             Command::new(program)
                 .args(args)
                 .envs(env.to_owned())
-                .args(args)
-                .envs(env.to_owned())
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -778,7 +776,7 @@ mod tests {
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
         let pm = FakeProcessManager::new(HashMap::new());
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
 
         let namespace = provider.create_namespace().await.unwrap();
 
@@ -804,7 +802,7 @@ mod tests {
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
         let pm = FakeProcessManager::new(HashMap::new());
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
 
         assert_eq!(provider.namespaces().await.len(), 0);
     }
@@ -817,7 +815,7 @@ mod tests {
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
         let pm = FakeProcessManager::new(HashMap::new());
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
 
         let namespace = provider.create_namespace().await.unwrap();
 
@@ -833,7 +831,7 @@ mod tests {
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
         let pm = FakeProcessManager::new(HashMap::new());
-        let provider = NativeProvider::new(fs.clone(), pm);
+        let provider = NativeProvider::new(fs.clone(), pm).tmp_dir("/tmp");
 
         let namespace1 = provider.create_namespace().await.unwrap();
         let namespace2 = provider.create_namespace().await.unwrap();
@@ -865,7 +863,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         let node = namespace
@@ -1031,7 +1029,7 @@ mod tests {
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
         let pm = FakeProcessManager::new(HashMap::new());
-        let provider = NativeProvider::new(fs.clone(), pm);
+        let provider = NativeProvider::new(fs.clone(), pm).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
@@ -1057,7 +1055,7 @@ mod tests {
             (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
         ]));
         let pm = FakeProcessManager::new(HashMap::new());
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // force error
@@ -1095,7 +1093,7 @@ mod tests {
                 ))],
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone(), pm);
+        let provider = NativeProvider::new(fs.clone(), pm).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
@@ -1160,7 +1158,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn 2 dummy nodes to populate namespace
@@ -1202,7 +1200,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1247,7 +1245,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1315,7 +1313,7 @@ mod tests {
                 ))],
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1358,7 +1356,7 @@ mod tests {
                 vec![StreamValue::Stderr("Some error happened".to_string())],
             ),
         ]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1393,7 +1391,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1440,7 +1438,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1495,7 +1493,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1536,7 +1534,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1595,7 +1593,7 @@ mod tests {
                 StreamValue::Stdout("Line 4\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1692,7 +1690,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1728,7 +1726,7 @@ mod tests {
                 StreamValue::Stdout("Line 4\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1850,7 +1848,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -1896,7 +1894,7 @@ mod tests {
                 StreamValue::Stdout("Line 4\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         let node = namespace
@@ -2052,7 +2050,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -2088,7 +2086,7 @@ mod tests {
                 StreamValue::Stdout("Line 4\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node
@@ -2165,7 +2163,7 @@ mod tests {
                 StreamValue::Stdout("Line 3\n".to_string()),
             ],
         )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone());
+        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
         let namespace = provider.create_namespace().await.unwrap();
 
         // spawn dummy node

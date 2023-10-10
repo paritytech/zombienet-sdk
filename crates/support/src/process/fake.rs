@@ -99,8 +99,6 @@ impl Process for FakeProcess {
 
         if let Some(errno) = pm_inner.node_kill_should_error {
             return Err(errno.into());
-        } else {
-            println!("else");
         }
 
         pm_inner.processes.remove(&self.id);

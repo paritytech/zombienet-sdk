@@ -10,35 +10,47 @@ pub struct LocalFileSystem;
 
 #[async_trait]
 impl FileSystem for LocalFileSystem {
-    async fn create_dir(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()> {
+    async fn create_dir<P>(&self, path: P) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+    {
         tokio::fs::create_dir(path).await.map_err(Into::into)
     }
 
-    async fn create_dir_all(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<()> {
+    async fn create_dir_all<P>(&self, path: P) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+    {
         tokio::fs::create_dir_all(path).await.map_err(Into::into)
     }
 
-    async fn read(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<Vec<u8>> {
+    async fn read<P>(&self, path: P) -> FileSystemResult<Vec<u8>>
+    where
+        P: AsRef<Path> + Send,
+    {
         tokio::fs::read(path).await.map_err(Into::into)
     }
 
-    async fn read_to_string(&self, path: impl AsRef<Path> + Send) -> FileSystemResult<String> {
+    async fn read_to_string<P>(&self, path: P) -> FileSystemResult<String>
+    where
+        P: AsRef<Path> + Send,
+    {
         tokio::fs::read_to_string(path).await.map_err(Into::into)
     }
 
-    async fn write(
-        &self,
-        path: impl AsRef<Path> + Send,
-        contents: impl AsRef<[u8]> + Send,
-    ) -> FileSystemResult<()> {
+    async fn write<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+        C: AsRef<[u8]> + Send,
+    {
         tokio::fs::write(path, contents).await.map_err(Into::into)
     }
 
-    async fn append(
-        &self,
-        path: impl AsRef<Path> + Send,
-        contents: impl AsRef<[u8]> + Send,
-    ) -> FileSystemResult<()> {
+    async fn append<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+        C: AsRef<[u8]> + Send,
+    {
         let contents = contents.as_ref();
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -54,21 +66,31 @@ impl FileSystem for LocalFileSystem {
         file.flush().await.and(Ok(())).map_err(Into::into)
     }
 
-    async fn copy(
-        &self,
-        from: impl AsRef<Path> + Send,
-        to: impl AsRef<Path> + Send,
-    ) -> FileSystemResult<()> {
+    async fn copy<P1, P2>(&self, from: P1, to: P2) -> FileSystemResult<()>
+    where
+        P1: AsRef<Path> + Send,
+        P2: AsRef<Path> + Send,
+    {
         tokio::fs::copy(from, to)
             .await
             .and(Ok(()))
             .map_err(Into::into)
     }
 
-    async fn set_mode(&self, path: impl AsRef<Path> + Send, mode: u32) -> FileSystemResult<()> {
+    async fn set_mode<P>(&self, path: P, mode: u32) -> FileSystemResult<()>
+    where
+        P: AsRef<Path> + Send,
+    {
         tokio::fs::set_permissions(path, Permissions::from_mode(mode))
             .await
             .map_err(Into::into)
+    }
+
+    async fn exists<P>(&self, path: P) -> bool
+    where
+        P: AsRef<Path> + Send,
+    {
+        path.as_ref().exists()
     }
 }
 

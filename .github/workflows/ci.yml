@@ -37,12 +37,8 @@ jobs:
       - name: Build
         run: cargo build
 
-      - name: Tests (except provider crate)
-        run: cargo test --workspace --exclude provider
-
-      - name: Tests (provider crate)
-        # there should be a unique test thread for native provider tests (asserting spawned processes count)
-        run: cargo test -p provider -- --test-threads 1
+      - name: Tests 
+        run: cargo test --workspace
 
   coverage:
     name: Zombienet SDK - coverage
@@ -64,8 +60,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Collect coverage data
-        # there should be a unique test thread for native provider tests (asserting spawned processes count)
-        run: cargo llvm-cov nextest -j 1 --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --lcov --output-path lcov.info
 
       - name: Report code coverage
         uses: Nef10/lcov-reporter-action@v0.4.0

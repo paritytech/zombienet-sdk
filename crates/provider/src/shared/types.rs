@@ -20,7 +20,7 @@ impl ProviderCapabilities {
 
 pub struct SpawnNodeOptions {
     pub name: String,
-    pub command: String,
+    pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     // TODO: naming
@@ -32,13 +32,13 @@ pub struct SpawnNodeOptions {
 }
 
 impl SpawnNodeOptions {
-    pub fn new<S>(name: S, command: S) -> Self
+    pub fn new<S>(name: S, program: S) -> Self
     where
         S: AsRef<str>,
     {
         Self {
             name: name.as_ref().to_string(),
-            command: command.as_ref().to_string(),
+            program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
             injected_files: vec![],
@@ -78,20 +78,20 @@ impl SpawnNodeOptions {
 
 #[derive(Debug)]
 pub struct GenerateFileCommand {
-    pub command: String,
+    pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     pub local_output_path: PathBuf,
 }
 
 impl GenerateFileCommand {
-    pub fn new<S, P>(command: S, local_output_path: P) -> Self
+    pub fn new<S, P>(program: S, local_output_path: P) -> Self
     where
         S: AsRef<str>,
         P: AsRef<Path>,
     {
         Self {
-            command: command.as_ref().to_string(),
+            program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
             local_output_path: local_output_path.as_ref().into(),
@@ -147,18 +147,18 @@ impl GenerateFilesOptions {
 }
 
 pub struct RunCommandOptions {
-    pub command: String,
+    pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
 }
 
 impl RunCommandOptions {
-    pub fn new<S>(command: S) -> Self
+    pub fn new<S>(program: S) -> Self
     where
         S: AsRef<str>,
     {
         Self {
-            command: command.as_ref().to_string(),
+            program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
         }

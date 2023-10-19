@@ -1,3 +1,4 @@
+pub mod kubernetes;
 pub mod native;
 pub mod shared;
 

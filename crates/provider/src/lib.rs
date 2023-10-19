@@ -1,3 +1,4 @@
+pub mod kubernetes;
 pub mod native;
 pub mod shared;
 
@@ -8,8 +9,8 @@ use std::{
 
 use async_trait::async_trait;
 use shared::types::{
-    GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
-    RunScriptOptions, SpawnNodeOptions,
+    GenerateFilesOptions, ProviderCapabilities, RunCommandOptions, RunScriptOptions,
+    SpawnNodeOptions,
 };
 use support::fs::FileSystemError;
 
@@ -71,7 +72,7 @@ pub type DynProvider = Arc<dyn Provider>;
 
 #[async_trait]
 pub trait ProviderNamespace {
-    fn id(&self) -> &str;
+    fn name(&self) -> &str;
 
     fn base_dir(&self) -> &PathBuf;
 
@@ -94,9 +95,9 @@ type ExecutionResult = Result<String, (ExitStatus, String)>;
 pub trait ProviderNode {
     fn name(&self) -> &str;
 
-    fn command(&self) -> &str;
+    fn program(&self) -> &str;
 
-    fn args(&self) -> Vec<&String>;
+    fn args(&self) -> Vec<&str>;
 
     async fn ip(&self) -> Result<IpAddr, ProviderError>;
 

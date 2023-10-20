@@ -18,8 +18,11 @@ use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
-use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
-use support::fs::{FileSystem, FileSystemError};
+use provider::{constants::LOCALHOST, types::TransferedFile, NativeProvider, Provider};
+use support::{
+    fs::{local::LocalFileSystem, FileSystem, FileSystemError},
+    process::os::OsProcessManager,
+};
 use tokio::time::timeout;
 
 use crate::{
@@ -34,6 +37,13 @@ where
 {
     filesystem: T,
     provider: P,
+}
+
+impl Orchestrator<LocalFileSystem, NativeProvider<LocalFileSystem, OsProcessManager>> {
+    pub fn native() -> Self {
+        let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+        Self::new(LocalFileSystem {}, provider)
+    }
 }
 
 impl<T, P> Orchestrator<T, P>

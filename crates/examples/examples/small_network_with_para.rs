@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use configuration::{NetworkConfigBuilder, RegistrationStrategy};
 use orchestrator::{AddNodeOpts, Orchestrator};
-use provider::NativeProvider;
-use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,11 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .unwrap();
 
-    let fs = LocalFileSystem;
-    let pm = OsProcessManager;
-    let provider = NativeProvider::new(fs.clone(), pm);
-    let orchestrator = Orchestrator::new(fs, provider);
-    let mut network = orchestrator.spawn(config).await?;
+    let mut network = Orchestrator::native().spawn(config).await?;
     println!("🚀🚀🚀🚀 network deployed");
     // add  a new node
     let opts = AddNodeOpts {

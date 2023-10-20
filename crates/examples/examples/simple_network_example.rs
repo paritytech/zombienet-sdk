@@ -14,11 +14,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pm = OsProcessManager;
     let provider = NativeProvider::new(fs.clone(), pm);
     let orchestrator = Orchestrator::new(fs, provider);
-    orchestrator.spawn(config).await?;
+    let network = orchestrator.spawn(config).await?;
     println!("🚀🚀🚀🚀 network deployed");
-    // For now let just loop....
-    #[allow(clippy::empty_loop)]
-    loop {}
 
-    // Ok(())
+    let client = network.get_node("alice").unwrap().client();
+    let mut blocks = client.blocks().subscribe_finalized().await?;
+    while let Some(block) = blocks.next().await {
+        println!("Block #{}", block?.header().number);
+    }
+
+    Ok(())
 }

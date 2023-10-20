@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
+use subxt::{backend::rpc::RpcClient, OnlineClient, PolkadotConfig};
 use tokio::sync::RwLock;
 
 use crate::network_spec::node::NodeSpec;
@@ -15,6 +16,8 @@ pub struct NetworkNode {
     pub(crate) spec: NodeSpec,
     pub(crate) name: String,
     pub(crate) ws_uri: String,
+    rpc: RpcClient,
+    client: OnlineClient<PolkadotConfig>,
     pub(crate) prometheus_uri: String,
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
@@ -24,6 +27,8 @@ impl NetworkNode {
     pub(crate) fn new<T: Into<String>>(
         name: T,
         ws_uri: T,
+        rpc: RpcClient,
+        client: OnlineClient<PolkadotConfig>,
         prometheus_uri: T,
         spec: NodeSpec,
         inner: DynNode,
@@ -31,6 +36,8 @@ impl NetworkNode {
         Self {
             name: name.into(),
             ws_uri: ws_uri.into(),
+            rpc,
+            client,
             prometheus_uri: prometheus_uri.into(),
             inner,
             spec,
@@ -43,6 +50,14 @@ impl NetworkNode {
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.inner.pause().await?;
         Ok(())
+    }
+
+    pub fn rpc(&self) -> RpcClient {
+        self.rpc.clone()
+    }
+
+    pub fn client(&self) -> OnlineClient<PolkadotConfig> {
+        self.client.clone()
     }
 
     /// Resume the node, this is implemented by resuming the

@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
+use futures::Future;
 use provider::{
     constants::LOCALHOST,
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
+use subxt::{backend::rpc::RpcClient, OnlineClient, PolkadotConfig};
 use support::fs::FileSystem;
 
 use crate::{
@@ -149,6 +152,7 @@ where
     let running_node = ctx.ns.spawn_node(spawn_ops).await?;
 
     let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
+
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
     println!("🚀 {}, should be running now", node.name);
     println!(
@@ -158,11 +162,43 @@ where
     println!("🚀 {} : metrics link {prometheus_uri}", node.name);
     println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     println!("\n");
+
+    let client = retry(|| async {
+        OnlineClient::from_url(&ws_uri)
+            .await
+            .context(format!("Failed to connect to node rpc at {ws_uri}"))
+    })
+    .await?;
+
+    let rpc = RpcClient::from_url(&ws_uri)
+        .await
+        .context(format!("Failed to connect to rpc client at {ws_uri}"))?;
+
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,
+        rpc,
+        client,
         prometheus_uri,
         node.clone(),
         running_node,
     ))
+}
+
+async fn retry<T, F>(connect: F) -> anyhow::Result<OnlineClient<PolkadotConfig>>
+where
+    T: Future<Output = anyhow::Result<OnlineClient<PolkadotConfig>>>,
+    F: Fn() -> T,
+{
+    let mut retries = 5;
+    loop {
+        match connect().await {
+            Err(_) if retries >= 0 => {
+                println!("Error connecting, retrying ...");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                retries -= 1;
+            },
+            res => break res,
+        }
+    }
 }

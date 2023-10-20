@@ -7,7 +7,7 @@ use provider::{
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
-use subxt::{backend::rpc::RpcClient, OnlineClient, PolkadotConfig};
+use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::fs::FileSystem;
 
 use crate::{
@@ -163,12 +163,9 @@ where
     println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     println!("\n");
 
-    let client = retry(|| async {
-        OnlineClient::from_url(&ws_uri)
-            .await
-            .context(format!("Failed to connect to node rpc at {ws_uri}"))
-    })
-    .await?;
+    let client = retry(|| async { OnlineClient::from_url(&ws_uri).await })
+        // .context(format!("Failed to connect to node rpc at {ws_uri}"))
+        .await?;
 
     let rpc = RpcClient::from_url(&ws_uri)
         .await
@@ -185,9 +182,9 @@ where
     ))
 }
 
-async fn retry<T, F>(connect: F) -> anyhow::Result<OnlineClient<PolkadotConfig>>
+async fn retry<T, F, R, E>(connect: F) -> Result<R, E>
 where
-    T: Future<Output = anyhow::Result<OnlineClient<PolkadotConfig>>>,
+    T: Future<Output = Result<R, E>>,
     F: Fn() -> T,
 {
     let mut retries = 5;

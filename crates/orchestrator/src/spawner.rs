@@ -164,8 +164,8 @@ where
     println!("\n");
 
     let client = retry(|| async { OnlineClient::from_url(&ws_uri).await })
-        // .context(format!("Failed to connect to node rpc at {ws_uri}"))
-        .await?;
+        .await
+        .context(format!("Failed to connect to node rpc at {ws_uri}"))?;
 
     let rpc = RpcClient::from_url(&ws_uri)
         .await

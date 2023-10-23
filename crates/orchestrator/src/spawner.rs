@@ -150,7 +150,6 @@ where
     let running_node = ctx.ns.spawn_node(spawn_ops).await?;
 
     let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
-
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
     println!("🚀 {}, should be running now", node.name);
     println!(
@@ -160,7 +159,6 @@ where
     println!("🚀 {} : metrics link {prometheus_uri}", node.name);
     println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     println!("\n");
-
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,

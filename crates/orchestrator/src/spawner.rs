@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use futures::Future;
 use provider::{
     constants::LOCALHOST,
     types::{SpawnNodeOptions, TransferedFile},

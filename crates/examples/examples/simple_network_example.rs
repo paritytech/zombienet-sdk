@@ -18,7 +18,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let network = orchestrator.spawn(config).await?;
     println!("🚀🚀🚀🚀 network deployed");
 
-    let client = network.get_node("alice")?.client().await?;
+    let client = network
+        .get_node("alice")?
+        .client::<subxt::PolkadotConfig>()
+        .await?;
     let mut blocks = client.blocks().subscribe_finalized().await?.take(3);
 
     while let Some(block) = blocks.next().await {

@@ -14,3 +14,4 @@ provider = { path = "../provider" }
 support = { path = "../support" }
 tokio = { workspace = true }
 futures = { workspace = true }
+subxt = { workspace = true }

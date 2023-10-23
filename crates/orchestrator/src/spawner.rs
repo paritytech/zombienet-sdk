@@ -167,21 +167,3 @@ where
         running_node,
     ))
 }
-
-async fn retry<T, F, R, E>(retry_count: u32, connect: F) -> Result<R, E>
-where
-    T: Future<Output = Result<R, E>>,
-    F: Fn() -> T,
-{
-    let mut failed_count = 0;
-    loop {
-        match connect().await {
-            Err(_) if retry_count > failed_count => {
-                failed_count += 1;
-                println!("Error connecting, retrying {failed_count}/{retry_count} ...");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            },
-            res => break res,
-        }
-    }
-}

@@ -1,13 +1,11 @@
 use std::path::PathBuf;
 
-use anyhow::Context;
 use futures::Future;
 use provider::{
     constants::LOCALHOST,
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
-use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::fs::FileSystem;
 
 use crate::{
@@ -163,19 +161,9 @@ where
     println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     println!("\n");
 
-    let client = retry(5, || async { OnlineClient::from_url(&ws_uri).await })
-        .await
-        .context(format!("Failed to connect to node rpc at {ws_uri}"))?;
-
-    let rpc = RpcClient::from_url(&ws_uri)
-        .await
-        .context(format!("Failed to connect to rpc client at {ws_uri}"))?;
-
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,
-        rpc,
-        client,
         prometheus_uri,
         node.clone(),
         running_node,

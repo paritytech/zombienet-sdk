@@ -163,7 +163,7 @@ where
     println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     println!("\n");
 
-    let client = retry(|| async { OnlineClient::from_url(&ws_uri).await })
+    let client = retry(5, || async { OnlineClient::from_url(&ws_uri).await })
         .await
         .context(format!("Failed to connect to node rpc at {ws_uri}"))?;
 
@@ -182,18 +182,18 @@ where
     ))
 }
 
-async fn retry<T, F, R, E>(connect: F) -> Result<R, E>
+async fn retry<T, F, R, E>(retry_count: u32, connect: F) -> Result<R, E>
 where
     T: Future<Output = Result<R, E>>,
     F: Fn() -> T,
 {
-    let mut retries = 5;
+    let mut failed_count = 0;
     loop {
         match connect().await {
-            Err(_) if retries >= 0 => {
-                println!("Error connecting, retrying ...");
+            Err(_) if retry_count > failed_count => {
+                failed_count += 1;
+                println!("Error connecting, retrying {failed_count}/{retry_count} ...");
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                retries -= 1;
             },
             res => break res,
         }

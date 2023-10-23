@@ -1,6 +1,7 @@
 // use std::time::Duration;
 
 use configuration::NetworkConfig;
+use futures::stream::StreamExt;
 use orchestrator::Orchestrator;
 use provider::NativeProvider;
 use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
@@ -18,7 +19,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀🚀🚀🚀 network deployed");
 
     let client = network.get_node("alice")?.client();
-    let mut blocks = client.blocks().subscribe_finalized().await?;
+    let mut blocks = client.blocks().subscribe_finalized().await?.take(3);
+
     while let Some(block) = blocks.next().await {
         println!("Block #{}", block?.header().number);
     }

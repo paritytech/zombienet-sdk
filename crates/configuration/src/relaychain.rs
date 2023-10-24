@@ -511,7 +511,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.chain: 'invalid chain' shouldn't contains whitespace"
         );
     }
@@ -531,7 +531,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.default_command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -551,7 +551,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"relaychain.default_image: 'invalid image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
     }
@@ -576,7 +576,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"relaychain.default_resources.request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -595,7 +595,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.nodes['node'].command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -620,7 +620,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.nodes['node2'].command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -646,7 +646,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.default_resources.limit_cpu: 'invalid' doesn't match regex '^\\d+(.\\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
         assert_eq!(

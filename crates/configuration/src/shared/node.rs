@@ -717,7 +717,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -734,7 +734,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "image: 'myinvalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
     }
@@ -752,7 +752,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
     }
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
         assert_eq!(
@@ -792,7 +792,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -814,7 +814,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"resources.limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
         assert_eq!(
@@ -842,7 +842,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 4);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(
@@ -875,7 +875,7 @@ mod tests {
         assert_eq!(node_name, "mynode");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "name: 'mynode' is already used across config"
         );
     }
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "ws_port: '30333' is already used across config"
         );
     }
@@ -919,7 +919,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "rpc_port: '4444' is already used across config"
         );
     }
@@ -941,7 +941,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "prometheus_port: '9089' is already used across config"
         );
     }
@@ -963,7 +963,7 @@ mod tests {
         assert_eq!(node_name, "node");
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "p2p_port: '45093' is already used across config"
         );
     }

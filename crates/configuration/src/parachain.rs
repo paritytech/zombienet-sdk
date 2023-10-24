@@ -831,7 +831,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[1000].chain: 'invalid chain' shouldn't contains whitespace"
         );
     }
@@ -853,7 +853,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[1000].default_command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -875,7 +875,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"parachain[1000].default_image: 'invalid image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
     }
@@ -902,7 +902,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"parachain[1000].default_resources.request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -925,7 +925,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[2000].genesis_wasm_generator: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -948,7 +948,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[1000].genesis_state_generator: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -971,7 +971,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[2000].bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
         assert_eq!(
@@ -995,7 +995,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[1000].collators['collator'].command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -1024,7 +1024,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[2000].collators['collator2'].command: 'invalid command' shouldn't contains whitespace"
         );
     }
@@ -1060,7 +1060,7 @@ mod tests {
 
         assert_eq!(errors.len(), 5);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[2000].bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
         assert_eq!(

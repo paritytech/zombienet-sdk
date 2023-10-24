@@ -215,8 +215,8 @@ impl<T: FileSystem> Network<T> {
         self.parachains.insert(para.para_id, para);
     }
 
-    pub(crate) fn id(&self) -> &str {
-        self.ns.id()
+    pub(crate) fn name(&self) -> &str {
+        self.ns.name()
     }
 
     pub(crate) fn relaychain(&self) -> &Relaychain {

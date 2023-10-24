@@ -582,7 +582,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.default_image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
         assert_eq!(
@@ -622,7 +622,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[1000].collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(
@@ -679,7 +679,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "parachain[1000].collators['collator1'].command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(
@@ -724,7 +724,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "global_settings.local_ip: invalid IP address syntax"
         );
         assert_eq!(
@@ -766,7 +766,7 @@ mod tests {
 
         assert_eq!(errors.len(), 3);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "relaychain.nodes['node'].command: 'invalid command' shouldn't contains whitespace"
         );
         assert_eq!(

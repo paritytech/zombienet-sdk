@@ -85,7 +85,7 @@ where
         let ns = self.provider.create_namespace().await?;
 
         println!("\n\n");
-        println!("🧰 ns: {:#?}", ns.id());
+        println!("🧰 ns: {:#?}", ns.name());
         println!("🧰 base_dir: {:#?}", ns.base_dir());
 
         // TODO: noop for native

@@ -81,7 +81,7 @@ mod tests {
             .unwrap();
 
         let network_spec = NetworkSpec::from_config(&config).await.unwrap();
-        let alice = network_spec.relaychain.nodes.get(0).unwrap();
+        let alice = network_spec.relaychain.nodes.first().unwrap();
         let bob = network_spec.relaychain.nodes.get(1).unwrap();
         assert_eq!(alice.command.as_str(), "polkadot");
         assert_eq!(bob.command.as_str(), "polkadot1");
@@ -90,7 +90,7 @@ mod tests {
 
         // paras
         assert_eq!(network_spec.parachains.len(), 1);
-        let para_100 = network_spec.parachains.get(0).unwrap();
+        let para_100 = network_spec.parachains.first().unwrap();
         assert_eq!(para_100.id, 100);
     }
 }

@@ -423,7 +423,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -436,7 +436,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"request_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -449,7 +449,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"limit_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -462,7 +462,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
     }
@@ -478,7 +478,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             r"limit_cpu: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
         );
         assert_eq!(

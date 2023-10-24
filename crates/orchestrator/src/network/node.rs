@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
+use subxt::{backend::rpc::RpcClient, OnlineClient};
 use tokio::sync::RwLock;
 
 use crate::network_spec::node::NodeSpec;
@@ -43,6 +44,18 @@ impl NetworkNode {
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.inner.pause().await?;
         Ok(())
+    }
+
+    /// Get the rpc client for the node
+    pub async fn rpc(&self) -> Result<RpcClient, subxt::Error> {
+        RpcClient::from_url(&self.ws_uri).await
+    }
+
+    /// Get the online client for the node
+    pub async fn client<Config: subxt::Config>(
+        &self,
+    ) -> Result<OnlineClient<Config>, subxt::Error> {
+        OnlineClient::from_url(&self.ws_uri).await
     }
 
     /// Resume the node, this is implemented by resuming the

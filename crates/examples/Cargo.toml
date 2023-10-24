@@ -13,3 +13,5 @@ provider = { path = "../provider" }
 # to review the exports for neeeded types
 support = { path = "../support" }
 tokio = { workspace = true }
+futures = { workspace = true }
+subxt = { workspace = true }

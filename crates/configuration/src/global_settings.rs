@@ -235,7 +235,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
     }
@@ -250,7 +250,7 @@ mod tests {
 
         assert_eq!(errors.len(), 2);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
         assert_eq!(
@@ -268,7 +268,7 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "global_settings.local_ip: invalid IP address syntax"
         );
     }
@@ -284,7 +284,7 @@ mod tests {
 
         assert_eq!(errors.len(), 3);
         assert_eq!(
-            errors.get(0).unwrap().to_string(),
+            errors.first().unwrap().to_string(),
             "global_settings.bootnodes_addresses[0]: '/ip4//tcp/45421' failed to parse: invalid IPv4 address syntax"
         );
         assert_eq!(

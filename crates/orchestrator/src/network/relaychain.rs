@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use super::node::NetworkNode;
+
+use super::{node::NetworkNode};
 
 #[derive(Debug)]
 pub struct Relaychain {
@@ -19,4 +20,10 @@ impl Relaychain {
             nodes: Default::default(),
         }
     }
+
+    // Public API
+    pub fn chain(&self) -> &str {
+        &self.chain
+    }
+
 }

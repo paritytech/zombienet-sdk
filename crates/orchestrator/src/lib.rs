@@ -8,10 +8,11 @@ mod network_helper;
 mod network_spec;
 mod shared;
 mod spawner;
+mod tx_helper;
 
 use std::{
     path::{Path, PathBuf},
-    time::Duration,
+    time::Duration
 };
 
 use configuration::{NetworkConfig, RegistrationStrategy};
@@ -67,7 +68,6 @@ where
         &self,
         mut network_spec: NetworkSpec,
     ) -> Result<Network<T>, OrchestratorError> {
-        // main driver for spawn the network
         // TODO: move to logger
         // println!("{:#?}", network_spec);
 
@@ -230,6 +230,9 @@ where
             PathBuf::from(network_spec.relaychain.chain_spec.raw_path().ok_or(
                 OrchestratorError::InvariantError("chain-spec raw path should be set now"),
             )?),
+            network_spec.relaychain.clone(),
+            ns.clone(),
+            self.filesystem.clone()
         );
         let mut network =
             Network::new_with_relay(r, ns.clone(), self.filesystem.clone(), network_spec.clone());
@@ -339,10 +342,13 @@ where
             }
         }
 
-        // TODO: we should wait until node is ready!
-        if !para_to_register_with_extrinsic.is_empty() {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-        }
+        // TODO (future):
+
+        // - add-ons (introspector/tracing/etc)
+
+        // verify nodes
+        network_helper::verifier::verify_nodes(&network.nodes()).await?;
+
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
             let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
@@ -368,15 +374,8 @@ where
                 finalization: false, // TODO: Seed is passed by?
             };
 
-            Parachain::register(register_para_options, &scoped_fs).await?;
+            tx_helper::register_para::register(register_para_options, &scoped_fs).await?;
         }
-
-        // TODO (future):
-
-        // - add-ons (introspector/tracing/etc)
-
-        // verify nodes
-        network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // - write zombie.json state file (we should defined in a way we can load later)
 
@@ -469,4 +468,5 @@ pub enum ZombieRole {
 }
 
 // re-export
-pub use network::AddNodeOpts;
+pub use network::{AddNodeOptions, AddCollatorOptions};
+pub use tx_helper::validator_actions;

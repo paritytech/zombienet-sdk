@@ -5,10 +5,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use configuration::shared::{
+use configuration::{shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
-};
+}, types::Chain};
+use multiaddr::Multiaddr;
+
+use crate::network_spec::node::AddNodeSpecOpts;
 
 pub type Accounts = HashMap<String, NodeAccount>;
 
@@ -74,4 +77,38 @@ pub struct ParachainGenesisArgs {
     pub genesis_head: String,
     pub validation_code: String,
     pub parachain: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AddParaOpts {
+    /// Chain name for parachain, used to genrate the chain-spec.
+    pub chain: Option<Chain>,
+    /// Default command to run collators
+    pub default_command: Option<Command>,
+    /// Default image to run collators
+    pub default_image: Option<Image>,
+    /// Default resources to run collators (only in k8s)
+    pub default_resources: Option<Resources>,
+    /// Default db snapshot to use for bootstrap collators
+    pub default_db_snapshot: Option<AssetLocation>,
+    /// Default args to run collators
+    pub default_args: Vec<Arg>,
+    /// Path to the wasm to use
+    pub genesis_wasm_path: Option<AssetLocation>,
+    /// Command to generate the wasm
+    pub genesis_wasm_generator: Option<Command>,
+    /// Path to genesis state
+    pub genesis_state_path: Option<AssetLocation>,
+    /// Command to get the genesis state
+    pub genesis_state_generator: Option<Command>,
+    /// Path to custom chain spec file to use
+    pub chain_spec_path: Option<AssetLocation>,
+    /// Is the parachain based on Cumulus (true by default)
+    pub is_cumulus_based: bool,
+    /// Bootnodes to use for the network
+    pub bootnodes_addresses: Vec<Multiaddr>,
+    /// Overrides to apply to the spec file, only if the file is in plain
+    pub genesis_overrides: Option<serde_json::Value>,
+    /// Collator to bootstrap the parachain
+    pub collator: AddNodeSpecOpts,
 }

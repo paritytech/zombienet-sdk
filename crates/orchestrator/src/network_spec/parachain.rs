@@ -1,18 +1,20 @@
 use configuration::{
     shared::resources::Resources,
-    types::{Arg, AssetLocation, Command, Image},
+    types::{Arg, AssetLocation, Command, Image, ParaId, Chain},
     ParachainConfig, RegistrationStrategy,
 };
+use multiaddr::Multiaddr;
 
-use super::node::NodeSpec;
+use super::node::{NodeSpec, AddNodeSpecOpts};
 use crate::{
     errors::OrchestratorError,
     generators::{
         chain_spec::{ChainSpec, Context},
         para_artifact::*,
     },
-    shared::types::ChainDefaultContext,
+    shared::types::{ChainDefaultContext, AddParaOpts},
 };
+
 
 #[derive(Debug, Clone)]
 pub struct ParachainSpec {
@@ -65,7 +67,7 @@ pub struct ParachainSpec {
 }
 
 impl ParachainSpec {
-    pub fn from_config(config: &ParachainConfig) -> Result<ParachainSpec, OrchestratorError> {
+    pub fn from_config(config: &ParachainConfig) -> Result<Self, OrchestratorError> {
         let main_cmd = if let Some(cmd) = config.default_command() {
             cmd
         } else if let Some(first_node) = config.collators().first() {
@@ -182,5 +184,13 @@ impl ParachainSpec {
         };
 
         Ok(para_spec)
+    }
+
+    pub fn from_ad_hoc(
+        para_id: ParaId,
+        options: AddParaOpts,
+        relaychain_context: &ChainDefaultContext,
+    ) -> Result<(), OrchestratorError> {
+        Ok(())
     }
 }

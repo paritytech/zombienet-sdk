@@ -1,9 +1,9 @@
 // TODO(Javier): Remove when we implement the logic in the orchestrator to spawn with the provider.
 #![allow(dead_code)]
 
-mod errors;
+pub mod errors;
 mod generators;
-mod network;
+pub mod network;
 mod network_helper;
 mod network_spec;
 mod shared;

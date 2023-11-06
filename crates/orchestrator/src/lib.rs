@@ -339,10 +339,12 @@ where
             }
         }
 
-        // TODO: we should wait until node is ready!
-        if !para_to_register_with_extrinsic.is_empty() {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-        }
+        // TODO:
+        // - add-ons (introspector/tracing/etc)
+
+        // verify nodes
+        network_helper::verifier::verify_nodes(&network.nodes()).await?;
+
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
             let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
@@ -370,13 +372,6 @@ where
 
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
-
-        // TODO (future):
-
-        // - add-ons (introspector/tracing/etc)
-
-        // verify nodes
-        network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // - write zombie.json state file (we should defined in a way we can load later)
 

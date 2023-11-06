@@ -182,13 +182,22 @@ impl<T: FileSystem> Network<T> {
     // deregister and stop the collator?
     // remove_parachain()
 
-    pub fn get_node(&self, node_name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
-        let node_name = node_name.into();
-        if let Some(node) = self.nodes_by_name.get(&node_name) {
-            Ok(node)
-        } else {
-            Err(anyhow::anyhow!("can't find the node!"))
+    pub fn get_node(&self, name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
+        let name = &name.into();
+        if let Some(node) = self.nodes_by_name.get(name) {
+            return Ok(node);
         }
+
+        let list = self
+            .nodes_by_name
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        Err(anyhow::anyhow!(
+            "can't find node with name: {name:?}, should be one of {list}"
+        ))
     }
 
     pub fn nodes(&self) -> Vec<&NetworkNode> {

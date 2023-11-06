@@ -1,10 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::ExitStatus,
+};
 
 pub type Port = u16;
+
+pub type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ProviderCapabilities {
     pub requires_image: bool,
+    pub has_resources: bool,
 }
 
 impl ProviderCapabilities {

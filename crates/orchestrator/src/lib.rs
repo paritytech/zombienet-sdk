@@ -373,7 +373,6 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
-
         // - write zombie.json state file (we should defined in a way we can load later)
 
         Ok(network)

@@ -1,5 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 
+/// Namespace prefix
+pub const NAMESPACE_PREFIX: &str= "zombie_";
 /// Directory for node configuration
 pub const NODE_CONFIG_DIR: &str = "/cfg";
 /// Directory for node configuration

@@ -10,7 +10,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::namespace::{NativeNamespace, NativeNamespaceInner};
-use crate::{types::ProviderCapabilities, DynNamespace, Provider, ProviderError};
+use crate::{
+    constants::NAMESPACE_PREFIX, types::ProviderCapabilities, DynNamespace, Provider, ProviderError,
+};
 
 #[derive(Clone)]
 pub struct NativeProvider<FS, PM>
@@ -91,7 +93,7 @@ where
     }
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
-        let name = format!("zombie_{}", Uuid::new_v4());
+        let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
         let mut inner = self.inner.write().await;
 
         let base_dir = PathBuf::from_iter([&self.tmp_dir, &PathBuf::from(&name)]);

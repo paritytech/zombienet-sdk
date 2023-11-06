@@ -1,4 +1,4 @@
-use zombienet_sdk::{AddNodeOpts, NetworkConfigBuilder, Spawner};
+use zombienet_sdk::{AddNodeOpts, NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

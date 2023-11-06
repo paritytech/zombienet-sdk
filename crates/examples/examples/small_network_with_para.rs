@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use zombienet_sdk::{AddNodeOpts, NetworkConfigBuilder, RegistrationStrategy, Spawner};
+use zombienet_sdk::{AddNodeOpts, NetworkConfigBuilder, NetworkConfigExt, RegistrationStrategy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

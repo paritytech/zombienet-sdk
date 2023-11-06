@@ -7,6 +7,17 @@ use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
 #[async_trait]
 pub trait NetworkConfigExt {
     /// Spawns a network using the native provider.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use zombienet_sdk::{NetworkConfig, NetworkConfigExt};
+    /// # async fn example() -> Result<(), zombienet_sdk::OrchestratorError> {
+    /// let network = NetworkConfig::load_from_toml("config.toml")?
+    ///     .spawn_native()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
 }
 

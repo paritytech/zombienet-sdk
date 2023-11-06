@@ -14,6 +14,7 @@ futures = { workspace = true }
 #napi-derive = "2.12.5"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 tokio = { workspace = true, features = [
     "process",
     "macros",
@@ -21,7 +22,13 @@ tokio = { workspace = true, features = [
     "time",
     "rt",
 ] }
+tokio-util = { workspace = true, features = ["compat"] }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 nix = { workspace = true, features = ["signal"] }
+kube = { workspace = true, features = ["ws"] }
+k8s-openapi = { workspace = true, features = ["v1_27"] }
+tar = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

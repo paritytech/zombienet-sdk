@@ -139,6 +139,7 @@ mod tests {
             capabilities,
             &ProviderCapabilities {
                 requires_image: false,
+                has_resources: false,
             }
         );
     }

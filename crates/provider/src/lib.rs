@@ -1,15 +1,13 @@
-pub mod native;
+mod kubernetes;
+mod native;
 pub mod shared;
 
-use std::{
-    collections::HashMap, net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use shared::types::{
-    GenerateFilesOptions, ProviderCapabilities, RunCommandOptions, RunScriptOptions,
-    SpawnNodeOptions,
+    ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+    RunScriptOptions, SpawnNodeOptions,
 };
 use support::fs::FileSystemError;
 
@@ -87,8 +85,6 @@ pub trait ProviderNamespace {
 }
 
 pub type DynNamespace = Arc<dyn ProviderNamespace>;
-
-type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[async_trait]
 pub trait ProviderNode {

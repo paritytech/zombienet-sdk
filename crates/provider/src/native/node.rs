@@ -12,8 +12,8 @@ use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
 use super::{helpers::create_process_with_log_tasks, namespace::WeakNativeNamespace};
 use crate::{
     constants::LOCALHOST,
-    types::{Port, RunCommandOptions, RunScriptOptions},
-    ExecutionResult, ProviderError, ProviderNode,
+    types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions},
+    ProviderError, ProviderNode,
 };
 
 #[derive(Clone)]

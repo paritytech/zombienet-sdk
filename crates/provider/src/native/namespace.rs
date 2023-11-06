@@ -103,13 +103,10 @@ where
         // Created needed paths
         let ops_fut: Vec<_> = options
             .created_paths
-            .iter()
+            .into_iter()
             .map(|created_path| {
-                self.filesystem.create_dir_all(format!(
-                    "{}{}",
-                    &base_dir.to_string_lossy(),
-                    created_path.to_string_lossy()
-                ))
+                self.filesystem
+                    .create_dir_all(PathBuf::from_iter([&base_dir, &created_path]))
             })
             .collect();
         try_join_all(ops_fut).await?;
@@ -121,7 +118,7 @@ where
             .map(|file| {
                 self.filesystem.copy(
                     &file.local_path,
-                    format!("{}{}", base_dir_raw, file.remote_path.to_string_lossy()),
+                    PathBuf::from_iter([&base_dir, &file.remote_path]),
                 )
             })
             .collect();

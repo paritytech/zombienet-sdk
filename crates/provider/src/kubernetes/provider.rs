@@ -149,7 +149,7 @@ where
             name: name.clone(),
             base_dir,
             filesystem: self.filesystem.clone(),
-            k8s_client: self.client.clone(),
+            client: self.client.clone(),
             provider: WeakKubernetesProvider {
                 inner: Arc::downgrade(&self.inner),
             },

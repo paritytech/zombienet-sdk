@@ -31,12 +31,12 @@ where
     inner: Arc<RwLock<KubernetesProviderInner<FS, KC>>>,
 }
 
-struct KubernetesProviderInner<FS, KC>
+pub(super) struct KubernetesProviderInner<FS, KC>
 where
     FS: FileSystem + Send + Sync + Clone,
     KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
-    namespaces: HashMap<String, KubernetesNamespace<FS, KC>>,
+    pub(super) namespaces: HashMap<String, KubernetesNamespace<FS, KC>>,
 }
 
 #[derive(Clone)]
@@ -45,7 +45,7 @@ where
     FS: FileSystem + Send + Sync + Clone,
     KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
-    inner: Weak<RwLock<KubernetesProviderInner<FS, KC>>>,
+    pub(super) inner: Weak<RwLock<KubernetesProviderInner<FS, KC>>>,
 }
 
 impl<FS, KC> KubernetesProvider<FS, KC>

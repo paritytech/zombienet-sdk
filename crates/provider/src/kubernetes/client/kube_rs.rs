@@ -34,8 +34,9 @@ impl<FS> KubeRsKubernetesClient<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    async fn initialize(filesystem: FS) -> Result<Self, Box<dyn std::error::Error>> {
+    async fn new(filesystem: FS) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
+            // TODO: make it more flexible with path to kube config
             client: Client::try_default().await?,
             filesystem,
         })
@@ -270,7 +271,14 @@ where
     }
 
     // TODO: rework error to have more explicit message instead of just passing the underlying error?
-    async fn copy_to_pod<P>(&self, namespace: &str, name: &str, from: P, to: P) -> kube::Result<()>
+    async fn copy_to_pod<P>(
+        &self,
+        namespace: &str,
+        name: &str,
+        from: P,
+        to: P,
+        mode: &str,
+    ) -> kube::Result<()>
     where
         P: AsRef<Path> + Send,
     {
@@ -297,7 +305,7 @@ where
 
         // execute tar command
         let dest = to.as_ref().to_string_lossy();
-        let mut tar = pods
+        let mut tar_process = pods
             .exec(
                 name,
                 vec!["tar", "-xmf", "-", "-C", &dest],
@@ -306,16 +314,18 @@ where
             .await?;
 
         // write archive content to attached process
-        tar.stdin()
+        tar_process
+            .stdin()
             .unwrap()
             .write_all(&data)
             .await
-            .map_err(|err| kube::Error::Service(err.into()));
+            .map_err(|err| kube::Error::Service(err.into()))?;
 
         // wait for process to finish
-        tar.join()
+        tar_process
+            .join()
             .await
-            .map_err(|err| kube::Error::Service(err.into()));
+            .map_err(|err| kube::Error::Service(err.into()))?;
 
         let file_path = format!(
             "{}/{}",
@@ -324,32 +334,33 @@ where
         );
 
         // execute chmod to set default file permissions
-        self.pod_exec(namespace, name, vec!["chmod", "0644", &file_path])
+        self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
             .await?
             .map_err(|err| {
                 kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
             })?;
 
         // retrieve sha256sum of file to ensure integrity
-        let sha256sum = self
+        let sha256sum_stdout = self
             .pod_exec(namespace, name, vec!["sha256sum", &file_path])
             .await?
             .map_err(|err| {
                 kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
-            })?
+            })?;
+        let actual_hash = sha256sum_stdout
             .split_whitespace()
             .next()
             .expect("sha256sum output should be in the form `hash<spaces>filename`");
 
         // get the hash of the file
         let expected_hash = hex::encode(sha2::Sha256::digest(&contents));
-        if sha256sum != expected_hash {
+        if actual_hash != expected_hash {
             // TODO: should we delete partially copied file here?
             return Err(kube::Error::Service(
                 anyhow!(
                     "file copy failed, expected sha256sum of {} got {}",
                     expected_hash,
-                    sha256sum
+                    actual_hash
                 )
                 .into(),
             ));

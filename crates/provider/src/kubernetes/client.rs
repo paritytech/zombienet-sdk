@@ -1,4 +1,3 @@
-mod fake;
 mod kube_rs;
 
 use std::{collections::BTreeMap, path::Path};
@@ -63,6 +62,7 @@ where
         name: &str,
         from: P,
         to: P,
+        mode: &str,
     ) -> kube::Result<()>
     where
         P: AsRef<Path> + Send;

@@ -1,21 +1,13 @@
-// use std::time::Duration;
-
-use configuration::NetworkConfig;
 use futures::stream::StreamExt;
-use orchestrator::Orchestrator;
-use provider::NativeProvider;
-use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+use zombienet_sdk::{NetworkConfig, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = NetworkConfig::load_from_toml("./crates/examples/examples/0001-simple.toml")
-        .expect("errored?");
+    let network = NetworkConfig::load_from_toml("./crates/examples/examples/0001-simple.toml")
+        .expect("errored?")
+        .spawn_native()
+        .await?;
 
-    let fs = LocalFileSystem;
-    let pm = OsProcessManager;
-    let provider = NativeProvider::new(fs.clone(), pm);
-    let orchestrator = Orchestrator::new(fs, provider);
-    let network = orchestrator.spawn(config).await?;
     println!("🚀🚀🚀🚀 network deployed");
 
     let client = network

@@ -86,7 +86,7 @@ pub trait ProviderNamespace {
     async fn static_setup(&self) -> Result<(), ProviderError>;
 }
 
-pub type DynNamespace = Arc<dyn ProviderNamespace>;
+pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 
 type ExecutionResult = Result<String, (ExitStatus, String)>;
 

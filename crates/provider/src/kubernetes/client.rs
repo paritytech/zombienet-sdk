@@ -66,4 +66,10 @@ where
     ) -> kube::Result<()>
     where
         P: AsRef<Path> + Send;
+
+    async fn delete_pod(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> kube::Result<()>;
 }

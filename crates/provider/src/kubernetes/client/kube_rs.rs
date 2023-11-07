@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec};
 use kube::{
-    api::{AttachParams, ListParams, LogParams, PostParams, WatchParams},
+    api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
     core::{ObjectMeta, WatchEvent},
     Api, Client, Resource,
 };
@@ -365,6 +365,14 @@ where
                 .into(),
             ));
         }
+
+        Ok(())
+    }
+
+    async fn delete_pod(&self, namespace: &str, name: &str) -> kube::Result<()> {
+        Api::<Pod>::namespaced(self.client.clone(), namespace)
+            .delete(name, &DeleteParams::default())
+            .await?;
 
         Ok(())
     }

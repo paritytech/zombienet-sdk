@@ -237,6 +237,8 @@ impl RunScriptOptions {
 pub struct TransferedFile {
     pub local_path: PathBuf,
     pub remote_path: PathBuf,
+    // TODO: Can be narrowed to have strict typing on this?
+    pub mode: String,
 }
 
 impl TransferedFile {
@@ -247,7 +249,16 @@ impl TransferedFile {
         Self {
             local_path: local_path.as_ref().into(),
             remote_path: remote_path.as_ref().into(),
+            mode: "0644".to_string() // default to rw-r--r--
         }
+    }
+
+    pub fn mode<S>(mut self, mode: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.mode = mode.as_ref().to_string();
+        self
     }
 }
 

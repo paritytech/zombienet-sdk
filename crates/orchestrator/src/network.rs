@@ -145,29 +145,29 @@ impl<T: FileSystem> Network<T> {
             wait_ready: true,
         };
 
-        let mut global_files_to_inject = vec![TransferedFile {
-            local_path: PathBuf::from(format!(
+        let mut global_files_to_inject = vec![TransferedFile::new(
+            PathBuf::from(format!(
                 "{}/{}.json",
                 self.ns.base_dir().to_string_lossy(),
                 self.relay.chain
             )),
-            remote_path: PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
-        }];
+            PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
+        )];
 
         if let Some(para_spec_path) = maybe_para_chain_spec_path {
-            global_files_to_inject.push(TransferedFile {
-                local_path: PathBuf::from(format!(
+            global_files_to_inject.push(TransferedFile::new(
+                PathBuf::from(format!(
                     "{}/{}",
                     self.ns.base_dir().to_string_lossy(),
                     para_spec_path.to_string_lossy()
                 )),
-                remote_path: PathBuf::from(format!(
+                PathBuf::from(format!(
                     "/cfg/{}.json",
                     para_id.ok_or(anyhow::anyhow!(
                         "para_id should be valid here, this is a bug!"
                     ))?
                 )),
-            });
+            ));
         }
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;

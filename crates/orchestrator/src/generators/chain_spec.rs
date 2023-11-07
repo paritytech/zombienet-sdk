@@ -113,10 +113,8 @@ impl ChainSpec {
         if let Some(location) = self.asset_location.as_ref() {
             match location {
                 AssetLocation::FilePath(path) => {
-                    let file_to_transfer = TransferedFile {
-                        local_path: path.clone(),
-                        remote_path: maybe_plain_spec_path.clone(),
-                    };
+                    let file_to_transfer =
+                        TransferedFile::new(path.clone(), maybe_plain_spec_path.clone());
 
                     scoped_fs
                         .copy_files(vec![&file_to_transfer])

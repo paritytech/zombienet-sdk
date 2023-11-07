@@ -216,13 +216,13 @@ where
             wait_ready: false,
         };
 
-        let global_files_to_inject = vec![TransferedFile {
-            local_path: PathBuf::from(format!(
+        let global_files_to_inject = vec![TransferedFile::new(
+            PathBuf::from(format!(
                 "{}/{relay_chain_name}.json",
                 ns.base_dir().to_string_lossy()
             )),
-            remote_path: PathBuf::from(format!("/cfg/{relay_chain_name}.json")),
-        }];
+            PathBuf::from(format!("/cfg/{relay_chain_name}.json")),
+        )];
 
         let r = Relaychain::new(
             relay_chain_name.to_string(),
@@ -319,14 +319,14 @@ where
             };
             let mut para_files_to_inject = global_files_to_inject.clone();
             if para.is_cumulus_based {
-                para_files_to_inject.push(TransferedFile {
-                    local_path: PathBuf::from(format!(
+                para_files_to_inject.push(TransferedFile::new(
+                    PathBuf::from(format!(
                         "{}/{}.json",
                         ns.base_dir().to_string_lossy(),
                         para.id
                     )),
-                    remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
-                });
+                    PathBuf::from(format!("/cfg/{}.json", para.id)),
+                ));
             }
 
             let spawning_tasks = para

@@ -71,19 +71,19 @@ where
         };
 
         for key_filename in key_filenames {
-            let f = TransferedFile {
-                local_path: PathBuf::from(format!(
+            let f = TransferedFile::new(
+                PathBuf::from(format!(
                     "{}/{}/{}",
                     ctx.ns.base_dir().to_string_lossy(),
                     node_files_path,
                     key_filename.to_string_lossy()
                 )),
-                remote_path: PathBuf::from(format!(
+                PathBuf::from(format!(
                     "/data/chains/{}/keystore/{}",
                     remote_keystore_chain_id,
                     key_filename.to_string_lossy()
                 )),
-            };
+            );
             files_to_inject.push(f);
         }
         created_paths.push(PathBuf::from(format!(

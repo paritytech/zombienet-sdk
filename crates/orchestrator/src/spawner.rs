@@ -6,6 +6,7 @@ use provider::{
     DynNamespace,
 };
 use support::fs::FileSystem;
+use tracing::info;
 
 use crate::{
     generators,
@@ -124,9 +125,12 @@ where
                               * ZombieRole::Companion => todo!(), */
     };
 
-    println!("\n");
-    println!("🚀 {}, spawning.... with command:", node.name);
-    println!("{program} {}", args.join(" "));
+    info!(
+        "🚀 {}, spawning.... with command: {} {}",
+        node.name,
+        program,
+        args.join(" ")
+    );
 
     let spawn_ops = SpawnNodeOptions {
         name: node.name.clone(),
@@ -150,14 +154,13 @@ where
 
     let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
-    println!("🚀 {}, should be running now", node.name);
-    println!(
-        "🚀 {} : direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
+    info!("🚀 {}, should be running now", node.name);
+    info!(
+        "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
         node.name
     );
-    println!("🚀 {} : metrics link {prometheus_uri}", node.name);
-    println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
-    println!("\n");
+    info!("🚀 {}: metrics link {prometheus_uri}", node.name);
+    info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use tokio::time::timeout;
+use tracing::trace;
 
 use crate::network::node::NetworkNode;
 
@@ -18,8 +19,7 @@ async fn check_nodes(nodes: &[&NetworkNode]) {
         let tasks: Vec<_> = nodes
             .iter()
             .map(|node| {
-                // TODO: move to logger
-                // println!("getting from {}", node.name);
+                trace!("🔎 checking node: {} ", node.name);
                 reqwest::get(node.prometheus_uri.clone())
             })
             .collect();

@@ -6,6 +6,7 @@ use std::{
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::fs::FileSystem;
+use tracing::info;
 
 // use crate::generators::key::generate_pair;
 // use sp_core::{sr25519, Pair};
@@ -50,7 +51,7 @@ impl Parachain {
         options: RegisterParachainOptions,
         scoped_fs: &ScopedFilesystem<'_, impl FileSystem>,
     ) -> Result<(), anyhow::Error> {
-        println!("Registering parachain: {:?}", options);
+        info!("Registering parachain: {:?}", options);
         // get the seed
         let sudo: Keypair;
         if let Some(possible_seed) = options.seed {
@@ -100,7 +101,7 @@ impl Parachain {
             .await?;
 
         let result = result.wait_for_in_block().await?;
-        println!("In block: {:#?}", result.block_hash());
+        info!("In block: {:#?}", result.block_hash());
         Ok(())
     }
 }

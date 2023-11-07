@@ -35,3 +35,4 @@ sp-core = "22.0.0"
 libp2p = { version = "0.52" }
 subxt = "0.32.0"
 subxt-signer = { version = "0.32.0", features = ["subxt"]}
+tracing = "0.1.35"

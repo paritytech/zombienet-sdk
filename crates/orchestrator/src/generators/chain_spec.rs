@@ -11,6 +11,7 @@ use provider::{
 };
 use serde_json::json;
 use support::fs::FileSystem;
+use tracing::warn;
 
 use super::errors::GeneratorError;
 use crate::{
@@ -396,31 +397,11 @@ impl ChainSpec {
                 }
             }
 
-            // TODO: move to logger
-            // println!(
-            //     "{:#?}",
-            //     chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
-            // );
             // Clear authorities
             clear_authorities(&pointer, &mut chain_spec_json);
 
-            // TODO: move to logger
-            // println!(
-            //     "{:#?}",
-            //     chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
-            // );
-
-            // TODO: add to logger
-            // println!("BALANCES");
-            // println!("{:#?}", chain_spec_json.pointer(format!("{}/balances",pointer).as_str()));
             // add balances
             add_balances(&pointer, &mut chain_spec_json, &relaychain.nodes, 0);
-
-            // TODO: move to logger
-            // println!(
-            //     "{:#?}",
-            //     chain_spec_json.pointer(format!("{}/balances", pointer).as_str())
-            // );
 
             // Get validators to add as authorities
             let validators: Vec<&NodeSpec> = relaychain
@@ -443,10 +424,6 @@ impl ChainSpec {
             }
 
             // staking && nominators
-
-            // TODO: add to logger
-            // println!("KEYS");
-            // println!("{:#?}", chain_spec_json.pointer(format!("{}/session/keys",pointer).as_str()));
 
             // add_hrmp_channels
 
@@ -671,7 +648,7 @@ fn add_balances(
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let Some(balances) = val.pointer("/balances/balances") else {
             // should be a info log
-            println!("NO 'balances' key in runtime config, skipping...");
+            warn!("NO 'balances' key in runtime config, skipping...");
             return;
         };
 

@@ -14,7 +14,7 @@ use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     shared::helpers::{create_log_writing_task, create_stream_polling_task},
     types::{GenerateFilesOptions, SpawnNodeOptions},
-    DynNode, ProviderError, ProviderNamespace,
+    DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
 use super::{
@@ -52,7 +52,7 @@ where
     FS: FileSystem + Send + Sync + Clone,
     KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
-    pub inner: Weak<RwLock<KubernetesNamespaceInner<FS, KC>>>,
+    pub(super) inner: Weak<RwLock<KubernetesNamespaceInner<FS, KC>>>,
 }
 
 #[async_trait]
@@ -186,6 +186,7 @@ where
         // create node structure holding state
         let node = KubernetesNode {
             name: options.name.clone(),
+            namespace_name: self.name.clone(),
             program: options.program,
             args: options.args,
             env: options.env,
@@ -220,6 +221,19 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        todo!()
+        // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
+        // method acquiring a lock the namespace to remove the node from the nodes hashmap.
+        let nodes: Vec<KubernetesNode<FS, KC>> =
+            self.inner.write().await.nodes.values().cloned().collect();
+        for node in nodes.iter() {
+            node.destroy().await?;
+        }
+
+        // remove namespace from provider
+        if let Some(provider) = self.provider.inner.upgrade() {
+            provider.write().await.namespaces.remove(&self.name);
+        }
+
+        Ok(())
     }
 }

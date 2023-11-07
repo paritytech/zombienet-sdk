@@ -2,7 +2,7 @@ use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use support::fs::FileSystem;
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
 
 use crate::{
     types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions},
@@ -18,6 +18,8 @@ where
     KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
     pub(super) name: String,
+    // TODO: find an easy way to avoid this given we have Weak to inner namespace but namespace name is one level up
+    pub(super) namespace_name: String,
     pub(super) program: String,
     pub(super) args: Vec<String>,
     pub(super) env: Vec<(String, String)>,
@@ -118,18 +120,68 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
-        todo!()
+        // TODO: handle unwraps
+        self.client
+            .pod_exec(
+                &self.namespace_name,
+                &self.name,
+                vec!["echo", "pause", ">", "/tmp/zombiepipe"],
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        Ok(())
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
-        todo!()
+        // TODO: handle unwraps
+        self.client
+            .pod_exec(
+                &self.namespace_name,
+                &self.name,
+                vec!["echo", "resume", ">", "/tmp/zombiepipe"],
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        Ok(())
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
-        todo!()
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
+
+        // TODO: handle unwraps
+        self.client
+            .pod_exec(
+                &self.namespace_name,
+                &self.name,
+                vec!["echo", "restart", ">", "/tmp/zombiepipe"],
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        Ok(())
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        todo!()
+        let inner = self.inner.write().await;
+
+        inner.log_writing_handle.abort();
+        inner.log_reading_handle.abort();
+        self.client
+            .delete_pod(&self.namespace_name, &self.name)
+            .await
+            .unwrap();
+
+        if let Some(namespace) = self.namespace.inner.upgrade() {
+            namespace.write().await.nodes.remove(&self.name);
+        }
+
+        Ok(())
     }
 }

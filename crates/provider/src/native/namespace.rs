@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use futures::{future::try_join_all, try_join};
 use support::{fs::FileSystem, process::ProcessManager};
 use tokio::sync::RwLock;
+use tracing::trace;
 use uuid::Uuid;
 
 use super::{
@@ -189,10 +190,13 @@ where
             local_output_path,
         } in options.commands
         {
-            // TODO: move to logger
-            // println!("{:#?}, {:#?}", command, args);
-            // println!("{:#?}", self.base_dir.to_string_lossy());
-            // println!("{:#?}", local_output_path.as_os_str());
+            trace!(
+                "🏗  building file {:?} in path {} with command {} {}",
+                local_output_path.as_os_str(),
+                self.base_dir.to_string_lossy(),
+                program,
+                args.join(" ")
+            );
             let local_output_full_path = format!(
                 "{}{}{}",
                 self.base_dir.to_string_lossy(),

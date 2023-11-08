@@ -26,3 +26,4 @@ libp2p = { workspace = true }
 subxt = { workspace = true }
 subxt-signer = { workspace = true }
 reqwest = { workspace = true }
+tracing = { workspace = true }

@@ -21,12 +21,12 @@ use network_spec::{parachain::ParachainSpec, NetworkSpec};
 use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
+use tracing::{debug, info};
 
 use crate::{
     generators::chain_spec::ParaGenesisConfig, shared::types::RegisterParachainOptions,
     spawner::SpawnNodeCtx,
 };
-
 pub struct Orchestrator<T, P>
 where
     T: FileSystem + Sync + Send,
@@ -68,15 +68,13 @@ where
         mut network_spec: NetworkSpec,
     ) -> Result<Network<T>, OrchestratorError> {
         // main driver for spawn the network
-        // TODO: move to logger
-        // println!("{:#?}", network_spec);
+        debug!("Network spec to spawn, {:#?}", network_spec);
 
         // create namespace
         let ns = self.provider.create_namespace().await?;
 
-        println!("\n\n");
-        println!("🧰 ns: {:#?}", ns.name());
-        println!("🧰 base_dir: {:#?}", ns.base_dir());
+        info!("🧰 ns: {}", ns.name());
+        info!("🧰 base_dir: {:?}", ns.base_dir());
 
         // TODO: noop for native
         // Static setup
@@ -91,9 +89,6 @@ where
             .build(&ns, &scoped_fs)
             .await?;
 
-        // TODO: move to logger
-        // println!("{:#?}", network_spec.relaychain.chain_spec);
-
         // Create parachain artifacts (chain-spec, wasm, state)
         let relay_chain_id = network_spec
             .relaychain
@@ -106,8 +101,7 @@ where
             let para_cloned = para.clone();
             let chain_spec_raw_path = if let Some(chain_spec) = para.chain_spec.as_mut() {
                 chain_spec.build(&ns, &scoped_fs).await?;
-                // TODO: move to logger
-                // println!("{:#?}", chain_spec);
+                debug!("chain_spec: {:#?}", chain_spec);
 
                 chain_spec
                     .customize_para(&para_cloned, &relay_chain_id, &scoped_fs)

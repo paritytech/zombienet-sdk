@@ -73,6 +73,10 @@ impl ChainSpec {
         }
     }
 
+    pub(crate) fn chain_spec_name(&self) -> &str {
+        self.chain_spec_name.as_ref()
+    }
+
     pub(crate) fn chain_name(&self) -> Option<&str> {
         self.chain_name.as_deref()
     }

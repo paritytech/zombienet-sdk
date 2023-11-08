@@ -347,10 +347,10 @@ impl ChainSpec {
 
             // Add nodes to collator
             let invulnerables: Vec<&NodeSpec> = para
-            .collators
-            .iter()
-            .filter(|node| node.is_invulnerable)
-            .collect();
+                .collators
+                .iter()
+                .filter(|node| node.is_invulnerable)
+                .collect();
 
             add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
 

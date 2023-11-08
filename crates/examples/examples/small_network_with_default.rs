@@ -1,11 +1,8 @@
-use configuration::NetworkConfigBuilder;
-use orchestrator::{AddNodeOpts, Orchestrator};
-use provider::NativeProvider;
-use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+use zombienet_sdk::{AddNodeOpts, NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = NetworkConfigBuilder::new()
+    let mut network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
@@ -18,13 +15,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
-        .unwrap();
+        .unwrap()
+        .spawn_native()
+        .await?;
 
-    let fs = LocalFileSystem;
-    let pm = OsProcessManager;
-    let provider = NativeProvider::new(fs.clone(), pm);
-    let orchestrator = Orchestrator::new(fs, provider);
-    let mut network = orchestrator.spawn(config).await?;
     println!("🚀🚀🚀🚀 network deployed");
     // add  a new node
     let opts = AddNodeOpts {
@@ -36,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: add check to ensure if unique
     network.add_node("new1", opts, None).await?;
 
-    // Example of some opertions that you can do
+    // Example of some operations that you can do
     // with `nodes` (e.g pause, resume, restart)
 
     // Get a ref to the node

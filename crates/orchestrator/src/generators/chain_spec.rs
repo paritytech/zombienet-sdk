@@ -343,14 +343,17 @@ impl ChainSpec {
                 );
             } else {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
-                let invulnerables: Vec<&NodeSpec> = para
-                    .collators
-                    .iter()
-                    .filter(|node| node.is_invulnerable)
-                    .collect();
-                add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
                 // await addParaCustom(chainSpecFullPathPlain, node);
             };
+
+            // Add nodes to collator
+            let invulnerables: Vec<&NodeSpec> = para
+                .collators
+                .iter()
+                .filter(|node| node.is_invulnerable)
+                .collect();
+
+            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
 
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
@@ -798,11 +801,13 @@ fn add_collator_selection(
                     .clone()
             })
             .collect();
+
         // collatorSelection.invulnerables
-        if let Some(invulnerables) = val.pointer_mut("collatorSelection/invulnerables") {
+        if let Some(invulnerables) = val.pointer_mut("/collatorSelection/invulnerables") {
             *invulnerables = json!(keys);
         } else {
             // TODO: add a nice warning here.
+            println!("warn!! can't customize the invulnerables key");
         }
     } else {
         unreachable!("pointer to runtime config should be valid!")

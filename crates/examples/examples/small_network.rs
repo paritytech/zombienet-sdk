@@ -1,4 +1,4 @@
-use configuration::NetworkConfigBuilder;
+use zombienet_sdk::NetworkConfigBuilder;
 
 fn main() {
     let config = NetworkConfigBuilder::new()

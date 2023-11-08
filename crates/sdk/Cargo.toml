@@ -1,12 +1,16 @@
 [package]
-name = "examples"
+name = "zombienet-sdk"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zombienet-sdk = { path = "../sdk" }
+configuration = { path = "../configuration" }
+orchestrator = { path = "../orchestrator" }
+provider = { path = "../provider" }
+support = { path = "../support" }
+async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 subxt = { workspace = true }

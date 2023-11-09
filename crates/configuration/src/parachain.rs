@@ -10,7 +10,7 @@ use serde::{
 use crate::{
     shared::{
         errors::{ConfigError, FieldError},
-        helpers::{merge_errors, merge_errors_vecs},
+        helpers::{ensure_parachain_id_unique, merge_errors, merge_errors_vecs},
         macros::states,
         node::{self, NodeConfig, NodeConfigBuilder},
         resources::{Resources, ResourcesBuilder},
@@ -305,13 +305,19 @@ impl ParachainConfigBuilder<Initial> {
     }
 
     /// Set the parachain ID (should be unique).
-    // TODO: handle unique validation
     pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId> {
-        Self::transition(
-            ParachainConfig { id, ..self.config },
-            self.validation_context,
-            self.errors,
-        )
+        match ensure_parachain_id_unique(id, self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                ParachainConfig { id, ..self.config },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, error),
+            ),
+        }
     }
 }
 
@@ -696,7 +702,7 @@ impl ParachainConfigBuilder<WithAtLeastOneCollator> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::NetworkConfig;
+    use crate::{NetworkConfig, NetworkConfigBuilder};
 
     #[test]
     fn parachain_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
@@ -1079,6 +1085,35 @@ mod tests {
             errors.get(4).unwrap().to_string(),
             "parachain[2000].collators['collator2'].image: 'invalid.image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "'1000' is already used across config")]
+    fn parachains_with_same_id_should_fail() {
+        let network = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_node(|node| node.with_name("alice"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_collator(|collator| collator.with_name("charles"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1000)
+                    .with_collator(|collator| collator.with_name("jim"))
+            })
+            .build()
+            .unwrap();
+
+        network.parachains().iter().for_each(|parachain| {
+            if parachain.id() != 1000 {
+                assert_eq!(parachain.id(), 1001);
+            }
+        });
     }
 
     #[test]

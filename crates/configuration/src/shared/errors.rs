@@ -104,4 +104,7 @@ pub enum ValidationError {
 
     #[error("'{0}' is already used across config")]
     NodeNameAlreadyUsed(String),
+
+    #[error("'{0}' is already used across config")]
+    ParachainIdAlreadyUsed(ParaId),
 }

@@ -18,6 +18,7 @@ impl ProviderCapabilities {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SpawnNodeOptions {
     pub name: String,
     pub program: String,

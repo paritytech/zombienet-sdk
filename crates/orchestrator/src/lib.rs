@@ -279,9 +279,20 @@ where
 
         // spawn paras
         for para in network_spec.parachains.iter() {
+            // global files to include for this parachain
+            let mut para_files_to_inject = global_files_to_inject.clone();
+
             // parachain id is used for the keystore
             let parachain_id = if let Some(chain_spec) = para.chain_spec.as_ref() {
                 let id = chain_spec.read_chain_id(&scoped_fs).await?;
+
+                // add the spec to global files to inject
+                let spec_name = chain_spec.chain_spec_name();
+                para_files_to_inject.push(TransferedFile {
+                    local_path: ns.base_dir().join(format!("{}.json", spec_name)),
+                    remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
+                });
+
                 let raw_path = chain_spec
                     .raw_path()
                     .ok_or(OrchestratorError::InvariantError(
@@ -311,17 +322,6 @@ where
                 bootnodes_addr: &vec![],
                 ..ctx.clone()
             };
-            let mut para_files_to_inject = global_files_to_inject.clone();
-            if para.is_cumulus_based {
-                para_files_to_inject.push(TransferedFile {
-                    local_path: PathBuf::from(format!(
-                        "{}/{}.json",
-                        ns.base_dir().to_string_lossy(),
-                        para.id
-                    )),
-                    remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
-                });
-            }
 
             let spawning_tasks = para
                 .collators

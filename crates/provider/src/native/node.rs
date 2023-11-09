@@ -318,7 +318,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -363,7 +363,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -431,7 +431,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -474,7 +474,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -509,7 +509,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -556,7 +556,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -611,7 +611,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -652,7 +652,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -711,7 +711,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -808,7 +808,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -844,7 +844,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -966,7 +966,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -1012,7 +1012,7 @@ mod tests {
 
         let node = namespace
             .spawn_node(
-                SpawnNodeOptions::new("mynode", "/path/to/my/node_binary")
+                &SpawnNodeOptions::new("mynode", "/path/to/my/node_binary")
                     .args(vec![
                         "-flag1",
                         "--flag2",
@@ -1168,7 +1168,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -1203,7 +1203,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 
@@ -1280,7 +1280,7 @@ mod tests {
 
         // spawn dummy node
         let node = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
             .await
             .unwrap();
 

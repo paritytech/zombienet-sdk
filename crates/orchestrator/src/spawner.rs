@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use provider::{
     constants::LOCALHOST,
     types::{SpawnNodeOptions, TransferedFile},
@@ -150,7 +151,12 @@ where
     node.rpc_port.drop_listener();
     node.prometheus_port.drop_listener();
 
-    let running_node = ctx.ns.spawn_node(spawn_ops).await?;
+    let running_node = ctx.ns.spawn_node(&spawn_ops).await.with_context(|| {
+        format!(
+            "Failed to spawn node: {} with opts: {:#?}",
+            node.name, spawn_ops
+        )
+    })?;
 
     let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);

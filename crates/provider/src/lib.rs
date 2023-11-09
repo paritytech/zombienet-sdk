@@ -77,7 +77,7 @@ pub trait ProviderNamespace {
 
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
-    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
+    async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
 

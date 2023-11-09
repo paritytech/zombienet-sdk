@@ -289,11 +289,7 @@ where
                 // add the spec to global files to inject
                 let spec_name = chain_spec.chain_spec_name();
                 para_files_to_inject.push(TransferedFile {
-                    local_path: PathBuf::from(format!(
-                        "{}/{}.json",
-                        ns.base_dir().to_string_lossy(),
-                        spec_name
-                    )),
+                    local_path: ns.base_dir().join(format!("{}.json", spec_name)),
                     remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
                 });
 

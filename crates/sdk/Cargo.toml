@@ -1,15 +1,24 @@
 [package]
 name = "zombienet-sdk"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+description = "Zombienet SDK, entrypoint for using zombienet"
+keywords = ["zombienet", "sdk"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-configuration = { path = "../configuration" }
-orchestrator = { path = "../orchestrator" }
-provider = { path = "../provider" }
-support = { path = "../support" }
+# Zombienet deps
+configuration = { workspace = true }
+orchestrator = { workspace = true }
+provider = { workspace = true }
+support = { workspace = true }
+
 async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }

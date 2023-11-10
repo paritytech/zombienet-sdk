@@ -209,7 +209,7 @@ states! {
 /// # Example:
 ///
 /// ```
-/// use configuration::NetworkConfigBuilder;
+/// use zombienet_configuration::NetworkConfigBuilder;
 ///
 /// let network_config = NetworkConfigBuilder::new()
 ///     .with_relaychain(|relaychain| {

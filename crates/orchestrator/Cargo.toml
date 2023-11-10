@@ -1,15 +1,24 @@
 [package]
-name = "orchestrator"
-version = "0.1.0"
-edition = "2021"
+name = "zombienet-orchestrator"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+description = "Zombienet Orchestrator, drive network spwan through providers"
+keywords = ["zombienet", "orchestrator", "sdk"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-configuration = { path = "../configuration" }
-support = { path = "../support" }
-provider = { path = "../provider" }
-prom-metrics-parser = { path = "../prom-metrics-parser" }
+# Zombienet deps
+configuration = { workspace = true }
+support = { workspace = true }
+provider = { workspace = true }
+prom-metrics-parser = { workspace = true }
+
 tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
 # TODO: add logger in a new pr.

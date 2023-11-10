@@ -33,8 +33,6 @@ pub fn parse(input: &str) -> Result<MetricMap, ParserError> {
         .next()
         .ok_or(ParserError::ParseRootNodeError(pairs.as_str().to_string()))?;
     for token in root.into_inner() {
-        // match token.as_rule() {
-        //     Rule::block => {
         if token.as_rule() == Rule::block {
             let inner = token.into_inner();
             for value in inner {

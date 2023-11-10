@@ -83,7 +83,7 @@ impl<'de> Deserialize<'de> for U128 {
 ///
 /// # Examples:
 /// ```
-/// use configuration::shared::types::Chain;
+/// use zombienet_configuration::shared::types::Chain;
 ///
 /// let polkadot: Chain = "polkadot".try_into().unwrap();
 /// let kusama: Chain = "kusama".try_into().unwrap();
@@ -123,7 +123,7 @@ impl Chain {
 ///
 /// # Examples:
 /// ```
-/// use configuration::shared::types::Image;
+/// use zombienet_configuration::shared::types::Image;
 ///
 /// let image1: Image = "name".try_into().unwrap();
 /// let image2: Image = "name:version".try_into().unwrap();
@@ -175,7 +175,7 @@ impl Image {
 ///
 /// # Examples:
 /// ```
-/// use configuration::shared::types::Command;
+/// use zombienet_configuration::shared::types::Command;
 ///
 /// let command1: Command = "mycommand".try_into().unwrap();
 /// let command2: Command = "myothercommand".try_into().unwrap();
@@ -211,7 +211,7 @@ impl Command {
 /// ```
 /// use url::Url;
 /// use std::{path::PathBuf, str::FromStr};
-/// use configuration::shared::types::AssetLocation;
+/// use zombienet_configuration::shared::types::AssetLocation;
 ///
 /// let url_location: AssetLocation = Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap().into();
 /// let url_location2: AssetLocation = "https://mycloudstorage.com/path/to/my/file.tgz".into();
@@ -302,7 +302,7 @@ impl<'de> Deserialize<'de> for AssetLocation {
 ///
 /// # Examples:
 /// ```
-/// use configuration::shared::types::Arg;
+/// use zombienet_configuration::shared::types::Arg;
 ///
 /// let flag_arg: Arg = "myflag".into();
 /// let option_arg: Arg = ("name", "value").into();

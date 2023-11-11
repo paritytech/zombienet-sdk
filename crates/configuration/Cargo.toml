@@ -21,5 +21,3 @@ serde = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 serde_json = { workspace = true }
 
-[dev-dependencies]
-configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.0", path = "." }

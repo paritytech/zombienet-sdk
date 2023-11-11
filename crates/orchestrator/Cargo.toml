@@ -13,16 +13,8 @@ keywords = ["zombienet", "orchestrator", "sdk"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# Zombienet deps
-configuration = { workspace = true }
-support = { workspace = true }
-provider = { workspace = true }
-prom-metrics-parser = { workspace = true }
-
 tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
-# TODO: add logger in a new pr.
-#log = { workspace = true }
 multiaddr = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
@@ -36,3 +28,9 @@ subxt = { workspace = true }
 subxt-signer = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
+
+# Zombienet deps
+configuration = { workspace = true }
+support = { workspace = true }
+provider = { workspace = true }
+prom-metrics-parser = { workspace = true }

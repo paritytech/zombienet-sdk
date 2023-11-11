@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = true
 license.workspace = true
 repository.workspace = true
-description = "Support crates with common traits"
+description = "Support crates with common traits/structs and helpers"
 keywords = ["zombienet"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

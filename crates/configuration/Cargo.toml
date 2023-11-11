@@ -22,5 +22,4 @@ toml = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-#{ package = "zombienet-configuration", version = "0.1.0-alpha.0", path = "crates/configuration" }
 configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.0", path = "." }

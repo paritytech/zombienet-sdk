@@ -13,10 +13,6 @@ keywords = ["zombienet", "provider", "native"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# Zomebienet deps
-support = { workspace = true }
-configuration = { workspace = true }
-
 async-trait = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -33,3 +29,7 @@ anyhow = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 nix = { workspace = true, features = ["signal"] }
 tracing = { workspace = true }
+
+# Zomebienet deps
+support = { workspace = true }
+configuration = { workspace = true }

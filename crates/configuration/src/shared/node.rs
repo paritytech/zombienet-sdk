@@ -24,7 +24,7 @@ use crate::{
 /// # Examples:
 ///
 /// ```
-/// use configuration::shared::node::EnvVar;
+/// use zombienet_configuration::shared::node::EnvVar;
 ///
 /// let simple_var: EnvVar = ("FOO", "BAR").into();
 ///

@@ -1,7 +1,14 @@
 [package]
-name = "configuration"
-version = "0.1.0"
-edition = "2021"
+name = "zombienet-configuration"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+description = "Zombienet sdk config builder, allow to build a network configuration"
+keywords = ["zombienet", "configuration", "sdk"]
 
 [dependencies]
 regex = { workspace = true }
@@ -13,3 +20,4 @@ anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 serde_json = { workspace = true }
+

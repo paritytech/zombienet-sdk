@@ -52,3 +52,4 @@ configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.0"
 orchestrator = { package = "zombienet-orchestrator", version = "0.1.0-alpha.0", path = "crates/orchestrator" }
 provider = { package = "zombienet-provider", version = "0.1.0-alpha.0", path = "crates/provider" }
 prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.1.0-alpha.0", path = "crates/prom-metrics-parser" }
+sdk = { package = "zombienet-sdk", version = "0.1.0-alpha.0", path = "crates/sdk" }

@@ -262,16 +262,14 @@ impl<T: FileSystem> Network<T> {
 
         let para_chain_spec_local_path = if let Some(para_chain_spec_custom) = &options.chain_spec {
             Some(para_chain_spec_custom.clone())
+        } else if let Some(para_spec_path) = &parachain.chain_spec_path {
+            Some(PathBuf::from(format!(
+                "{}/{}",
+                self.ns.base_dir().to_string_lossy(),
+                para_spec_path.to_string_lossy()
+            )))
         } else {
-            if let Some(para_spec_path) = &parachain.chain_spec_path {
-                Some(PathBuf::from(format!(
-                    "{}/{}",
-                    self.ns.base_dir().to_string_lossy(),
-                    para_spec_path.to_string_lossy()
-                )))
-            } else {
-                None
-            }
+            None
         };
 
         if let Some(para_spec_path) = para_chain_spec_local_path {

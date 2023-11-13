@@ -6,7 +6,12 @@ use std::{
 
 use async_trait::async_trait;
 use futures::{future::try_join_all, try_join};
-use k8s_openapi::api::core::v1::PodSpec;
+use k8s_openapi::{
+    api::core::v1::{
+        ConfigMapVolumeSource, Container, PodSpec, ResourceRequirements, Volume, VolumeMount,
+    },
+    apimachinery::pkg::api::resource::Quantity,
+};
 use support::fs::FileSystem;
 use tokio::sync::{mpsc, RwLock};
 
@@ -109,8 +114,108 @@ where
             .create_pod(
                 &self.name,
                 &options.name,
-                PodSpec::default(),
-                BTreeMap::from([("foo".to_string(), "bar".to_string())]),
+                PodSpec {
+                    hostname: Some(options.name.to_string()),
+                    containers: vec![Container {
+                        name: options.name.clone(),
+                        image: options.image,
+                        command: Some(vec![
+                            "/zombie-wrapper.sh".to_string(),
+                            options.program.clone(),
+                        ]),
+                        volume_mounts: Some(vec![VolumeMount {
+                            name: "zombie-wrapper-volume".to_string(),
+                            mount_path: "/zombie-wrapper.sh".to_string(),
+                            sub_path: Some("zombie-wrapper.sh".to_string()),
+                            ..Default::default()
+                        }]),
+                        resources: Some(ResourceRequirements {
+                            limits: if options.resources.is_some() {
+                                let mut limits = BTreeMap::new();
+
+                                if let Some(limit_cpu) =
+                                    options.resources.clone().unwrap().limit_cpu()
+                                {
+                                    limits.insert(
+                                        "cpu".to_string(),
+                                        Quantity(limit_cpu.as_str().to_string()),
+                                    );
+                                }
+                                if let Some(limit_memory) =
+                                    options.resources.clone().unwrap().request_memory()
+                                {
+                                    limits.insert(
+                                        "memory".to_string(),
+                                        Quantity(limit_memory.as_str().to_string()),
+                                    );
+                                }
+
+                                if limits.len() > 0 {
+                                    Some(limits)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            },
+                            requests: if options.resources.is_some() {
+                                let mut request = BTreeMap::new();
+
+                                if let Some(request_cpu) =
+                                    options.resources.clone().unwrap().request_cpu()
+                                {
+                                    request.insert(
+                                        "cpu".to_string(),
+                                        Quantity(request_cpu.as_str().to_string()),
+                                    );
+                                }
+                                if let Some(request_memory) =
+                                    options.resources.unwrap().request_memory()
+                                {
+                                    request.insert(
+                                        "memory".to_string(),
+                                        Quantity(request_memory.as_str().to_string()),
+                                    );
+                                }
+
+                                if request.len() > 0 {
+                                    Some(request)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            },
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    volumes: Some(vec![
+                        Volume {
+                            name: "cfg".to_string(),
+                            ..Default::default()
+                        },
+                        Volume {
+                            name: "data".to_string(),
+                            ..Default::default()
+                        },
+                        Volume {
+                            name: "relay-data".to_string(),
+                            ..Default::default()
+                        },
+                        Volume {
+                            name: "zombie-wrapper-volume".to_string(),
+                            config_map: Some(ConfigMapVolumeSource {
+                                name: Some("zombie-wrapper".to_string()),
+                                default_mode: Some(0o744),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                    ]),
+                    ..Default::default()
+                },
+                BTreeMap::from([("some".to_string(), "labels".to_string())]),
             )
             .await
             .unwrap();

@@ -2,7 +2,7 @@ use sp_core::{crypto::SecretStringError, ecdsa, ed25519, sr25519, Pair};
 
 use super::errors::GeneratorError;
 use crate::shared::types::{Accounts, NodeAccount};
-const KEY_SCHEME: [&str; 3] = ["sr", "ed", "ec"];
+const KEYS: [&str; 4] = ["sr", "sr_stash", "ed", "ec"];
 
 pub fn generate_pair<T: Pair>(seed: &str) -> Result<T::Pair, SecretStringError> {
     let pair = T::Pair::from_string(seed, None)?;
@@ -11,26 +11,31 @@ pub fn generate_pair<T: Pair>(seed: &str) -> Result<T::Pair, SecretStringError> 
 
 pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
     let mut accounts: Accounts = Default::default();
-    for scheme in KEY_SCHEME {
-        let (address, public_key) = match scheme {
+    for k in KEYS {
+        let (address, public_key) = match k {
             "sr" => {
                 let pair = generate_pair::<sr25519::Pair>(seed)
-                    .map_err(|_| GeneratorError::KeyGeneration(scheme.into(), seed.into()))?;
+                    .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
+                (pair.public().to_string(), hex::encode(pair.public()))
+            },
+            "sr_stash" => {
+                let pair = generate_pair::<sr25519::Pair>(&format!("{}/stash", seed))
+                    .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             "ed" => {
                 let pair = generate_pair::<ed25519::Pair>(seed)
-                    .map_err(|_| GeneratorError::KeyGeneration(scheme.into(), seed.into()))?;
+                    .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             "ec" => {
                 let pair = generate_pair::<ecdsa::Pair>(seed)
-                    .map_err(|_| GeneratorError::KeyGeneration(scheme.into(), seed.into()))?;
+                    .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             _ => unreachable!(),
         };
-        accounts.insert(scheme.into(), NodeAccount::new(address, public_key));
+        accounts.insert(k.into(), NodeAccount::new(address, public_key));
     }
     Ok(accounts)
 }
@@ -90,11 +95,16 @@ mod tests {
 
         let pair = generate(&seed).unwrap();
         let sr = pair.get("sr").unwrap();
+        let sr_stash = pair.get("sr_stash").unwrap();
         let ed = pair.get("ed").unwrap();
         let ec = pair.get("ec").unwrap();
         assert_eq!(
             sr.address,
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+        );
+        assert_eq!(
+            sr_stash.address,
+            "5DZnGRAr28KP4GvbuxW2cBNo9Aodcm4QKUMj3Zqj67YjYStr"
         );
         assert_eq!(
             ed.address,

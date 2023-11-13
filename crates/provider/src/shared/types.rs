@@ -3,29 +3,22 @@ use std::{
     process::ExitStatus,
 };
 
+use configuration::shared::resources::Resources;
+
 pub type Port = u16;
 
 pub type ExecutionResult = Result<String, (ExitStatus, String)>;
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProviderCapabilities {
     pub requires_image: bool,
     pub has_resources: bool,
 }
 
-impl ProviderCapabilities {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn requires_image(mut self) -> Self {
-        self.requires_image = true;
-        self
-    }
-}
-
 pub struct SpawnNodeOptions {
     pub name: String,
+    pub image: Option<String>,
+    pub resources: Option<Resources>,
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
@@ -44,12 +37,27 @@ impl SpawnNodeOptions {
     {
         Self {
             name: name.as_ref().to_string(),
+            image: None,
+            resources: None,
             program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
             injected_files: vec![],
             created_paths: vec![],
         }
+    }
+
+    pub fn image<S>(mut self, image: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.image = Some(image.as_ref().to_string());
+        self
+    }
+
+    pub fn resources(mut self, resources: Resources) -> Self {
+        self.resources = Some(resources);
+        self
     }
 
     pub fn args<S, I>(mut self, args: I) -> Self
@@ -78,6 +86,18 @@ impl SpawnNodeOptions {
         I: IntoIterator<Item = TransferedFile>,
     {
         self.injected_files = injected_files.into_iter().collect();
+        self
+    }
+
+    pub fn created_paths<P, I>(mut self, created_paths: I) -> Self
+    where
+        P: AsRef<Path>,
+        I: IntoIterator<Item = P>,
+    {
+        self.created_paths = created_paths
+            .into_iter()
+            .map(|path| path.as_ref().into())
+            .collect();
         self
     }
 }
@@ -249,7 +269,7 @@ impl TransferedFile {
         Self {
             local_path: local_path.as_ref().into(),
             remote_path: remote_path.as_ref().into(),
-            mode: "0644".to_string() // default to rw-r--r--
+            mode: "0644".to_string(), // default to rw-r--r--
         }
     }
 

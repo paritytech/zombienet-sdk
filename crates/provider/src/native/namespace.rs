@@ -169,14 +169,11 @@ where
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
         // we spawn a node doing nothing but looping so we can execute our commands
         let temp_node = self
-            .spawn_node(SpawnNodeOptions {
-                name: format!("temp_{}", Uuid::new_v4()),
-                program: "bash".to_string(),
-                args: vec!["-c".to_string(), "while :; do sleep 1; done".to_string()],
-                env: vec![],
-                injected_files: options.injected_files,
-                created_paths: vec![],
-            })
+            .spawn_node(
+                SpawnNodeOptions::new(format!("temp_{}", Uuid::new_v4()), "bash".to_string())
+                    .args(vec!["-c", "while :; do sleep 1; done"])
+                    .injected_files(options.injected_files),
+            )
             .await?;
 
         for GenerateFileCommand {

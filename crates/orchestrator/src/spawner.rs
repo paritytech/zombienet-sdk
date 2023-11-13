@@ -128,18 +128,15 @@ where
     println!("🚀 {}, spawning.... with command:", node.name);
     println!("{program} {}", args.join(" "));
 
-    let spawn_ops = SpawnNodeOptions {
-        name: node.name.clone(),
-        program,
-        args,
-        env: node
-            .env
-            .iter()
-            .map(|env| (env.name.clone(), env.value.clone()))
-            .collect(),
-        injected_files: files_to_inject,
-        created_paths,
-    };
+    let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
+        .args(args)
+        .env(
+            node.env
+                .iter()
+                .map(|var| (var.name.clone(), var.value.clone())),
+        )
+        .injected_files(files_to_inject)
+        .created_paths(created_paths);
 
     // Drops the port parking listeners before spawn
     node.p2p_port.drop_listener();

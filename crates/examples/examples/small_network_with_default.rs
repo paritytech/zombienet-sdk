@@ -1,7 +1,8 @@
-use zombienet_sdk::{AddNodeOpts, NetworkConfigBuilder, NetworkConfigExt};
+use zombienet_sdk::{AddCollatorOptions, AddNodeOptions, NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
     let mut network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
@@ -20,15 +21,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     println!("🚀🚀🚀🚀 network deployed");
-    // add  a new node
-    let opts = AddNodeOpts {
+
+    // Add a new node to the running network.
+    let opts = AddNodeOptions {
         rpc_port: Some(9444),
         is_validator: true,
         ..Default::default()
     };
 
-    // TODO: add check to ensure if unique
-    network.add_node("new1", opts, None).await?;
+    network.add_node("new1", opts).await?;
 
     // Example of some operations that you can do
     // with `nodes` (e.g pause, resume, restart)
@@ -49,11 +50,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // node.resume().await?;
     // println!("node new1 resumed!");
 
-    let col_opts = AddNodeOpts {
+    let col_opts = AddCollatorOptions {
         command: Some("polkadot-parachain".try_into()?),
         ..Default::default()
     };
-    network.add_node("new-col-1", col_opts, Some(100)).await?;
+    network.add_collator("new-col-1", col_opts, 100).await?;
     println!("new collator deployed!");
 
     // For now let just loop....

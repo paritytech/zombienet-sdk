@@ -11,7 +11,7 @@ use provider::{
 };
 use serde_json::json;
 use support::fs::FileSystem;
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 use super::errors::GeneratorError;
 use crate::{

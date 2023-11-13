@@ -90,16 +90,16 @@ impl<T: FileSystem> Network<T> {
     /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
     /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
     /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
-    ///     let mut network = orchestrator.spawn(config).await?;
+    /// let mut network = orchestrator.spawn(config).await?;
     ///
-    ///     // Create the options to add the new node
-    ///     let opts = AddNodeOptions {
-    ///         rpc_port: Some(9444),
-    ///         is_validator: true,
-    ///         ..Default::default()
-    ///     };
+    /// // Create the options to add the new node
+    /// let opts = AddNodeOptions {
+    ///     rpc_port: Some(9444),
+    ///     is_validator: true,
+    ///     ..Default::default()
+    /// };
     ///
-    ///     network.add_node("new-node", opts).await?;
+    /// network.add_node("new-node", opts).await?;
     /// #   Ok(())
     /// # }
     /// ```
@@ -189,14 +189,14 @@ impl<T: FileSystem> Network<T> {
     /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
     /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
     /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
-    ///     let mut network = orchestrator.spawn(config).await?;
+    /// let mut network = orchestrator.spawn(config).await?;
     ///
-    ///     let col_opts = AddCollatorOptions {
-    ///         command: Some("polkadot-parachain".try_into()?),
-    ///         ..Default::default()
-    ///     };
+    /// let col_opts = AddCollatorOptions {
+    ///     command: Some("polkadot-parachain".try_into()?),
+    ///     ..Default::default()
+    /// };
     ///
-    ///     network.add_collator("new-col-1", col_opts, 100).await?;
+    /// network.add_collator("new-col-1", col_opts, 100).await?;
     /// #   Ok(())
     /// # }
     /// ```
@@ -291,7 +291,6 @@ impl<T: FileSystem> Network<T> {
 
         Ok(())
     }
-
 
     // This should include at least of collator?
     // add_parachain()

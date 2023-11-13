@@ -51,7 +51,10 @@ where
 {
     pub fn new(filesystem: FS, process_manager: PM) -> Self {
         Self {
-            capabilities: ProviderCapabilities::new(),
+            capabilities: ProviderCapabilities {
+                has_resources: false,
+                requires_image: false,
+            },
             // NOTE: temp_dir in linux return `/tmp` but on mac something like
             //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having
             // one `trailing slash` and the other no can cause issues if

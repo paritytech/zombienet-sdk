@@ -339,12 +339,7 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &validators,
-                    KeyType::Session,
-                );
+                add_authorities(&pointer, &mut chain_spec_json, &validators, false);
             } else {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
                 // await addParaCustom(chainSpecFullPathPlain, node);
@@ -422,12 +417,7 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &validators,
-                    KeyType::Session,
-                );
+                add_authorities(&pointer, &mut chain_spec_json, &validators, true);
             }
 
             // staking && nominators
@@ -691,8 +681,9 @@ fn add_balances(
     }
 }
 
-fn get_node_keys(node: &NodeSpec) -> GenesisNodeKey {
+fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
     let sr_account = node.accounts.accounts.get("sr").unwrap();
+    let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
     let ed_account = node.accounts.accounts.get("ed").unwrap();
     let ec_account = node.accounts.accounts.get("ec").unwrap();
     let mut keys = HashMap::new();
@@ -713,16 +704,24 @@ fn get_node_keys(node: &NodeSpec) -> GenesisNodeKey {
     keys.insert("grandpa".to_string(), ed_account.address.clone());
     keys.insert("beefy".to_string(), ec_account.address.clone());
 
-    (sr_account.address.clone(), sr_account.address.clone(), keys)
+    let account_to_use = if use_stash { sr_stash } else { sr_account };
+    (
+        account_to_use.address.clone(),
+        account_to_use.address.clone(),
+        keys,
+    )
 }
 fn add_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &[&NodeSpec],
-    _key_type: KeyType,
+    use_stash: bool,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let keys: Vec<GenesisNodeKey> = nodes.iter().map(|node| get_node_keys(node)).collect();
+        let keys: Vec<GenesisNodeKey> = nodes
+            .iter()
+            .map(|node| get_node_keys(node, use_stash))
+            .collect();
         val["session"]["keys"] = json!(keys);
     } else {
         unreachable!("pointer to runtime config should be valid!")

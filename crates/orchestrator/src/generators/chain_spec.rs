@@ -377,7 +377,7 @@ impl ChainSpec {
     pub async fn customize_relay<'a, T, U>(
         &self,
         relaychain: &RelaychainSpec,
-        _hrmp_channels: &[HrmpChannelConfig],
+        hrmp_channels: &[HrmpChannelConfig],
         para_artifacts: Vec<ParaGenesisConfig<U>>,
         scoped_fs: &ScopedFilesystem<'a, T>,
     ) -> Result<(), GeneratorError>
@@ -432,7 +432,9 @@ impl ChainSpec {
 
             // staking && nominators
 
-            // add_hrmp_channels
+            if !hrmp_channels.is_empty() {
+                add_hrmp_channels(&pointer, &mut chain_spec_json, hrmp_channels);
+            }
 
             // paras
             for para_genesis_config in para_artifacts.iter() {
@@ -556,10 +558,6 @@ where
         let wasm = scoped_fs
             .read_to_string(para_genesis_config.wasm_path.as_ref())
             .await?;
-        // const new_para = [
-        //     parseInt(para_id),
-        //     [readDataFile(head), readDataFile(wasm), parachain],
-        //   ];
 
         paras_vec.push(json!([
             para_genesis_config.id,
@@ -733,10 +731,14 @@ fn add_authorities(
 fn add_hrmp_channels(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    _hrmp_channels: &[HrmpChannelConfig],
+    hrmp_channels: &[HrmpChannelConfig],
 ) {
-    if let Some(_val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        todo!()
+    if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
+        if let Some(preopen_hrmp_channels) = val.pointer_mut("/hrmp/preopenHrmpChannels") {
+            *preopen_hrmp_channels = json!(hrmp_channels);
+        } else {
+            warn!("⚠️  'hrmp/preopenHrmpChannels' key not present in runtime config.");
+        }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }
@@ -819,4 +821,75 @@ fn add_collator_selection(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use std::fs;
+
+    use configuration::HrmpChannelConfigBuilder;
+
+    use super::*;
+
+    fn chain_spec_test(file: &str) -> serde_json::Value {
+        let content = fs::read_to_string(file).unwrap();
+        serde_json::from_str(&content).unwrap()
+    }
+
+    #[test]
+    fn adding_hrmp_channels_works() {
+        let mut spec_plain = chain_spec_test("./testing/rococo-local-plain.json");
+
+        {
+            let current_hrmp_channels = spec_plain
+                .pointer("/genesis/runtime/hrmp/preopenHrmpChannels")
+                .unwrap();
+            // assert should be empty
+            assert_eq!(current_hrmp_channels, &json!([]));
+        }
+
+        let para_100_101 = HrmpChannelConfigBuilder::new()
+            .with_sender(100)
+            .with_recipient(101)
+            .build();
+        let para_101_100 = HrmpChannelConfigBuilder::new()
+            .with_sender(101)
+            .with_recipient(100)
+            .build();
+        let channels = vec![para_100_101, para_101_100];
+
+        add_hrmp_channels("/genesis/runtime", &mut spec_plain, &channels);
+        let new_hrmp_channels = spec_plain
+            .pointer("/genesis/runtime/hrmp/preopenHrmpChannels")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert_eq!(new_hrmp_channels.len(), 2);
+        assert_eq!(new_hrmp_channels.first().unwrap()["sender"], 100);
+        assert_eq!(new_hrmp_channels.first().unwrap()["recipient"], 101);
+    }
+
+    #[test]
+    fn adding_hrmp_channels_to_an_spec_without_channels() {
+        let mut spec_plain = chain_spec_test("./testing/rococo-local-plain.json");
+
+        {
+            let hrmp = spec_plain.pointer_mut("/genesis/runtime/hrmp").unwrap();
+            *hrmp = json!(serde_json::Value::Null);
+        }
+
+        let para_100_101 = HrmpChannelConfigBuilder::new()
+            .with_sender(100)
+            .with_recipient(101)
+            .build();
+        let para_101_100 = HrmpChannelConfigBuilder::new()
+            .with_sender(101)
+            .with_recipient(100)
+            .build();
+        let channels = vec![para_100_101, para_101_100];
+
+        add_hrmp_channels("/genesis/runtime", &mut spec_plain, &channels);
+        let new_hrmp_channels = spec_plain.pointer("/genesis/runtime/hrmp/preopenHrmpChannels");
+
+        // assert 'preopenHrmpChannels' is not created
+        assert_eq!(new_hrmp_channels, None);
+    }
+}

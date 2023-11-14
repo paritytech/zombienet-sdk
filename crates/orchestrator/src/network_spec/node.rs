@@ -4,13 +4,42 @@ use configuration::shared::{
     types::{Arg, AssetLocation, Command, Image},
 };
 use multiaddr::Multiaddr;
+use provider::types::Port;
 
 use crate::{
     errors::OrchestratorError,
     generators,
-    network::AddNodeOpts,
-    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
+    network::AddNodeOptions,
+    shared::{
+        macros,
+        types::{ChainDefaultContext, NodeAccounts, ParkedPort},
+    },
+    AddCollatorOptions,
 };
+
+macros::create_add_options!(AddNodeSpecOpts {});
+
+macro_rules! impl_from_for_add_node_opts {
+    ($struct:ident) => {
+        impl From<$struct> for AddNodeSpecOpts {
+            fn from(value: $struct) -> Self {
+                Self {
+                    image: value.image,
+                    command: value.command,
+                    args: value.args,
+                    env: value.env,
+                    is_validator: value.is_validator,
+                    rpc_port: value.rpc_port,
+                    prometheus_port: value.prometheus_port,
+                    p2p_port: value.p2p_port,
+                }
+            }
+        }
+    };
+}
+
+impl_from_for_add_node_opts!(AddNodeOptions);
+impl_from_for_add_node_opts!(AddCollatorOptions);
 
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone)]
@@ -145,7 +174,7 @@ impl NodeSpec {
 
     pub fn from_ad_hoc(
         name: impl Into<String>,
-        options: AddNodeOpts,
+        options: AddNodeSpecOpts,
         chain_context: &ChainDefaultContext,
     ) -> Result<Self, OrchestratorError> {
         // Check first if the image is set at node level, then try with the default

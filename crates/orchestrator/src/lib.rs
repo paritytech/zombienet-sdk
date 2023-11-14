@@ -458,4 +458,4 @@ pub enum ZombieRole {
 }
 
 // re-export
-pub use network::AddNodeOpts;
+pub use network::{AddCollatorOptions, AddNodeOptions};

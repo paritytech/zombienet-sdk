@@ -39,6 +39,14 @@ impl NetworkNode {
         }
     }
 
+    pub fn spec(&self) -> &NodeSpec {
+        &self.spec
+    }
+
+    pub fn ws_uri(&self) -> &str {
+        &self.ws_uri
+    }
+
     /// Pause the node, this is implemented by pausing the
     /// actual process (e.g polkadot) with sendig `SIGSTOP` signal
     pub async fn pause(&self) -> Result<(), anyhow::Error> {

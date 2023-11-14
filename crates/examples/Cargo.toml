@@ -10,3 +10,4 @@ zombienet-sdk = { path = "../sdk" }
 tokio = { workspace = true }
 futures = { workspace = true }
 subxt = { workspace = true }
+tracing-subscriber = "0.3"

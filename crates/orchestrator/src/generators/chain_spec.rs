@@ -11,7 +11,7 @@ use provider::{
 };
 use serde_json::json;
 use support::fs::FileSystem;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::errors::GeneratorError;
 use crate::{
@@ -811,7 +811,7 @@ fn add_collator_selection(
             *invulnerables = json!(keys);
         } else {
             // TODO: add a nice warning here.
-            println!("warn!! can't customize the invulnerables key");
+            debug!("⚠️  'invulnerables' not present in spec, will not be customized");
         }
     } else {
         unreachable!("pointer to runtime config should be valid!")

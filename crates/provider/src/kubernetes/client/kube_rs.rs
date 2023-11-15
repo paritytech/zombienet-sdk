@@ -382,7 +382,6 @@ where
         name: &str,
         from: P,
         to: P,
-        mode: &str,
     ) -> kube::Result<()>
     where
         P: AsRef<Path> + Send,
@@ -459,23 +458,6 @@ where
                     "file copy failed, expected sha256sum of {} got {}",
                     expected_hash,
                     actual_hash
-                )
-                .into(),
-            ));
-        }
-
-        // execute chmod to set local file permissions
-        let chmod_output = Command::new("chmod")
-            .args(vec![mode, &dest_path])
-            .output()
-            .await
-            .unwrap();
-
-        if !chmod_output.status.success() {
-            return Err(kube::Error::Service(
-                anyhow!(
-                    "error while trying to set file permissions: {}",
-                    String::from_utf8_lossy(&chmod_output.stderr)
                 )
                 .into(),
             ));

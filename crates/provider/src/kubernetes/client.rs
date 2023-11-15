@@ -73,7 +73,6 @@ where
         name: &str,
         from: P,
         to: P,
-        mode: &str,
     ) -> kube::Result<()>
     where
         P: AsRef<Path> + Send;

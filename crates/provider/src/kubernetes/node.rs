@@ -101,6 +101,7 @@ where
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
+        // self.client.pod_exec(&self.namespace_name, &self.name, options.)
         todo!()
     }
 
@@ -116,7 +117,12 @@ where
         remote_src: PathBuf,
         local_dest: PathBuf,
     ) -> Result<(), ProviderError> {
-        todo!()
+        self.client
+            .copy_from_pod(&self.namespace_name, &self.name, remote_src, local_dest)
+            .await
+            .unwrap();
+
+        Ok(())
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {

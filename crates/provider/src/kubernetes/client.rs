@@ -67,9 +67,16 @@ where
     where
         P: AsRef<Path> + Send;
 
-    async fn delete_pod(
+    async fn copy_from_pod<P>(
         &self,
         namespace: &str,
         name: &str,
-    ) -> kube::Result<()>;
+        from: P,
+        to: P,
+        mode: &str,
+    ) -> kube::Result<()>
+    where
+        P: AsRef<Path> + Send;
+
+    async fn delete_pod(&self, namespace: &str, name: &str) -> kube::Result<()>;
 }

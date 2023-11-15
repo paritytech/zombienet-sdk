@@ -1,6 +1,10 @@
 use std::{
-    collections::BTreeMap, fmt::Debug, os::unix::process::ExitStatusExt, path::Path,
-    process::ExitStatus,
+    collections::BTreeMap,
+    fmt::Debug,
+    io::stdout,
+    os::unix::process::ExitStatusExt,
+    path::Path,
+    process::{ExitStatus, Stdio},
 };
 
 use anyhow::anyhow;
@@ -13,9 +17,13 @@ use kube::{
     Api, Client, Resource,
 };
 use serde::de::DeserializeOwned;
-use sha2::digest::Digest;
+use sha2::{digest::Digest, Sha256};
 use support::fs::FileSystem;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    fs::File,
+    io::{self, AsyncRead, AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use crate::types::ExecutionResult;
@@ -333,13 +341,6 @@ where
             file_name.to_string_lossy()
         );
 
-        // execute chmod to set default file permissions
-        self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
-            .await?
-            .map_err(|err| {
-                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
-            })?;
-
         // retrieve sha256sum of file to ensure integrity
         let sha256sum_stdout = self
             .pod_exec(namespace, name, vec!["sha256sum", &file_path])
@@ -355,12 +356,126 @@ where
         // get the hash of the file
         let expected_hash = hex::encode(sha2::Sha256::digest(&contents));
         if actual_hash != expected_hash {
-            // TODO: should we delete partially copied file here?
             return Err(kube::Error::Service(
                 anyhow!(
                     "file copy failed, expected sha256sum of {} got {}",
                     expected_hash,
                     actual_hash
+                )
+                .into(),
+            ));
+        }
+
+        // execute chmod to set file permissions
+        self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
+            .await?
+            .map_err(|err| {
+                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
+            })?;
+
+        Ok(())
+    }
+
+    async fn copy_from_pod<P>(
+        &self,
+        namespace: &str,
+        name: &str,
+        from: P,
+        to: P,
+        mode: &str,
+    ) -> kube::Result<()>
+    where
+        P: AsRef<Path> + Send,
+    {
+        let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
+        let file_name = from.as_ref().file_name().unwrap().to_string_lossy();
+        let file_dir = to.as_ref().parent().unwrap().to_string_lossy();
+
+        // create the archive in the pod and pipe to stdout
+        let mut tar = pods
+            .exec(
+                name,
+                vec!["tar", "-cf", "-", "-C", &file_dir, &file_name],
+                &AttachParams::default().stdin(true),
+            )
+            .await?;
+
+        let tar_status = tar.take_status().unwrap();
+        let mut tar_stdout = tar.stdout().take().unwrap();
+        let mut tar_stderr = tar.stderr().take().unwrap();
+
+        // create child process tar fo extraction
+        let dest_dir = to.as_ref().to_string_lossy();
+        let mut extract = Command::new("tar")
+            .args(vec!["-xmf", "-", "-C", &dest_dir, &file_name])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let mut extract_stdin = extract.stdin.take().unwrap();
+
+        // pipe the container tar stdout into the local tar stdin
+        io::copy(&mut tar_stdout, &mut extract_stdin).await.unwrap();
+
+        tar.join().await.unwrap();
+        extract.wait().await.unwrap();
+
+        // compute sha256sum of local received file
+        let dest_path = format!("{dest_dir}/{file_name}");
+        let mut file = File::open(&dest_path).await.unwrap();
+        let mut hasher = Sha256::new();
+        let mut buffer = [0; 1024];
+
+        loop {
+            let bytes_read = file.read(&mut buffer).await.unwrap();
+            if bytes_read == 0 {
+                break;
+            }
+
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        let actual_hash = hex::encode(hasher.finalize());
+
+        // compute sha256sum of remote copied file
+        let file_path = from.as_ref().to_string_lossy();
+        let sha256sum = self
+            .pod_exec(namespace, name, vec!["sha256sum", &file_path])
+            .await?
+            .map_err(|err| {
+                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
+            })?;
+        let expected_hash = sha256sum
+            .split_whitespace()
+            .next()
+            .expect("sha256sum output should be in the form `hash<spaces>filename`");
+
+        // check integrity
+        if actual_hash != expected_hash {
+            return Err(kube::Error::Service(
+                anyhow!(
+                    "file copy failed, expected sha256sum of {} got {}",
+                    expected_hash,
+                    actual_hash
+                )
+                .into(),
+            ));
+        }
+
+        // execute chmod to set local file permissions
+        let chmod_output = Command::new("chmod")
+            .args(vec![mode, &dest_path])
+            .output()
+            .await
+            .unwrap();
+
+        if !chmod_output.status.success() {
+            return Err(kube::Error::Service(
+                anyhow!(
+                    "error while trying to set file permissions: {}",
+                    String::from_utf8_lossy(&chmod_output.stderr)
                 )
                 .into(),
             ));

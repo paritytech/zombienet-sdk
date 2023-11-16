@@ -4,21 +4,24 @@ use std::{
     sync::{Arc, Weak},
 };
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::{future::try_join_all, try_join};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, PodSpec, ResourceRequirements, Volume, VolumeMount,
+        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Volume,
+        VolumeMount,
     },
     apimachinery::pkg::api::resource::Quantity,
 };
 use support::fs::FileSystem;
 use tokio::sync::{mpsc, RwLock};
+use uuid::Uuid;
 
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     shared::helpers::{create_log_writing_task, create_stream_polling_task},
-    types::{GenerateFilesOptions, SpawnNodeOptions},
+    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions},
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -119,10 +122,22 @@ where
                     containers: vec![Container {
                         name: options.name.clone(),
                         image: options.image,
+                        image_pull_policy: Some("Always".to_string()),
                         command: Some(vec![
                             "/zombie-wrapper.sh".to_string(),
                             options.program.clone(),
                         ]),
+                        env: Some(
+                            options
+                                .env
+                                .iter()
+                                .map(|(name, value)| EnvVar {
+                                    name: name.clone(),
+                                    value: Some(value.clone()),
+                                    value_from: None,
+                                })
+                                .collect(),
+                        ),
                         volume_mounts: Some(vec![VolumeMount {
                             name: "zombie-wrapper-volume".to_string(),
                             mount_path: "/zombie-wrapper.sh".to_string(),

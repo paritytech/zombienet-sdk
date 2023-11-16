@@ -149,6 +149,7 @@ impl GenerateFileCommand {
 #[derive(Debug)]
 pub struct GenerateFilesOptions {
     pub commands: Vec<GenerateFileCommand>,
+    pub image: Option<String>,
     pub injected_files: Vec<TransferedFile>,
 }
 
@@ -159,8 +160,17 @@ impl GenerateFilesOptions {
     {
         Self {
             commands: commands.into_iter().collect(),
+            image: None,
             injected_files: vec![],
         }
+    }
+
+    pub fn image<S>(mut self, image: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.image = Some(image.as_ref().to_string());
+        self
     }
 
     pub fn injected_files<I>(mut self, injected_files: I) -> Self

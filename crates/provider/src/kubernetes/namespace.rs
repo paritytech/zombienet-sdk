@@ -333,7 +333,49 @@ where
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
-        todo!()
+        // run dummy command in new pod
+        let temp_node = self
+            .spawn_node(
+                SpawnNodeOptions::new(format!("temp_{}", Uuid::new_v4()), "sh".to_string())
+                    .args(vec!["-c", "while :; do sleep 1; done"])
+                    .injected_files(options.injected_files)
+                    .image(options.image.unwrap()),
+            )
+            .await?;
+
+        for GenerateFileCommand {
+            program,
+            args,
+            env,
+            local_output_path,
+        } in options.commands
+        {
+            let local_output_full_path = format!(
+                "{}{}{}",
+                self.base_dir.to_string_lossy(),
+                if local_output_path.starts_with("/") {
+                    ""
+                } else {
+                    "/"
+                },
+                local_output_path.to_string_lossy()
+            );
+
+            match temp_node
+                .run_command(RunCommandOptions { program, args, env })
+                .await
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
+            {
+                Ok(contents) => self
+                    .filesystem
+                    .write(local_output_full_path, contents)
+                    .await
+                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
+            };
+        }
+
+        temp_node.destroy().await
     }
 
     async fn static_setup(&self) -> Result<(), ProviderError> {

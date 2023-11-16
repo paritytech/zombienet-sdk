@@ -101,8 +101,29 @@ where
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        // self.client.pod_exec(&self.namespace_name, &self.name, options.)
-        todo!()
+        let mut command = vec![];
+
+        for (name, value) in options.env {
+            command.push(format!("export {name}={value};"));
+        }
+
+        for arg in options.args {
+            command.push(arg);
+        }
+
+        command.push(options.program);
+
+        let result = self
+            .client
+            .pod_exec(
+                &self.namespace_name,
+                &self.name,
+                vec!["sh", "-c", &command.join(" ")],
+            )
+            .await
+            .unwrap();
+
+        Ok(result)
     }
 
     async fn run_script(

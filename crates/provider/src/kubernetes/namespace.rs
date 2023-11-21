@@ -123,10 +123,13 @@ where
                         name: options.name.clone(),
                         image: options.image,
                         image_pull_policy: Some("Always".to_string()),
-                        command: Some(vec![
-                            "/zombie-wrapper.sh".to_string(),
-                            options.program.clone(),
-                        ]),
+                        command: Some(
+                            vec![
+                                vec!["/zombie-wrapper.sh".to_string(), options.program.clone()],
+                                options.args.clone(),
+                            ]
+                            .concat(),
+                        ),
                         env: Some(
                             options
                                 .env
@@ -284,7 +287,7 @@ where
             .pod_exec(
                 &self.name,
                 &options.name,
-                vec!["echo", "start", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
             )
             .await
             .unwrap()
@@ -293,7 +296,7 @@ where
         // create log stream
         let logs_stream = self
             .client
-            .create_pod_logs_stream(&options.name, &self.name)
+            .create_pod_logs_stream(&self.name, &options.name)
             .await
             .unwrap();
 

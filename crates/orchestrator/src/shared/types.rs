@@ -75,3 +75,16 @@ pub struct ParachainGenesisArgs {
     pub validation_code: String,
     pub parachain: bool,
 }
+
+
+/// pjs-rs sucess call return type
+///
+/// Represent the possible states returned from a succefully call to pjs-rs
+#[derive(Debug, Clone)]
+pub enum PjsSuccessResult {
+    /// Deserialized return value into a [serde_json::Value]
+    Value(serde_json::Value),
+    /// Execution of the script finish Ok, but the
+    /// returned value can not be deserialize into a [serde_json::Value]
+    DeserializeErrorMsg(String),
+}

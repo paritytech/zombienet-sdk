@@ -79,3 +79,5 @@ where
 
     async fn delete_pod(&self, namespace: &str, name: &str) -> kube::Result<()>;
 }
+
+pub use kube_rs::KubeRsKubernetesClient;

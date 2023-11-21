@@ -140,5 +140,6 @@ pub trait ProviderNode {
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 
 // re-export
-pub use native::NativeProvider;
+pub use native::*;
+pub use kubernetes::*;
 pub use shared::{constants, types};

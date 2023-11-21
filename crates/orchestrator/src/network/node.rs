@@ -224,5 +224,6 @@ fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>)
 // execute in an isolated thread.
 #[tokio::main(flavor = "current_thread")]
 async fn pjs_inner(code: String) -> Result<ReturnValue, anyhow::Error> {
-    Ok(pjs_rs::run_ts_code(code, None).await?)
+    // Arguments are already encoded in the code built from the template.
+    pjs_rs::run_ts_code(code, None).await
 }

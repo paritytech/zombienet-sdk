@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 pub use configuration::{NetworkConfig, NetworkConfigBuilder, RegistrationStrategy};
 pub use orchestrator::{
-    errors::OrchestratorError, network::Network, AddCollatorOptions, AddNodeOptions, Orchestrator, PjsSuccessResult,
+    errors::OrchestratorError, network::Network, AddCollatorOptions, AddNodeOptions, Orchestrator,
+    PjsSuccessResult,
 };
 use provider::NativeProvider;
 use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};

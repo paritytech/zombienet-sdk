@@ -76,7 +76,6 @@ pub struct ParachainGenesisArgs {
     pub parachain: bool,
 }
 
-
 /// pjs-rs sucess call return type
 ///
 /// Represent the possible states returned from a succefully call to pjs-rs

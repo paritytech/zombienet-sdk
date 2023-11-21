@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration, thread, path::Path};
+use std::{path::Path, sync::Arc, thread, time::Duration};
 
 use anyhow::anyhow;
 use pjs_rs::ReturnValue;
@@ -73,11 +73,16 @@ impl NetworkNode {
     /// The code will be run in a wrapper similat to the `javascript` developer tab
     /// of polkadot.js apps. The returning value is represented as [PjsSuccessResult] enum, to allow
     /// to communicate that the execution was succeful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs(&self, code: impl AsRef<str>, args: Vec<serde_json::Value>) -> Result<PjsSuccessResult, anyhow::Error> {
+    pub async fn pjs(
+        &self,
+        code: impl AsRef<str>,
+        args: Vec<serde_json::Value>,
+    ) -> Result<PjsSuccessResult, anyhow::Error> {
         let code = pjs_build_template(self.ws_uri(), code.as_ref(), args);
-        let value = match thread::spawn(|| {
-            pjs_inner(code)
-        }).join().map_err(|_| anyhow!("[pjs] Thread panicked"))?? {
+        let value = match thread::spawn(|| pjs_inner(code))
+            .join()
+            .map_err(|_| anyhow!("[pjs] Thread panicked"))??
+        {
             ReturnValue::Deserialized(val) => PjsSuccessResult::Value(val),
             ReturnValue::CantDeserialize(msg) => PjsSuccessResult::DeserializeErrorMsg(msg),
         };
@@ -90,12 +95,17 @@ impl NetworkNode {
     /// The content of the file will be run in a wrapper similat to the `javascript` developer tab
     /// of polkadot.js apps. The returning value is represented as [PjsSuccessResult] enum, to allow
     /// to communicate that the execution was succeful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs_file(&self, file: impl AsRef<Path>, args: Vec<serde_json::Value>) -> Result<PjsSuccessResult, anyhow::Error> {
+    pub async fn pjs_file(
+        &self,
+        file: impl AsRef<Path>,
+        args: Vec<serde_json::Value>,
+    ) -> Result<PjsSuccessResult, anyhow::Error> {
         let content = std::fs::read_to_string(file)?;
         let code = pjs_build_template(self.ws_uri(), content.as_ref(), args);
-        let value = match thread::spawn(|| {
-            pjs_inner(code)
-        }).join().map_err(|_| anyhow!("[pjs] Thread panicked"))?? {
+        let value = match thread::spawn(|| pjs_inner(code))
+            .join()
+            .map_err(|_| anyhow!("[pjs] Thread panicked"))??
+        {
             ReturnValue::Deserialized(val) => PjsSuccessResult::Value(val),
             ReturnValue::CantDeserialize(msg) => PjsSuccessResult::DeserializeErrorMsg(msg),
         };
@@ -193,7 +203,8 @@ impl std::fmt::Debug for NetworkNode {
 // Helper methods
 
 fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>) -> String {
-    format!(r#"
+    format!(
+        r#"
     const {{ util, utilCrypto, keyring, types }} = pjs;
     ( async () => {{
         const api = await pjs.api.ApiPromise.create({{ provider: new pjs.api.WsProvider('{}') }});
@@ -202,7 +213,11 @@ fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>)
         }};
         return await _run(api, utilCrypto, keyring, types, util, {});
     }})()
-    "#, ws_uri, content, json!(args))
+    "#,
+        ws_uri,
+        content,
+        json!(args)
+    )
 }
 
 // Since pjs-rs run a custom javascript runtime (using deno_core) we need to

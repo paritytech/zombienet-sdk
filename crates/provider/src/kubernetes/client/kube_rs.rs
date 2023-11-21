@@ -14,6 +14,7 @@ use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec};
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
     core::{ObjectMeta, WatchEvent},
+    runtime::{conditions, wait::await_condition},
     Api, Client, Resource,
 };
 use serde::de::DeserializeOwned;
@@ -30,6 +31,7 @@ use crate::types::ExecutionResult;
 
 use super::KubernetesClient;
 
+#[derive(Clone)]
 pub struct KubeRsKubernetesClient<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
@@ -42,7 +44,7 @@ impl<FS> KubeRsKubernetesClient<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    async fn new(filesystem: FS) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(filesystem: FS) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             // TODO: make it more flexible with path to kube config
             client: Client::try_default().await?,
@@ -166,7 +168,9 @@ where
 
         pods.create(&PostParams::default(), &pod).await?;
 
-        self.wait_created(pods, name).await?;
+        await_condition(pods, name, conditions::is_pod_running())
+            .await
+            .unwrap();
 
         Ok(pod)
     }
@@ -341,6 +345,13 @@ where
             file_name.to_string_lossy()
         );
 
+        // execute chmod to set file permissions
+        self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
+            .await?
+            .map_err(|err| {
+                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
+            })?;
+
         // retrieve sha256sum of file to ensure integrity
         let sha256sum_stdout = self
             .pod_exec(namespace, name, vec!["sha256sum", &file_path])
@@ -365,13 +376,6 @@ where
                 .into(),
             ));
         }
-
-        // execute chmod to set file permissions
-        self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
-            .await?
-            .map_err(|err| {
-                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
-            })?;
 
         Ok(())
     }

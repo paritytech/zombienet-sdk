@@ -197,6 +197,11 @@ impl TryFrom<&str> for Command {
         Ok(Self(value.to_string()))
     }
 }
+impl Default for Command {
+    fn default() -> Self {
+        Self(String::from("polkadot"))
+    }
+}
 
 impl Command {
     pub fn as_str(&self) -> &str {

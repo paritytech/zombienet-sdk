@@ -27,13 +27,13 @@ impl NodeAccount {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct NodeAccounts {
     pub(crate) seed: String,
     pub(crate) accounts: Accounts,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct ParkedPort(pub(crate) Port, pub(crate) Arc<RwLock<Option<TcpListener>>>);
 
 impl ParkedPort {

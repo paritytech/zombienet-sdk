@@ -107,13 +107,13 @@ where
             command.push(format!("export {name}={value};"));
         }
 
+        command.push(options.program);
+
         for arg in options.args {
             command.push(arg);
         }
 
-        command.push(options.program);
-
-        let result = self
+        Ok(self
             .client
             .pod_exec(
                 &self.namespace_name,
@@ -121,9 +121,7 @@ where
                 vec!["sh", "-c", &command.join(" ")],
             )
             .await
-            .unwrap();
-
-        Ok(result)
+            .unwrap())
     }
 
     async fn run_script(

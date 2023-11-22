@@ -926,6 +926,38 @@ mod tests {
     }
 
     #[test]
+    fn add_balances_spec_without_balances() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+
+        {
+            let balances = spec_plain.pointer_mut("/genesis/runtime/balances").unwrap();
+            *balances = json!(serde_json::Value::Null);
+        }
+
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let nodes = vec![node];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain.pointer("/genesis/runtime/balances/balances");
+
+        // assert 'balances' is not created
+        assert_eq!(new_balances, None);
+    }
+
+    #[test]
     fn adding_hrmp_channels_works() {
         let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
 

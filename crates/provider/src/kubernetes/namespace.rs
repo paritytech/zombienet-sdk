@@ -339,8 +339,7 @@ where
         // run dummy command in new pod
         let temp_node = self
             .spawn_node(
-                SpawnNodeOptions::new(format!("temp_{}", Uuid::new_v4()), "sh".to_string())
-                    .args(vec!["-c", "while :; do sleep 1; done"])
+                SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
                     .injected_files(options.injected_files)
                     .image(options.image.unwrap()),
             )

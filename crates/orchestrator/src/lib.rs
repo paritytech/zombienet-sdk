@@ -459,4 +459,4 @@ pub enum ZombieRole {
 
 // re-export
 pub use network::{AddCollatorOptions, AddNodeOptions};
-pub use shared::types::PjsSuccessResult;
+pub use shared::types::PjsResult;

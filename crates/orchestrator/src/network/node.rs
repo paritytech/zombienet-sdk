@@ -8,7 +8,7 @@ use serde_json::json;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use tokio::sync::RwLock;
 
-use crate::{network_spec::node::NodeSpec, PjsSuccessResult};
+use crate::{network_spec::node::NodeSpec, shared::types::PjsResult};
 
 #[derive(Clone)]
 pub struct NetworkNode {
@@ -71,20 +71,20 @@ impl NetworkNode {
     /// Execute js/ts code inside [pjs_rs] custom runtime.
     ///
     /// The code will be run in a wrapper similat to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsSuccessResult] enum, to allow
+    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
     /// to communicate that the execution was succeful but the returning value can be deserialized as [serde_json::Value].
     pub async fn pjs(
         &self,
         code: impl AsRef<str>,
         args: Vec<serde_json::Value>,
-    ) -> Result<PjsSuccessResult, anyhow::Error> {
+    ) -> Result<PjsResult, anyhow::Error> {
         let code = pjs_build_template(self.ws_uri(), code.as_ref(), args);
         let value = match thread::spawn(|| pjs_inner(code))
             .join()
             .map_err(|_| anyhow!("[pjs] Thread panicked"))??
         {
-            ReturnValue::Deserialized(val) => PjsSuccessResult::Value(val),
-            ReturnValue::CantDeserialize(msg) => PjsSuccessResult::DeserializeErrorMsg(msg),
+            ReturnValue::Deserialized(val) => Ok(val),
+            ReturnValue::CantDeserialize(msg) => Err(msg),
         };
 
         Ok(value)
@@ -93,21 +93,21 @@ impl NetworkNode {
     /// Execute js/ts file  inside [pjs_rs] custom runtime.
     ///
     /// The content of the file will be run in a wrapper similat to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsSuccessResult] enum, to allow
+    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
     /// to communicate that the execution was succeful but the returning value can be deserialized as [serde_json::Value].
     pub async fn pjs_file(
         &self,
         file: impl AsRef<Path>,
         args: Vec<serde_json::Value>,
-    ) -> Result<PjsSuccessResult, anyhow::Error> {
+    ) -> Result<PjsResult, anyhow::Error> {
         let content = std::fs::read_to_string(file)?;
         let code = pjs_build_template(self.ws_uri(), content.as_ref(), args);
         let value = match thread::spawn(|| pjs_inner(code))
             .join()
             .map_err(|_| anyhow!("[pjs] Thread panicked"))??
         {
-            ReturnValue::Deserialized(val) => PjsSuccessResult::Value(val),
-            ReturnValue::CantDeserialize(msg) => PjsSuccessResult::DeserializeErrorMsg(msg),
+            ReturnValue::Deserialized(val) => Ok(val),
+            ReturnValue::CantDeserialize(msg) => Err(msg),
         };
 
         Ok(value)

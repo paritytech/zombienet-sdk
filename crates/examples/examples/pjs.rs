@@ -1,6 +1,5 @@
-use serde_json::json;
-
 use futures::stream::StreamExt;
+use serde_json::json;
 use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
@@ -46,7 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("parachains registered: {:?}", paras);
 
     // run pjs with file
-    let _ = alice.pjs_file("./examples/pjs_transfer.js", vec![json!("//Alice")]).await?;
+    let _ = alice
+        .pjs_file("./examples/pjs_transfer.js", vec![json!("//Alice")])
+        .await?;
 
     Ok(())
 }

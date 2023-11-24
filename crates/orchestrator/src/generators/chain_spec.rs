@@ -564,6 +564,8 @@ fn get_runtime_config_pointer(chain_spec_json: &serde_json::Value) -> Result<Str
     // runtime_genesis_config is no longer in ChainSpec after rococo runtime rework (refer to: https://github.com/paritytech/polkadot-sdk/pull/1256)
     // ChainSpec may contain a RuntimeGenesisConfigPatch
     let pointers = [
+        "/genesis/runtimeGenesis/config",
+        "/genesis/runtimeGenesis/patch",
         "/genesis/runtimeGenesisConfigPatch",
         "/genesis/runtime/runtime_genesis_config",
         "/genesis/runtime",

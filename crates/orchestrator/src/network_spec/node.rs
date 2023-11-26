@@ -42,7 +42,7 @@ impl_from_for_add_node_opts!(AddNodeOptions);
 impl_from_for_add_node_opts!(AddCollatorOptions);
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NodeSpec {
     // Node name (should be unique or an index will be appended).
     pub(crate) name: String,

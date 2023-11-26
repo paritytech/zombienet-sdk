@@ -70,6 +70,19 @@ mod tests {
     }
 
     #[test]
+    fn generate_for_zombie() {
+        use sp_core::crypto::Ss58Codec;
+        let s = "Zombie";
+        let seed = format!("//{}", s);
+
+        let pair = generate_pair::<sr25519::Pair>(&seed).unwrap();
+        assert_eq!(
+            "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8",
+            pair.public().to_ss58check()
+        );
+    }
+
+    #[test]
     fn generate_pair_invalid_should_fail() {
         let s = "Alice";
         let seed = s.to_string();

@@ -387,6 +387,18 @@ impl ChainSpec {
             })?;
 
         if let ChainSpecFormat::Plain = format {
+            // get the tokenDecimals property or set the default (12)
+            let token_decimals =
+                if let Some(val) = chain_spec_json.pointer("/properties/tokenDecimals") {
+                    let val = val.as_u64().unwrap_or(12);
+                    if val > u8::MAX as u64 {
+                        12
+                    } else {
+                        val as u8
+                    }
+                } else {
+                    12
+                };
             // get the config pointer
             let pointer = get_runtime_config_pointer(&chain_spec_json)
                 .map_err(GeneratorError::ChainSpecGeneration)?;
@@ -403,7 +415,13 @@ impl ChainSpec {
             clear_authorities(&pointer, &mut chain_spec_json);
 
             // add balances
-            add_balances(&pointer, &mut chain_spec_json, &relaychain.nodes, 0);
+            add_balances(
+                &pointer,
+                &mut chain_spec_json,
+                &relaychain.nodes,
+                token_decimals,
+                0,
+            );
 
             // Get validators to add as authorities
             let validators: Vec<&NodeSpec> = relaychain
@@ -640,6 +658,7 @@ fn add_balances(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &Vec<NodeSpec>,
+    token_decimals: u8,
     staking_min: u128,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
@@ -650,28 +669,26 @@ fn add_balances(
         };
 
         // create a balance map
-        // SAFETY: balances is always an array in chain-spec with items [k,v]
-        let mut balances_map: HashMap<String, u128> =
-            serde_json::from_value::<Vec<(String, u128)>>(balances.clone())
-                .unwrap()
-                .iter()
-                .fold(HashMap::new(), |mut memo, balance| {
-                    memo.insert(balance.0.clone(), balance.1);
-                    memo
-                });
-
+        let mut balances_map = generate_balance_map(balances);
         for node in nodes {
             if node.initial_balance.eq(&0) {
                 continue;
             };
 
             // TODO: handle error here and check the `accounts.accounts` design
-            let account = node.accounts.accounts.get("sr").unwrap();
-            balances_map.insert(
-                account.address.clone(),
-                std::cmp::max(node.initial_balance, staking_min),
-            );
+            let balance = std::cmp::max(node.initial_balance, staking_min);
+            for k in ["sr", "sr_stash"] {
+                let account = node.accounts.accounts.get(k).unwrap();
+                balances_map.insert(account.address.clone(), balance);
+            }
         }
+
+        // ensure zombie account (//Zombie) have funds
+        // we will use for internal usage (e.g new validators)
+        balances_map.insert(
+            "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
+            1000 * 10_u128.pow(token_decimals as u32),
+        );
 
         // convert the map and store again
         let new_balances: Vec<(&String, &u128)> =
@@ -821,6 +838,20 @@ fn add_collator_selection(
     }
 }
 
+// Helpers
+fn generate_balance_map(balances: &serde_json::Value) -> HashMap<String, u128> {
+    // SAFETY: balances is always an array in chain-spec with items [k,v]
+    let balances_map: HashMap<String, u128> =
+        serde_json::from_value::<Vec<(String, u128)>>(balances.to_owned())
+            .unwrap()
+            .iter()
+            .fold(HashMap::new(), |mut memo, balance| {
+                memo.insert(balance.0.clone(), balance.1);
+                memo
+            });
+    balances_map
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -828,6 +859,9 @@ mod tests {
     use configuration::HrmpChannelConfigBuilder;
 
     use super::*;
+    use crate::{generators, shared::types::NodeAccounts};
+
+    const ROCOCO_LOCAL_PLAIN_TESTING: &str = "./testing/rococo-local-plain.json";
 
     fn chain_spec_test(file: &str) -> serde_json::Value {
         let content = fs::read_to_string(file).unwrap();
@@ -835,8 +869,99 @@ mod tests {
     }
 
     #[test]
+    fn add_balances_works() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let nodes = vec![node];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain
+            .pointer("/genesis/runtime/balances/balances")
+            .unwrap();
+
+        let balances_map = generate_balance_map(new_balances);
+
+        // sr and sr_stash keys exists
+        let sr = nodes[0].accounts.accounts.get("sr").unwrap();
+        let sr_stash = nodes[0].accounts.accounts.get("sr_stash").unwrap();
+        assert_eq!(balances_map.get(&sr.address).unwrap(), &initial_balance);
+        assert_eq!(
+            balances_map.get(&sr_stash.address).unwrap(),
+            &initial_balance
+        );
+    }
+
+    #[test]
+    fn add_balances_ensure_zombie_account() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+
+        let balances = spec_plain
+            .pointer("/genesis/runtime/balances/balances")
+            .unwrap();
+        let balances_map = generate_balance_map(balances);
+
+        let nodes: Vec<NodeSpec> = vec![];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain
+            .pointer("/genesis/runtime/balances/balances")
+            .unwrap();
+
+        let new_balances_map = generate_balance_map(new_balances);
+
+        // sr and sr_stash keys exists
+        assert!(new_balances_map.contains_key("5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8"));
+        assert_eq!(new_balances_map.len(), balances_map.len() + 1);
+    }
+
+    #[test]
+    fn add_balances_spec_without_balances() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+
+        {
+            let balances = spec_plain.pointer_mut("/genesis/runtime/balances").unwrap();
+            *balances = json!(serde_json::Value::Null);
+        }
+
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let nodes = vec![node];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain.pointer("/genesis/runtime/balances/balances");
+
+        // assert 'balances' is not created
+        assert_eq!(new_balances, None);
+    }
+
+    #[test]
     fn adding_hrmp_channels_works() {
-        let mut spec_plain = chain_spec_test("./testing/rococo-local-plain.json");
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
 
         {
             let current_hrmp_channels = spec_plain

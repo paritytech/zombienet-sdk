@@ -44,9 +44,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("parachains registered: {:?}", paras);
 
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
     // run pjs with file
     let _ = alice
-        .pjs_file("./examples/pjs_transfer.js", vec![json!("//Alice")])
+        .pjs_file(
+            format!("{}/{}", manifest_dir, "examples/pjs_transfer.js"),
+            vec![json!("//Alice")],
+        )
         .await?;
 
     Ok(())

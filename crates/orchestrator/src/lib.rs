@@ -319,7 +319,7 @@ where
                     .to_path_buf(),
                 node_ws_url: node_ws_url.clone(),
                 onboard_as_para: para.onboard_as_parachain,
-                seed: None,          // TODO: Seed is passed by?
+                seed: None, // TODO: Seed is passed by?
                 finalization: false,
             };
 

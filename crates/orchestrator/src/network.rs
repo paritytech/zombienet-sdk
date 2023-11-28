@@ -17,7 +17,10 @@ use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
     generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
-    shared::{macros, types::{ChainDefaultContext, RegisterParachainOptions}},
+    shared::{
+        macros,
+        types::{ChainDefaultContext, RegisterParachainOptions},
+    },
     spawner::{self, SpawnNodeCtx},
     ScopedFilesystem, ZombieRole,
 };
@@ -323,7 +326,11 @@ impl<T: FileSystem> Network<T> {
             ChainSpec::chain_id_from_spec(&content)?
         } else {
             global_files_to_inject.push(TransferedFile {
-                local_path: PathBuf::from(format!("{}/{}",scoped_fs.base_dir,self.relaychain().chain_spec_path.to_string_lossy())),
+                local_path: PathBuf::from(format!(
+                    "{}/{}",
+                    scoped_fs.base_dir,
+                    self.relaychain().chain_spec_path.to_string_lossy()
+                )),
                 remote_path: PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
             });
             self.relay.chain_id.clone()
@@ -375,7 +382,14 @@ impl<T: FileSystem> Network<T> {
         };
 
         // Register the parachain to the running network
-        let first_node_url = self.relaychain().nodes.first().ok_or(anyhow::anyhow!("At least one node of the relaychain should be running"))?.ws_uri();
+        let first_node_url = self
+            .relaychain()
+            .nodes
+            .first()
+            .ok_or(anyhow::anyhow!(
+                "At least one node of the relaychain should be running"
+            ))?
+            .ws_uri();
         let register_para_options = RegisterParachainOptions {
             id: parachain.para_id,
             // This needs to resolve correctly
@@ -395,7 +409,7 @@ impl<T: FileSystem> Network<T> {
                 .to_path_buf(),
             node_ws_url: first_node_url.to_string(),
             onboard_as_para: para_spec.onboard_as_parachain,
-            seed: None,          // TODO: Seed is passed by?
+            seed: None, // TODO: Seed is passed by?
             finalization: false,
         };
 

@@ -54,11 +54,6 @@ echo "COMMAND TO RUN IS: $CMD"
 start() {
     "${CMD[@]}" &
     child_pid="$!"
-
-    # check if the process is running
-    if ! $LS /proc/$child_pid > /dev/null 2>&1 ; then
-        exit 1
-    fi;
 }
 
 restart() {

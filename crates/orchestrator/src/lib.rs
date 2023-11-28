@@ -320,7 +320,7 @@ where
                 node_ws_url: node_ws_url.clone(),
                 onboard_as_para: para.onboard_as_parachain,
                 seed: None,          // TODO: Seed is passed by?
-                finalization: false, // TODO: Seed is passed by?
+                finalization: false,
             };
 
             Parachain::register(register_para_options, &scoped_fs).await?;

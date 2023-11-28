@@ -213,22 +213,7 @@ impl ChainSpec {
         T: FileSystem,
     {
         let (content, _) = self.read_spec(scoped_fs).await?;
-        let chain_spec_json: serde_json::Value = serde_json::from_str(&content).map_err(|_| {
-            GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
-        })?;
-        if let Some(chain_id) = chain_spec_json.get("id") {
-            if let Some(chain_id) = chain_id.as_str() {
-                Ok(chain_id.to_string())
-            } else {
-                Err(GeneratorError::ChainSpecGeneration(
-                    "id should be an string in the chain-spec, this is a bug".into(),
-                ))
-            }
-        } else {
-            Err(GeneratorError::ChainSpecGeneration(
-                "'id' should be a fields in the chain-spec of the relaychain".into(),
-            ))
-        }
+        ChainSpec::chain_id_from_spec(&content)
     }
 
     async fn read_spec<'a, T>(
@@ -510,6 +495,26 @@ impl ChainSpec {
         self.write_spec(scoped_fs, content).await?;
 
         Ok(())
+    }
+
+    pub fn chain_id_from_spec(spec_content: &str) -> Result<String, GeneratorError> {
+        let chain_spec_json: serde_json::Value =
+            serde_json::from_str(spec_content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+        if let Some(chain_id) = chain_spec_json.get("id") {
+            if let Some(chain_id) = chain_id.as_str() {
+                Ok(chain_id.to_string())
+            } else {
+                Err(GeneratorError::ChainSpecGeneration(
+                    "id should be an string in the chain-spec, this is a bug".into(),
+                ))
+            }
+        } else {
+            Err(GeneratorError::ChainSpecGeneration(
+                "'id' should be a fields in the chain-spec of the relaychain".into(),
+            ))
+        }
     }
 }
 

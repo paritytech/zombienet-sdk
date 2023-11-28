@@ -3,6 +3,7 @@ use std::{
     str::FromStr,
 };
 
+use provider::types::TransferedFile;
 use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::fs::FileSystem;
@@ -11,7 +12,10 @@ use tracing::info;
 // use crate::generators::key::generate_pair;
 // use sp_core::{sr25519, Pair};
 use super::node::NetworkNode;
-use crate::{shared::types::RegisterParachainOptions, ScopedFilesystem};
+use crate::{
+    network_spec::parachain::ParachainSpec, shared::types::RegisterParachainOptions,
+    ScopedFilesystem,
+};
 
 #[derive(Debug)]
 pub struct Parachain {
@@ -20,6 +24,7 @@ pub struct Parachain {
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,
     pub(crate) collators: Vec<NetworkNode>,
+    pub(crate) files_to_inject: Vec<TransferedFile>,
 }
 
 impl Parachain {
@@ -30,6 +35,7 @@ impl Parachain {
             chain_id: None,
             chain_spec_path: None,
             collators: Default::default(),
+            files_to_inject: Default::default(),
         }
     }
 
@@ -44,7 +50,45 @@ impl Parachain {
             chain_id: Some(chain_id.into()),
             chain_spec_path: Some(chain_spec_path.as_ref().into()),
             collators: Default::default(),
+            files_to_inject: Default::default(),
         }
+    }
+
+    pub(crate) async fn from_spec(
+        para: &ParachainSpec,
+        files_to_inject: &[TransferedFile],
+        scoped_fs: &ScopedFilesystem<'_, impl FileSystem>,
+    ) -> Result<Self, anyhow::Error> {
+        let mut para_files_to_inject = files_to_inject.to_owned();
+
+        // parachain id is used for the keystore
+        // let parachain_id = if let Some(chain_spec) = para.chain_spec.as_ref() {
+        let mut para = if let Some(chain_spec) = para.chain_spec.as_ref() {
+            let id = chain_spec.read_chain_id(scoped_fs).await?;
+
+            // add the spec to global files to inject
+            let spec_name = chain_spec.chain_spec_name();
+            let base = PathBuf::from_str(scoped_fs.base_dir)?;
+            para_files_to_inject.push(TransferedFile {
+                local_path: base.join(format!("{}.json", spec_name)),
+                remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
+            });
+
+            let raw_path = chain_spec
+                .raw_path()
+                .ok_or(anyhow::anyhow!("chain-spec path should be set by now.",))?;
+            let mut running_para = Parachain::with_chain_spec(para.id, id, raw_path);
+            if let Some(chain_name) = chain_spec.chain_name() {
+                running_para.chain = Some(chain_name.to_string());
+            }
+            running_para
+        } else {
+            Parachain::new(para.id)
+        };
+
+        para.files_to_inject = para_files_to_inject;
+
+        Ok(para)
     }
 
     pub async fn register(
@@ -103,5 +147,71 @@ impl Parachain {
         let result = result.wait_for_in_block().await?;
         info!("In block: {:#?}", result.block_hash());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn create_with_is_works() {
+        let para = Parachain::new(100);
+        // only para_id should be set
+        assert_eq!(para.para_id, 100);
+        assert_eq!(para.chain_id, None);
+        assert_eq!(para.chain, None);
+        assert_eq!(para.chain_spec_path, None);
+    }
+
+    #[test]
+    fn create_with_chain_spec_works() {
+        let para = Parachain::with_chain_spec(100, "rococo-local", "/tmp/rococo-local.json");
+        // only para_id should be set
+        assert_eq!(para.para_id, 100);
+        assert_eq!(para.chain_id, Some("rococo-local".to_string()));
+        assert_eq!(para.chain, None);
+        assert_eq!(
+            para.chain_spec_path,
+            Some(PathBuf::from("/tmp/rococo-local.json"))
+        );
+    }
+
+    #[tokio::test]
+    async fn create_with_para_spec_works() {
+        use configuration::ParachainConfigBuilder;
+
+        use crate::network_spec::parachain::ParachainSpec;
+
+        let para_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(100)
+            .cumulus_based(false)
+            .with_default_command("adder-collator")
+            .with_collator(|c| c.with_name("col"))
+            .build()
+            .unwrap();
+
+        let para_spec = ParachainSpec::from_config(&para_config).unwrap();
+        let fs = support::fs::in_memory::InMemoryFileSystem::new(HashMap::default());
+        let scoped_fs = ScopedFilesystem {
+            fs: &fs,
+            base_dir: "/tmp/some",
+        };
+
+        let files = vec![TransferedFile {
+            local_path: PathBuf::from("/tmp/some"),
+            remote_path: PathBuf::from("/tmp/some"),
+        }];
+        let para = Parachain::from_spec(&para_spec, &files, &scoped_fs)
+            .await
+            .unwrap();
+        println!("{:#?}", para);
+        assert_eq!(para.para_id, 100);
+        assert_eq!(para.chain_id, None);
+        assert_eq!(para.chain, None);
+        // one file should be added.
+        assert_eq!(para.files_to_inject.len(), 1);
     }
 }

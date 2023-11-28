@@ -18,6 +18,11 @@ use crate::{
     utils::{default_as_true, default_initial_balance},
 };
 
+states! {
+    Buildable,
+    Initial
+}
+
 /// An environment variable with a name and a value.
 /// It can be constructed from a `(&str, &str)`.
 ///
@@ -243,11 +248,6 @@ impl NodeConfig {
     pub fn db_snapshot(&self) -> Option<&AssetLocation> {
         self.db_snapshot.as_ref()
     }
-}
-
-states! {
-    Initial,
-    Buildable
 }
 
 /// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.

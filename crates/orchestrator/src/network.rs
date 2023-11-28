@@ -5,14 +5,17 @@ pub mod relaychain;
 use std::{collections::HashMap, path::PathBuf};
 
 use configuration::{
+    para_states::{Initial, Running},
     shared::node::EnvVar,
     types::{Arg, Command, Image, Port},
+    ParachainConfig, ParachainConfigBuilder,
 };
 use provider::{types::TransferedFile, DynNamespace};
 use support::fs::FileSystem;
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
+    generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
     shared::{macros, types::ChainDefaultContext},
     spawner::{self, SpawnNodeCtx},
@@ -290,8 +293,105 @@ impl<T: FileSystem> Network<T> {
         Ok(())
     }
 
+    /// Get a parachain config builder from a running network
+    // TODO: build the validation context from the running network
+    pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
+        ParachainConfigBuilder::new_with_running(Default::default())
+    }
+
     // This should include at least of collator?
-    // add_parachain()
+    pub async fn add_parachain(
+        &mut self,
+        para_config: &ParachainConfig,
+        custom_relaychain_spec: Option<PathBuf>,
+    ) -> Result<(), anyhow::Error> {
+        // build
+        let mut para_spec = network_spec::parachain::ParachainSpec::from_config(para_config)?;
+        let base_dir = self.ns.base_dir().to_string_lossy().to_string();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+
+        let mut global_files_to_inject = vec![];
+
+        // get relaychain id
+        let relay_chain_id = if let Some(custom_path) = custom_relaychain_spec {
+            // use this file as relaychain spec
+            global_files_to_inject.push(TransferedFile {
+                local_path: custom_path.clone(),
+                remote_path: PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
+            });
+            let content = std::fs::read_to_string(custom_path)?;
+            ChainSpec::chain_id_from_spec(&content)?
+        } else {
+            global_files_to_inject.push(TransferedFile {
+                local_path: self.relaychain().chain_spec_path.clone(),
+                remote_path: PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
+            });
+            self.relay.chain_id.clone()
+        };
+
+        let chain_spec_raw_path = para_spec
+            .build_chain_spec(&relay_chain_id, &self.ns, &scoped_fs)
+            .await?;
+        scoped_fs.create_dir(para_spec.id.to_string()).await?;
+        // create wasm/state
+        para_spec
+            .genesis_state
+            .build(
+                chain_spec_raw_path.as_ref(),
+                format!("{}/genesis-state", para_spec.id),
+                &self.ns,
+                &scoped_fs,
+            )
+            .await?;
+        para_spec
+            .genesis_wasm
+            .build(
+                chain_spec_raw_path.as_ref(),
+                format!("{}/para_spec-wasm", para_spec.id),
+                &self.ns,
+                &scoped_fs,
+            )
+            .await?;
+
+        let parachain =
+            Parachain::from_spec(&para_spec, &global_files_to_inject, &scoped_fs).await?;
+        let parachain_id = parachain.chain_id.clone();
+
+        // Create `ctx` for spawn the nodes
+        let ctx_para = SpawnNodeCtx {
+            parachain: Some(&para_spec),
+            parachain_id: parachain_id.as_deref(),
+            role: if para_spec.is_cumulus_based {
+                ZombieRole::CumulusCollator
+            } else {
+                ZombieRole::Collator
+            },
+            bootnodes_addr: &vec![],
+            chain_id: &self.relaychain().chain_id,
+            chain: &self.relaychain().chain,
+            ns: &self.ns,
+            scoped_fs: &scoped_fs,
+            wait_ready: false,
+        };
+
+        // Add the parachain to the running network
+        // self.add_para(parachain);
+
+        // Spawn the nodes
+        let spawning_tasks = para_spec
+            .collators
+            .iter()
+            .map(|node| spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para));
+
+        let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
+        let running_para_id = parachain.para_id;
+        self.add_para(parachain);
+        for node in running_nodes {
+            self.add_running_node(node, Some(running_para_id));
+        }
+
+        Ok(())
+    }
 
     // deregister and stop the collator?
     // remove_parachain()
@@ -324,6 +424,7 @@ impl<T: FileSystem> Network<T> {
             if let Some(para) = self.parachains.get_mut(&para_id) {
                 para.collators.push(node.clone());
             } else {
+                // is the first node of the para, let create the entry
                 unreachable!()
             }
         } else {

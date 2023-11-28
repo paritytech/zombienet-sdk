@@ -1,8 +1,12 @@
+use std::path::PathBuf;
+
 use configuration::{
     shared::resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
     ParachainConfig, RegistrationStrategy,
 };
+use provider::DynNamespace;
+use support::fs::FileSystem;
 
 use super::node::NodeSpec;
 use crate::{
@@ -12,6 +16,7 @@ use crate::{
         para_artifact::*,
     },
     shared::types::ChainDefaultContext,
+    ScopedFilesystem,
 };
 
 #[derive(Debug, Clone)]
@@ -182,5 +187,36 @@ impl ParachainSpec {
         };
 
         Ok(para_spec)
+    }
+
+    pub(crate) async fn build_chain_spec<'a, T>(
+        &mut self,
+        relay_chain_id: &str,
+        ns: &DynNamespace,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+    ) -> Result<Option<PathBuf>, anyhow::Error>
+    where
+        T: FileSystem,
+    {
+        let cloned = self.clone();
+        let chain_spec_raw_path = if let Some(chain_spec) = self.chain_spec.as_mut() {
+            chain_spec.build(ns, scoped_fs).await?;
+
+            chain_spec
+                .customize_para(&cloned, relay_chain_id, scoped_fs)
+                .await?;
+            chain_spec.build_raw(ns).await?;
+
+            let chain_spec_raw_path =
+                chain_spec
+                    .raw_path()
+                    .ok_or(OrchestratorError::InvariantError(
+                        "chain-spec raw path should be set now",
+                    ))?;
+            Some(chain_spec_raw_path.to_path_buf())
+        } else {
+            None
+        };
+        Ok(chain_spec_raw_path)
     }
 }

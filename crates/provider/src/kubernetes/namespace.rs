@@ -225,7 +225,7 @@ where
                             name: "zombie-wrapper-volume".to_string(),
                             config_map: Some(ConfigMapVolumeSource {
                                 name: Some("zombie-wrapper".to_string()),
-                                default_mode: Some(0o744),
+                                default_mode: Some(0o755),
                                 ..Default::default()
                             }),
                             ..Default::default()

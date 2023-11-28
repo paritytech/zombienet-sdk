@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     fmt::Debug,
-    io::stdout,
     os::unix::process::ExitStatusExt,
     path::Path,
     process::{ExitStatus, Stdio},
@@ -213,15 +212,17 @@ where
             )
             .await?;
 
-        // retrieve stdout/stderr and k8s execution status
-        let mut stdout_stream = process
-            .stdout()
-            .take()
-            .expect("exec with stdout set to true shouldn't fail");
-        let mut stderr_stream = process
-            .stderr()
-            .take()
-            .expect("exec with stderr set to true shouldn't fail");
+        let stdout = tokio_util::io::ReaderStream::new(process.stdout().unwrap())
+            .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
+            .collect::<Vec<_>>()
+            .await
+            .join("");
+        let stderr = tokio_util::io::ReaderStream::new(process.stderr().unwrap())
+            .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
+            .collect::<Vec<_>>()
+            .await
+            .join("");
+
         let status = process
             .take_status()
             .expect("first call to status shouldn't fail")
@@ -233,8 +234,6 @@ where
         match status {
             // command succeeded with stdout
             Some(status) if status.status.as_ref().is_some_and(|s| s == "Success") => {
-                let mut stdout = String::new();
-                stdout_stream.read_to_string(&mut stdout).await.unwrap();
                 Ok(Ok(stdout))
             },
             // command failed
@@ -260,21 +259,15 @@ where
                                 "command with non-zero exit code should have exit code present",
                             );
 
-                        let mut stderr = String::new();
-                        stderr_stream.read_to_string(&mut stderr).await.unwrap();
-
                         Ok(Err((exit_status, stderr)))
                     },
-                    // due to other reason (e.g.: binary not found)
-                    // TODO: build error correctly, using anyhow to simplify?
-                    Some(_reason) => todo!(),
-                    None => {
-                        panic!("command had status but no reason was present, this is a bug");
-                    },
+                    // due to other unknown reason
+                    Some(reason) => Err(kube::Error::Service(anyhow!(reason).into())),
+                    None => panic!("command had status but no reason was present, this is a bug"),
                 }
             },
             Some(_) => {
-                unreachable!("command had status but it didn't matches either Success or Failure, this is a bug from the kubers library itself");
+                unreachable!("command had status but it didn't matches either Success or Failure, this is a bug from the kube.rs library itself");
             },
             None => {
                 panic!("command has no status following its execution, this is a bug");

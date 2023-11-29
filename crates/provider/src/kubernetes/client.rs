@@ -41,6 +41,8 @@ where
         labels: BTreeMap<String, String>,
     ) -> kube::Result<Pod>;
 
+    async fn pod_logs(&self, namespace: &str, name: &str) -> kube::Result<String>;
+
     async fn create_pod_logs_stream(
         &self,
         namespace: &str,

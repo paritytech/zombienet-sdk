@@ -174,6 +174,19 @@ where
         Ok(pod)
     }
 
+    async fn pod_logs(&self, namespace: &str, name: &str) -> kube::Result<String> {
+        Api::<Pod>::namespaced(self.client.clone(), namespace)
+            .logs(
+                name,
+                &LogParams {
+                    pretty: true,
+                    timestamps: true,
+                    ..Default::default()
+                },
+            )
+            .await
+    }
+
     async fn create_pod_logs_stream(
         &self,
         namespace: &str,
@@ -331,7 +344,7 @@ where
             .join()
             .await
             .map_err(|err| kube::Error::Service(err.into()))?;
-        
+
         let file_path = format!(
             "{}/{}",
             if to.as_ref().to_string_lossy() == "/" {

@@ -497,6 +497,7 @@ impl ChainSpec {
         Ok(())
     }
 
+    /// Get the chain_is from the json content of a chain-spec file.
     pub fn chain_id_from_spec(spec_content: &str) -> Result<String, GeneratorError> {
         let chain_spec_json: serde_json::Value =
             serde_json::from_str(spec_content).map_err(|_| {

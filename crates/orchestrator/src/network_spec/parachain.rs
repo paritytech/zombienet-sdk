@@ -189,6 +189,10 @@ impl ParachainSpec {
         Ok(para_spec)
     }
 
+    /// Build parachain chain-spec
+    ///
+    /// This fn customize the chain-spec (if is possible) and build the raw version
+    /// of the chain-spec.
     pub(crate) async fn build_chain_spec<'a, T>(
         &mut self,
         relay_chain_id: &str,

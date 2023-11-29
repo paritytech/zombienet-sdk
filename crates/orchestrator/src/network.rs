@@ -297,12 +297,43 @@ impl<T: FileSystem> Network<T> {
     }
 
     /// Get a parachain config builder from a running network
-    // TODO: build the validation context from the running network
+    ///
+    /// This allow you to build a new parachain config to be deployed into
+    /// the running network.
     pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
+        // TODO: build the validation context from the running network
         ParachainConfigBuilder::new_with_running(Default::default())
     }
 
-    // This should include at least of collator?
+    /// Add a new parachain to the running network
+    ///
+    /// NOTE: para_id must be unique in the whole network.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use anyhow::anyhow;
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+    /// # use zombienet_orchestrator::{errors, AddCollatorOptions, Orchestrator};
+    /// # use configuration::NetworkConfig;
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// let mut network = orchestrator.spawn(config).await?;
+    /// let para_config = network
+    ///     .para_config_builder()
+    ///     .with_id(100)
+    ///     .with_default_command("polkadot-parachain")
+    ///     .with_collator(|c| c.with_name("col-100-1"))
+    ///     .build()
+    ///     .map_err(|_e| anyhow!("Building config"))?;
+    ///
+    /// network.add_parachain(&para_config, None).await?;
+    ///
+    /// #   Ok(())
+    /// # }
+    /// ```
     pub async fn add_parachain(
         &mut self,
         para_config: &ParachainConfig,

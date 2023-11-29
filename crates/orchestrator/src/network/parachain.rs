@@ -62,7 +62,6 @@ impl Parachain {
         let mut para_files_to_inject = files_to_inject.to_owned();
 
         // parachain id is used for the keystore
-        // let parachain_id = if let Some(chain_spec) = para.chain_spec.as_ref() {
         let mut para = if let Some(chain_spec) = para.chain_spec.as_ref() {
             let id = chain_spec.read_chain_id(scoped_fs).await?;
 

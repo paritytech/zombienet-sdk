@@ -90,11 +90,17 @@ where
     }
 
     async fn logs(&self) -> Result<String, ProviderError> {
-        todo!()
+        Ok(self
+            .client
+            .pod_logs(&self.namespace_name, &self.name)
+            .await
+            .unwrap())
     }
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
-        todo!()
+        let logs = self.logs().await?;
+        self.filesystem.write(local_dest, logs).await.unwrap();
+        Ok(())
     }
 
     async fn run_command(

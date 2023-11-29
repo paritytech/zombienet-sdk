@@ -128,7 +128,31 @@ where
         &self,
         options: RunScriptOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        todo!()
+        self.client
+            .copy_to_pod(
+                &self.namespace_name,
+                &self.name,
+                options.local_script_path.clone(),
+                "/tmp".into(),
+                "0755",
+            )
+            .await
+            .unwrap();
+
+        let file_name = options
+            .local_script_path
+            .file_name()
+            .expect("file name should be present at this point")
+            .to_string_lossy();
+
+        Ok(self
+            .run_command(RunCommandOptions {
+                program: format!("/tmp/{file_name}"),
+                args: options.args,
+                env: options.env,
+            })
+            .await
+            .unwrap())
     }
 
     async fn copy_file_from_node(

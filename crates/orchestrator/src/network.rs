@@ -5,16 +5,22 @@ pub mod relaychain;
 use std::{collections::HashMap, path::PathBuf};
 
 use configuration::{
+    para_states::{Initial, Running},
     shared::node::EnvVar,
     types::{Arg, Command, Image, Port},
+    ParachainConfig, ParachainConfigBuilder,
 };
 use provider::{types::TransferedFile, DynNamespace};
 use support::fs::FileSystem;
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
+    generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
-    shared::{macros, types::ChainDefaultContext},
+    shared::{
+        macros,
+        types::{ChainDefaultContext, RegisterParachainOptions},
+    },
     spawner::{self, SpawnNodeCtx},
     ScopedFilesystem, ZombieRole,
 };
@@ -290,8 +296,171 @@ impl<T: FileSystem> Network<T> {
         Ok(())
     }
 
-    // This should include at least of collator?
-    // add_parachain()
+    /// Get a parachain config builder from a running network
+    ///
+    /// This allow you to build a new parachain config to be deployed into
+    /// the running network.
+    pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
+        // TODO: build the validation context from the running network
+        ParachainConfigBuilder::new_with_running(Default::default())
+    }
+
+    /// Add a new parachain to the running network
+    ///
+    /// NOTE: para_id must be unique in the whole network.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use anyhow::anyhow;
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+    /// # use zombienet_orchestrator::{errors, AddCollatorOptions, Orchestrator};
+    /// # use configuration::NetworkConfig;
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// let mut network = orchestrator.spawn(config).await?;
+    /// let para_config = network
+    ///     .para_config_builder()
+    ///     .with_id(100)
+    ///     .with_default_command("polkadot-parachain")
+    ///     .with_collator(|c| c.with_name("col-100-1"))
+    ///     .build()
+    ///     .map_err(|_e| anyhow!("Building config"))?;
+    ///
+    /// network.add_parachain(&para_config, None).await?;
+    ///
+    /// #   Ok(())
+    /// # }
+    /// ```
+    pub async fn add_parachain(
+        &mut self,
+        para_config: &ParachainConfig,
+        custom_relaychain_spec: Option<PathBuf>,
+    ) -> Result<(), anyhow::Error> {
+        // build
+        let mut para_spec = network_spec::parachain::ParachainSpec::from_config(para_config)?;
+        let base_dir = self.ns.base_dir().to_string_lossy().to_string();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+
+        let mut global_files_to_inject = vec![];
+
+        // get relaychain id
+        let relay_chain_id = if let Some(custom_path) = custom_relaychain_spec {
+            // use this file as relaychain spec
+            global_files_to_inject.push(TransferedFile {
+                local_path: custom_path.clone(),
+                remote_path: PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
+            });
+            let content = std::fs::read_to_string(custom_path)?;
+            ChainSpec::chain_id_from_spec(&content)?
+        } else {
+            global_files_to_inject.push(TransferedFile {
+                local_path: PathBuf::from(format!(
+                    "{}/{}",
+                    scoped_fs.base_dir,
+                    self.relaychain().chain_spec_path.to_string_lossy()
+                )),
+                remote_path: PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
+            });
+            self.relay.chain_id.clone()
+        };
+
+        let chain_spec_raw_path = para_spec
+            .build_chain_spec(&relay_chain_id, &self.ns, &scoped_fs)
+            .await?;
+        scoped_fs.create_dir(para_spec.id.to_string()).await?;
+        // create wasm/state
+        para_spec
+            .genesis_state
+            .build(
+                chain_spec_raw_path.as_ref(),
+                format!("{}/genesis-state", para_spec.id),
+                &self.ns,
+                &scoped_fs,
+            )
+            .await?;
+        para_spec
+            .genesis_wasm
+            .build(
+                chain_spec_raw_path.as_ref(),
+                format!("{}/para_spec-wasm", para_spec.id),
+                &self.ns,
+                &scoped_fs,
+            )
+            .await?;
+
+        let parachain =
+            Parachain::from_spec(&para_spec, &global_files_to_inject, &scoped_fs).await?;
+        let parachain_id = parachain.chain_id.clone();
+
+        // Create `ctx` for spawn the nodes
+        let ctx_para = SpawnNodeCtx {
+            parachain: Some(&para_spec),
+            parachain_id: parachain_id.as_deref(),
+            role: if para_spec.is_cumulus_based {
+                ZombieRole::CumulusCollator
+            } else {
+                ZombieRole::Collator
+            },
+            bootnodes_addr: &vec![],
+            chain_id: &self.relaychain().chain_id,
+            chain: &self.relaychain().chain,
+            ns: &self.ns,
+            scoped_fs: &scoped_fs,
+            wait_ready: false,
+        };
+
+        // Register the parachain to the running network
+        let first_node_url = self
+            .relaychain()
+            .nodes
+            .first()
+            .ok_or(anyhow::anyhow!(
+                "At least one node of the relaychain should be running"
+            ))?
+            .ws_uri();
+        let register_para_options = RegisterParachainOptions {
+            id: parachain.para_id,
+            // This needs to resolve correctly
+            wasm_path: para_spec
+                .genesis_wasm
+                .artifact_path()
+                .ok_or(anyhow::anyhow!(
+                    "artifact path for wasm must be set at this point",
+                ))?
+                .to_path_buf(),
+            state_path: para_spec
+                .genesis_state
+                .artifact_path()
+                .ok_or(anyhow::anyhow!(
+                    "artifact path for state must be set at this point",
+                ))?
+                .to_path_buf(),
+            node_ws_url: first_node_url.to_string(),
+            onboard_as_para: para_spec.onboard_as_parachain,
+            seed: None, // TODO: Seed is passed by?
+            finalization: false,
+        };
+
+        Parachain::register(register_para_options, &scoped_fs).await?;
+
+        // Spawn the nodes
+        let spawning_tasks = para_spec
+            .collators
+            .iter()
+            .map(|node| spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para));
+
+        let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
+        let running_para_id = parachain.para_id;
+        self.add_para(parachain);
+        for node in running_nodes {
+            self.add_running_node(node, Some(running_para_id));
+        }
+
+        Ok(())
+    }
 
     // deregister and stop the collator?
     // remove_parachain()
@@ -324,6 +493,7 @@ impl<T: FileSystem> Network<T> {
             if let Some(para) = self.parachains.get_mut(&para_id) {
                 para.collators.push(node.clone());
             } else {
+                // is the first node of the para, let create the entry
                 unreachable!()
             }
         } else {

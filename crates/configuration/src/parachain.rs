@@ -11,7 +11,6 @@ use crate::{
     shared::{
         errors::{ConfigError, FieldError},
         helpers::{merge_errors, merge_errors_vecs},
-        macros::states,
         node::{self, NodeConfig, NodeConfigBuilder},
         resources::{Resources, ResourcesBuilder},
         types::{
@@ -224,21 +223,36 @@ impl ParachainConfig {
     }
 }
 
-states! {
-    Initial,
-    WithId,
-    WithAtLeastOneCollator
+pub mod states {
+    use crate::shared::macros::states;
+
+    states! {
+        Initial,
+        WithId,
+        WithAtLeastOneCollator
+    }
+
+    states! {
+        Bootstrap,
+        Running
+    }
+
+    pub trait Context {}
+    impl Context for Bootstrap {}
+    impl Context for Running {}
 }
 
+use states::{Bootstrap, Context, Initial, Running, WithAtLeastOneCollator, WithId};
 /// A parachain configuration builder, used to build a [`ParachainConfig`] declaratively with fields validation.
-pub struct ParachainConfigBuilder<S> {
+pub struct ParachainConfigBuilder<S, C> {
     config: ParachainConfig,
     validation_context: Rc<RefCell<ValidationContext>>,
     errors: Vec<anyhow::Error>,
     _state: PhantomData<S>,
+    _context: PhantomData<C>,
 }
 
-impl Default for ParachainConfigBuilder<Initial> {
+impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
     fn default() -> Self {
         Self {
             config: ParachainConfig {
@@ -265,21 +279,23 @@ impl Default for ParachainConfigBuilder<Initial> {
             validation_context: Default::default(),
             errors: vec![],
             _state: PhantomData,
+            _context: PhantomData,
         }
     }
 }
 
-impl<A> ParachainConfigBuilder<A> {
+impl<A, C> ParachainConfigBuilder<A, C> {
     fn transition<B>(
         config: ParachainConfig,
         validation_context: Rc<RefCell<ValidationContext>>,
         errors: Vec<anyhow::Error>,
-    ) -> ParachainConfigBuilder<B> {
+    ) -> ParachainConfigBuilder<B, C> {
         ParachainConfigBuilder {
             config,
             validation_context,
             errors,
             _state: PhantomData,
+            _context: PhantomData,
         }
     }
 
@@ -294,19 +310,51 @@ impl<A> ParachainConfigBuilder<A> {
     }
 }
 
-impl ParachainConfigBuilder<Initial> {
+impl ParachainConfigBuilder<Initial, Bootstrap> {
     pub fn new(
         validation_context: Rc<RefCell<ValidationContext>>,
-    ) -> ParachainConfigBuilder<Initial> {
+    ) -> ParachainConfigBuilder<Initial, Bootstrap> {
         Self {
             validation_context,
             ..Self::default()
         }
     }
+}
 
+impl ParachainConfigBuilder<WithId, Bootstrap> {
+    /// Set the registration strategy for the parachain, could be without registration, using extrinsic or in genesis.
+    pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
+        Self::transition(
+            ParachainConfig {
+                registration_strategy: Some(strategy),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+}
+
+impl ParachainConfigBuilder<Initial, Running> {
+    /// Start a new builder in the context of a running network
+    pub fn new_with_running(
+        validation_context: Rc<RefCell<ValidationContext>>,
+    ) -> ParachainConfigBuilder<Initial, Running> {
+        let mut builder = Self {
+            validation_context,
+            ..Self::default()
+        };
+
+        // override the registration strategy
+        builder.config.registration_strategy = Some(RegistrationStrategy::UsingExtrinsic);
+        builder
+    }
+}
+
+impl<C: Context> ParachainConfigBuilder<Initial, C> {
     /// Set the parachain ID (should be unique).
     // TODO: handle unique validation
-    pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId> {
+    pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId, C> {
         Self::transition(
             ParachainConfig { id, ..self.config },
             self.validation_context,
@@ -315,7 +363,7 @@ impl ParachainConfigBuilder<Initial> {
     }
 }
 
-impl ParachainConfigBuilder<WithId> {
+impl<C: Context> ParachainConfigBuilder<WithId, C> {
     /// Set the chain name (e.g. rococo-local).
     /// Use [`None`], if you are running adder-collator or undying-collator).
     pub fn with_chain<T>(self, chain: T) -> Self
@@ -338,18 +386,6 @@ impl ParachainConfigBuilder<WithId> {
                 merge_errors(self.errors, FieldError::Chain(error.into()).into()),
             ),
         }
-    }
-
-    /// Set the registration strategy for the parachain, could be without registration, using extrinsic or in genesis.
-    pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
-        Self::transition(
-            ParachainConfig {
-                registration_strategy: Some(strategy),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
     }
 
     /// Set whether the parachain should be onboarded or stay a parathread. Default is ```true```.
@@ -615,7 +651,7 @@ impl ParachainConfigBuilder<WithId> {
     pub fn with_collator(
         self,
         f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
-    ) -> ParachainConfigBuilder<WithAtLeastOneCollator> {
+    ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
         match f(NodeConfigBuilder::new(
             self.default_chain_context(),
             self.validation_context.clone(),
@@ -645,7 +681,7 @@ impl ParachainConfigBuilder<WithId> {
     }
 }
 
-impl ParachainConfigBuilder<WithAtLeastOneCollator> {
+impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
     /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
@@ -1121,5 +1157,20 @@ mod tests {
             .unwrap();
 
         assert!(config.onboard_as_parachain());
+    }
+
+    #[test]
+    fn build_config_in_running_context() {
+        let config = ParachainConfigBuilder::new_with_running(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            config.registration_strategy(),
+            Some(&RegistrationStrategy::UsingExtrinsic)
+        );
     }
 }

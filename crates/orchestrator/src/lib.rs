@@ -98,33 +98,16 @@ where
         let relay_chain_name = network_spec.relaychain.chain.as_str();
         // TODO: if we don't need to register this para we can skip it
         for para in network_spec.parachains.iter_mut() {
-            let para_cloned = para.clone();
-            let chain_spec_raw_path = if let Some(chain_spec) = para.chain_spec.as_mut() {
-                chain_spec.build(&ns, &scoped_fs).await?;
-                debug!("chain_spec: {:#?}", chain_spec);
-
-                chain_spec
-                    .customize_para(&para_cloned, &relay_chain_id, &scoped_fs)
-                    .await?;
-                chain_spec.build_raw(&ns).await?;
-
-                let chain_spec_raw_path =
-                    chain_spec
-                        .raw_path()
-                        .ok_or(OrchestratorError::InvariantError(
-                            "chain-spec raw path should be set now",
-                        ))?;
-                Some(chain_spec_raw_path)
-            } else {
-                None
-            };
+            let chain_spec_raw_path = para
+                .build_chain_spec(&relay_chain_id, &ns, &scoped_fs)
+                .await?;
 
             // TODO: this need to be abstracted in a single call to generate_files.
             scoped_fs.create_dir(para.id.to_string()).await?;
             // create wasm/state
             para.genesis_state
                 .build(
-                    chain_spec_raw_path,
+                    chain_spec_raw_path.clone(),
                     format!("{}/genesis-state", para.id),
                     &ns,
                     &scoped_fs,
@@ -279,38 +262,11 @@ where
 
         // spawn paras
         for para in network_spec.parachains.iter() {
-            // global files to include for this parachain
-            let mut para_files_to_inject = global_files_to_inject.clone();
+            // Create parachain (in the context of the running network)
+            let parachain = Parachain::from_spec(para, &global_files_to_inject, &scoped_fs).await?;
+            let parachain_id = parachain.chain_id.clone();
 
-            // parachain id is used for the keystore
-            let parachain_id = if let Some(chain_spec) = para.chain_spec.as_ref() {
-                let id = chain_spec.read_chain_id(&scoped_fs).await?;
-
-                // add the spec to global files to inject
-                let spec_name = chain_spec.chain_spec_name();
-                para_files_to_inject.push(TransferedFile {
-                    local_path: ns.base_dir().join(format!("{}.json", spec_name)),
-                    remote_path: PathBuf::from(format!("/cfg/{}.json", para.id)),
-                });
-
-                let raw_path = chain_spec
-                    .raw_path()
-                    .ok_or(OrchestratorError::InvariantError(
-                        "chain-spec path should be set by now.",
-                    ))?;
-                let mut running_para = Parachain::with_chain_spec(para.id, &id, raw_path);
-                if let Some(chain_name) = chain_spec.chain_name() {
-                    running_para.chain = Some(chain_name.to_string());
-                }
-                network.add_para(running_para);
-
-                Some(id)
-            } else {
-                network.add_para(Parachain::new(para.id));
-
-                None
-            };
-
+            // Create `ctx` for spawn the nodes
             let ctx_para = SpawnNodeCtx {
                 parachain: Some(para),
                 parachain_id: parachain_id.as_deref(),
@@ -323,13 +279,16 @@ where
                 ..ctx.clone()
             };
 
-            let spawning_tasks = para
-                .collators
-                .iter()
-                .map(|node| spawner::spawn_node(node, para_files_to_inject.clone(), &ctx_para));
-            // TODO: Add para to Network instance
-            for node in futures::future::try_join_all(spawning_tasks).await? {
-                network.add_running_node(node, Some(para.id));
+            // Spawn the nodes
+            let spawning_tasks = para.collators.iter().map(|node| {
+                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+            });
+
+            let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
+            let running_para_id = parachain.para_id;
+            network.add_para(parachain);
+            for node in running_nodes {
+                network.add_running_node(node, Some(running_para_id));
             }
         }
 
@@ -360,8 +319,8 @@ where
                     .to_path_buf(),
                 node_ws_url: node_ws_url.clone(),
                 onboard_as_para: para.onboard_as_parachain,
-                seed: None,          // TODO: Seed is passed by?
-                finalization: false, // TODO: Seed is passed by?
+                seed: None, // TODO: Seed is passed by?
+                finalization: false,
             };
 
             Parachain::register(register_para_options, &scoped_fs).await?;

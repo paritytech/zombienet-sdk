@@ -331,10 +331,14 @@ where
             .join()
             .await
             .map_err(|err| kube::Error::Service(err.into()))?;
-
+        
         let file_path = format!(
             "{}/{}",
-            to.as_ref().to_string_lossy(),
+            if to.as_ref().to_string_lossy() == "/" {
+                "".to_string()
+            } else {
+                to.as_ref().to_string_lossy().to_string()
+            },
             file_name.to_string_lossy()
         );
 

@@ -28,7 +28,7 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use crate::types::ExecutionResult;
 
-use super::KubernetesClient;
+use super::{Error, KubernetesClient, Result};
 
 #[derive(Clone)]
 pub struct KubeRsKubernetesClient<FS>
@@ -43,25 +43,41 @@ impl<FS> KubeRsKubernetesClient<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub async fn new(filesystem: FS) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(filesystem: FS) -> Result<Self> {
         Ok(Self {
             // TODO: make it more flexible with path to kube config
-            client: Client::try_default().await?,
+            client: Client::try_default()
+                .await
+                .map_err(|err| Error::from(anyhow!("error initializing kubers client: {err}")))?,
             filesystem,
         })
     }
 
-    async fn wait_created<K>(&self, api: Api<K>, name: &str) -> kube::Result<()>
+    async fn wait_created<K>(&self, api: Api<K>, name: &str) -> Result<()>
     where
         K: Clone + DeserializeOwned + Debug,
     {
         let params = &WatchParams::default().fields(&format!("metadata.name={}", name));
-        let mut stream = api.watch(&params, "0").await.unwrap().boxed();
+        let mut stream = api
+            .watch(&params, "0")
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while awaiting first response when resource {name} is created: {err}"
+                ))
+            })?
+            .boxed();
 
-        while let Some(status) = stream.try_next().await.unwrap() {
+        while let Some(status) = stream.try_next().await.map_err(|err| {
+            Error::from(anyhow!(
+                "error while awaiting next change after resource {name} is created: {err}"
+            ))
+        })? {
             match status {
                 WatchEvent::Added(_) => break,
-                WatchEvent::Error(err) => Err(kube::Error::Api(err))?,
+                WatchEvent::Error(err) => Err(Error::from(anyhow!(
+                    "error while awaiting resource {name} is created: {err}"
+                )))?,
                 _ => panic!("Unexpected event happened while creating '{}'", name),
             }
         }
@@ -75,16 +91,18 @@ impl<FS> KubernetesClient<FS> for KubeRsKubernetesClient<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    async fn get_namespace(&self, name: &str) -> kube::Result<Option<Namespace>> {
+    async fn get_namespace(&self, name: &str) -> Result<Option<Namespace>> {
         Api::<Namespace>::all(self.client.clone())
             .get_opt(name.as_ref())
             .await
+            .map_err(|err| Error::from(anyhow!("error while getting namespace {name}: {err}")))
     }
 
-    async fn get_namespaces(&self) -> kube::Result<Vec<Namespace>> {
+    async fn get_namespaces(&self) -> Result<Vec<Namespace>> {
         Ok(Api::<Namespace>::all(self.client.clone())
             .list(&ListParams::default())
-            .await?
+            .await
+            .map_err(|err| Error::from(anyhow!("error while getting all namespaces: {err}")))?
             .into_iter()
             .filter(|ns| matches!(&ns.meta().name, Some(name) if name.starts_with("zombienet")))
             .collect())
@@ -94,7 +112,7 @@ where
         &self,
         name: &str,
         labels: BTreeMap<String, String>,
-    ) -> kube::Result<Namespace> {
+    ) -> Result<Namespace> {
         let namespaces = Api::<Namespace>::all(self.client.clone());
         let namespace = Namespace {
             metadata: ObjectMeta {
@@ -107,7 +125,8 @@ where
 
         namespaces
             .create(&PostParams::default(), &namespace)
-            .await?;
+            .await
+            .map_err(|err| Error::from(anyhow!("error while created namespace {name}: {err}")))?;
 
         self.wait_created(namespaces, name).await?;
 
@@ -121,7 +140,7 @@ where
         file_name: &str,
         file_contents: &str,
         labels: BTreeMap<String, String>,
-    ) -> kube::Result<ConfigMap> {
+    ) -> Result<ConfigMap> {
         let config_maps = Api::<ConfigMap>::namespaced(self.client.clone(), namespace);
         let config_map = ConfigMap {
             metadata: ObjectMeta {
@@ -139,7 +158,12 @@ where
 
         config_maps
             .create(&PostParams::default(), &config_map)
-            .await?;
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while creating config map {name} for {file_name}: {err}"
+                ))
+            })?;
 
         self.wait_created(config_maps, name).await?;
 
@@ -152,7 +176,7 @@ where
         name: &str,
         spec: PodSpec,
         labels: BTreeMap<String, String>,
-    ) -> kube::Result<Pod> {
+    ) -> Result<Pod> {
         let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
         let pod = Pod {
             metadata: ObjectMeta {
@@ -165,16 +189,20 @@ where
             ..Default::default()
         };
 
-        pods.create(&PostParams::default(), &pod).await?;
+        pods.create(&PostParams::default(), &pod)
+            .await
+            .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
         await_condition(pods, name, conditions::is_pod_running())
             .await
-            .unwrap();
+            .map_err(|err| {
+                Error::from(anyhow!("error while awaiting pod {name} running: {err}"))
+            })?;
 
         Ok(pod)
     }
 
-    async fn pod_logs(&self, namespace: &str, name: &str) -> kube::Result<String> {
+    async fn pod_logs(&self, namespace: &str, name: &str) -> Result<String> {
         Api::<Pod>::namespaced(self.client.clone(), namespace)
             .logs(
                 name,
@@ -185,13 +213,14 @@ where
                 },
             )
             .await
+            .map_err(|err| Error::from(anyhow!("error while getting logs for pod {name}: {err}")))
     }
 
     async fn create_pod_logs_stream(
         &self,
         namespace: &str,
         name: &str,
-    ) -> kube::Result<Box<dyn AsyncRead + Send + Unpin>> {
+    ) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
         Ok(Box::new(
             Api::<Pod>::namespaced(self.client.clone(), namespace)
                 .log_stream(
@@ -203,7 +232,12 @@ where
                         ..Default::default()
                     },
                 )
-                .await?
+                .await
+                .map_err(|err| {
+                    Error::from(anyhow!(
+                        "error while getting a log stream for {name}: {err}"
+                    ))
+                })?
                 .compat(),
         ))
     }
@@ -213,7 +247,7 @@ where
         namespace: &str,
         name: &str,
         command: Vec<S>,
-    ) -> kube::Result<ExecutionResult>
+    ) -> Result<ExecutionResult>
     where
         S: Into<String> + std::fmt::Debug + Send,
     {
@@ -223,14 +257,21 @@ where
                 command,
                 &AttachParams::default().stdout(true).stderr(true),
             )
-            .await?;
+            .await
+            .map_err(|err| Error::from(anyhow!("error while exec in the pod {name}: {err}")))?;
 
-        let stdout = tokio_util::io::ReaderStream::new(process.stdout().unwrap())
+        let stdout_stream = process
+            .stdout()
+            .expect("stdout shouldn't be None when true passed to exec");
+        let stdout = tokio_util::io::ReaderStream::new(stdout_stream)
             .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
             .collect::<Vec<_>>()
             .await
             .join("");
-        let stderr = tokio_util::io::ReaderStream::new(process.stderr().unwrap())
+        let stderr_stream = process
+            .stderr()
+            .expect("stderr shouldn't be None when true passed to exec");
+        let stderr = tokio_util::io::ReaderStream::new(stderr_stream)
             .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
             .collect::<Vec<_>>()
             .await
@@ -242,7 +283,11 @@ where
             .await;
 
         // await process to finish
-        process.join().await.unwrap();
+        process.join().await.map_err(|err| {
+            Error::from(anyhow!(
+                "error while joining process during exec for {name}: {err}"
+            ))
+        })?;
 
         match status {
             // command succeeded with stdout
@@ -275,8 +320,12 @@ where
                         Ok(Err((exit_status, stderr)))
                     },
                     // due to other unknown reason
-                    Some(reason) => Err(kube::Error::Service(anyhow!(reason).into())),
-                    None => panic!("command had status but no reason was present, this is a bug"),
+                    Some(reason) => Err(Error::from(anyhow!(
+                        "unhandled reason while exec for {name}: {reason}"
+                    ))),
+                    None => {
+                        panic!("command had status but no reason was present, this is a bug")
+                    },
                 }
             },
             Some(_) => {
@@ -296,19 +345,35 @@ where
         from: P,
         to: P,
         mode: &str,
-    ) -> kube::Result<()>
+    ) -> Result<()>
     where
         P: AsRef<Path> + Send,
     {
         let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
-        let file_name = from.as_ref().file_name().unwrap().to_owned();
-        let contents = self.filesystem.read(from).await.unwrap();
+        let file_name = from
+            .as_ref()
+            .file_name()
+            .ok_or(Error::from(anyhow!(
+                "error while copying to pod {name}: no filename was present in path {}",
+                to.as_ref().to_string_lossy()
+            )))?
+            .to_owned();
+        let contents = self.filesystem.read(from).await.map_err(|err| {
+            Error::from(anyhow!(
+                "error while reading {} when trying to copy file to pod {name}: {err}",
+                to.as_ref().to_string_lossy()
+            ))
+        })?;
 
         // create archive header
         let mut header = tar::Header::new_gnu();
-        header
-            .set_path(&file_name)
-            .map_err(|err| kube::Error::Service(err.into()))?;
+        header.set_path(&file_name).map_err(|err| {
+            Error::from(anyhow!(
+                "error while setting path with {} for archive when trying to copy file {} to pod {name}: {err}",
+                file_name.to_string_lossy(),
+                to.as_ref().to_string_lossy()
+            ))
+        })?;
         header.set_size(contents.len() as u64);
         header.set_cksum();
 
@@ -316,10 +381,18 @@ where
         let mut archive = tar::Builder::new(Vec::new());
         archive
             .append(&header, &mut contents.as_slice())
-            .map_err(|err| kube::Error::Service(err.into()))?;
-        let data = archive
-            .into_inner()
-            .map_err(|err| kube::Error::Service(err.into()))?;
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while appending content of {} to archive when trying to copy file to pod {name}: {err}",
+                    file_name.to_string_lossy(),
+                ))
+            })?;
+        let data = archive.into_inner().map_err(|err| {
+            Error::from(anyhow!(
+                "error while unwraping archive when trying to copy file {} to pod {name}: {err}",
+                file_name.to_string_lossy()
+            ))
+        })?;
 
         // execute tar command
         let dest = to.as_ref().to_string_lossy();
@@ -329,21 +402,27 @@ where
                 vec!["tar", "-xmf", "-", "-C", &dest],
                 &AttachParams::default().stdin(true),
             )
-            .await?;
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while executing tar when trying to copy file {} to pod {name}: {err}",
+                    file_name.to_string_lossy()
+                ))
+            })?;
 
         // write archive content to attached process
         tar_process
             .stdin()
-            .unwrap()
+            .expect("stdin shouldn't be None when true passed to exec")
             .write_all(&data)
             .await
-            .map_err(|err| kube::Error::Service(err.into()))?;
+            .map_err(|err| Error::from(anyhow!("error when writing file {} content as archive to tar process when trying to copy file to pod {name}: {err}",file_name.to_string_lossy())))?;
 
         // wait for process to finish
         tar_process
             .join()
             .await
-            .map_err(|err| kube::Error::Service(err.into()))?;
+            .map_err(|err| Error::from(anyhow!("error while trying to join the tar process when copying file {} to pod {name}: {err}", file_name.to_string_lossy())))?;
 
         let file_path = format!(
             "{}/{}",
@@ -356,19 +435,17 @@ where
         );
 
         // execute chmod to set file permissions
-        self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
-            .await?
-            .map_err(|err| {
-                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
-            })?;
+        let _ = self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
+            .await
+            .map_err(|err| Error::from(anyhow!("error while trying to setting permissions when trying to copy file {} to pod {name}: status {}: {}", file_name.to_string_lossy(), err.0, err.0)))?
+            .map_err(|err| Error::from(anyhow!("error happened when chmoding file {} when trying to copy file to pod {name}: status {}: {}", file_name.to_string_lossy(), err.0, err.1)))?;
 
         // retrieve sha256sum of file to ensure integrity
         let sha256sum_stdout = self
             .pod_exec(namespace, name, vec!["sha256sum", &file_path])
-            .await?
-            .map_err(|err| {
-                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
-            })?;
+            .await
+            .map_err(|err| Error::from(anyhow!("error while exec for sha256 integrity check when trying to copy file {} to {name}: {err}", file_name.to_string_lossy())))?
+            .map_err(|err| Error::from(anyhow!("sha256 integrity check failed when trying to copy file {} to {name}: status {}: {}", file_name.to_string_lossy(), err.0, err.1)))?;
         let actual_hash = sha256sum_stdout
             .split_whitespace()
             .next()
@@ -377,32 +454,38 @@ where
         // get the hash of the file
         let expected_hash = hex::encode(sha2::Sha256::digest(&contents));
         if actual_hash != expected_hash {
-            return Err(kube::Error::Service(
-                anyhow!(
-                    "file copy failed, expected sha256sum of {} got {}",
-                    expected_hash,
-                    actual_hash
-                )
-                .into(),
-            ));
+            return Err(Error::from(anyhow!(
+                "file {} copy to {name} failed, expected sha256sum of {} got {}",
+                file_name.to_string_lossy(),
+                expected_hash,
+                actual_hash
+            )));
         }
 
         Ok(())
     }
 
-    async fn copy_from_pod<P>(
-        &self,
-        namespace: &str,
-        name: &str,
-        from: P,
-        to: P,
-    ) -> kube::Result<()>
+    async fn copy_from_pod<P>(&self, namespace: &str, name: &str, from: P, to: P) -> Result<()>
     where
         P: AsRef<Path> + Send,
     {
         let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
-        let file_name = from.as_ref().file_name().unwrap().to_string_lossy();
-        let file_dir = to.as_ref().parent().unwrap().to_string_lossy();
+        let file_name = from
+            .as_ref()
+            .file_name()
+            .ok_or(Error::from(anyhow!(
+                "no file name found when trying to copy file {} from pod {}",
+                from.as_ref().to_string_lossy(),
+                name
+            )))?
+            .to_string_lossy();
+        let file_dir = to
+            .as_ref()
+            .parent()
+            .ok_or(Error::from(anyhow!(
+                "no parent dir found for file {file_name} when trying to copy file from pod {name}"
+            )))?
+            .to_string_lossy();
 
         // create the archive in the pod and pipe to stdout
         let mut tar = pods
@@ -411,11 +494,17 @@ where
                 vec!["tar", "-cf", "-", "-C", &file_dir, &file_name],
                 &AttachParams::default().stdin(true),
             )
-            .await?;
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while executing tar command when trying to copy {file_name} from {name}: {err}",
+                ))
+            })?;
 
-        let tar_status = tar.take_status().unwrap();
-        let mut tar_stdout = tar.stdout().take().unwrap();
-        let mut tar_stderr = tar.stderr().take().unwrap();
+        let mut tar_stdout = tar
+            .stdout()
+            .take()
+            .expect("stdout shouldn't be None when true passed to exec");
 
         // create child process tar fo extraction
         let dest_dir = to.as_ref().to_string_lossy();
@@ -425,24 +514,46 @@ where
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap();
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error when spawning tar process when copying {file_name} from pod {name}: {err}",
+                ))
+            })?;
 
-        let mut extract_stdin = extract.stdin.take().unwrap();
+        let mut extract_stdin = extract.stdin.take().ok_or(Error::from(anyhow!(
+            "error when getting stdin from tar process when copying {file_name} from pod {name}"
+        )))?;
 
         // pipe the container tar stdout into the local tar stdin
-        io::copy(&mut tar_stdout, &mut extract_stdin).await.unwrap();
+        io::copy(&mut tar_stdout, &mut extract_stdin).await.map_err(|err| Error::from(anyhow!("error when piping tar stdout to tar stdin when copying {file_name} from pod {name}: {err}",)))?;
 
-        tar.join().await.unwrap();
-        extract.wait().await.unwrap();
+        tar.join().await.map_err(|err| {
+            Error::from(anyhow!(
+                "error when joining tar process when copying {file_name} from pod {name}: {err}",
+            ))
+        })?;
+        extract.wait().await.map_err(|err| {
+            Error::from(anyhow!(
+                "error when waiting for tar process when copying {file_name} from pod {name}: {err}",
+            ))
+        })?;
 
         // compute sha256sum of local received file
         let dest_path = format!("{dest_dir}/{file_name}");
-        let mut file = File::open(&dest_path).await.unwrap();
+        let mut file = File::open(&dest_path).await.map_err(|err| {
+            Error::from(anyhow!(
+                "error when opening file {file_name} when copying from pod {name}: {err}",
+            ))
+        })?; // TODO: use tokio fs instead of std
         let mut hasher = Sha256::new();
         let mut buffer = [0; 1024];
 
         loop {
-            let bytes_read = file.read(&mut buffer).await.unwrap();
+            let bytes_read = file.read(&mut buffer).await.map_err(|err| {
+                Error::from(anyhow!(
+                    "error when reading file {file_name} when copying from pod {name}: {err}"
+                ))
+            })?;
             if bytes_read == 0 {
                 break;
             }
@@ -457,9 +568,7 @@ where
         let sha256sum = self
             .pod_exec(namespace, name, vec!["sha256sum", &file_path])
             .await?
-            .map_err(|err| {
-                kube::Error::Service(anyhow!("error: status {}: {}", err.0, err.1).into())
-            })?;
+            .map_err(|err| Error::from(anyhow!("error when checking file integrity when copying {file_name} from pod {name}: status {}: {}", err.0, err.1)))?;
         let expected_hash = sha256sum
             .split_whitespace()
             .next()
@@ -467,24 +576,21 @@ where
 
         // check integrity
         if actual_hash != expected_hash {
-            return Err(kube::Error::Service(
-                anyhow!(
-                    "file copy failed, expected sha256sum of {} got {}",
-                    expected_hash,
-                    actual_hash
-                )
-                .into(),
-            ));
+            return Err(Error::from(anyhow!(
+                "file {file_name} copy failed, expected sha256sum of {} got {} when copying file from {name}",
+                expected_hash,
+                actual_hash
+            )));
         }
 
         Ok(())
     }
 
-    async fn delete_pod(&self, namespace: &str, name: &str) -> kube::Result<()> {
+    async fn delete_pod(&self, namespace: &str, name: &str) -> Result<()> {
         Api::<Pod>::namespaced(self.client.clone(), namespace)
             .delete(name, &DeleteParams::default())
-            .await?;
-
-        Ok(())
+            .await
+            .map(|_| ())
+            .map_err(|err| Error::from(anyhow!("error when deleting pod {name}: {err}")))
     }
 }

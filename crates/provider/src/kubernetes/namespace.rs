@@ -151,16 +151,22 @@ where
                             limits: if options.resources.is_some() {
                                 let mut limits = BTreeMap::new();
 
-                                if let Some(limit_cpu) =
-                                    options.resources.clone().unwrap().limit_cpu()
+                                if let Some(limit_cpu) = options
+                                    .resources
+                                    .clone()
+                                    .expect("safe to unwrap")
+                                    .limit_cpu()
                                 {
                                     limits.insert(
                                         "cpu".to_string(),
                                         Quantity(limit_cpu.as_str().to_string()),
                                     );
                                 }
-                                if let Some(limit_memory) =
-                                    options.resources.clone().unwrap().request_memory()
+                                if let Some(limit_memory) = options
+                                    .resources
+                                    .clone()
+                                    .expect("safe to unwrap")
+                                    .request_memory()
                                 {
                                     limits.insert(
                                         "memory".to_string(),
@@ -179,8 +185,11 @@ where
                             requests: if options.resources.is_some() {
                                 let mut request = BTreeMap::new();
 
-                                if let Some(request_cpu) =
-                                    options.resources.clone().unwrap().request_cpu()
+                                if let Some(request_cpu) = options
+                                    .resources
+                                    .clone()
+                                    .expect("safe to unwrap")
+                                    .request_cpu()
                                 {
                                     request.insert(
                                         "cpu".to_string(),
@@ -188,7 +197,7 @@ where
                                     );
                                 }
                                 if let Some(request_memory) =
-                                    options.resources.unwrap().request_memory()
+                                    options.resources.expect("safe to unwrap").request_memory()
                                 {
                                     request.insert(
                                         "memory".to_string(),
@@ -236,13 +245,23 @@ where
                 BTreeMap::from([("some".to_string(), "labels".to_string())]),
             )
             .await
-            .unwrap();
+            .map_err(|err| {
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to created pod {}", options.name),
+                    err.into(),
+                )
+            })?;
 
         // store pod manifest
         self.filesystem
             .write(
                 PathBuf::from_iter([&base_dir, &PathBuf::from("pod_manifest.yaml")]),
-                serde_yaml::to_string(&manifest).unwrap(),
+                serde_yaml::to_string(&manifest).map_err(|err| {
+                    ProviderError::NodeSpawningFailed(
+                        format!("failed to serialize pod manifest {}", options.name),
+                        err.into(),
+                    )
+                })?,
             )
             .await?;
 
@@ -261,8 +280,13 @@ where
                 )
             })
             .collect();
-        // TODO: handle the error conversion correctly
-        try_join_all(ops_fut).await.unwrap();
+
+        try_join_all(ops_fut).await.map_err(|err| {
+            ProviderError::NodeSpawningFailed(
+                format!("failed to create paths for pod {}", options.name),
+                err.into(),
+            )
+        })?;
 
         // copy injected files
         let ops_fut: Vec<_> = options
@@ -278,11 +302,15 @@ where
                 )
             })
             .collect();
-        // TODO: handle the error conversion correctly
-        try_join_all(ops_fut).await.unwrap();
+
+        try_join_all(ops_fut).await.map_err(|err| {
+            ProviderError::NodeSpawningFailed(
+                format!("failed to copy injected files for pod {}", options.name),
+                err.into(),
+            )
+        })?;
 
         // start process
-        // TODO: handle the error conversion correctly
         self.client
             .pod_exec(
                 &self.name,
@@ -290,15 +318,30 @@ where
                 vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
             )
             .await
-            .unwrap()
-            .unwrap();
+            .map_err(|err| {
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to start pod {} after spawning", options.name),
+                    err.into(),
+                )
+            })?
+            .map_err(|err| {
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to start pod {} after spawning", options.name,),
+                    anyhow!("command failed in container: status {}: {}", err.0, err.1),
+                )
+            })?;
 
         // create log stream
         let logs_stream = self
             .client
             .create_pod_logs_stream(&self.name, &options.name)
             .await
-            .unwrap();
+            .map_err(|err| {
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to create log stream for pod {}", options.name),
+                    err.into(),
+                )
+            })?;
 
         // handle log writing
         let (logs_tx, rx) = mpsc::channel(10);
@@ -312,7 +355,6 @@ where
             namespace_name: self.name.clone(),
             program: options.program,
             args: options.args,
-            env: options.env,
             base_dir,
             config_dir,
             data_dir,
@@ -341,7 +383,9 @@ where
             .spawn_node(
                 SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
                     .injected_files(options.injected_files)
-                    .image(options.image.unwrap()),
+                    .image(options.image.expect(
+                        "image should be present when generating files with kubernetes provider",
+                    )),
             )
             .await?;
 

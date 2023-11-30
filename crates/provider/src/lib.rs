@@ -16,11 +16,17 @@ use crate::shared::types::Port;
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum ProviderError {
+    #[error("Failed to create namespace '{0}': {1}")]
+    CreateNamespaceFailed(String, anyhow::Error),
+
     #[error("Failed to spawn node '{0}': {1}")]
     NodeSpawningFailed(String, anyhow::Error),
 
     #[error("Error running command '{0}': {1}")]
     RunCommandError(String, anyhow::Error),
+
+    #[error("Error running script'{0}': {1}")]
+    RunScriptError(String, anyhow::Error),
 
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
@@ -46,14 +52,26 @@ pub enum ProviderError {
     #[error("Failed to retrieve process ID for node '{0}'")]
     ProcessIdRetrievalFailed(String),
 
-    #[error("Failed to pause node '{0}'")]
-    PauseNodeFailed(String),
+    #[error("Failed to pause node '{0}': {1}")]
+    PauseNodeFailed(String, anyhow::Error),
 
-    #[error("Failed to resume node '{0}'")]
-    ResumeNodeFaied(String),
+    #[error("Failed to resume node '{0}': {1}")]
+    ResumeNodeFailed(String, anyhow::Error),
 
-    #[error("Failed to kill node '{0}'")]
-    KillNodeFailed(String),
+    #[error("Failed to kill node '{0}': {1}")]
+    KillNodeFailed(String, anyhow::Error),
+
+    #[error("Failed to restart node '{0}': {1}")]
+    RestartNodeFailed(String, anyhow::Error),
+
+    #[error("Failed to get logs for node '{0}': {1}")]
+    GetLogsFailed(String, anyhow::Error),
+
+    #[error("Failed to dump logs for node '{0}': {1}")]
+    DumpLogsFailed(String, anyhow::Error),
+
+    #[error("Failed to copy file from node '{0}': {1}")]
+    CopyFileFromNodeError(String, anyhow::Error),
 }
 
 #[async_trait]
@@ -140,6 +158,6 @@ pub trait ProviderNode {
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 
 // re-export
-pub use native::*;
 pub use kubernetes::*;
+pub use native::*;
 pub use shared::{constants, types};

@@ -187,7 +187,7 @@ where
         self.process_manager
             .kill(pid, Signal::SIGSTOP)
             .await
-            .map_err(|_| ProviderError::PauseNodeFailed(self.name.clone()))?;
+            .map_err(|err| ProviderError::PauseNodeFailed(self.name.clone(), err.into()))?;
 
         Ok(())
     }
@@ -199,7 +199,7 @@ where
         self.process_manager
             .kill(pid, Signal::SIGCONT)
             .await
-            .map_err(|_| ProviderError::ResumeNodeFaied(self.name.clone()))?;
+            .map_err(|err| ProviderError::ResumeNodeFailed(self.name.clone(), err.into()))?;
 
         Ok(())
     }
@@ -219,7 +219,7 @@ where
             .process
             .kill()
             .await
-            .map_err(|_| ProviderError::KillNodeFailed(self.name.clone()))?;
+            .map_err(|err| ProviderError::KillNodeFailed(self.name.clone(), err.into()))?;
 
         // re-spawn process with tasks for logs
         let (process, stdout_reading_handle, stderr_reading_handle, log_writing_handle) =
@@ -253,7 +253,7 @@ where
             .process
             .kill()
             .await
-            .map_err(|_| ProviderError::KillNodeFailed(self.name.clone()))?;
+            .map_err(|err| ProviderError::KillNodeFailed(self.name.clone(), err.into()))?;
 
         if let Some(namespace) = self.namespace.inner.upgrade() {
             namespace.write().await.nodes.remove(&self.name);

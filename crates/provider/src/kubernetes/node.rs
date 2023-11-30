@@ -1,5 +1,6 @@
 use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
@@ -22,7 +23,6 @@ where
     pub(super) namespace_name: String,
     pub(super) program: String,
     pub(super) args: Vec<String>,
-    pub(super) env: Vec<(String, String)>,
     pub(super) base_dir: PathBuf,
     pub(super) config_dir: PathBuf,
     pub(super) data_dir: PathBuf,
@@ -90,16 +90,18 @@ where
     }
 
     async fn logs(&self) -> Result<String, ProviderError> {
-        Ok(self
-            .client
+        self.client
             .pod_logs(&self.namespace_name, &self.name)
             .await
-            .unwrap())
+            .map_err(|err| ProviderError::GetLogsFailed(self.name.to_string(), err.into()))
     }
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
         let logs = self.logs().await?;
-        self.filesystem.write(local_dest, logs).await.unwrap();
+        self.filesystem
+            .write(local_dest, logs)
+            .await
+            .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?;
         Ok(())
     }
 
@@ -119,15 +121,14 @@ where
             command.push(arg);
         }
 
-        Ok(self
-            .client
+        self.client
             .pod_exec(
                 &self.namespace_name,
                 &self.name,
                 vec!["sh", "-c", &command.join(" ")],
             )
             .await
-            .unwrap())
+            .map_err(|err| ProviderError::RunCommandError(self.name.to_string(), err.into()))
     }
 
     async fn run_script(
@@ -143,7 +144,7 @@ where
                 "0755",
             )
             .await
-            .unwrap();
+            .map_err(|err| ProviderError::RunScriptError(self.name.to_string(), err.into()))?;
 
         let file_name = options
             .local_script_path
@@ -151,14 +152,13 @@ where
             .expect("file name should be present at this point")
             .to_string_lossy();
 
-        Ok(self
-            .run_command(RunCommandOptions {
-                program: format!("/tmp/{file_name}"),
-                args: options.args,
-                env: options.env,
-            })
-            .await
-            .unwrap())
+        self.run_command(RunCommandOptions {
+            program: format!("/tmp/{file_name}"),
+            args: options.args,
+            env: options.env,
+        })
+        .await
+        .map_err(|err| ProviderError::RunScriptError(self.name.to_string(), err.into()))
     }
 
     async fn copy_file_from_node(
@@ -169,13 +169,14 @@ where
         self.client
             .copy_from_pod(&self.namespace_name, &self.name, remote_src, local_dest)
             .await
-            .unwrap();
+            .map_err(|err| {
+                ProviderError::CopyFileFromNodeError(self.name.to_string(), err.into())
+            })?;
 
         Ok(())
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
-        // TODO: handle unwraps
         self.client
             .pod_exec(
                 &self.namespace_name,
@@ -183,14 +184,18 @@ where
                 vec!["echo", "pause", ">", "/tmp/zombiepipe"],
             )
             .await
-            .unwrap()
-            .unwrap();
+            .map_err(|err| ProviderError::PauseNodeFailed(self.name.to_string(), err.into()))?
+            .map_err(|err| {
+                ProviderError::PauseNodeFailed(
+                    self.name.to_string(),
+                    anyhow!("error when pausing node: status {}: {}", err.0, err.1),
+                )
+            })?;
 
         Ok(())
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
-        // TODO: handle unwraps
         self.client
             .pod_exec(
                 &self.namespace_name,
@@ -198,8 +203,13 @@ where
                 vec!["echo", "resume", ">", "/tmp/zombiepipe"],
             )
             .await
-            .unwrap()
-            .unwrap();
+            .map_err(|err| ProviderError::ResumeNodeFailed(self.name.to_string(), err.into()))?
+            .map_err(|err| {
+                ProviderError::ResumeNodeFailed(
+                    self.name.to_string(),
+                    anyhow!("error when pausing node: status {}: {}", err.0, err.1),
+                )
+            })?;
 
         Ok(())
     }
@@ -209,7 +219,6 @@ where
             sleep(duration).await;
         }
 
-        // TODO: handle unwraps
         self.client
             .pod_exec(
                 &self.namespace_name,
@@ -217,8 +226,13 @@ where
                 vec!["echo", "restart", ">", "/tmp/zombiepipe"],
             )
             .await
-            .unwrap()
-            .unwrap();
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.to_string(), err.into()))?
+            .map_err(|err| {
+                ProviderError::RestartNodeFailed(
+                    self.name.to_string(),
+                    anyhow!("error when restarting node: status {}: {}", err.0, err.1),
+                )
+            })?;
 
         Ok(())
     }
@@ -231,7 +245,7 @@ where
         self.client
             .delete_pod(&self.namespace_name, &self.name)
             .await
-            .unwrap();
+            .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
 
         if let Some(namespace) = self.namespace.inner.upgrade() {
             namespace.write().await.nodes.remove(&self.name);

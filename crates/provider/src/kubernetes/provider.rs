@@ -111,13 +111,15 @@ where
                 BTreeMap::from([("foo".to_string(), "bar".to_string())]),
             )
             .await
-            .unwrap();
+            .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?;
 
         // store namespace manifest
         self.filesystem
             .write(
                 PathBuf::from_iter([&base_dir, &PathBuf::from("namespace_manifest.yaml")]),
-                serde_yaml::to_string(&manifest).unwrap(),
+                serde_yaml::to_string(&manifest).map_err(|err| {
+                    ProviderError::CreateNamespaceFailed(name.clone(), err.into())
+                })?,
             )
             .await?;
 
@@ -132,7 +134,7 @@ where
                 BTreeMap::from([("foo".to_string(), "bar".to_string())]),
             )
             .await
-            .unwrap();
+            .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?;
 
         // store config map manifest
         self.filesystem
@@ -141,7 +143,9 @@ where
                     &base_dir,
                     &PathBuf::from("zombie_wrapper_config_map_manifest.yaml"),
                 ]),
-                serde_yaml::to_string(&manifest).unwrap(),
+                serde_yaml::to_string(&manifest).map_err(|err| {
+                    ProviderError::CreateNamespaceFailed(name.clone(), err.into())
+                })?,
             )
             .await?;
 

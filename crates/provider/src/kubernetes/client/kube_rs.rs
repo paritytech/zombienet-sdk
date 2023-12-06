@@ -304,10 +304,7 @@ where
                                 details.causes.and_then(|causes| {
                                     causes.first().and_then(|cause| {
                                         cause.message.as_deref().and_then(|message| {
-                                            message
-                                                .parse::<i32>()
-                                                .ok()
-                                                .map(ExitStatus::from_raw)
+                                            message.parse::<i32>().ok().map(ExitStatus::from_raw)
                                         })
                                     })
                                 })

@@ -123,8 +123,11 @@ where
                         image: options.image.clone(),
                         image_pull_policy: Some("Always".to_string()),
                         command: Some(
-                            [vec!["/zombie-wrapper.sh".to_string(), options.program.clone()],
-                                options.args.clone()].concat()
+                            [
+                                vec!["/zombie-wrapper.sh".to_string(), options.program.clone()],
+                                options.args.clone(),
+                            ]
+                            .concat(),
                         ),
                         env: Some(
                             options

@@ -1182,7 +1182,7 @@ mod tests {
 
         let err = node.restart(None).await.unwrap_err();
 
-        //TODO: on mac the actual output is "Failed to kill node 'mynode': Operation not permitted (os error 1)"
+        // TODO: on mac the actual output is "Failed to kill node 'mynode': Operation not permitted (os error 1)"
         assert!(err.to_string().contains("Failed to kill node 'mynode'"))
     }
 
@@ -1295,7 +1295,7 @@ mod tests {
 
         let err = node.destroy().await.unwrap_err();
 
-        //TODO: on mac the actual output is "Failed to kill node 'mynode': Operation not permitted (os error 1)"
+        // TODO: on mac the actual output is "Failed to kill node 'mynode': Operation not permitted (os error 1)"
         assert!(err.to_string().contains("Failed to kill node 'mynode'"));
     }
 }

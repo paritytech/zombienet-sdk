@@ -156,7 +156,10 @@ impl<T: FileSystem> Network<T> {
             wait_ready: true,
         };
 
-        let global_files_to_inject = vec![TransferedFile::new(chain_spec_path, PathBuf::from(format!("/cfg/{}.json", relaychain.chain)))];
+        let global_files_to_inject = vec![TransferedFile::new(
+            chain_spec_path,
+            PathBuf::from(format!("/cfg/{}.json", relaychain.chain)),
+        )];
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
 
@@ -258,7 +261,10 @@ impl<T: FileSystem> Network<T> {
             ))
         };
 
-        let mut global_files_to_inject = vec![TransferedFile::new(relaychain_spec_path, PathBuf::from(format!("/cfg/{}.json", self.relay.chain)))];
+        let mut global_files_to_inject = vec![TransferedFile::new(
+            relaychain_spec_path,
+            PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
+        )];
 
         let para_chain_spec_local_path = if let Some(para_chain_spec_custom) = &options.chain_spec {
             Some(para_chain_spec_custom.clone())
@@ -273,7 +279,10 @@ impl<T: FileSystem> Network<T> {
         };
 
         if let Some(para_spec_path) = para_chain_spec_local_path {
-            global_files_to_inject.push(TransferedFile::new(para_spec_path, PathBuf::from(format!("/cfg/{}.json", para_id))));
+            global_files_to_inject.push(TransferedFile::new(
+                para_spec_path,
+                PathBuf::from(format!("/cfg/{}.json", para_id)),
+            ));
         }
 
         let node_spec =
@@ -340,7 +349,10 @@ impl<T: FileSystem> Network<T> {
         // get relaychain id
         let relay_chain_id = if let Some(custom_path) = custom_relaychain_spec {
             // use this file as relaychain spec
-            global_files_to_inject.push(TransferedFile::new(custom_path.clone(), PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain))));
+            global_files_to_inject.push(TransferedFile::new(
+                custom_path.clone(),
+                PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
+            ));
             let content = std::fs::read_to_string(custom_path)?;
             ChainSpec::chain_id_from_spec(&content)?
         } else {
@@ -350,7 +362,7 @@ impl<T: FileSystem> Network<T> {
                     scoped_fs.base_dir,
                     self.relaychain().chain_spec_path.to_string_lossy()
                 )),
-                PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain))
+                PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
             ));
             self.relay.chain_id.clone()
         };

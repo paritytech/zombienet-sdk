@@ -9,13 +9,12 @@ use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{
-    constants::NAMESPACE_PREFIX, types::ProviderCapabilities, DynNamespace, Provider, ProviderError,
-};
-
 use super::{
     client::KubernetesClient,
     namespace::{KubernetesNamespace, KubernetesNamespaceInner},
+};
+use crate::{
+    constants::NAMESPACE_PREFIX, types::ProviderCapabilities, DynNamespace, Provider, ProviderError,
 };
 
 #[derive(Clone)]

@@ -103,12 +103,16 @@ where
 
         // Created needed paths
         let ops_fut: Vec<_> = options
-            .created_paths.clone()
+            .created_paths
+            .clone()
             .into_iter()
             .map(|created_path| {
-                let full_remote_path = PathBuf::from(format!("{}{}", &base_dir.to_string_lossy(), &created_path.to_string_lossy()));
-                self.filesystem
-                    .create_dir_all(full_remote_path)
+                let full_remote_path = PathBuf::from(format!(
+                    "{}{}",
+                    &base_dir.to_string_lossy(),
+                    &created_path.to_string_lossy()
+                ));
+                self.filesystem.create_dir_all(full_remote_path)
             })
             .collect();
         try_join_all(ops_fut).await?;
@@ -118,11 +122,12 @@ where
             .injected_files
             .iter()
             .map(|file| {
-                let full_remote_path = PathBuf::from(format!("{}{}", &base_dir.to_string_lossy(), &file.remote_path.to_string_lossy()));
-                self.filesystem.copy(
-                    &file.local_path,
-                    full_remote_path,
-                )
+                let full_remote_path = PathBuf::from(format!(
+                    "{}{}",
+                    &base_dir.to_string_lossy(),
+                    &file.remote_path.to_string_lossy()
+                ));
+                self.filesystem.copy(&file.local_path, full_remote_path)
             })
             .collect();
         try_join_all(ops_fut).await?;

@@ -5,12 +5,11 @@ use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
 
+use super::{client::KubernetesClient, namespace::WeakKubernetesNamespace};
 use crate::{
     types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions},
     ProviderError, ProviderNode,
 };
-
-use super::{client::KubernetesClient, namespace::WeakKubernetesNamespace};
 
 #[derive(Clone)]
 pub(super) struct KubernetesNode<FS, KC>

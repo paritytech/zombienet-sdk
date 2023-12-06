@@ -18,17 +18,16 @@ use support::fs::FileSystem;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
+use super::{
+    client::KubernetesClient,
+    node::{KubernetesNode, KubernetesNodeInner},
+    provider::WeakKubernetesProvider,
+};
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     shared::helpers::{create_log_writing_task, create_stream_polling_task},
     types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions},
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
-};
-
-use super::{
-    client::KubernetesClient,
-    node::{KubernetesNode, KubernetesNodeInner},
-    provider::WeakKubernetesProvider,
 };
 
 #[derive(Clone)]
@@ -124,11 +123,8 @@ where
                         image: options.image.clone(),
                         image_pull_policy: Some("Always".to_string()),
                         command: Some(
-                            vec![
-                                vec!["/zombie-wrapper.sh".to_string(), options.program.clone()],
-                                options.args.clone(),
-                            ]
-                            .concat(),
+                            [vec!["/zombie-wrapper.sh".to_string(), options.program.clone()],
+                                options.args.clone()].concat()
                         ),
                         env: Some(
                             options
@@ -174,7 +170,7 @@ where
                                     );
                                 }
 
-                                if limits.len() > 0 {
+                                if !limits.is_empty() {
                                     Some(limits)
                                 } else {
                                     None
@@ -196,8 +192,11 @@ where
                                         Quantity(request_cpu.as_str().to_string()),
                                     );
                                 }
-                                if let Some(request_memory) =
-                                    options.resources.clone().expect("safe to unwrap").request_memory()
+                                if let Some(request_memory) = options
+                                    .resources
+                                    .clone()
+                                    .expect("safe to unwrap")
+                                    .request_memory()
                                 {
                                     request.insert(
                                         "memory".to_string(),
@@ -205,7 +204,7 @@ where
                                     );
                                 }
 
-                                if request.len() > 0 {
+                                if !request.is_empty() {
                                     Some(request)
                                 } else {
                                     None
@@ -267,7 +266,8 @@ where
 
         // create paths
         let ops_fut: Vec<_> = options
-            .created_paths.clone()
+            .created_paths
+            .clone()
             .into_iter()
             .map(|created_path| {
                 self.client.pod_exec(

@@ -79,7 +79,6 @@ impl FileSystem for InMemoryFileSystem {
     where
         P: AsRef<Path> + Send,
     {
-
         let path = path.as_ref();
         let os_path = path.as_os_str();
         match self.files.read().await.get(os_path) {

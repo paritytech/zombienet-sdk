@@ -68,7 +68,10 @@ impl Parachain {
             // add the spec to global files to inject
             let spec_name = chain_spec.chain_spec_name();
             let base = PathBuf::from_str(scoped_fs.base_dir)?;
-            para_files_to_inject.push(TransferedFile::new( base.join(format!("{}.json", spec_name)), PathBuf::from(format!("/cfg/{}.json", para.id))));
+            para_files_to_inject.push(TransferedFile::new(
+                base.join(format!("{}.json", spec_name)),
+                PathBuf::from(format!("/cfg/{}.json", para.id)),
+            ));
 
             let raw_path = chain_spec
                 .raw_path()
@@ -196,7 +199,10 @@ mod tests {
             base_dir: "/tmp/some",
         };
 
-        let files = vec![TransferedFile::new(PathBuf::from("/tmp/some"), PathBuf::from("/tmp/some"))];
+        let files = vec![TransferedFile::new(
+            PathBuf::from("/tmp/some"),
+            PathBuf::from("/tmp/some"),
+        )];
         let para = Parachain::from_spec(&para_spec, &files, &scoped_fs)
             .await
             .unwrap();

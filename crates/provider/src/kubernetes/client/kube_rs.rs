@@ -26,9 +26,8 @@ use tokio::{
 };
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
-use crate::types::ExecutionResult;
-
 use super::{Error, KubernetesClient, Result};
+use crate::types::ExecutionResult;
 
 #[derive(Clone)]
 pub struct KubeRsKubernetesClient<FS>
@@ -59,7 +58,7 @@ where
     {
         let params = &WatchParams::default().fields(&format!("metadata.name={}", name));
         let mut stream = api
-            .watch(&params, "0")
+            .watch(params, "0")
             .await
             .map_err(|err| {
                 Error::from(anyhow!(
@@ -308,7 +307,7 @@ where
                                             message
                                                 .parse::<i32>()
                                                 .ok()
-                                                .map(|code| ExitStatus::from_raw(code))
+                                                .map(ExitStatus::from_raw)
                                         })
                                     })
                                 })

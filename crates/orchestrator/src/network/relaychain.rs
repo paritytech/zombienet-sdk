@@ -19,4 +19,9 @@ impl Relaychain {
             nodes: Default::default(),
         }
     }
+
+    // Public API
+    pub fn chain(&self) -> &str {
+        &self.chain
+    }
 }

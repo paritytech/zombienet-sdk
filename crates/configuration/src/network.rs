@@ -209,7 +209,7 @@ states! {
 /// # Example:
 ///
 /// ```
-/// use configuration::NetworkConfigBuilder;
+/// use zombienet_configuration::NetworkConfigBuilder;
 ///
 /// let network_config = NetworkConfigBuilder::new()
 ///     .with_relaychain(|relaychain| {
@@ -373,8 +373,11 @@ impl NetworkConfigBuilder<WithRelaychain> {
     pub fn with_parachain(
         self,
         f: fn(
-            ParachainConfigBuilder<parachain::Initial>,
-        ) -> ParachainConfigBuilder<parachain::WithAtLeastOneCollator>,
+            ParachainConfigBuilder<parachain::states::Initial, parachain::states::Bootstrap>,
+        ) -> ParachainConfigBuilder<
+            parachain::states::WithAtLeastOneCollator,
+            parachain::states::Bootstrap,
+        >,
     ) -> Self {
         match f(ParachainConfigBuilder::new(self.validation_context.clone())).build() {
             Ok(parachain) => Self::transition(

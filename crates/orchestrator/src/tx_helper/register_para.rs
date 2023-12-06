@@ -5,13 +5,14 @@ use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::fs::FileSystem;
 
 use crate::{shared::types::RegisterParachainOptions, ScopedFilesystem};
+use tracing::{debug, info, trace};
 
 
 pub async fn register(
     options: RegisterParachainOptions,
     scoped_fs: &ScopedFilesystem<'_, impl FileSystem>,
 ) -> Result<(), anyhow::Error> {
-    println!("Registering parachain: {:?}", options);
+    debug!("Registering parachain: {:?}", options);
     // get the seed
     let sudo: Keypair;
     if let Some(possible_seed) = options.seed {
@@ -61,6 +62,6 @@ pub async fn register(
         .await?;
 
     let result = result.wait_for_in_block().await?;
-    println!("In block: {:#?}", result.block_hash());
+    debug!("In block: {:#?}", result.block_hash());
     Ok(())
 }

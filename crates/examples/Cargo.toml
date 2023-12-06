@@ -6,12 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-configuration = { path = "../configuration" }
-orchestrator = { path = "../orchestrator" }
-provider = { path = "../provider" }
-# TODO: we shouldn't need to pull from support, we need
-# to review the exports for neeeded types
-support = { path = "../support" }
+zombienet-sdk = { path = "../sdk" }
 tokio = { workspace = true }
 futures = { workspace = true }
 subxt = { workspace = true }
+tracing-subscriber = "0.3"
+serde_json = { workspace = true }
+anyhow = { workspace = true }

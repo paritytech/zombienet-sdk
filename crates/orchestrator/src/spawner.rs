@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use provider::{
     constants::LOCALHOST,
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
 use support::fs::FileSystem;
+use tracing::info;
 
 use crate::{
     generators,
@@ -124,9 +126,12 @@ where
                               * ZombieRole::Companion => todo!(), */
     };
 
-    println!("\n");
-    println!("🚀 {}, spawning.... with command:", node.name);
-    println!("{program} {}", args.join(" "));
+    info!(
+        "🚀 {}, spawning.... with command: {} {}",
+        node.name,
+        program,
+        args.join(" ")
+    );
 
     let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
         .args(args)
@@ -143,18 +148,22 @@ where
     node.rpc_port.drop_listener();
     node.prometheus_port.drop_listener();
 
-    let running_node = ctx.ns.spawn_node(spawn_ops).await?;
+    let running_node = ctx.ns.spawn_node(&spawn_ops).await.with_context(|| {
+        format!(
+            "Failed to spawn node: {} with opts: {:#?}",
+            node.name, spawn_ops
+        )
+    })?;
 
     let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
-    println!("🚀 {}, should be running now", node.name);
-    println!(
-        "🚀 {} : direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
+    info!("🚀 {}, should be running now", node.name);
+    info!(
+        "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
         node.name
     );
-    println!("🚀 {} : metrics link {prometheus_uri}", node.name);
-    println!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
-    println!("\n");
+    info!("🚀 {}: metrics link {prometheus_uri}", node.name);
+    info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,

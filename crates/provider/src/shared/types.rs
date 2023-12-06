@@ -15,6 +15,7 @@ pub struct ProviderCapabilities {
     pub has_resources: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct SpawnNodeOptions {
     pub name: String,
     pub image: Option<String>,

@@ -1,17 +1,20 @@
 [package]
-name = "provider"
-version = "0.1.0"
-edition = "2021"
+name = "zombienet-provider"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = true
+license.workspace = true
+repository.workspace = true
+description = "Zombienet provider, implement the logic to run the nodes in the native provider"
+keywords = ["zombienet", "provider", "native"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-support = { path = "../support" }
-configuration = { path = "../configuration" }
 async-trait = { workspace = true }
 futures = { workspace = true }
-#napi = { version="2.12.7", features=["async"]}
-#napi-derive = "2.12.5"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -32,3 +35,8 @@ k8s-openapi = { workspace = true, features = ["v1_27"] }
 tar = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+tracing = { workspace = true }
+
+# Zomebienet deps
+support = { workspace = true }
+configuration = { workspace = true }

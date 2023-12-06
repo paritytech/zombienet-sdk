@@ -93,7 +93,7 @@ pub trait ProviderNamespace {
 
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
-    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError>;
+    async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
 
@@ -102,7 +102,7 @@ pub trait ProviderNamespace {
     async fn static_setup(&self) -> Result<(), ProviderError>;
 }
 
-pub type DynNamespace = Arc<dyn ProviderNamespace>;
+pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 
 #[async_trait]
 pub trait ProviderNode {

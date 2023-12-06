@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/sdk",
   "crates/examples",
   "crates/support",
   "crates/configuration",
@@ -9,6 +10,14 @@ members = [
   "crates/test-runner",
   "crates/prom-metrics-parser",
 ]
+
+[workspace.package]
+authors = ["Parity Technologies <admin@parity.io>"]
+edition = "2021"
+version = "0.1.0-alpha.0"
+rust-version = "1.70.0"
+license = "Apache-2.0 OR GPL-3.0"
+repository = "https://github.com/paritytech/zombienet-sdk"
 
 [workspace.dependencies]
 thiserror = "1.0"
@@ -36,7 +45,17 @@ hex = "0.4"
 sp-core = "22.0.0"
 libp2p = { version = "0.52" }
 subxt = "0.32.0"
-subxt-signer = { version = "0.32.0", features = ["subxt"] }
+subxt-signer = { version = "0.32.0", features = ["subxt"]}
+tracing = "0.1.35"
+pjs-rs = "0.1.2"
 kube = "0.86"
 k8s-openapi = "0.20.0"
 tar = "0.4"
+
+# Zombienet workspace crates:
+support = { package = "zombienet-support", version = "0.1.0-alpha.0", path = "crates/support" }
+configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.0", path = "crates/configuration" }
+orchestrator = { package = "zombienet-orchestrator", version = "0.1.0-alpha.0", path = "crates/orchestrator" }
+provider = { package = "zombienet-provider", version = "0.1.0-alpha.0", path = "crates/provider" }
+prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.1.0-alpha.0", path = "crates/prom-metrics-parser" }
+sdk = { package = "zombienet-sdk", version = "0.1.0-alpha.0", path = "crates/sdk" }

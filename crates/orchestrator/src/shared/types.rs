@@ -27,13 +27,13 @@ impl NodeAccount {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct NodeAccounts {
     pub(crate) seed: String,
     pub(crate) accounts: Accounts,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct ParkedPort(pub(crate) Port, pub(crate) Arc<RwLock<Option<TcpListener>>>);
 
 impl ParkedPort {
@@ -75,3 +75,12 @@ pub struct ParachainGenesisArgs {
     pub validation_code: String,
     pub parachain: bool,
 }
+
+/// pjs-rs success [Result] type
+///
+/// Represent the possible states returned from a succefully call to pjs-rs
+///
+/// Ok(value) -> Deserialized return value into a [serde_json::Value]
+/// Err(msg) -> Execution of the script finish Ok, but the returned value
+/// can't be deserialize into a [serde_json::Value]
+pub type PjsResult = Result<serde_json::Value, String>;

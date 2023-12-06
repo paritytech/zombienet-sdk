@@ -11,6 +11,7 @@ use provider::{
 };
 use serde_json::json;
 use support::fs::FileSystem;
+use tracing::{debug, warn};
 
 use super::errors::GeneratorError;
 use crate::{
@@ -70,6 +71,10 @@ impl ChainSpec {
             command: None,
             context,
         }
+    }
+
+    pub(crate) fn chain_spec_name(&self) -> &str {
+        self.chain_spec_name.as_ref()
     }
 
     pub(crate) fn chain_name(&self) -> Option<&str> {
@@ -206,22 +211,7 @@ impl ChainSpec {
         T: FileSystem,
     {
         let (content, _) = self.read_spec(scoped_fs).await?;
-        let chain_spec_json: serde_json::Value = serde_json::from_str(&content).map_err(|_| {
-            GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
-        })?;
-        if let Some(chain_id) = chain_spec_json.get("id") {
-            if let Some(chain_id) = chain_id.as_str() {
-                Ok(chain_id.to_string())
-            } else {
-                Err(GeneratorError::ChainSpecGeneration(
-                    "id should be an string in the chain-spec, this is a bug".into(),
-                ))
-            }
-        } else {
-            Err(GeneratorError::ChainSpecGeneration(
-                "'id' should be a fields in the chain-spec of the relaychain".into(),
-            ))
-        }
+        ChainSpec::chain_id_from_spec(&content)
     }
 
     async fn read_spec<'a, T>(
@@ -332,22 +322,20 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &validators,
-                    KeyType::Session,
-                );
+                add_authorities(&pointer, &mut chain_spec_json, &validators, false);
             } else {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
-                let invulnerables: Vec<&NodeSpec> = para
-                    .collators
-                    .iter()
-                    .filter(|node| node.is_invulnerable)
-                    .collect();
-                add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
                 // await addParaCustom(chainSpecFullPathPlain, node);
             };
+
+            // Add nodes to collator
+            let invulnerables: Vec<&NodeSpec> = para
+                .collators
+                .iter()
+                .filter(|node| node.is_invulnerable)
+                .collect();
+
+            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
 
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
@@ -367,7 +355,7 @@ impl ChainSpec {
     pub async fn customize_relay<'a, T, U>(
         &self,
         relaychain: &RelaychainSpec,
-        _hrmp_channels: &[HrmpChannelConfig],
+        hrmp_channels: &[HrmpChannelConfig],
         para_artifacts: Vec<ParaGenesisConfig<U>>,
         scoped_fs: &ScopedFilesystem<'a, T>,
     ) -> Result<(), GeneratorError>
@@ -382,6 +370,18 @@ impl ChainSpec {
             })?;
 
         if let ChainSpecFormat::Plain = format {
+            // get the tokenDecimals property or set the default (12)
+            let token_decimals =
+                if let Some(val) = chain_spec_json.pointer("/properties/tokenDecimals") {
+                    let val = val.as_u64().unwrap_or(12);
+                    if val > u8::MAX as u64 {
+                        12
+                    } else {
+                        val as u8
+                    }
+                } else {
+                    12
+                };
             // get the config pointer
             let pointer = get_runtime_config_pointer(&chain_spec_json)
                 .map_err(GeneratorError::ChainSpecGeneration)?;
@@ -394,31 +394,17 @@ impl ChainSpec {
                 }
             }
 
-            // TODO: move to logger
-            // println!(
-            //     "{:#?}",
-            //     chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
-            // );
             // Clear authorities
             clear_authorities(&pointer, &mut chain_spec_json);
 
-            // TODO: move to logger
-            // println!(
-            //     "{:#?}",
-            //     chain_spec_json.pointer(format!("{}/session/keys", pointer).as_str())
-            // );
-
-            // TODO: add to logger
-            // println!("BALANCES");
-            // println!("{:#?}", chain_spec_json.pointer(format!("{}/balances",pointer).as_str()));
             // add balances
-            add_balances(&pointer, &mut chain_spec_json, &relaychain.nodes, 0);
-
-            // TODO: move to logger
-            // println!(
-            //     "{:#?}",
-            //     chain_spec_json.pointer(format!("{}/balances", pointer).as_str())
-            // );
+            add_balances(
+                &pointer,
+                &mut chain_spec_json,
+                &relaychain.nodes,
+                token_decimals,
+                0,
+            );
 
             // Get validators to add as authorities
             let validators: Vec<&NodeSpec> = relaychain
@@ -432,21 +418,14 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &validators,
-                    KeyType::Session,
-                );
+                add_authorities(&pointer, &mut chain_spec_json, &validators, true);
             }
 
             // staking && nominators
 
-            // TODO: add to logger
-            // println!("KEYS");
-            // println!("{:#?}", chain_spec_json.pointer(format!("{}/session/keys",pointer).as_str()));
-
-            // add_hrmp_channels
+            if !hrmp_channels.is_empty() {
+                add_hrmp_channels(&pointer, &mut chain_spec_json, hrmp_channels);
+            }
 
             // paras
             for para_genesis_config in para_artifacts.iter() {
@@ -515,6 +494,27 @@ impl ChainSpec {
 
         Ok(())
     }
+
+    /// Get the chain_is from the json content of a chain-spec file.
+    pub fn chain_id_from_spec(spec_content: &str) -> Result<String, GeneratorError> {
+        let chain_spec_json: serde_json::Value =
+            serde_json::from_str(spec_content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+        if let Some(chain_id) = chain_spec_json.get("id") {
+            if let Some(chain_id) = chain_id.as_str() {
+                Ok(chain_id.to_string())
+            } else {
+                Err(GeneratorError::ChainSpecGeneration(
+                    "id should be an string in the chain-spec, this is a bug".into(),
+                ))
+            }
+        } else {
+            Err(GeneratorError::ChainSpecGeneration(
+                "'id' should be a fields in the chain-spec of the relaychain".into(),
+            ))
+        }
+    }
 }
 
 type GenesisNodeKey = (String, String, HashMap<String, String>);
@@ -570,10 +570,6 @@ where
         let wasm = scoped_fs
             .read_to_string(para_genesis_config.wasm_path.as_ref())
             .await?;
-        // const new_para = [
-        //     parseInt(para_id),
-        //     [readDataFile(head), readDataFile(wasm), parachain],
-        //   ];
 
         paras_vec.push(json!([
             para_genesis_config.id,
@@ -590,6 +586,8 @@ fn get_runtime_config_pointer(chain_spec_json: &serde_json::Value) -> Result<Str
     // runtime_genesis_config is no longer in ChainSpec after rococo runtime rework (refer to: https://github.com/paritytech/polkadot-sdk/pull/1256)
     // ChainSpec may contain a RuntimeGenesisConfigPatch
     let pointers = [
+        "/genesis/runtimeGenesis/config",
+        "/genesis/runtimeGenesis/patch",
         "/genesis/runtimeGenesisConfigPatch",
         "/genesis/runtime/runtime_genesis_config",
         "/genesis/runtime",
@@ -664,38 +662,37 @@ fn add_balances(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &Vec<NodeSpec>,
+    token_decimals: u8,
     staking_min: u128,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let Some(balances) = val.pointer("/balances/balances") else {
             // should be a info log
-            println!("NO 'balances' key in runtime config, skipping...");
+            warn!("NO 'balances' key in runtime config, skipping...");
             return;
         };
 
         // create a balance map
-        // SAFETY: balances is always an array in chain-spec with items [k,v]
-        let mut balances_map: HashMap<String, u128> =
-            serde_json::from_value::<Vec<(String, u128)>>(balances.clone())
-                .unwrap()
-                .iter()
-                .fold(HashMap::new(), |mut memo, balance| {
-                    memo.insert(balance.0.clone(), balance.1);
-                    memo
-                });
-
+        let mut balances_map = generate_balance_map(balances);
         for node in nodes {
             if node.initial_balance.eq(&0) {
                 continue;
             };
 
             // TODO: handle error here and check the `accounts.accounts` design
-            let account = node.accounts.accounts.get("sr").unwrap();
-            balances_map.insert(
-                account.address.clone(),
-                std::cmp::max(node.initial_balance, staking_min),
-            );
+            let balance = std::cmp::max(node.initial_balance, staking_min);
+            for k in ["sr", "sr_stash"] {
+                let account = node.accounts.accounts.get(k).unwrap();
+                balances_map.insert(account.address.clone(), balance);
+            }
         }
+
+        // ensure zombie account (//Zombie) have funds
+        // we will use for internal usage (e.g new validators)
+        balances_map.insert(
+            "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
+            1000 * 10_u128.pow(token_decimals as u32),
+        );
 
         // convert the map and store again
         let new_balances: Vec<(&String, &u128)> =
@@ -707,8 +704,9 @@ fn add_balances(
     }
 }
 
-fn get_node_keys(node: &NodeSpec) -> GenesisNodeKey {
+fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
     let sr_account = node.accounts.accounts.get("sr").unwrap();
+    let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
     let ed_account = node.accounts.accounts.get("ed").unwrap();
     let ec_account = node.accounts.accounts.get("ec").unwrap();
     let mut keys = HashMap::new();
@@ -729,16 +727,24 @@ fn get_node_keys(node: &NodeSpec) -> GenesisNodeKey {
     keys.insert("grandpa".to_string(), ed_account.address.clone());
     keys.insert("beefy".to_string(), ec_account.address.clone());
 
-    (sr_account.address.clone(), sr_account.address.clone(), keys)
+    let account_to_use = if use_stash { sr_stash } else { sr_account };
+    (
+        account_to_use.address.clone(),
+        account_to_use.address.clone(),
+        keys,
+    )
 }
 fn add_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &[&NodeSpec],
-    _key_type: KeyType,
+    use_stash: bool,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let keys: Vec<GenesisNodeKey> = nodes.iter().map(|node| get_node_keys(node)).collect();
+        let keys: Vec<GenesisNodeKey> = nodes
+            .iter()
+            .map(|node| get_node_keys(node, use_stash))
+            .collect();
         val["session"]["keys"] = json!(keys);
     } else {
         unreachable!("pointer to runtime config should be valid!")
@@ -747,10 +753,14 @@ fn add_authorities(
 fn add_hrmp_channels(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    _hrmp_channels: &[HrmpChannelConfig],
+    hrmp_channels: &[HrmpChannelConfig],
 ) {
-    if let Some(_val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        todo!()
+    if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
+        if let Some(preopen_hrmp_channels) = val.pointer_mut("/hrmp/preopenHrmpChannels") {
+            *preopen_hrmp_channels = json!(hrmp_channels);
+        } else {
+            warn!("⚠️  'hrmp/preopenHrmpChannels' key not present in runtime config.");
+        }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }
@@ -819,16 +829,197 @@ fn add_collator_selection(
                     .clone()
             })
             .collect();
+
         // collatorSelection.invulnerables
-        if let Some(invulnerables) = val.pointer_mut("collatorSelection/invulnerables") {
+        if let Some(invulnerables) = val.pointer_mut("/collatorSelection/invulnerables") {
             *invulnerables = json!(keys);
         } else {
             // TODO: add a nice warning here.
+            debug!("⚠️  'invulnerables' not present in spec, will not be customized");
         }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }
 }
 
+// Helpers
+fn generate_balance_map(balances: &serde_json::Value) -> HashMap<String, u128> {
+    // SAFETY: balances is always an array in chain-spec with items [k,v]
+    let balances_map: HashMap<String, u128> =
+        serde_json::from_value::<Vec<(String, u128)>>(balances.to_owned())
+            .unwrap()
+            .iter()
+            .fold(HashMap::new(), |mut memo, balance| {
+                memo.insert(balance.0.clone(), balance.1);
+                memo
+            });
+    balances_map
+}
+
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use std::fs;
+
+    use configuration::HrmpChannelConfigBuilder;
+
+    use super::*;
+    use crate::{generators, shared::types::NodeAccounts};
+
+    const ROCOCO_LOCAL_PLAIN_TESTING: &str = "./testing/rococo-local-plain.json";
+
+    fn chain_spec_test(file: &str) -> serde_json::Value {
+        let content = fs::read_to_string(file).unwrap();
+        serde_json::from_str(&content).unwrap()
+    }
+
+    #[test]
+    fn add_balances_works() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let nodes = vec![node];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain
+            .pointer("/genesis/runtime/balances/balances")
+            .unwrap();
+
+        let balances_map = generate_balance_map(new_balances);
+
+        // sr and sr_stash keys exists
+        let sr = nodes[0].accounts.accounts.get("sr").unwrap();
+        let sr_stash = nodes[0].accounts.accounts.get("sr_stash").unwrap();
+        assert_eq!(balances_map.get(&sr.address).unwrap(), &initial_balance);
+        assert_eq!(
+            balances_map.get(&sr_stash.address).unwrap(),
+            &initial_balance
+        );
+    }
+
+    #[test]
+    fn add_balances_ensure_zombie_account() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+
+        let balances = spec_plain
+            .pointer("/genesis/runtime/balances/balances")
+            .unwrap();
+        let balances_map = generate_balance_map(balances);
+
+        let nodes: Vec<NodeSpec> = vec![];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain
+            .pointer("/genesis/runtime/balances/balances")
+            .unwrap();
+
+        let new_balances_map = generate_balance_map(new_balances);
+
+        // sr and sr_stash keys exists
+        assert!(new_balances_map.contains_key("5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8"));
+        assert_eq!(new_balances_map.len(), balances_map.len() + 1);
+    }
+
+    #[test]
+    fn add_balances_spec_without_balances() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+
+        {
+            let balances = spec_plain.pointer_mut("/genesis/runtime/balances").unwrap();
+            *balances = json!(serde_json::Value::Null);
+        }
+
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let nodes = vec![node];
+        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+
+        let new_balances = spec_plain.pointer("/genesis/runtime/balances/balances");
+
+        // assert 'balances' is not created
+        assert_eq!(new_balances, None);
+    }
+
+    #[test]
+    fn adding_hrmp_channels_works() {
+        let mut spec_plain = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+
+        {
+            let current_hrmp_channels = spec_plain
+                .pointer("/genesis/runtime/hrmp/preopenHrmpChannels")
+                .unwrap();
+            // assert should be empty
+            assert_eq!(current_hrmp_channels, &json!([]));
+        }
+
+        let para_100_101 = HrmpChannelConfigBuilder::new()
+            .with_sender(100)
+            .with_recipient(101)
+            .build();
+        let para_101_100 = HrmpChannelConfigBuilder::new()
+            .with_sender(101)
+            .with_recipient(100)
+            .build();
+        let channels = vec![para_100_101, para_101_100];
+
+        add_hrmp_channels("/genesis/runtime", &mut spec_plain, &channels);
+        let new_hrmp_channels = spec_plain
+            .pointer("/genesis/runtime/hrmp/preopenHrmpChannels")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert_eq!(new_hrmp_channels.len(), 2);
+        assert_eq!(new_hrmp_channels.first().unwrap()["sender"], 100);
+        assert_eq!(new_hrmp_channels.first().unwrap()["recipient"], 101);
+    }
+
+    #[test]
+    fn adding_hrmp_channels_to_an_spec_without_channels() {
+        let mut spec_plain = chain_spec_test("./testing/rococo-local-plain.json");
+
+        {
+            let hrmp = spec_plain.pointer_mut("/genesis/runtime/hrmp").unwrap();
+            *hrmp = json!(serde_json::Value::Null);
+        }
+
+        let para_100_101 = HrmpChannelConfigBuilder::new()
+            .with_sender(100)
+            .with_recipient(101)
+            .build();
+        let para_101_100 = HrmpChannelConfigBuilder::new()
+            .with_sender(101)
+            .with_recipient(100)
+            .build();
+        let channels = vec![para_100_101, para_101_100];
+
+        add_hrmp_channels("/genesis/runtime", &mut spec_plain, &channels);
+        let new_hrmp_channels = spec_plain.pointer("/genesis/runtime/hrmp/preopenHrmpChannels");
+
+        // assert 'preopenHrmpChannels' is not created
+        assert_eq!(new_hrmp_channels, None);
+    }
+}

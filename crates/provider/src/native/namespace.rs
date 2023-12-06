@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use futures::{future::try_join_all, try_join};
 use support::{fs::FileSystem, process::ProcessManager};
 use tokio::sync::RwLock;
+use tracing::trace;
 use uuid::Uuid;
 
 use super::{
@@ -78,11 +79,11 @@ where
             .collect()
     }
 
-    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
+    async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         let mut inner = self.inner.write().await;
 
         if inner.nodes.contains_key(&options.name) {
-            return Err(ProviderError::DuplicatedNodeName(options.name));
+            return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
 
         // create node directories and filepaths
@@ -139,9 +140,9 @@ where
         // create node structure holding state
         let node = NativeNode {
             name: options.name.clone(),
-            program: options.program,
-            args: options.args,
-            env: options.env,
+            program: options.program.clone(),
+            args: options.args.clone(),
+            env: options.env.clone(),
             base_dir,
             config_dir,
             data_dir,
@@ -161,7 +162,7 @@ where
         };
 
         // store node inside namespace
-        inner.nodes.insert(options.name, node.clone());
+        inner.nodes.insert(options.name.clone(), node.clone());
 
         Ok(Arc::new(node))
     }
@@ -183,10 +184,13 @@ where
             local_output_path,
         } in options.commands
         {
-            // TODO: move to logger
-            // println!("{:#?}, {:#?}", command, args);
-            // println!("{:#?}", self.base_dir.to_string_lossy());
-            // println!("{:#?}", local_output_path.as_os_str());
+            trace!(
+                "🏗  building file {:?} in path {} with command {} {}",
+                local_output_path.as_os_str(),
+                self.base_dir.to_string_lossy(),
+                program,
+                args.join(" ")
+            );
             let local_output_full_path = format!(
                 "{}{}{}",
                 self.base_dir.to_string_lossy(),
@@ -278,7 +282,7 @@ mod tests {
 
         let node = namespace
             .spawn_node(
-                SpawnNodeOptions::new("mynode", "/path/to/my/node_binary")
+                &SpawnNodeOptions::new("mynode", "/path/to/my/node_binary")
                     .args(vec![
                         "-flag1",
                         "--flag2",
@@ -442,12 +446,12 @@ mod tests {
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await
             .unwrap();
 
         let result = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await;
 
         // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
@@ -471,7 +475,7 @@ mod tests {
         pm.spawn_should_error(std::io::ErrorKind::TimedOut).await;
 
         let result = namespace
-            .spawn_node(SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
+            .spawn_node(&SpawnNodeOptions::new("mynode", "./testing/dummy_node"))
             .await;
 
         // we must match here because Arc<dyn Node + Send + Sync> doesn't implements Debug, so unwrap_err is not an option
@@ -571,11 +575,11 @@ mod tests {
 
         // spawn 2 dummy nodes to populate namespace
         namespace
-            .spawn_node(SpawnNodeOptions::new("mynode1", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode1", "/path/to/my/node_binary"))
             .await
             .unwrap();
         namespace
-            .spawn_node(SpawnNodeOptions::new("mynode2", "/path/to/my/node_binary"))
+            .spawn_node(&SpawnNodeOptions::new("mynode2", "/path/to/my/node_binary"))
             .await
             .unwrap();
 

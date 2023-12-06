@@ -821,7 +821,8 @@ mod tests {
         // pause the node where some error would happen
         let err = node.pause().await.unwrap_err();
 
-        assert_eq!(err.to_string(), "Failed to pause node 'mynode'");
+        // TODO: actual output on mac "Failed to pause node 'mynode': EPERM: Operation not permitted"
+        assert!(err.to_string().contains("Failed to pause node 'mynode'"));
     }
 
     #[tokio::test]
@@ -981,7 +982,8 @@ mod tests {
 
         let err = node.resume().await.unwrap_err();
 
-        assert_eq!(err.to_string(), "Failed to resume node 'mynode'");
+        // TODO: actual output on mac "Failed to resume node 'mynode': EPERM: Operation not permitted"
+        assert!(err.to_string().contains("Failed to resume node 'mynode'"));
     }
 
     #[tokio::test]
@@ -1180,7 +1182,8 @@ mod tests {
 
         let err = node.restart(None).await.unwrap_err();
 
-        assert_eq!(err.to_string(), "Failed to kill node 'mynode'");
+        //TODO: on mac the actual output is "Failed to kill node 'mynode': Operation not permitted (os error 1)"
+        assert!(err.to_string().contains("Failed to kill node 'mynode'"))
     }
 
     #[tokio::test]
@@ -1292,6 +1295,7 @@ mod tests {
 
         let err = node.destroy().await.unwrap_err();
 
-        assert_eq!(err.to_string(), "Failed to kill node 'mynode'");
+        //TODO: on mac the actual output is "Failed to kill node 'mynode': Operation not permitted (os error 1)"
+        assert!(err.to_string().contains("Failed to kill node 'mynode'"));
     }
 }

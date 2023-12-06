@@ -88,11 +88,11 @@ where
             .collect()
     }
 
-    async fn spawn_node(&self, options: SpawnNodeOptions) -> Result<DynNode, ProviderError> {
+    async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         let mut inner = self.inner.write().await;
 
         if inner.nodes.contains_key(&options.name) {
-            return Err(ProviderError::DuplicatedNodeName(options.name));
+            return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
 
         // create node directories and filepaths
@@ -121,7 +121,7 @@ where
                     hostname: Some(options.name.to_string()),
                     containers: vec![Container {
                         name: options.name.clone(),
-                        image: options.image,
+                        image: options.image.clone(),
                         image_pull_policy: Some("Always".to_string()),
                         command: Some(
                             vec![
@@ -197,7 +197,7 @@ where
                                     );
                                 }
                                 if let Some(request_memory) =
-                                    options.resources.expect("safe to unwrap").request_memory()
+                                    options.resources.clone().expect("safe to unwrap").request_memory()
                                 {
                                     request.insert(
                                         "memory".to_string(),
@@ -267,7 +267,7 @@ where
 
         // create paths
         let ops_fut: Vec<_> = options
-            .created_paths
+            .created_paths.clone()
             .into_iter()
             .map(|created_path| {
                 self.client.pod_exec(
@@ -353,8 +353,8 @@ where
         let node = KubernetesNode {
             name: options.name.clone(),
             namespace_name: self.name.clone(),
-            program: options.program,
-            args: options.args,
+            program: options.program.clone(),
+            args: options.args.clone(),
             base_dir,
             config_dir,
             data_dir,
@@ -372,7 +372,7 @@ where
         };
 
         // store node inside namespace
-        inner.nodes.insert(options.name, node.clone());
+        inner.nodes.insert(options.name.clone(), node.clone());
 
         Ok(Arc::new(node))
     }
@@ -381,7 +381,7 @@ where
         // run dummy command in new pod
         let temp_node = self
             .spawn_node(
-                SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
+                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
                     .injected_files(options.injected_files)
                     .image(options.image.expect(
                         "image should be present when generating files with kubernetes provider",

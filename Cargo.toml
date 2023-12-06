@@ -48,7 +48,7 @@ subxt = "0.32.0"
 subxt-signer = { version = "0.32.0", features = ["subxt"]}
 tracing = "0.1.35"
 pjs-rs = "0.1.2"
-kube = "0.86"
+kube = "0.87.1"
 k8s-openapi = "0.20.0"
 tar = "0.4"
 

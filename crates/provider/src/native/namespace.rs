@@ -103,11 +103,12 @@ where
 
         // Created needed paths
         let ops_fut: Vec<_> = options
-            .created_paths
+            .created_paths.clone()
             .into_iter()
             .map(|created_path| {
+                let full_remote_path = PathBuf::from(format!("{}{}", &base_dir.to_string_lossy(), &created_path.to_string_lossy()));
                 self.filesystem
-                    .create_dir_all(PathBuf::from_iter([&base_dir, &created_path]))
+                    .create_dir_all(full_remote_path)
             })
             .collect();
         try_join_all(ops_fut).await?;
@@ -117,9 +118,10 @@ where
             .injected_files
             .iter()
             .map(|file| {
+                let full_remote_path = PathBuf::from(format!("{}{}", &base_dir.to_string_lossy(), &file.remote_path.to_string_lossy()));
                 self.filesystem.copy(
                     &file.local_path,
-                    PathBuf::from_iter([&base_dir, &file.remote_path]),
+                    full_remote_path,
                 )
             })
             .collect();
@@ -171,7 +173,7 @@ where
         // we spawn a node doing nothing but looping so we can execute our commands
         let temp_node = self
             .spawn_node(
-                SpawnNodeOptions::new(format!("temp_{}", Uuid::new_v4()), "bash".to_string())
+                &SpawnNodeOptions::new(format!("temp_{}", Uuid::new_v4()), "bash".to_string())
                     .args(vec!["-c", "while :; do sleep 1; done"])
                     .injected_files(options.injected_files),
             )

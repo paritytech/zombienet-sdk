@@ -30,7 +30,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 nix = { workspace = true, features = ["signal"] }
-kube = { workspace = true, features = ["ws"] }
+kube = { workspace = true, features = ["ws", "runtime"] }
 k8s-openapi = { workspace = true, features = ["v1_27"] }
 tar = { workspace = true }
 sha2 = { workspace = true }

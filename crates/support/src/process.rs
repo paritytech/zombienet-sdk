@@ -12,6 +12,7 @@ use tokio::io::AsyncRead;
 pub mod fake;
 pub mod os;
 
+#[derive(Debug)]
 pub struct Command {
     program: OsString,
     args: Vec<OsString>,

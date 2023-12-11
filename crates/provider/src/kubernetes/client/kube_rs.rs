@@ -333,7 +333,6 @@ where
         }
     }
 
-    // TODO: rework error to have more explicit message instead of just passing the underlying error?
     async fn copy_to_pod<P>(
         &self,
         namespace: &str,
@@ -540,7 +539,7 @@ where
             Error::from(anyhow!(
                 "error when opening file {file_name} when copying from pod {name}: {err}",
             ))
-        })?; // TODO: use tokio fs instead of std
+        })?;
         let mut hasher = Sha256::new();
         let mut buffer = [0; 1024];
 

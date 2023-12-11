@@ -1,9 +1,9 @@
-use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{net::IpAddr, path::PathBuf, time::Duration};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
 use support::fs::FileSystem;
-use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
+use tokio::time::sleep;
 
 use super::{client::KubernetesClient, namespace::WeakKubernetesNamespace};
 use crate::{
@@ -27,15 +27,9 @@ where
     pub(super) data_dir: PathBuf,
     pub(super) scripts_dir: PathBuf,
     pub(super) log_path: PathBuf,
-    pub(super) inner: Arc<RwLock<KubernetesNodeInner>>,
     pub(super) filesystem: FS,
     pub(super) client: KC,
     pub(super) namespace: WeakKubernetesNamespace<FS, KC>,
-}
-
-pub(super) struct KubernetesNodeInner {
-    pub(super) log_reading_handle: JoinHandle<()>,
-    pub(super) log_writing_handle: JoinHandle<()>,
 }
 
 #[async_trait]
@@ -237,10 +231,6 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        let inner = self.inner.write().await;
-
-        inner.log_writing_handle.abort();
-        inner.log_reading_handle.abort();
         self.client
             .delete_pod(&self.namespace_name, &self.name)
             .await

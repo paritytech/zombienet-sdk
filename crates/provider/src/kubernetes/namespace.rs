@@ -15,17 +15,16 @@ use k8s_openapi::{
     apimachinery::pkg::api::resource::Quantity,
 };
 use support::fs::FileSystem;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::{
     client::KubernetesClient,
-    node::{KubernetesNode, KubernetesNodeInner},
+    node::KubernetesNode,
     provider::WeakKubernetesProvider,
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-    shared::helpers::{create_log_writing_task, create_stream_polling_task},
     types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions},
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -334,24 +333,6 @@ where
                 )
             })?;
 
-        // create log stream
-        let logs_stream = self
-            .client
-            .create_pod_logs_stream(&self.name, &options.name)
-            .await
-            .map_err(|err| {
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to create log stream for pod {}", options.name),
-                    err.into(),
-                )
-            })?;
-
-        // handle log writing
-        let (logs_tx, rx) = mpsc::channel(10);
-        let log_reading_handle = create_stream_polling_task(logs_stream, logs_tx);
-        let log_writing_handle =
-            create_log_writing_task(rx, self.filesystem.clone(), log_path.clone());
-
         // create node structure holding state
         let node = KubernetesNode {
             name: options.name.clone(),
@@ -368,10 +349,6 @@ where
             namespace: WeakKubernetesNamespace {
                 inner: Arc::downgrade(&self.inner),
             },
-            inner: Arc::new(RwLock::new(KubernetesNodeInner {
-                log_reading_handle,
-                log_writing_handle,
-            })),
         };
 
         // store node inside namespace

@@ -18,11 +18,7 @@ use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use super::{
-    client::KubernetesClient,
-    node::KubernetesNode,
-    provider::WeakKubernetesProvider,
-};
+use super::{client::KubernetesClient, node::KubernetesNode, provider::WeakKubernetesProvider};
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions},

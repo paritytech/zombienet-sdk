@@ -1,4 +1,4 @@
-use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{net::IpAddr, path::{PathBuf, Path}, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -82,6 +82,11 @@ where
         &self.log_path
     }
 
+    fn path_in_node(&self, file: &Path) -> PathBuf {
+        let full_path = format!("{}/{}", self.base_dir.to_string_lossy(), file.to_string_lossy());
+        PathBuf::from(full_path)
+    }
+
     async fn ip(&self) -> Result<IpAddr, ProviderError> {
         Ok(LOCALHOST)
     }
@@ -106,12 +111,14 @@ where
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
+        // REMOVE
+        // let args: Vec<String> = options.args.into_iter().map(|s| s.replace("{{NODE_BASE_PATH}}", self.base_dir().to_string_lossy().as_ref())).collect();
         let result = self
             .process_manager
             .output(
                 Command::new(options.program.clone())
                     .args(options.args)
-                    .envs(options.env),
+                    .envs(options.env)
             )
             .await
             .map_err(|err| ProviderError::RunCommandError(options.program, err.into()))?;

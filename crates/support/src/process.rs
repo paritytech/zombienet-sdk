@@ -3,7 +3,7 @@ use std::{
     fmt::Debug,
     io,
     process::Stdio,
-    sync::Arc,
+    sync::Arc, path::{PathBuf, Path},
 };
 
 use async_trait::async_trait;
@@ -21,6 +21,7 @@ pub struct Command {
     stdout: Option<Stdio>,
     stderr: Option<Stdio>,
     kill_on_drop: bool,
+    current_dir: Option<PathBuf>
 }
 
 impl Command {
@@ -36,6 +37,7 @@ impl Command {
             stdout: None,
             stderr: None,
             kill_on_drop: false,
+            current_dir: None
         }
     }
 
@@ -90,6 +92,11 @@ impl Command {
 
     pub fn kill_on_drop(mut self, kill_on_drop: bool) -> Self {
         self.kill_on_drop = kill_on_drop;
+        self
+    }
+
+    pub fn current_dir(mut self, current_dir: impl AsRef<Path>) -> Self {
+        self.current_dir = Some(current_dir.as_ref().into());
         self
     }
 }

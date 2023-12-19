@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions},
+    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions, ProviderCapabilities},
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -31,6 +31,7 @@ where
 {
     pub(super) name: String,
     pub(super) base_dir: PathBuf,
+    pub(super) capabilities: ProviderCapabilities,
     pub(super) inner: Arc<RwLock<NativeNamespaceInner<FS, PM>>>,
     pub(super) filesystem: FS,
     pub(super) process_manager: PM,
@@ -66,6 +67,10 @@ where
 
     fn base_dir(&self) -> &PathBuf {
         &self.base_dir
+    }
+
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {
@@ -175,10 +180,16 @@ where
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
+        let node_name = if let Some(name) = options.temp_name {
+            name
+        } else {
+            format!("temp-{}", Uuid::new_v4())
+        };
+
         // we spawn a node doing nothing but looping so we can execute our commands
         let temp_node = self
             .spawn_node(
-                &SpawnNodeOptions::new(format!("temp_{}", Uuid::new_v4()), "bash".to_string())
+                &SpawnNodeOptions::new(node_name, "bash".to_string())
                     .args(vec!["-c", "while :; do sleep 1; done"])
                     .injected_files(options.injected_files),
             )
@@ -521,7 +532,7 @@ mod tests {
                 GenerateFileCommand::new("sh", "/myfile2")
                     .args(vec!["-c", "echo -n $MY_CONTENT"])
                     .env(vec![("MY_CONTENT", "My file 2")]),
-            ]))
+            ], None))
             .await
             .unwrap();
 

@@ -13,6 +13,8 @@ pub type ExecutionResult = Result<String, (ExitStatus, String)>;
 pub struct ProviderCapabilities {
     pub requires_image: bool,
     pub has_resources: bool,
+    // Used in native to prefix filepath with fullpath
+    pub prefix_with_full_path: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -152,17 +154,32 @@ pub struct GenerateFilesOptions {
     pub commands: Vec<GenerateFileCommand>,
     pub image: Option<String>,
     pub injected_files: Vec<TransferedFile>,
+    // Allow to control the name of the node used to create the files.
+    pub temp_name: Option<String>,
 }
 
 impl GenerateFilesOptions {
-    pub fn new<I>(commands: I) -> Self
+    pub fn new<I>(commands: I, image: Option<String>) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
         Self {
             commands: commands.into_iter().collect(),
-            image: None,
             injected_files: vec![],
+            image,
+            temp_name: None,
+        }
+    }
+
+    pub fn with_files<I>(commands: I, image: Option<String>, injected_files: &[TransferedFile]) -> Self
+    where
+        I: IntoIterator<Item = GenerateFileCommand>,
+    {
+        Self {
+            commands: commands.into_iter().collect(),
+            injected_files: injected_files.into(),
+            image,
+            temp_name: None
         }
     }
 
@@ -179,6 +196,11 @@ impl GenerateFilesOptions {
         I: IntoIterator<Item = TransferedFile>,
     {
         self.injected_files = injected_files.into_iter().collect();
+        self
+    }
+
+    pub fn temp_name(mut self, name: impl Into<String>) -> Self {
+        self.temp_name = Some(name.into());
         self
     }
 }

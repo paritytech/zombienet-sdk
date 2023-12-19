@@ -1,4 +1,4 @@
-use std::{net::IpAddr, path::PathBuf, time::Duration};
+use std::{net::IpAddr, path::{PathBuf, Path}, time::Duration};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -68,6 +68,12 @@ where
 
     fn log_path(&self) -> &PathBuf {
         &self.log_path
+    }
+
+    fn path_in_node(&self, file: &Path) -> PathBuf {
+        // here is just a noop op since we will receive the path
+        // for the file inside the pod
+        PathBuf::from(file)
     }
 
     async fn ip(&self) -> Result<IpAddr, ProviderError> {

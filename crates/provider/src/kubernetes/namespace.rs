@@ -16,12 +16,13 @@ use k8s_openapi::{
 };
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
+use tracing::{debug, trace};
 use uuid::Uuid;
 
 use super::{client::KubernetesClient, node::KubernetesNode, provider::WeakKubernetesProvider};
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions},
+    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions, ProviderCapabilities},
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -33,6 +34,7 @@ where
 {
     pub(super) name: String,
     pub(super) base_dir: PathBuf,
+    pub(super) capabilities: ProviderCapabilities,
     pub(super) inner: Arc<RwLock<KubernetesNamespaceInner<FS, KC>>>,
     pub(super) filesystem: FS,
     pub(super) client: KC,
@@ -71,6 +73,10 @@ where
         &self.base_dir
     }
 
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
+    }
+
     async fn nodes(&self) -> HashMap<String, DynNode> {
         self.inner
             .read()
@@ -83,6 +89,7 @@ where
     }
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
+        trace!("spawn option {:?}", options);
         let mut inner = self.inner.write().await;
 
         if inner.nodes.contains_key(&options.name) {
@@ -116,6 +123,7 @@ where
                     containers: vec![Container {
                         name: options.name.clone(),
                         image: options.image.clone(),
+                        // TODO: we should allow to set by config
                         image_pull_policy: Some("Always".to_string()),
                         command: Some(
                             [
@@ -135,12 +143,20 @@ where
                                 })
                                 .collect(),
                         ),
-                        volume_mounts: Some(vec![VolumeMount {
-                            name: "zombie-wrapper-volume".to_string(),
-                            mount_path: "/zombie-wrapper.sh".to_string(),
-                            sub_path: Some("zombie-wrapper.sh".to_string()),
-                            ..Default::default()
-                        }]),
+                        volume_mounts: Some(vec![
+                            VolumeMount {
+                                name: "zombie-wrapper-volume".to_string(),
+                                mount_path: "/zombie-wrapper.sh".to_string(),
+                                sub_path: Some("zombie-wrapper.sh".to_string()),
+                                ..Default::default()
+                            },
+                            VolumeMount {
+                                name: "cfg".to_string(),
+                                mount_path: "/cfg".to_string(),
+                                read_only: Some(false),
+                                ..Default::default()
+                            }
+                        ]),
                         resources: Some(ResourceRequirements {
                             limits: if options.resources.is_some() {
                                 let mut limits = BTreeMap::new();
@@ -279,12 +295,20 @@ where
             })
             .collect();
 
-        try_join_all(ops_fut).await.map_err(|err| {
-            ProviderError::NodeSpawningFailed(
-                format!("failed to create paths for pod {}", options.name),
-                err.into(),
-            )
-        })?;
+        for op in ops_fut {
+            _ = op.await.map_err(|err|{
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to create paths for pod {}", options.name),
+                    err.into(),
+                )
+            })?;
+        }
+        // try_join_all(ops_fut).await.map_err(|err| {
+        //     ProviderError::NodeSpawningFailed(
+        //         format!("failed to create paths for pod {}", options.name),
+        //         err.into(),
+        //     )
+        // })?;
 
         // copy injected files
         let ops_fut: Vec<_> = options
@@ -354,10 +378,17 @@ where
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
+        debug!("options {:#?}", options);
+        let node_name = if let Some(name) = options.temp_name {
+            name
+        } else {
+            format!("temp-{}", Uuid::new_v4())
+        };
+
         // run dummy command in new pod
         let temp_node = self
             .spawn_node(
-                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
+                &SpawnNodeOptions::new(node_name, "cat".to_string())
                     .injected_files(options.injected_files)
                     .image(options.image.expect(
                         "image should be present when generating files with kubernetes provider",
@@ -365,6 +396,7 @@ where
             )
             .await?;
 
+        debug!("temp ready!");
         for GenerateFileCommand {
             program,
             args,

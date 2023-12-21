@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀🚀🚀🚀 network deployed");
 
     let client = network
-        .get_node("alice")?
+        .get_node("collator01")?
         .client::<subxt::PolkadotConfig>()
         .await?;
     let mut blocks = client.blocks().subscribe_finalized().await?.take(3);

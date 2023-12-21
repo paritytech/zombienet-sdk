@@ -33,7 +33,7 @@ pub struct RelaychainConfig {
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<NodeConfig>,
-    genesis_overrides: Option<serde_json::Value>,
+    runtime_genesis_patch: Option<serde_json::Value>,
     command: Option<Command>,
 }
 
@@ -89,8 +89,8 @@ impl RelaychainConfig {
     }
 
     /// The genesis overrides as a JSON value.
-    pub fn genesis_overrides(&self) -> Option<&serde_json::Value> {
-        self.genesis_overrides.as_ref()
+    pub fn runtime_genesis_patch(&self) -> Option<&serde_json::Value> {
+        self.runtime_genesis_patch.as_ref()
     }
 
     /// The nodes of the relay chain.
@@ -133,7 +133,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 command: None,
                 random_nominators_count: None,
                 max_nominations: None,
-                genesis_overrides: None,
+                runtime_genesis_patch: None,
                 nodes: vec![],
             },
             validation_context: Default::default(),
@@ -338,7 +338,7 @@ impl RelaychainConfigBuilder<WithChain> {
     pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
         Self::transition(
             RelaychainConfig {
-                genesis_overrides: Some(genesis_overrides.into()),
+                runtime_genesis_patch: Some(genesis_overrides.into()),
                 ..self.config
             },
             self.validation_context,

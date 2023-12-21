@@ -306,7 +306,7 @@ impl ChainSpec {
             if let Some(overrides) = &para.genesis_overrides {
                 if let Some(genesis) = chain_spec_json.pointer_mut(&format!("{}/genesis", pointer))
                 {
-                    override_genesis(genesis, overrides);
+                    merge(genesis, overrides);
                 }
             }
 
@@ -389,10 +389,9 @@ impl ChainSpec {
                 .map_err(GeneratorError::ChainSpecGeneration)?;
 
             // make genesis overrides first.
-            if let Some(overrides) = &relaychain.genesis_overrides {
-                if let Some(genesis) = chain_spec_json.pointer_mut(&format!("{}/genesis", pointer))
-                {
-                    override_genesis(genesis, overrides);
+            if let Some(overrides) = &relaychain.runtime_genesis_patch {
+                if let Some(patch_section) = chain_spec_json.pointer_mut(&pointer) {
+                    merge(patch_section, overrides);
                 }
             }
 
@@ -604,10 +603,10 @@ fn get_runtime_config_pointer(chain_spec_json: &serde_json::Value) -> Result<Str
     Err("Can not find the runtime pointer".into())
 }
 
-// Override `genesis` key if present
-fn override_genesis(genesis: &mut serde_json::Value, overrides: &serde_json::Value) {
+// Merge `patch_section` with `overrides`.
+fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     if let (Some(genesis_obj), Some(overrides_obj)) =
-        (genesis.as_object_mut(), overrides.as_object())
+        (patch_section.as_object_mut(), overrides.as_object())
     {
         for overrides_key in overrides_obj.keys() {
             // we only want to override keys present in the genesis object
@@ -617,7 +616,7 @@ fn override_genesis(genesis: &mut serde_json::Value, overrides: &serde_json::Val
                     (serde_json::Value::Object(_), Some(overrides_value))
                         if overrides_value.is_object() =>
                     {
-                        override_genesis(genesis_value, overrides_value);
+                        merge(genesis_value, overrides_value);
                     },
                     // override if genesis value not an object
                     (_, Some(overrides_value)) => {

@@ -5,7 +5,8 @@ pub use orchestrator::{
     PjsResult,
 };
 use provider::NativeProvider;
-use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+pub use support::fs::local::LocalFileSystem;
+use support::process::os::OsProcessManager;
 
 #[async_trait]
 pub trait NetworkConfigExt {

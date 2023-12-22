@@ -6,6 +6,8 @@ macro_rules! create_add_options {
             pub image: Option<Image>,
             /// Command to run the node
             pub command: Option<Command>,
+            /// Subcommand for the node
+            pub subcommand: Option<Command>,
             /// Arguments to pass to the node
             pub args: Vec<Arg>,
             /// Env vars to set

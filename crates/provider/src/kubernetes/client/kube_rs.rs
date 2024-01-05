@@ -360,30 +360,6 @@ where
             ))
         })?;
 
-        let contents_str = String::from_utf8_lossy(contents.as_slice());
-
-        // let ap = AttachParams::default().stdin(true).stderr(false);
-        // let mut p = pods
-        //     .exec(name, vec!["tee", &to.as_ref().to_string_lossy(), ">", "/dev/null"], &ap)
-        //     .await.map_err(|err| {
-        //         Error::from(anyhow!(
-        //             "error  {}  when trying to copy file {} to pod {name}: {err}",
-        //             file_name.to_string_lossy(),
-        //             to.as_ref().to_string_lossy()
-        //         ))
-        //     })?;
-        // println!("1111");
-        // p.stdin().unwrap().write_all(&contents_str.as_bytes()).await.map_err(|err| {
-        //     Error::from(anyhow!(
-        //         "Error  {}  when trying to copy file {} to pod {name}: {err}",
-        //         file_name.to_string_lossy(),
-        //         to.as_ref().to_string_lossy()
-        //     ))
-        // })?;
-        // println!("2222");
-
-
-
         // create archive header
         let mut header = tar::Header::new_gnu();
         header.set_path(&file_name).map_err(|err| {
@@ -399,8 +375,7 @@ where
         // build archive from file contents
         let mut archive = tar::Builder::new(Vec::new());
         archive
-            //.append(&header, &mut contents.as_slice())
-            .append(&header, contents_str.as_bytes())
+            .append(&header, &mut contents.as_slice())
             .map_err(|err| {
                 Error::from(anyhow!(
                     "error while appending content of {} to archive when trying to copy file to pod {name}: {err}",
@@ -416,9 +391,6 @@ where
             ))
         })?;
 
-        println!("size tar: {}", data.len());
-        // tokio::fs::write("/tmp/a.tar", &data).await.expect("should work");
-
         // execute tar command
         let dir_dest = to.as_ref().parent().ok_or(
             Error::from(anyhow!(
@@ -426,11 +398,6 @@ where
                 to.as_ref().to_string_lossy()
             )))?.to_string_lossy();
 
-        //println!("1");
-        //println!("header: {:#?}", header);
-        //println!("len: {}", contents.len());
-        println!("dest: {:#?}", dir_dest);
-        //println!("contents:\n {contents_str}");
         let mut tar_process = pods
             .exec(
                 name,
@@ -454,46 +421,12 @@ where
             .await
             .map_err(|err| Error::from(anyhow!("error when writing file {} content as archive to tar process when trying to copy file to pod {name}: {err}",file_name.to_string_lossy())))?;
 
-        tokio::time::sleep(Duration::from_secs(5)).await;
-
         // wait for process to finish
         tar_process
             .join()
             .await
             .map_err(|err| Error::from(anyhow!("error while trying to join the tar process when copying file {} to pod {name}: {err}", file_name.to_string_lossy())))?;
 
-
-
-
-        println!("executing sync {}", &to.as_ref().to_string_lossy());
-        let _r = pods.exec(
-            name,
-            vec!["sync", &to.as_ref().to_string_lossy()],
-            &AttachParams::default()
-        ).await
-        .map_err(|err| {
-            Error::from(anyhow!(
-                "SYNC error while executing tar when trying to copy file {} to pod {name}: {err}",
-                file_name.to_string_lossy()
-            ))
-        })?
-        .join().await.map_err(|err| {
-            Error::from(anyhow!(
-                "SYNC (join) error while executing tar when trying to copy file {} to pod {name}: {err}",
-                file_name.to_string_lossy()
-            ))
-        })?;
-
-
-        // let file_path = format!(
-        //     "{}/{}",
-        //     if to.as_ref().to_string_lossy() == "/" {
-        //         "".to_string()
-        //     } else {
-        //         to.as_ref().to_string_lossy().to_string()
-        //     },
-        //     file_name.to_string_lossy()
-        // );
 
         // TODO: check this logic since `to` should be the path of the pod
         let file_path = to.as_ref().to_string_lossy().to_string();

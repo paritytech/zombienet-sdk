@@ -155,6 +155,18 @@ where
                                 mount_path: "/cfg".to_string(),
                                 read_only: Some(false),
                                 ..Default::default()
+                            },
+                            VolumeMount {
+                                name: "data".to_string(),
+                                mount_path: "/data".to_string(),
+                                read_only: Some(false),
+                                ..Default::default()
+                            },
+                            VolumeMount {
+                                name: "relay-data".to_string(),
+                                mount_path: "/relay-data".to_string(),
+                                read_only: Some(false),
+                                ..Default::default()
                             }
                         ]),
                         resources: Some(ResourceRequirements {
@@ -295,20 +307,12 @@ where
             })
             .collect();
 
-        for op in ops_fut {
-            _ = op.await.map_err(|err|{
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to create paths for pod {}", options.name),
-                    err.into(),
-                )
-            })?;
-        }
-        // try_join_all(ops_fut).await.map_err(|err| {
-        //     ProviderError::NodeSpawningFailed(
-        //         format!("failed to create paths for pod {}", options.name),
-        //         err.into(),
-        //     )
-        // })?;
+        try_join_all(ops_fut).await.map_err(|err| {
+            ProviderError::NodeSpawningFailed(
+                format!("failed to create paths for pod {}", options.name),
+                err.into(),
+            )
+        })?;
 
         // copy injected files
         let ops_fut: Vec<_> = options

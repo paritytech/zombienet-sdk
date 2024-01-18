@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)]
 use std::io;
 
 use axum::{

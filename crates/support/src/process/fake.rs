@@ -205,7 +205,7 @@ impl FakeProcessManager {
             .await
             .processes
             .values()
-            .map(Arc::clone)
+            .cloned()
             .collect()
     }
 

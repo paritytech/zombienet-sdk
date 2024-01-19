@@ -22,7 +22,10 @@ use uuid::Uuid;
 use super::{client::KubernetesClient, node::KubernetesNode, provider::WeakKubernetesProvider};
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions, ProviderCapabilities},
+    types::{
+        GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+        SpawnNodeOptions,
+    },
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -167,7 +170,7 @@ where
                                 mount_path: "/relay-data".to_string(),
                                 read_only: Some(false),
                                 ..Default::default()
-                            }
+                            },
                         ]),
                         resources: Some(ResourceRequirements {
                             limits: if options.resources.is_some() {

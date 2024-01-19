@@ -19,7 +19,10 @@ use super::{
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
-    types::{GenerateFileCommand, GenerateFilesOptions, RunCommandOptions, SpawnNodeOptions, ProviderCapabilities},
+    types::{
+        GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+        SpawnNodeOptions,
+    },
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -527,12 +530,15 @@ mod tests {
         let namespace = provider.create_namespace().await.unwrap();
 
         namespace
-            .generate_files(GenerateFilesOptions::new(vec![
-                GenerateFileCommand::new("echo", "/myfile1").args(vec!["My file 1"]),
-                GenerateFileCommand::new("sh", "/myfile2")
-                    .args(vec!["-c", "echo -n $MY_CONTENT"])
-                    .env(vec![("MY_CONTENT", "My file 2")]),
-            ], None))
+            .generate_files(GenerateFilesOptions::new(
+                vec![
+                    GenerateFileCommand::new("echo", "/myfile1").args(vec!["My file 1"]),
+                    GenerateFileCommand::new("sh", "/myfile2")
+                        .args(vec!["-c", "echo -n $MY_CONTENT"])
+                        .env(vec![("MY_CONTENT", "My file 2")]),
+                ],
+                None,
+            ))
             .await
             .unwrap();
 

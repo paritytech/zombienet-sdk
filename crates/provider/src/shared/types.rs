@@ -171,7 +171,11 @@ impl GenerateFilesOptions {
         }
     }
 
-    pub fn with_files<I>(commands: I, image: Option<String>, injected_files: &[TransferedFile]) -> Self
+    pub fn with_files<I>(
+        commands: I,
+        image: Option<String>,
+        injected_files: &[TransferedFile],
+    ) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
@@ -179,7 +183,7 @@ impl GenerateFilesOptions {
             commands: commands.into_iter().collect(),
             injected_files: injected_files.into(),
             image,
-            temp_name: None
+            temp_name: None,
         }
     }
 

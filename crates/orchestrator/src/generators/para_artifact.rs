@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 use provider::{
+    constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
-    DynNamespace, constants::NODE_CONFIG_DIR,
+    DynNamespace,
 };
 use support::fs::FileSystem;
+use uuid::Uuid;
 
 use super::errors::GeneratorError;
 use crate::ScopedFilesystem;
@@ -29,7 +30,7 @@ pub struct ParaArtifact {
     build_option: ParaArtifactBuildOption,
     artifact_path: Option<PathBuf>,
     // image to use for building the para artifact
-    image: Option<String>
+    image: Option<String>,
 }
 
 impl ParaArtifact {
@@ -41,7 +42,7 @@ impl ParaArtifact {
             artifact_type,
             build_option,
             artifact_path: None,
-            image: None
+            image: None,
         }
     }
 
@@ -81,13 +82,26 @@ impl ParaArtifact {
 
                 let files_to_inject = if let Some(chain_spec_path) = chain_spec_path {
                     // TODO: we should get the full path from the scoped filesystem
-                    let chain_spec_path_local = format!("{}/{}", ns.base_dir().to_string_lossy(), chain_spec_path.as_ref().to_string_lossy());
+                    let chain_spec_path_local = format!(
+                        "{}/{}",
+                        ns.base_dir().to_string_lossy(),
+                        chain_spec_path.as_ref().to_string_lossy()
+                    );
                     // Remote path to be injected
-                    let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, chain_spec_path.as_ref().to_string_lossy());
+                    let chain_spec_path_in_pod = format!(
+                        "{}/{}",
+                        NODE_CONFIG_DIR,
+                        chain_spec_path.as_ref().to_string_lossy()
+                    );
                     // Path in the context of the node, this can be different in the context of the providers (e.g native)
                     let chain_spec_path_in_args = if ns.capabilities().prefix_with_full_path {
                         // In native
-                        format!("{}/{}{}", ns.base_dir().to_string_lossy(), &temp_name, &chain_spec_path_in_pod)
+                        format!(
+                            "{}/{}{}",
+                            ns.base_dir().to_string_lossy(),
+                            &temp_name,
+                            &chain_spec_path_in_pod
+                        )
                     } else {
                         chain_spec_path_in_pod.clone()
                     };
@@ -95,7 +109,10 @@ impl ParaArtifact {
                     args.push("--chain".into());
                     args.push(chain_spec_path_in_args);
 
-                    vec![TransferedFile::new(chain_spec_path_local, chain_spec_path_in_pod)]
+                    vec![TransferedFile::new(
+                        chain_spec_path_local,
+                        chain_spec_path_in_pod,
+                    )]
                 } else {
                     vec![]
                 };
@@ -103,8 +120,11 @@ impl ParaArtifact {
                 let artifact_path_ref = artifact_path.as_ref();
                 let generate_command =
                     GenerateFileCommand::new(cmd.as_str(), artifact_path_ref).args(args);
-                let options = GenerateFilesOptions::with_files(vec![generate_command], self.image.clone(),
-                &files_to_inject)
+                let options = GenerateFilesOptions::with_files(
+                    vec![generate_command],
+                    self.image.clone(),
+                    &files_to_inject,
+                )
                 .temp_name(temp_name);
                 ns.generate_files(options).await?;
                 self.artifact_path = Some(artifact_path_ref.into());

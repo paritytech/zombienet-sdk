@@ -1,4 +1,8 @@
-use std::{net::IpAddr, path::{PathBuf, Path}, time::Duration};
+use std::{
+    net::IpAddr,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::anyhow;
 use async_trait::async_trait;

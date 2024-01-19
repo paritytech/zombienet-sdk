@@ -2,8 +2,9 @@ use std::{
     ffi::{OsStr, OsString},
     fmt::Debug,
     io,
+    path::{Path, PathBuf},
     process::Stdio,
-    sync::Arc, path::{PathBuf, Path},
+    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -21,7 +22,7 @@ pub struct Command {
     stdout: Option<Stdio>,
     stderr: Option<Stdio>,
     kill_on_drop: bool,
-    current_dir: Option<PathBuf>
+    current_dir: Option<PathBuf>,
 }
 
 impl Command {
@@ -37,7 +38,7 @@ impl Command {
             stdout: None,
             stderr: None,
             kill_on_drop: false,
-            current_dir: None
+            current_dir: None,
         }
     }
 

@@ -1,4 +1,9 @@
-use std::{net::IpAddr, path::{PathBuf, Path}, sync::Arc, time::Duration};
+use std::{
+    net::IpAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -83,7 +88,11 @@ where
     }
 
     fn path_in_node(&self, file: &Path) -> PathBuf {
-        let full_path = format!("{}/{}", self.base_dir.to_string_lossy(), file.to_string_lossy());
+        let full_path = format!(
+            "{}/{}",
+            self.base_dir.to_string_lossy(),
+            file.to_string_lossy()
+        );
         PathBuf::from(full_path)
     }
 
@@ -118,7 +127,7 @@ where
             .output(
                 Command::new(options.program.clone())
                     .args(options.args)
-                    .envs(options.env)
+                    .envs(options.env),
             )
             .await
             .map_err(|err| ProviderError::RunCommandError(options.program, err.into()))?;

@@ -230,7 +230,7 @@ pub fn generate_for_node(
 
     if *is_validator && !args.contains(&Arg::Flag("--validator".into())) {
         tmp_args.push("--validator".into());
-        //tmp_args.push("--insecure-validator-i-know-what-i-do".into());
+        // tmp_args.push("--insecure-validator-i-know-what-i-do".into());
     }
 
     if !bootnodes_addresses.is_empty() {

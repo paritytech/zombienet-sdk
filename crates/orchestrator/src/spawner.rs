@@ -97,7 +97,11 @@ where
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
 
     let (cfg_path, data_path, relay_data_path) = if ctx.ns.capabilities().requires_image {
-        (NODE_CONFIG_DIR.into(), NODE_DATA_DIR.into(), NODE_RELAY_DATA_DIR.into())
+        (
+            NODE_CONFIG_DIR.into(),
+            NODE_DATA_DIR.into(),
+            NODE_RELAY_DATA_DIR.into(),
+        )
     } else {
         let cfg_path = format!("{}/{NODE_CONFIG_DIR}", &base_dir);
         let data_path = format!("{}/{NODE_DATA_DIR}", &base_dir);
@@ -177,7 +181,11 @@ where
     );
     info!("🚀 {}: metrics link {prometheus_uri}", node.name);
     if ctx.ns.capabilities().requires_image {
-        info!("📓 logs cmd: kubectl -n {} logs {}", ctx.ns.name(), node.name);
+        info!(
+            "📓 logs cmd: kubectl -n {} logs {}",
+            ctx.ns.name(),
+            node.name
+        );
     } else {
         info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
     }

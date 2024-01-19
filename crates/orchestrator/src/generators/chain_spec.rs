@@ -6,8 +6,9 @@ use std::{
 use anyhow::anyhow;
 use configuration::{types::AssetLocation, HrmpChannelConfig};
 use provider::{
+    constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
-    DynNamespace, ProviderError, constants::NODE_CONFIG_DIR,
+    DynNamespace, ProviderError,
 };
 use serde_json::json;
 use support::fs::FileSystem;
@@ -173,7 +174,11 @@ impl ChainSpec {
             return Ok(());
         };
         // build raw
-        let temp_name = format!("temp-build-raw-{}-{}", self.chain_spec_name, rand::random::<u8>());
+        let temp_name = format!(
+            "temp-build-raw-{}-{}",
+            self.chain_spec_name,
+            rand::random::<u8>()
+        );
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
         let cmd = self
             .command
@@ -189,13 +194,26 @@ impl ChainSpec {
                 ))?;
 
         // TODO: we should get the full path from the scoped filesystem
-        let chain_spec_path_local = format!("{}/{}", ns.base_dir().to_string_lossy(), maybe_plain_path.display().to_string());
+        let chain_spec_path_local = format!(
+            "{}/{}",
+            ns.base_dir().to_string_lossy(),
+            maybe_plain_path.display().to_string()
+        );
         // Remote path to be injected
-        let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display().to_string());
+        let chain_spec_path_in_pod = format!(
+            "{}/{}",
+            NODE_CONFIG_DIR,
+            maybe_plain_path.display().to_string()
+        );
         // Path in the context of the node, this can be different in the context of the providers (e.g native)
         let chain_spec_path_in_args = if ns.capabilities().prefix_with_full_path {
             // In native
-            format!("{}/{}{}",ns.base_dir().to_string_lossy(), &temp_name, &chain_spec_path_in_pod)
+            format!(
+                "{}/{}{}",
+                ns.base_dir().to_string_lossy(),
+                &temp_name,
+                &chain_spec_path_in_pod
+            )
         } else {
             chain_spec_path_in_pod.clone()
         };
@@ -213,7 +231,11 @@ impl ChainSpec {
         let options = GenerateFilesOptions::with_files(
             vec![generate_command],
             self.image.clone(),
-        &[TransferedFile::new(chain_spec_path_local, chain_spec_path_in_pod)])
+            &[TransferedFile::new(
+                chain_spec_path_local,
+                chain_spec_path_in_pod,
+            )],
+        )
         .temp_name(temp_name);
         debug!("calling generate_files!");
         ns.generate_files(options).await?;
@@ -348,7 +370,10 @@ impl ChainSpec {
                 .is_some()
             {
                 add_authorities(&pointer, &mut chain_spec_json, &validators, false);
-            } else if chain_spec_json.pointer(&format!("{}/aura", pointer)).is_some() {
+            } else if chain_spec_json
+                .pointer(&format!("{}/aura", pointer))
+                .is_some()
+            {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
                 // await addParaCustom(chainSpecFullPathPlain, node);
             } else {

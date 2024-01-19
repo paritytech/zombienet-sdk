@@ -3,7 +3,8 @@ use std::{
     fmt::Debug,
     os::unix::process::ExitStatusExt,
     path::Path,
-    process::{ExitStatus, Stdio}, time::Duration,
+    process::{ExitStatus, Stdio},
+    time::Duration,
 };
 
 use anyhow::anyhow;
@@ -383,7 +384,6 @@ where
                 ))
             })?;
 
-
         let data = archive.into_inner().map_err(|err| {
             Error::from(anyhow!(
                 "error while unwraping archive when trying to copy file {} to pod {name}: {err}",
@@ -392,11 +392,14 @@ where
         })?;
 
         // execute tar command
-        let dir_dest = to.as_ref().parent().ok_or(
-            Error::from(anyhow!(
+        let dir_dest = to
+            .as_ref()
+            .parent()
+            .ok_or(Error::from(anyhow!(
                 "error while unwraping destination parent (to: {})",
                 to.as_ref().to_string_lossy()
-            )))?.to_string_lossy();
+            )))?
+            .to_string_lossy();
 
         let mut tar_process = pods
             .exec(
@@ -426,7 +429,6 @@ where
             .join()
             .await
             .map_err(|err| Error::from(anyhow!("error while trying to join the tar process when copying file {} to pod {name}: {err}", file_name.to_string_lossy())))?;
-
 
         // TODO: check this logic since `to` should be the path of the pod
         let file_path = to.as_ref().to_string_lossy().to_string();

@@ -1,4 +1,4 @@
-# https://rust-lang.github.io/rustfmt/?version=v1.5.2
+# https://rust-lang.github.io/rustfmt/?version=v1.7.0
 
 # general
 indent_style = "Block"

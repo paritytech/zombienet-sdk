@@ -2,7 +2,13 @@ mod kubernetes;
 mod native;
 pub mod shared;
 
-use std::{collections::HashMap, net::IpAddr, path::{PathBuf, Path}, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::IpAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use shared::types::{

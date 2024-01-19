@@ -4,9 +4,7 @@ pub use orchestrator::{
     errors::OrchestratorError, network::Network, AddCollatorOptions, AddNodeOptions, Orchestrator,
     PjsResult,
 };
-use provider::ProviderError;
-use provider::NativeProvider;
-use provider::{KubernetesProvider, KubeRsKubernetesClient};
+use provider::{KubeRsKubernetesClient, KubernetesProvider, NativeProvider, ProviderError};
 use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
 
 #[async_trait]
@@ -36,9 +34,9 @@ impl NetworkConfigExt for NetworkConfig {
     }
 
     async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
-        let client = KubeRsKubernetesClient::new(LocalFileSystem {}).await.map_err(|e| {
-            ProviderError::CreateClientFailed(String::from("Kubernetes"),e.into())
-        })?;
+        let client = KubeRsKubernetesClient::new(LocalFileSystem {})
+            .await
+            .map_err(|e| ProviderError::CreateClientFailed(String::from("Kubernetes"), e.into()))?;
         let provider = KubernetesProvider::new(LocalFileSystem {}, client);
         let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
         orchestrator.spawn(self).await

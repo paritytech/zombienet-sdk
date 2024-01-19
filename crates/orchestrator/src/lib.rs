@@ -103,7 +103,7 @@ where
             let chain_spec_raw_path = para
                 .build_chain_spec(&relay_chain_id, &ns, &scoped_fs)
                 .await?;
-                debug!("parachain chain-spec built!");
+            debug!("parachain chain-spec built!");
 
             // TODO: this need to be abstracted in a single call to generate_files.
             scoped_fs.create_dir(para.id.to_string()).await?;
@@ -116,7 +116,7 @@ where
                     &scoped_fs,
                 )
                 .await?;
-                debug!("parachain genesis state built!");
+            debug!("parachain genesis state built!");
             para.genesis_wasm
                 .build(
                     chain_spec_raw_path,
@@ -125,7 +125,7 @@ where
                     &scoped_fs,
                 )
                 .await?;
-                debug!("parachain genesis wasm built!");
+            debug!("parachain genesis wasm built!");
         }
 
         // Gather the parachains to register in genesis and the ones to register with extrinsic

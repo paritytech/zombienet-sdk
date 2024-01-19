@@ -87,7 +87,10 @@ impl ParachainSpec {
         };
 
         // TODO: internally we use image as String
-        let main_image = if let Some(image) = config.default_image().or(config.collators().first().and_then(|node| node.image())) {
+        let main_image = if let Some(image) = config
+            .default_image()
+            .or(config.collators().first().and_then(|node| node.image()))
+        {
             Some(image.as_str().to_string())
         } else {
             None
@@ -114,7 +117,11 @@ impl ParachainSpec {
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.
-                Some(chain_spec_builder.command(main_cmd.as_str()).image(main_image.clone()))
+                Some(
+                    chain_spec_builder
+                        .command(main_cmd.as_str())
+                        .image(main_image.clone()),
+                )
             }
         } else {
             None
@@ -153,7 +160,8 @@ impl ParachainSpec {
             ParaArtifact::new(
                 ParaArtifactType::State,
                 ParaArtifactBuildOption::Command(cmd.as_str().into()),
-            ).image(main_image.clone())
+            )
+            .image(main_image.clone())
         };
 
         let genesis_wasm = if let Some(path) = config.genesis_wasm_path() {
@@ -170,7 +178,8 @@ impl ParachainSpec {
             ParaArtifact::new(
                 ParaArtifactType::Wasm,
                 ParaArtifactBuildOption::Command(cmd.as_str().into()),
-            ).image(main_image.clone())
+            )
+            .image(main_image.clone())
         };
 
         let para_spec = ParachainSpec {

@@ -64,9 +64,11 @@ impl RelaychainSpec {
                     .to_string(),
             ))?;
 
-
         // TODO: internally we use image as String
-        let main_image = if let Some(image) = config.default_image().or(config.nodes().first().and_then(|node| node.image())) {
+        let main_image = if let Some(image) = config
+            .default_image()
+            .or(config.nodes().first().and_then(|node| node.image()))
+        {
             Some(image.as_str().to_string())
         } else {
             None
@@ -79,7 +81,9 @@ impl RelaychainSpec {
         } else {
             // TODO: Do we need to add the posibility to set the command to use?
             // Currently (v1) is possible but when is set is set to the default command.
-            chain_spec.command(main_cmd.as_str()).image(main_image.clone())
+            chain_spec
+                .command(main_cmd.as_str())
+                .image(main_image.clone())
         };
 
         // build the `node_specs`

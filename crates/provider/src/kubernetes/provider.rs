@@ -72,6 +72,84 @@ where
         self.tmp_dir = tmp_dir.into();
         self
     }
+
+    async fn create_base_dir(&self, name: &str) -> Result<PathBuf, ProviderError> {
+        let base_dir = PathBuf::from_iter([&self.tmp_dir, &PathBuf::from(&name)]);
+        self.filesystem.create_dir(&base_dir).await?;
+
+        Ok(base_dir)
+    }
+
+    async fn setup_namespace(&self, name: &str, base_dir: &PathBuf) -> Result<(), ProviderError> {
+        let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
+
+        let manifest = self
+            .client
+            .create_namespace(&name, labels)
+            .await
+            .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))?;
+
+        let serialized_manifest = serde_yaml::to_string(&manifest)
+            .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))?;
+
+        let dest_path = PathBuf::from_iter([base_dir, &PathBuf::from("namespace_manifest.yaml")]);
+
+        self.filesystem
+            .write(dest_path, serialized_manifest)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn setup_wrapper_config_map(
+        &self,
+        name: &str,
+        base_dir: &PathBuf,
+    ) -> Result<(), ProviderError> {
+        let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
+
+        let manifest = self
+            .client
+            .create_config_map_from_file(
+                &name,
+                "zombie-wrapper",
+                "zombie-wrapper.sh",
+                include_str!("./zombie-wrapper.sh"),
+                labels,
+            )
+            .await
+            .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))?;
+
+        let serializer_manifest = serde_yaml::to_string(&manifest)
+            .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))?;
+
+        let dest_path = PathBuf::from_iter([
+            &base_dir,
+            &PathBuf::from("zombie_wrapper_config_map_manifest.yaml"),
+        ]);
+
+        self.filesystem
+            .write(dest_path, serializer_manifest)
+            .await?;
+
+        Ok(())
+    }
+
+    fn build_namespace(&self, name: &str, base_dir: PathBuf) -> KubernetesNamespace<FS, KC> {
+        KubernetesNamespace {
+            name: name.to_string(),
+            base_dir,
+            capabilities: self.capabilities.clone(),
+            filesystem: self.filesystem.clone(),
+            client: self.client.clone(),
+            provider: WeakKubernetesProvider {
+                inner: Arc::downgrade(&self.inner),
+            },
+            inner: Arc::new(RwLock::new(KubernetesNamespaceInner {
+                nodes: Default::default(),
+            })),
+        }
+    }
 }
 
 #[async_trait]
@@ -96,73 +174,15 @@ where
     }
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
-        let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
         let mut inner = self.inner.write().await;
+        let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
 
-        // create namespace base dir
-        let base_dir = PathBuf::from_iter([&self.tmp_dir, &PathBuf::from(&name)]);
-        self.filesystem.create_dir(&base_dir).await?;
+        let base_dir = self.create_base_dir(&name).await?;
 
-        // create k8s namespace
-        let manifest = self
-            .client
-            .create_namespace(
-                &name,
-                BTreeMap::from([("foo".to_string(), "bar".to_string())]),
-            )
-            .await
-            .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?;
+        self.setup_namespace(&name, &base_dir).await?;
+        self.setup_wrapper_config_map(&name, &base_dir).await?;
 
-        // store namespace manifest
-        self.filesystem
-            .write(
-                PathBuf::from_iter([&base_dir, &PathBuf::from("namespace_manifest.yaml")]),
-                serde_yaml::to_string(&manifest).map_err(|err| {
-                    ProviderError::CreateNamespaceFailed(name.clone(), err.into())
-                })?,
-            )
-            .await?;
-
-        // create a config map embedding the zombie wrapper script inside the namespace
-        let manifest = self
-            .client
-            .create_config_map_from_file(
-                &name,
-                "zombie-wrapper",
-                "zombie-wrapper.sh",
-                include_str!("./zombie-wrapper.sh"),
-                BTreeMap::from([("foo".to_string(), "bar".to_string())]),
-            )
-            .await
-            .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?;
-
-        // store config map manifest
-        self.filesystem
-            .write(
-                PathBuf::from_iter([
-                    &base_dir,
-                    &PathBuf::from("zombie_wrapper_config_map_manifest.yaml"),
-                ]),
-                serde_yaml::to_string(&manifest).map_err(|err| {
-                    ProviderError::CreateNamespaceFailed(name.clone(), err.into())
-                })?,
-            )
-            .await?;
-
-        let namespace = KubernetesNamespace {
-            name: name.clone(),
-            base_dir,
-            capabilities: self.capabilities.clone(),
-            filesystem: self.filesystem.clone(),
-            client: self.client.clone(),
-            provider: WeakKubernetesProvider {
-                inner: Arc::downgrade(&self.inner),
-            },
-            inner: Arc::new(RwLock::new(KubernetesNamespaceInner {
-                nodes: Default::default(),
-            })),
-        };
-
+        let namespace = self.build_namespace(&name, base_dir);
         inner.namespaces.insert(name, namespace.clone());
 
         Ok(Arc::new(namespace))

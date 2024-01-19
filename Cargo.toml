@@ -9,6 +9,7 @@ members = [
   "crates/provider",
   "crates/test-runner",
   "crates/prom-metrics-parser",
+  "crates/file-server"
 ]
 
 [workspace.package]
@@ -45,12 +46,17 @@ hex = "0.4"
 sp-core = "22.0.0"
 libp2p = { version = "0.52" }
 subxt = "0.32.0"
-subxt-signer = { version = "0.32.0", features = ["subxt"]}
+subxt-signer = { version = "0.32.0", features = ["subxt"] }
 tracing = "0.1.35"
 pjs-rs = "0.1.2"
 kube = "0.87.1"
 k8s-openapi = "0.20.0"
 tar = "0.4"
+axum = { version = "0.7" }
+axum-extra = { version = "0.9" }
+tower = { version = "0.4" }
+tower-http = { version = "0.5" }
+tracing-subscriber = { version = "0.3" }
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.1.0-alpha.0", path = "crates/support" }

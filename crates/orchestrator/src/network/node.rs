@@ -50,7 +50,7 @@ impl NetworkNode {
     }
 
     /// Pause the node, this is implemented by pausing the
-    /// actual process (e.g polkadot) with sendig `SIGSTOP` signal
+    /// actual process (e.g polkadot) with sending `SIGSTOP` signal
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.inner.pause().await?;
         Ok(())
@@ -70,9 +70,9 @@ impl NetworkNode {
 
     /// Execute js/ts code inside [pjs_rs] custom runtime.
     ///
-    /// The code will be run in a wrapper similat to the `javascript` developer tab
+    /// The code will be run in a wrapper similar to the `javascript` developer tab
     /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was succeful but the returning value can be deserialized as [serde_json::Value].
+    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
     pub async fn pjs(
         &self,
         code: impl AsRef<str>,
@@ -92,9 +92,9 @@ impl NetworkNode {
 
     /// Execute js/ts file  inside [pjs_rs] custom runtime.
     ///
-    /// The content of the file will be run in a wrapper similat to the `javascript` developer tab
+    /// The content of the file will be run in a wrapper similar to the `javascript` developer tab
     /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was succeful but the returning value can be deserialized as [serde_json::Value].
+    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
     pub async fn pjs_file(
         &self,
         file: impl AsRef<Path>,
@@ -114,7 +114,7 @@ impl NetworkNode {
     }
 
     /// Resume the node, this is implemented by resuming the
-    /// actual process (e.g polkadot) with sendig `SIGCONT` signal
+    /// actual process (e.g polkadot) with sending `SIGCONT` signal
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
         self.inner.resume().await?;
         Ok(())
@@ -157,7 +157,7 @@ impl NetworkNode {
         if val == value {
             Ok(true)
         } else {
-            // reload metrcis
+            // reload metrics
             self.fetch_metrics().await?;
             let val = self.metric(&metric_name).await?;
             Ok(val == value)

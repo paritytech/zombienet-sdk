@@ -2,7 +2,7 @@ mod kubernetes;
 mod native;
 pub mod shared;
 
-use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::IpAddr, path::{PathBuf, Path}, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use shared::types::{
@@ -16,6 +16,9 @@ use crate::shared::types::Port;
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum ProviderError {
+    #[error("Failed to create client '{0}': {1}")]
+    CreateClientFailed(String, anyhow::Error),
+
     #[error("Failed to create namespace '{0}': {1}")]
     CreateNamespaceFailed(String, anyhow::Error),
 
@@ -91,6 +94,8 @@ pub trait ProviderNamespace {
 
     fn base_dir(&self) -> &PathBuf;
 
+    fn capabilities(&self) -> &ProviderCapabilities;
+
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
@@ -123,6 +128,9 @@ pub trait ProviderNode {
     fn scripts_dir(&self) -> &PathBuf;
 
     fn log_path(&self) -> &PathBuf;
+
+    // Return the absolute path to the file in the `node` perspective
+    fn path_in_node(&self, file: &Path) -> PathBuf;
 
     async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
 

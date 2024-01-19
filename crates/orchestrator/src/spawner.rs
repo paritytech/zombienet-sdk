@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use provider::{
-    constants::LOCALHOST,
+    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR},
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
@@ -95,9 +95,16 @@ where
     }
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
-    let cfg_path = format!("{}/cfg", &base_dir);
-    let data_path = format!("{}/data", &base_dir);
-    let relay_data_path = format!("{}/relay-data", &base_dir);
+
+    let (cfg_path, data_path, relay_data_path) = if ctx.ns.capabilities().requires_image {
+        (NODE_CONFIG_DIR.into(), NODE_DATA_DIR.into(), NODE_RELAY_DATA_DIR.into())
+    } else {
+        let cfg_path = format!("{}/{NODE_CONFIG_DIR}", &base_dir);
+        let data_path = format!("{}/{NODE_DATA_DIR}", &base_dir);
+        let relay_data_path = format!("{}/{NODE_RELAY_DATA_DIR}", &base_dir);
+        (cfg_path, data_path, relay_data_path)
+    };
+
     let gen_opts = generators::GenCmdOptions {
         relay_chain_name: ctx.chain,
         cfg_path: &cfg_path,               // TODO: get from provider/ns
@@ -143,6 +150,12 @@ where
         .injected_files(files_to_inject)
         .created_paths(created_paths);
 
+    let spawn_ops = if let Some(image) = node.image.as_ref() {
+        spawn_ops.image(image.as_str())
+    } else {
+        spawn_ops
+    };
+
     // Drops the port parking listeners before spawn
     node.p2p_port.drop_listener();
     node.rpc_port.drop_listener();
@@ -163,7 +176,11 @@ where
         node.name
     );
     info!("🚀 {}: metrics link {prometheus_uri}", node.name);
-    info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
+    if ctx.ns.capabilities().requires_image {
+        info!("📓 logs cmd: kubectl -n {} logs {}", ctx.ns.name(), node.name);
+    } else {
+        info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
+    }
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,

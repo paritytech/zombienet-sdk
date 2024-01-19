@@ -29,6 +29,6 @@ async fn check_nodes(nodes: &[&NetworkNode]) {
             return;
         }
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
     }
 }

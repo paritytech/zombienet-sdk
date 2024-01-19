@@ -54,6 +54,7 @@ where
             capabilities: ProviderCapabilities {
                 has_resources: false,
                 requires_image: false,
+                prefix_with_full_path: true,
             },
             // NOTE: temp_dir in linux return `/tmp` but on mac something like
             //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having
@@ -105,6 +106,7 @@ where
         let namespace = NativeNamespace {
             name: name.clone(),
             base_dir,
+            capabilities: self.capabilities.clone(),
             filesystem: self.filesystem.clone(),
             process_manager: self.process_manager.clone(),
             provider: WeakNativeProvider {
@@ -145,6 +147,7 @@ mod tests {
             &ProviderCapabilities {
                 requires_image: false,
                 has_resources: false,
+                prefix_with_full_path: true,
             }
         );
     }

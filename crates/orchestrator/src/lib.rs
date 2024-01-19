@@ -55,12 +55,13 @@ where
         let global_timeout = network_config.global_settings().network_spawn_timeout();
         let network_spec = NetworkSpec::from_config(&network_config).await?;
 
-        timeout(
+        let res = timeout(
             Duration::from_secs(global_timeout.into()),
             self.spawn_inner(network_spec),
         )
         .await
-        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout))?
+        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout));
+        res?
     }
 
     async fn spawn_inner(
@@ -89,6 +90,7 @@ where
             .build(&ns, &scoped_fs)
             .await?;
 
+        debug!("relaychain spec built!");
         // Create parachain artifacts (chain-spec, wasm, state)
         let relay_chain_id = network_spec
             .relaychain
@@ -101,6 +103,7 @@ where
             let chain_spec_raw_path = para
                 .build_chain_spec(&relay_chain_id, &ns, &scoped_fs)
                 .await?;
+                debug!("parachain chain-spec built!");
 
             // TODO: this need to be abstracted in a single call to generate_files.
             scoped_fs.create_dir(para.id.to_string()).await?;
@@ -113,6 +116,7 @@ where
                     &scoped_fs,
                 )
                 .await?;
+                debug!("parachain genesis state built!");
             para.genesis_wasm
                 .build(
                     chain_spec_raw_path,
@@ -121,6 +125,7 @@ where
                     &scoped_fs,
                 )
                 .await?;
+                debug!("parachain genesis wasm built!");
         }
 
         // Gather the parachains to register in genesis and the ones to register with extrinsic
@@ -308,7 +313,7 @@ where
         // - add-ons (introspector/tracing/etc)
 
         // verify nodes
-        network_helper::verifier::verify_nodes(&network.nodes()).await?;
+        // network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {

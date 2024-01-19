@@ -57,6 +57,7 @@ where
             capabilities: ProviderCapabilities {
                 requires_image: true,
                 has_resources: true,
+                prefix_with_full_path: false,
             },
             tmp_dir: std::env::temp_dir(),
             filesystem,
@@ -151,6 +152,7 @@ where
         let namespace = KubernetesNamespace {
             name: name.clone(),
             base_dir,
+            capabilities: self.capabilities.clone(),
             filesystem: self.filesystem.clone(),
             client: self.client.clone(),
             provider: WeakKubernetesProvider {

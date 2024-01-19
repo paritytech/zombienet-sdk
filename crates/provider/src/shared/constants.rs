@@ -4,8 +4,10 @@ use std::net::{IpAddr, Ipv4Addr};
 pub const NAMESPACE_PREFIX: &str = "zombie-";
 /// Directory for node configuration
 pub const NODE_CONFIG_DIR: &str = "/cfg";
-/// Directory for node configuration
+/// Directory for node data dir
 pub const NODE_DATA_DIR: &str = "/data";
+/// Directory for node relay data dir
+pub const NODE_RELAY_DATA_DIR: &str = "/relay-data";
 /// Directory for node scripts
 pub const NODE_SCRIPTS_DIR: &str = "/scripts";
 /// Localhost ip

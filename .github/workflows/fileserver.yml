@@ -1,5 +1,5 @@
 name: File server build & image publish
-run-name: Deploy file server ${{ github.sha }}
+run-name: Deploy file server ${{ github.ref }}
 
 on:
   push:
@@ -48,4 +48,5 @@ jobs:
         docker build -t $IMAGE:${{ github.sha }} -f ./crates/file-server/Dockerfile .
         docker tag $IMAGE:${{ github.sha }} $IMAGE:latest
         docker push --all-tags $IMAGE
-        echo "image=$IMAGE:${ github.sha }" >> $GITHUB_OUTPUT
+        echo "image=$IMAGE:${{ github.sha }}" >> $GITHUB_OUTPUT
+        echo "image=$IMAGE:latest" >> $GITHUB_OUTPUT

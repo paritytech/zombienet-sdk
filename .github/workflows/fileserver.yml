@@ -1,5 +1,5 @@
 name: File server build & image publish
-run-name: Deploy ${{github.ref}}
+run-name: Deploy file server ${{ github.sha }}
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
     - name: Build, tag, and push image to GCP Artifact registry
       id: build-image
       env:
-        IMAGE: "${{ env.GCR_REGISTRY }}/${{ env.GCR_PROJECT_ID }}/zombienet-file-server"
+        IMAGE: "${{ env.GCR_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.GCR_REPOSITORY }}/zombienet-file-server"
         
       run: |
         docker build -t $IMAGE:${{ github.sha }} -f ./crates/file-server/Dockerfile .

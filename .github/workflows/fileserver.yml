@@ -8,6 +8,7 @@ on:
     paths:
       - "Cargo.toml"
       - "crates/file-server/**"
+  workflow_dispatch: {}
     
 env:
   PROJECT_ID: "parity-zombienet"

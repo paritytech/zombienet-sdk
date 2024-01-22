@@ -82,8 +82,8 @@ pub enum ProviderError {
     #[error("Failed to copy file from node '{0}': {1}")]
     CopyFileFromNodeError(String, anyhow::Error),
 
-    #[error("Failed to create fileserver: {0}")]
-    FileServerSpawningError(anyhow::Error),
+    #[error("Failed to setup fileserver: {0}")]
+    FileServerSetupError(anyhow::Error),
 }
 
 #[async_trait]

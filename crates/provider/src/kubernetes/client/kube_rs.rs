@@ -13,7 +13,6 @@ use kube::{
     Api, Client, Resource,
 };
 use serde::de::DeserializeOwned;
-use support::fs::FileSystem;
 use tokio::io::AsyncRead;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
@@ -21,25 +20,17 @@ use super::{Error, KubernetesClient, Result};
 use crate::types::ExecutionResult;
 
 #[derive(Clone)]
-pub struct KubeRsKubernetesClient<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
+pub struct KubeRsKubernetesClient {
     client: kube::Client,
-    _filesystem: FS,
 }
 
-impl<FS> KubeRsKubernetesClient<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
-    pub async fn new(filesystem: FS) -> Result<Self> {
+impl KubeRsKubernetesClient {
+    pub async fn new() -> Result<Self> {
         Ok(Self {
             // TODO: make it more flexible with path to kube config
             client: Client::try_default()
                 .await
                 .map_err(|err| Error::from(anyhow!("error initializing kubers client: {err}")))?,
-            _filesystem: filesystem,
         })
     }
 
@@ -77,10 +68,7 @@ where
 }
 
 #[async_trait]
-impl<FS> KubernetesClient<FS> for KubeRsKubernetesClient<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
+impl KubernetesClient for KubeRsKubernetesClient {
     async fn get_namespace(&self, name: &str) -> Result<Option<Namespace>> {
         Api::<Namespace>::all(self.client.clone())
             .get_opt(name.as_ref())

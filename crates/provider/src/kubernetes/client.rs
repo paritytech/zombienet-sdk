@@ -1,10 +1,9 @@
 mod kube_rs;
 
-use std::{collections::BTreeMap, path::Path};
+use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec, Service, ServiceSpec};
-use support::fs::FileSystem;
 use tokio::io::AsyncRead;
 
 use crate::types::ExecutionResult;
@@ -16,10 +15,7 @@ pub struct Error(#[from] anyhow::Error);
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[async_trait]
-pub trait KubernetesClient<FS>
-where
-    FS: FileSystem + Send + Sync,
-{
+pub trait KubernetesClient {
     async fn get_namespace(&self, name: &str) -> Result<Option<Namespace>>;
 
     async fn get_namespaces(&self) -> Result<Vec<Namespace>>;
@@ -63,21 +59,6 @@ where
     ) -> Result<ExecutionResult>
     where
         S: Into<String> + std::fmt::Debug + Send;
-
-    async fn copy_to_pod<P>(
-        &self,
-        namespace: &str,
-        name: &str,
-        from: P,
-        to: P,
-        mode: &str,
-    ) -> Result<()>
-    where
-        P: AsRef<Path> + Send;
-
-    async fn copy_from_pod<P>(&self, namespace: &str, name: &str, from: P, to: P) -> Result<()>
-    where
-        P: AsRef<Path> + Send;
 
     async fn delete_pod(&self, namespace: &str, name: &str) -> Result<()>;
 

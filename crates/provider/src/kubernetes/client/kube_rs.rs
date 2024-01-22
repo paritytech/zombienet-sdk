@@ -4,13 +4,12 @@ use std::{
     os::unix::process::ExitStatusExt,
     path::Path,
     process::{ExitStatus, Stdio},
-    time::Duration,
 };
 
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec};
+use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec, Service, ServiceSpec};
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
     core::{ObjectMeta, WatchEvent},
@@ -142,6 +141,7 @@ where
         labels: BTreeMap<String, String>,
     ) -> Result<ConfigMap> {
         let config_maps = Api::<ConfigMap>::namespaced(self.client.clone(), namespace);
+
         let config_map = ConfigMap {
             metadata: ObjectMeta {
                 name: Some(name.to_string()),
@@ -178,6 +178,7 @@ where
         labels: BTreeMap<String, String>,
     ) -> Result<Pod> {
         let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
+
         let pod = Pod {
             metadata: ObjectMeta {
                 name: Some(name.to_string()),
@@ -587,10 +588,48 @@ where
     }
 
     async fn delete_pod(&self, namespace: &str, name: &str) -> Result<()> {
-        Api::<Pod>::namespaced(self.client.clone(), namespace)
-            .delete(name, &DeleteParams::default())
+        let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
+
+        pods.delete(name, &DeleteParams::default())
             .await
-            .map(|_| ())
-            .map_err(|err| Error::from(anyhow!("error when deleting pod {name}: {err}")))
+            .map_err(|err| Error::from(anyhow!("error when deleting pod {name}: {err}")))?;
+
+        await_condition(pods, name, conditions::is_deleted(name))
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error when waiting for pod {name} to be deleted: {err}"
+                ))
+            })?;
+
+        Ok(())
+    }
+
+    async fn create_service(
+        &self,
+        namespace: &str,
+        name: &str,
+        spec: ServiceSpec,
+        labels: BTreeMap<String, String>,
+    ) -> Result<Service> {
+        let services = Api::<Service>::namespaced(self.client.clone(), namespace);
+
+        let service = Service {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                namespace: Some(namespace.to_string()),
+                labels: Some(labels),
+                ..Default::default()
+            },
+            spec: Some(spec),
+            ..Default::default()
+        };
+
+        services
+            .create(&PostParams::default(), &service)
+            .await
+            .map_err(|err| Error::from(anyhow!("error while creating service {name}: {err}")))?;
+
+        Ok(service)
     }
 }

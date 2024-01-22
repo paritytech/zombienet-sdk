@@ -3,7 +3,7 @@ mod kube_rs;
 use std::{collections::BTreeMap, path::Path};
 
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec};
+use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec, Service, ServiceSpec};
 use support::fs::FileSystem;
 use tokio::io::AsyncRead;
 
@@ -80,6 +80,14 @@ where
         P: AsRef<Path> + Send;
 
     async fn delete_pod(&self, namespace: &str, name: &str) -> Result<()>;
+
+    async fn create_service(
+        &self,
+        namespace: &str,
+        name: &str,
+        spec: ServiceSpec,
+        labels: BTreeMap<String, String>,
+    ) -> Result<Service>;
 }
 
 pub use kube_rs::KubeRsKubernetesClient;

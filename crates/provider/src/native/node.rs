@@ -181,7 +181,17 @@ where
         .await
     }
 
-    async fn copy_file_from_node(
+    async fn send_file(
+        &self,
+        _local_src: &PathBuf,
+        _remote_dest: &PathBuf,
+        _mode: &str,
+    ) -> Result<(), ProviderError> {
+        // TODO: implement
+        Ok(())
+    }
+
+    async fn receive_file(
         &self,
         remote_src: PathBuf,
         local_dest: PathBuf,
@@ -691,7 +701,7 @@ mod tests {
         .await
         .unwrap();
 
-        node.copy_file_from_node(
+        node.receive_file(
             PathBuf::from("/mynode.log"),
             PathBuf::from("/nodelog.backup"),
         )

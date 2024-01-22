@@ -157,7 +157,14 @@ pub trait ProviderNode {
     async fn run_script(&self, options: RunScriptOptions)
         -> Result<ExecutionResult, ProviderError>;
 
-    async fn copy_file_from_node(
+    async fn send_file(
+        &self,
+        local_src: &PathBuf,
+        remote_dest: &PathBuf,
+        mode: &str,
+    ) -> Result<(), ProviderError>;
+
+    async fn receive_file(
         &self,
         remote_src: PathBuf,
         local_dest: PathBuf,

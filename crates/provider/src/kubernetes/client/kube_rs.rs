@@ -1,9 +1,5 @@
 use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    os::unix::process::ExitStatusExt,
-    path::Path,
-    process::{ExitStatus, Stdio},
+    collections::BTreeMap, fmt::Debug, os::unix::process::ExitStatusExt, process::ExitStatus,
 };
 
 use anyhow::anyhow;
@@ -17,13 +13,8 @@ use kube::{
     Api, Client, Resource,
 };
 use serde::de::DeserializeOwned;
-use sha2::{digest::Digest, Sha256};
 use support::fs::FileSystem;
-use tokio::{
-    fs::File,
-    io::{self, AsyncRead, AsyncReadExt, AsyncWriteExt},
-    process::Command,
-};
+use tokio::io::AsyncRead;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use super::{Error, KubernetesClient, Result};
@@ -35,7 +26,7 @@ where
     FS: FileSystem + Send + Sync + Clone,
 {
     client: kube::Client,
-    filesystem: FS,
+    _filesystem: FS,
 }
 
 impl<FS> KubeRsKubernetesClient<FS>
@@ -48,7 +39,7 @@ where
             client: Client::try_default()
                 .await
                 .map_err(|err| Error::from(anyhow!("error initializing kubers client: {err}")))?,
-            filesystem,
+            _filesystem: filesystem,
         })
     }
 
@@ -333,258 +324,6 @@ where
                 panic!("command has no status following its execution, this is a bug");
             },
         }
-    }
-
-    async fn copy_to_pod<P>(
-        &self,
-        namespace: &str,
-        name: &str,
-        from: P,
-        to: P,
-        mode: &str,
-    ) -> Result<()>
-    where
-        P: AsRef<Path> + Send,
-    {
-        let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
-        let file_name = to
-            .as_ref()
-            .file_name()
-            .ok_or(Error::from(anyhow!(
-                "error while copying to pod {name}: no filename was present in `to` path {}",
-                to.as_ref().to_string_lossy()
-            )))?
-            .to_owned();
-        let contents = self.filesystem.read(from).await.map_err(|err| {
-            Error::from(anyhow!(
-                "error while reading {} when trying to copy file to pod {name}: {err}",
-                to.as_ref().to_string_lossy()
-            ))
-        })?;
-
-        // create archive header
-        let mut header = tar::Header::new_gnu();
-        header.set_path(&file_name).map_err(|err| {
-            Error::from(anyhow!(
-                "error while setting path with {} for archive when trying to copy file {} to pod {name}: {err}",
-                file_name.to_string_lossy(),
-                to.as_ref().to_string_lossy()
-            ))
-        })?;
-        header.set_size(contents.len() as u64);
-        header.set_cksum();
-
-        // build archive from file contents
-        let mut archive = tar::Builder::new(Vec::new());
-        archive
-            .append(&header, &mut contents.as_slice())
-            .map_err(|err| {
-                Error::from(anyhow!(
-                    "error while appending content of {} to archive when trying to copy file to pod {name}: {err}",
-                    file_name.to_string_lossy(),
-                ))
-            })?;
-
-        let data = archive.into_inner().map_err(|err| {
-            Error::from(anyhow!(
-                "error while unwraping archive when trying to copy file {} to pod {name}: {err}",
-                file_name.to_string_lossy()
-            ))
-        })?;
-
-        // execute tar command
-        let dir_dest = to
-            .as_ref()
-            .parent()
-            .ok_or(Error::from(anyhow!(
-                "error while unwraping destination parent (to: {})",
-                to.as_ref().to_string_lossy()
-            )))?
-            .to_string_lossy();
-
-        let mut tar_process = pods
-            .exec(
-                name,
-                vec!["tar", "-xmf", "-", "-C", &dir_dest],
-                &AttachParams::default().stdin(true).stderr(false),
-            )
-            .await
-            .map_err(|err| {
-                Error::from(anyhow!(
-                    "error while executing tar when trying to copy file {} to pod {name}: {err}",
-                    file_name.to_string_lossy()
-                ))
-            })?;
-
-        println!("executing write all");
-        // write archive content to attached process
-        tar_process
-            .stdin()
-            .expect("stdin shouldn't be None when true passed to exec")
-            .write_all(&data)
-            .await
-            .map_err(|err| Error::from(anyhow!("error when writing file {} content as archive to tar process when trying to copy file to pod {name}: {err}",file_name.to_string_lossy())))?;
-
-        // wait for process to finish
-        tar_process
-            .join()
-            .await
-            .map_err(|err| Error::from(anyhow!("error while trying to join the tar process when copying file {} to pod {name}: {err}", file_name.to_string_lossy())))?;
-
-        // TODO: check this logic since `to` should be the path of the pod
-        let file_path = to.as_ref().to_string_lossy().to_string();
-
-        // execute chmod to set file permissions
-        println!("executing chmod {} {}", &mode, &file_path);
-        let _ = self.pod_exec(namespace, name, vec!["chmod", &mode, &file_path])
-            .await
-            .map_err(|err| Error::from(anyhow!("error while trying to setting permissions when trying to copy file {} to pod {name}: status {}: {}", file_name.to_string_lossy(), err.0, err.0)))?
-            .map_err(|err| Error::from(anyhow!("error happened when chmoding file {} when trying to copy file to pod {name}: status {}: {}", file_name.to_string_lossy(), err.0, err.1)))?;
-
-        // retrieve sha256sum of file to ensure integrity
-        let sha256sum_stdout = self
-            .pod_exec(namespace, name, vec!["sha256sum", &file_path])
-            .await
-            .map_err(|err| Error::from(anyhow!("error while exec for sha256 integrity check when trying to copy file {} to {name}: {err}", file_name.to_string_lossy())))?
-            .map_err(|err| Error::from(anyhow!("sha256 integrity check failed when trying to copy file {} to {name}: status {}: {}", file_name.to_string_lossy(), err.0, err.1)))?;
-        let actual_hash = sha256sum_stdout
-            .split_whitespace()
-            .next()
-            .expect("sha256sum output should be in the form `hash<spaces>filename`");
-
-        // get the hash of the file
-        let expected_hash = hex::encode(sha2::Sha256::digest(&contents));
-        if actual_hash != expected_hash {
-            return Err(Error::from(anyhow!(
-                "file {} copy to {name} failed, expected sha256sum of {} got {}",
-                file_name.to_string_lossy(),
-                expected_hash,
-                actual_hash
-            )));
-        }
-
-        Ok(())
-    }
-
-    async fn copy_from_pod<P>(&self, namespace: &str, name: &str, from: P, to: P) -> Result<()>
-    where
-        P: AsRef<Path> + Send,
-    {
-        let pods = Api::<Pod>::namespaced(self.client.clone(), namespace);
-        let file_name = from
-            .as_ref()
-            .file_name()
-            .ok_or(Error::from(anyhow!(
-                "no file name found when trying to copy file {} from pod {}",
-                from.as_ref().to_string_lossy(),
-                name
-            )))?
-            .to_string_lossy();
-        let file_dir = to
-            .as_ref()
-            .parent()
-            .ok_or(Error::from(anyhow!(
-                "no parent dir found for file {file_name} when trying to copy file from pod {name}"
-            )))?
-            .to_string_lossy();
-
-        // create the archive in the pod and pipe to stdout
-        let mut tar = pods
-            .exec(
-                name,
-                vec!["tar", "-cf", "-", "-C", &file_dir, &file_name],
-                &AttachParams::default().stdin(true),
-            )
-            .await
-            .map_err(|err| {
-                Error::from(anyhow!(
-                    "error while executing tar command when trying to copy {file_name} from {name}: {err}",
-                ))
-            })?;
-
-        let mut tar_stdout = tar
-            .stdout()
-            .take()
-            .expect("stdout shouldn't be None when true passed to exec");
-
-        // create child process tar fo extraction
-        let dest_dir = to.as_ref().to_string_lossy();
-        let mut extract = Command::new("tar")
-            .args(vec!["-xmf", "-", "-C", &dest_dir, &file_name])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|err| {
-                Error::from(anyhow!(
-                    "error when spawning tar process when copying {file_name} from pod {name}: {err}",
-                ))
-            })?;
-
-        let mut extract_stdin = extract.stdin.take().ok_or(Error::from(anyhow!(
-            "error when getting stdin from tar process when copying {file_name} from pod {name}"
-        )))?;
-
-        // pipe the container tar stdout into the local tar stdin
-        io::copy(&mut tar_stdout, &mut extract_stdin).await.map_err(|err| Error::from(anyhow!("error when piping tar stdout to tar stdin when copying {file_name} from pod {name}: {err}",)))?;
-
-        tar.join().await.map_err(|err| {
-            Error::from(anyhow!(
-                "error when joining tar process when copying {file_name} from pod {name}: {err}",
-            ))
-        })?;
-        extract.wait().await.map_err(|err| {
-            Error::from(anyhow!(
-                "error when waiting for tar process when copying {file_name} from pod {name}: {err}",
-            ))
-        })?;
-
-        // compute sha256sum of local received file
-        let dest_path = format!("{dest_dir}/{file_name}");
-        let mut file = File::open(&dest_path).await.map_err(|err| {
-            Error::from(anyhow!(
-                "error when opening file {file_name} when copying from pod {name}: {err}",
-            ))
-        })?;
-        let mut hasher = Sha256::new();
-        let mut buffer = [0; 1024];
-
-        loop {
-            let bytes_read = file.read(&mut buffer).await.map_err(|err| {
-                Error::from(anyhow!(
-                    "error when reading file {file_name} when copying from pod {name}: {err}"
-                ))
-            })?;
-            if bytes_read == 0 {
-                break;
-            }
-
-            hasher.update(&buffer[..bytes_read]);
-        }
-
-        let actual_hash = hex::encode(hasher.finalize());
-
-        // compute sha256sum of remote copied file
-        let file_path = from.as_ref().to_string_lossy();
-        let sha256sum = self
-            .pod_exec(namespace, name, vec!["sha256sum", &file_path])
-            .await?
-            .map_err(|err| Error::from(anyhow!("error when checking file integrity when copying {file_name} from pod {name}: status {}: {}", err.0, err.1)))?;
-        let expected_hash = sha256sum
-            .split_whitespace()
-            .next()
-            .expect("sha256sum output should be in the form `hash<spaces>filename`");
-
-        // check integrity
-        if actual_hash != expected_hash {
-            return Err(Error::from(anyhow!(
-                "file {file_name} copy failed, expected sha256sum of {} got {} when copying file from {name}",
-                expected_hash,
-                actual_hash
-            )));
-        }
-
-        Ok(())
     }
 
     async fn delete_pod(&self, namespace: &str, name: &str) -> Result<()> {

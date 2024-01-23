@@ -96,18 +96,6 @@ where
         PathBuf::from(full_path)
     }
 
-    async fn ip(&self) -> Result<IpAddr, ProviderError> {
-        Ok(LOCALHOST)
-    }
-
-    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError> {
-        todo!();
-    }
-
-    async fn mapped_port(&self, _port: Port) -> Result<Port, ProviderError> {
-        todo!()
-    }
-
     async fn logs(&self) -> Result<String, ProviderError> {
         Ok(self.filesystem.read_to_string(&self.log_path).await?)
     }

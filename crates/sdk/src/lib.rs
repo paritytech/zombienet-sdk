@@ -4,7 +4,7 @@ pub use orchestrator::{
     errors::OrchestratorError, network::Network, AddCollatorOptions, AddNodeOptions, Orchestrator,
     PjsResult,
 };
-use provider::{KubeRsClient, KubernetesProvider, NativeProvider, ProviderError};
+use provider::{KubernetesProvider, NativeProvider};
 use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
 
 #[async_trait]

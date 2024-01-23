@@ -126,8 +126,6 @@ pub trait ProviderNode {
 
     fn args(&self) -> Vec<&str>;
 
-    async fn ip(&self) -> Result<IpAddr, ProviderError>;
-
     fn base_dir(&self) -> &PathBuf;
 
     fn config_dir(&self) -> &PathBuf;
@@ -140,10 +138,6 @@ pub trait ProviderNode {
 
     // Return the absolute path to the file in the `node` perspective
     fn path_in_node(&self, file: &Path) -> PathBuf;
-
-    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
-
-    async fn mapped_port(&self, port: Port) -> Result<Port, ProviderError>;
 
     async fn logs(&self) -> Result<String, ProviderError>;
 

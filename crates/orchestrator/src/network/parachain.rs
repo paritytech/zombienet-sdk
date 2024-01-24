@@ -143,6 +143,8 @@ impl Parachain {
             .sign_and_submit_then_watch_default(&sudo_call, &sudo)
             .await?;
 
+        // Below we use the low level API to replicate the `wait_for_in_block` behaviour
+        // which was removed in subxt 0.33.0. See https://github.com/paritytech/subxt/pull/1237.
         while let Some(status) = tx.next().await {
             match status? {
                 TxStatus::InBestBlock(tx_in_block) | TxStatus::InFinalizedBlock(tx_in_block) => {

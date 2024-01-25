@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::{Arc, Weak},
     time::Duration,
 };
 
@@ -18,12 +19,13 @@ use k8s_openapi::{
 use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
 
-use super::namespace::WeakKubernetesNamespace;
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions},
     KubernetesClient, ProviderError, ProviderNode,
 };
+
+use super::namespace::KubernetesNamespace;
 
 struct PodSpecBuilder;
 
@@ -201,17 +203,17 @@ pub(super) struct KubernetesNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    name: String,
+    pub(super) name: String,
+    namespace: Weak<KubernetesNamespace<FS>>,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
     relay_data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
-    filesystem: FS,
     k8s_client: KubernetesClient,
     http_client: reqwest::Client,
-    namespace: WeakKubernetesNamespace<FS>,
+    filesystem: FS,
 }
 
 impl<FS> KubernetesNode<FS>
@@ -219,12 +221,12 @@ where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub(super) async fn new(
+        namespace: &Weak<KubernetesNamespace<FS>>,
         name: &str,
         namespace_base_dir: &PathBuf,
-        filesystem: &FS,
         k8s_client: &KubernetesClient,
-        namespace: WeakKubernetesNamespace<FS>,
-    ) -> Result<Self, ProviderError> {
+        filesystem: &FS,
+    ) -> Result<Arc<Self>, ProviderError> {
         let base_dir = PathBuf::from_iter([&namespace_base_dir, &PathBuf::from(name)]);
         filesystem.create_dir_all(&base_dir).await?;
 
@@ -241,7 +243,8 @@ where
 
         let log_path = PathBuf::from_iter([&base_dir, &PathBuf::from(format!("{name}.log"))]);
 
-        Ok(KubernetesNode {
+        Ok(Arc::new(KubernetesNode {
+            namespace: namespace.clone(),
             name: name.to_string(),
             base_dir,
             config_dir,
@@ -252,8 +255,7 @@ where
             filesystem: filesystem.clone(),
             k8s_client: k8s_client.clone(),
             http_client: reqwest::Client::new(),
-            namespace,
-        })
+        }))
     }
 
     pub(super) async fn initialize(
@@ -275,7 +277,7 @@ where
     pub(super) async fn start(&self) -> Result<(), ProviderError> {
         self.k8s_client
             .pod_exec(
-                &self.namespace_name,
+                &self.namespace_name(),
                 &self.name,
                 vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
             )
@@ -313,7 +315,7 @@ where
 
         let manifest = self
             .k8s_client
-            .create_pod(&namespace, &self.name, pod_spec, labels)
+            .create_pod(&self.namespace_name(), &self.name, pod_spec, labels)
             .await?;
 
         let serialized_manifest = serde_yaml::to_string(&manifest)
@@ -334,21 +336,21 @@ where
     async fn initialize_startup_files(&self) -> Result<(), ProviderError> {
         // create paths
         // TODO: can be done when sending files ?
-        try_join_all(
-            options
-                .created_paths
-                .iter()
-                .map(|path| node.create_path(path)),
-        )
-        .await?;
+        // try_join_all(
+        //     options
+        //         .created_paths
+        //         .iter()
+        //         .map(|path| node.create_path(path)),
+        // )
+        // .await?;
 
-        try_join_all(
-            options
-                .injected_files
-                .iter()
-                .map(|file| node.send_file(&file.local_path, &file.remote_path, &file.mode)),
-        )
-        .await?;
+        // try_join_all(
+        //     options
+        //         .injected_files
+        //         .iter()
+        //         .map(|file| node.send_file(&file.local_path, &file.remote_path, &file.mode)),
+        // )
+        // .await?;
 
         Ok(())
     }
@@ -356,7 +358,7 @@ where
     async fn create_path(&self, path: &PathBuf) -> Result<(), ProviderError> {
         self.k8s_client
             .pod_exec(
-                &self.namespace_name,
+                &self.namespace_name(),
                 &self.name,
                 vec!["mkdir", "-p", &path.to_string_lossy()],
             )
@@ -369,6 +371,13 @@ where
             });
 
         Ok(())
+    }
+
+    fn namespace_name(&self) -> String {
+        self.namespace
+            .upgrade()
+            .and_then(|namespace| Some(namespace.name.clone()))
+            .expect("namespace shouldn't be dropped")
     }
 }
 
@@ -409,7 +418,7 @@ where
 
     async fn logs(&self) -> Result<String, ProviderError> {
         self.k8s_client
-            .pod_logs(&self.namespace_name, &self.name)
+            .pod_logs(&self.namespace_name(), &self.name)
             .await
             .map_err(|err| ProviderError::GetLogsFailed(self.name.to_string(), err.into()))
     }
@@ -441,7 +450,7 @@ where
 
         self.k8s_client
             .pod_exec(
-                &self.namespace_name,
+                &self.namespace_name(),
                 &self.name,
                 vec!["sh", "-c", &command.join(" ")],
             )
@@ -491,7 +500,7 @@ where
     async fn pause(&self) -> Result<(), ProviderError> {
         self.k8s_client
             .pod_exec(
-                &self.namespace_name,
+                &self.namespace_name(),
                 &self.name,
                 vec!["echo", "pause", ">", "/tmp/zombiepipe"],
             )
@@ -510,7 +519,7 @@ where
     async fn resume(&self) -> Result<(), ProviderError> {
         self.k8s_client
             .pod_exec(
-                &self.namespace_name,
+                &self.namespace_name(),
                 &self.name,
                 vec!["echo", "resume", ">", "/tmp/zombiepipe"],
             )
@@ -533,7 +542,7 @@ where
 
         self.k8s_client
             .pod_exec(
-                &self.namespace_name,
+                &self.namespace_name(),
                 &self.name,
                 vec!["echo", "restart", ">", "/tmp/zombiepipe"],
             )
@@ -551,12 +560,12 @@ where
 
     async fn destroy(&self) -> Result<(), ProviderError> {
         self.k8s_client
-            .delete_pod(&self.namespace_name, &self.name)
+            .delete_pod(&self.namespace_name(), &self.name)
             .await
             .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
 
-        if let Some(namespace) = self.namespace.inner.upgrade() {
-            namespace.write().await.nodes.remove(&self.name);
+        if let Some(namespace) = self.namespace.upgrade() {
+            namespace.nodes.write().await.remove(&self.name);
         }
 
         Ok(())

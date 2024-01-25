@@ -12,44 +12,28 @@ use tokio::sync::RwLock;
 use tracing::{debug, trace};
 use uuid::Uuid;
 
-use super::{node::KubernetesNode, provider::WeakKubernetesProvider};
+use super::node::KubernetesNode;
 use crate::{
     constants::NAMESPACE_PREFIX,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
     },
-    DynNode, KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
+    DynNode, KubernetesClient, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
 
-#[derive(Clone)]
 pub(super) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    name: String,
+    pub(super) name: String,
+    pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
+    weak: Weak<KubernetesNamespace<FS>>,
+    provider: Weak<KubernetesProvider<FS>>,
     base_dir: PathBuf,
     capabilities: ProviderCapabilities,
-    inner: Arc<RwLock<KubernetesNamespaceInner<FS>>>,
-    filesystem: FS,
     k8s_client: KubernetesClient,
-    provider: WeakKubernetesProvider<FS>,
-}
-
-#[derive(Clone)]
-pub(super) struct KubernetesNamespaceInner<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
-    pub(super) nodes: HashMap<String, KubernetesNode<FS>>,
-}
-
-#[derive(Clone)]
-pub(super) struct WeakKubernetesNamespace<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
-    pub(super) inner: Weak<RwLock<KubernetesNamespaceInner<FS>>>,
+    filesystem: FS,
 }
 
 impl<FS> KubernetesNamespace<FS>
@@ -57,27 +41,26 @@ where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub(super) async fn new(
+        provider: &Weak<KubernetesProvider<FS>>,
         tmp_dir: &PathBuf,
         capabilities: &ProviderCapabilities,
-        filesystem: &FS,
         k8s_client: &KubernetesClient,
-        provider: WeakKubernetesProvider<FS>,
-    ) -> Result<Self, ProviderError> {
+        filesystem: &FS,
+    ) -> Result<Arc<Self>, ProviderError> {
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
         let base_dir = PathBuf::from_iter([&tmp_dir, &PathBuf::from(&name)]);
         filesystem.create_dir(&base_dir).await?;
 
-        Ok(Self {
+        Ok(Arc::new_cyclic(|weak| KubernetesNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
             name,
             base_dir,
             capabilities: capabilities.clone(),
-            inner: Arc::new(RwLock::new(KubernetesNamespaceInner {
-                nodes: Default::default(),
-            })),
             filesystem: filesystem.clone(),
             k8s_client: k8s_client.clone(),
-            provider,
-        })
+            nodes: RwLock::new(HashMap::new()),
+        }))
     }
 
     pub(super) async fn initialize(&self) -> Result<(), ProviderError> {
@@ -166,9 +149,9 @@ where
             .write(dest_path, serialized_manifest)
             .await?;
 
-        self.k8s_client
-            .create_pod_port_forward(&self.name, &name, 0, 80)
-            .await?;
+        // self.k8s_client
+        //     .create_pod_port_forward(&self.name, &name, 0, 80)
+        //     .await?;
 
         Ok(())
     }
@@ -226,32 +209,26 @@ where
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {
-        self.inner
+        self.nodes
             .read()
             .await
-            .nodes
-            .clone()
-            .into_iter()
-            .map(|(id, node)| (id, Arc::new(node) as DynNode))
+            .iter()
+            .map(|(name, node)| (name.clone(), node.clone() as DynNode))
             .collect()
     }
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         trace!("spawn option {:?}", options);
-        let mut inner = self.inner.write().await;
-
-        if inner.nodes.contains_key(&options.name) {
+        if self.nodes.read().await.contains_key(&options.name) {
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
 
         let node = KubernetesNode::new(
+            &self.weak,
             &options.name,
             &self.base_dir,
-            &self.filesystem,
             &self.k8s_client,
-            WeakKubernetesNamespace {
-                inner: Arc::downgrade(&self.inner),
-            },
+            &self.filesystem,
         )
         .await?;
 
@@ -266,10 +243,12 @@ where
 
         node.start().await?;
 
-        // store node inside namespace
-        inner.nodes.insert(options.name.clone(), node.clone());
+        self.nodes
+            .write()
+            .await
+            .insert(node.name.clone(), node.clone());
 
-        Ok(Arc::new(node))
+        Ok(node)
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
@@ -332,17 +311,12 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
-        // method acquiring a lock the namespace to remove the node from the nodes hashmap.
-        let nodes: Vec<KubernetesNode<FS>> =
-            self.inner.write().await.nodes.values().cloned().collect();
-        for node in nodes.iter() {
+        for node in self.nodes.read().await.values() {
             node.destroy().await?;
         }
 
-        // remove namespace from provider
-        if let Some(provider) = self.provider.inner.upgrade() {
-            provider.write().await.namespaces.remove(&self.name);
+        if let Some(provider) = self.provider.upgrade() {
+            provider.namespaces.write().await.remove(&self.name);
         }
 
         Ok(())

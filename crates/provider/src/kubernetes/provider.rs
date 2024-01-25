@@ -13,51 +13,37 @@ use crate::{
     types::ProviderCapabilities, DynNamespace, Provider, ProviderError, ProviderNamespace,
 };
 
-#[derive(Clone)]
 pub struct KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
+    pub(super) namespaces: RwLock<HashMap<String, Arc<KubernetesNamespace<FS>>>>,
+    weak: Weak<KubernetesProvider<FS>>,
     capabilities: ProviderCapabilities,
     tmp_dir: PathBuf,
-    filesystem: FS,
     k8s_client: KubernetesClient,
-    inner: Arc<RwLock<KubernetesProviderInner<FS>>>,
-}
-
-pub(super) struct KubernetesProviderInner<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
-    pub(super) namespaces: HashMap<String, KubernetesNamespace<FS>>,
-}
-
-#[derive(Clone)]
-pub(super) struct WeakKubernetesProvider<FS>
-where
-    FS: FileSystem + Send + Sync + Clone,
-{
-    pub(super) inner: Weak<RwLock<KubernetesProviderInner<FS>>>,
+    filesystem: FS,
 }
 
 impl<FS> KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub async fn new(filesystem: FS) -> Self {
-        Self {
+    pub async fn new(filesystem: FS) -> Arc<Self> {
+        let k8s_client = KubernetesClient::new().await.unwrap();
+
+        Arc::new_cyclic(|weak| KubernetesProvider {
+            weak: weak.clone(),
             capabilities: ProviderCapabilities {
                 requires_image: true,
                 has_resources: true,
                 prefix_with_full_path: false,
             },
             tmp_dir: std::env::temp_dir(),
+            k8s_client,
             filesystem,
-            k8s_client: KubernetesClient::new().await.unwrap(),
-            inner: Arc::new(RwLock::new(KubernetesProviderInner {
-                namespaces: Default::default(),
-            })),
-        }
+            namespaces: RwLock::new(HashMap::new()),
+        })
     }
 
     pub fn tmp_dir(mut self, tmp_dir: impl Into<PathBuf>) -> Self {
@@ -76,36 +62,31 @@ where
     }
 
     async fn namespaces(&self) -> HashMap<String, DynNamespace> {
-        self.inner
+        self.namespaces
             .read()
             .await
-            .namespaces
-            .clone()
-            .into_iter()
-            .map(|(id, namespace)| (id, Arc::new(namespace) as DynNamespace))
+            .iter()
+            .map(|(name, namespace)| (name.clone(), namespace.clone() as DynNamespace))
             .collect()
     }
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
-        let mut inner = self.inner.write().await;
-
         let namespace = KubernetesNamespace::new(
+            &self.weak,
             &self.tmp_dir,
             &self.capabilities,
-            &self.filesystem,
             &self.k8s_client,
-            WeakKubernetesProvider {
-                inner: Arc::downgrade(&self.inner),
-            },
+            &self.filesystem,
         )
         .await?;
 
         namespace.initialize().await?;
 
-        inner
-            .namespaces
-            .insert(namespace.name().to_string(), namespace.clone());
+        self.namespaces
+            .write()
+            .await
+            .insert(namespace.name.to_string(), namespace.clone());
 
-        Ok(Arc::new(namespace))
+        Ok(namespace)
     }
 }

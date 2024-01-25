@@ -122,10 +122,6 @@ pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 pub trait ProviderNode {
     fn name(&self) -> &str;
 
-    fn program(&self) -> &str;
-
-    fn args(&self) -> Vec<&str>;
-
     fn base_dir(&self) -> &PathBuf;
 
     fn config_dir(&self) -> &PathBuf;

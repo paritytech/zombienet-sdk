@@ -1,5 +1,4 @@
 use std::{
-    net::IpAddr,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -16,8 +15,7 @@ use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
 
 use super::{helpers::create_process_with_log_tasks, namespace::WeakNativeNamespace};
 use crate::{
-    constants::LOCALHOST,
-    types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions},
+    types::{ExecutionResult, RunCommandOptions, RunScriptOptions},
     ProviderError, ProviderNode,
 };
 
@@ -57,14 +55,6 @@ where
 {
     fn name(&self) -> &str {
         &self.name
-    }
-
-    fn program(&self) -> &str {
-        &self.program
-    }
-
-    fn args(&self) -> Vec<&str> {
-        self.args.iter().map(|arg| arg.as_str()).collect()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -108,8 +98,6 @@ where
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        // REMOVE
-        // let args: Vec<String> = options.args.into_iter().map(|s| s.replace("{{NODE_BASE_PATH}}", self.base_dir().to_string_lossy().as_ref())).collect();
         let result = self
             .process_manager
             .output(

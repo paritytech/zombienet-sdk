@@ -6,67 +6,212 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use futures::{future::try_join_all, try_join};
-use k8s_openapi::{
-    api::core::v1::{
-        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Volume,
-        VolumeMount,
-    },
-    apimachinery::pkg::api::resource::Quantity,
-};
+use k8s_openapi::api::core::v1::{Container, PodSpec};
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 use uuid::Uuid;
 
-use super::{client::KubernetesClient, node::KubernetesNode, provider::WeakKubernetesProvider};
+use super::{node::KubernetesNode, provider::WeakKubernetesProvider};
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::NAMESPACE_PREFIX,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
     },
-    DynNode, ProviderError, ProviderNamespace, ProviderNode,
+    DynNode, KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
 };
 
 #[derive(Clone)]
-pub(super) struct KubernetesNamespace<FS, KC>
+pub(super) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
-    KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
-    pub(super) name: String,
-    pub(super) base_dir: PathBuf,
-    pub(super) capabilities: ProviderCapabilities,
-    pub(super) inner: Arc<RwLock<KubernetesNamespaceInner<FS, KC>>>,
-    pub(super) filesystem: FS,
-    pub(super) client: KC,
-    pub(super) provider: WeakKubernetesProvider<FS, KC>,
+    name: String,
+    base_dir: PathBuf,
+    capabilities: ProviderCapabilities,
+    inner: Arc<RwLock<KubernetesNamespaceInner<FS>>>,
+    filesystem: FS,
+    k8s_client: KubernetesClient,
+    provider: WeakKubernetesProvider<FS>,
 }
 
 #[derive(Clone)]
-pub(super) struct KubernetesNamespaceInner<FS, KC>
+pub(super) struct KubernetesNamespaceInner<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
-    KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
-    pub(super) nodes: HashMap<String, KubernetesNode<FS, KC>>,
+    pub(super) nodes: HashMap<String, KubernetesNode<FS>>,
 }
 
 #[derive(Clone)]
-pub(super) struct WeakKubernetesNamespace<FS, KC>
+pub(super) struct WeakKubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
-    KC: KubernetesClient<FS> + Send + Sync + Clone,
 {
-    pub(super) inner: Weak<RwLock<KubernetesNamespaceInner<FS, KC>>>,
+    pub(super) inner: Weak<RwLock<KubernetesNamespaceInner<FS>>>,
+}
+
+impl<FS> KubernetesNamespace<FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub(super) async fn new(
+        tmp_dir: &PathBuf,
+        capabilities: &ProviderCapabilities,
+        filesystem: &FS,
+        k8s_client: &KubernetesClient,
+        provider: WeakKubernetesProvider<FS>,
+    ) -> Result<Self, ProviderError> {
+        let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
+        let base_dir = PathBuf::from_iter([&tmp_dir, &PathBuf::from(&name)]);
+        filesystem.create_dir(&base_dir).await?;
+
+        Ok(Self {
+            name,
+            base_dir,
+            capabilities: capabilities.clone(),
+            inner: Arc::new(RwLock::new(KubernetesNamespaceInner {
+                nodes: Default::default(),
+            })),
+            filesystem: filesystem.clone(),
+            k8s_client: k8s_client.clone(),
+            provider,
+        })
+    }
+
+    pub(super) async fn initialize(&self) -> Result<(), ProviderError> {
+        self.initialize_k8s().await?;
+        self.initialize_file_server().await?;
+
+        self.setup_script_config_map(
+            "zombienet-wrapper",
+            include_str!("./scripts/zombie-wrapper.sh"),
+            "zombie_wrapper_config_map_manifest.yaml",
+            // TODO: add correct labels
+            BTreeMap::new(),
+        )
+        .await?;
+
+        self.setup_script_config_map(
+            "helper-binaries-downloader",
+            include_str!("./scripts/helper-binaries-downloader.sh"),
+            "helper_binaries_downloader_config_map_manifest.yaml",
+            // TODO: add correct labels
+            BTreeMap::new(),
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn initialize_k8s(&self) -> Result<(), ProviderError> {
+        let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
+
+        let manifest = self
+            .k8s_client
+            .create_namespace(&self.name, labels)
+            .await
+            .map_err(|err| {
+                ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+            })?;
+
+        let serialized_manifest = serde_yaml::to_string(&manifest).map_err(|err| {
+            ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+        })?;
+
+        let dest_path =
+            PathBuf::from_iter([&self.base_dir, &PathBuf::from("namespace_manifest.yaml")]);
+
+        self.filesystem
+            .write(dest_path, serialized_manifest)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn initialize_file_server(&self) -> Result<(), ProviderError> {
+        let name = "fileserver".to_string();
+        let labels = BTreeMap::from([(
+            "app.kubernetes.io/name".to_string(),
+            "fileserver".to_string(),
+        )]);
+
+        let pod_spec = PodSpec {
+            hostname: Some(name.clone()),
+            containers: vec![Container {
+                name: name.clone(),
+                image: Some("fileserver:latest".to_string()),
+                image_pull_policy: Some("Always".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let manifest = self
+            .k8s_client
+            .create_pod(&self.name, &name, pod_spec, labels.clone())
+            .await
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        // TODO: remove duplication across methods
+        let serialized_manifest = serde_yaml::to_string(&manifest).map_err(|err| {
+            ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+        })?;
+
+        let dest_path =
+            PathBuf::from_iter([&self.base_dir, &PathBuf::from("namespace_manifest.yaml")]);
+
+        self.filesystem
+            .write(dest_path, serialized_manifest)
+            .await?;
+
+        self.k8s_client
+            .create_pod_port_forward(&self.name, &name, 0, 80)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn setup_script_config_map(
+        &self,
+        name: &str,
+        script_contents: &str,
+        local_manifest_name: &str,
+        labels: BTreeMap<String, String>,
+    ) -> Result<(), ProviderError> {
+        let manifest = self
+            .k8s_client
+            .create_config_map_from_file(
+                &self.name,
+                name,
+                &format!("{name}.sh"),
+                script_contents,
+                labels,
+            )
+            .await
+            .map_err(|err| {
+                ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+            })?;
+
+        let serializer_manifest = serde_yaml::to_string(&manifest).map_err(|err| {
+            ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+        })?;
+
+        let dest_path = PathBuf::from_iter([&self.base_dir, &PathBuf::from(local_manifest_name)]);
+
+        self.filesystem
+            .write(dest_path, serializer_manifest)
+            .await?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
-impl<FS, KC> ProviderNamespace for KubernetesNamespace<FS, KC>
+impl<FS> ProviderNamespace for KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
-    KC: KubernetesClient<FS> + Send + Sync + Clone + 'static,
 {
     fn name(&self) -> &str {
         &self.name
@@ -99,284 +244,27 @@ where
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
 
-        // create node directories and filepaths
-        // TODO: remove duplication between providers
-        let base_dir_raw = format!("{}/{}", &self.base_dir.to_string_lossy(), &options.name);
-        let base_dir = PathBuf::from(&base_dir_raw);
-        let log_path = PathBuf::from(format!("{}/{}.log", base_dir_raw, &options.name));
-        let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
-        let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
-        let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
-        // NOTE: in native this base path already exist
-        self.filesystem.create_dir_all(&base_dir).await?;
-        try_join!(
-            self.filesystem.create_dir(&config_dir),
-            self.filesystem.create_dir(&data_dir),
-            self.filesystem.create_dir(&scripts_dir),
-        )?;
-
-        // creat k8s pod
-        let manifest = self
-            .client
-            .create_pod(
-                &self.name,
-                &options.name,
-                PodSpec {
-                    hostname: Some(options.name.to_string()),
-                    containers: vec![Container {
-                        name: options.name.clone(),
-                        image: options.image.clone(),
-                        // TODO: we should allow to set by config
-                        image_pull_policy: Some("Always".to_string()),
-                        command: Some(
-                            [
-                                vec!["/zombie-wrapper.sh".to_string(), options.program.clone()],
-                                options.args.clone(),
-                            ]
-                            .concat(),
-                        ),
-                        env: Some(
-                            options
-                                .env
-                                .iter()
-                                .map(|(name, value)| EnvVar {
-                                    name: name.clone(),
-                                    value: Some(value.clone()),
-                                    value_from: None,
-                                })
-                                .collect(),
-                        ),
-                        volume_mounts: Some(vec![
-                            VolumeMount {
-                                name: "zombie-wrapper-volume".to_string(),
-                                mount_path: "/zombie-wrapper.sh".to_string(),
-                                sub_path: Some("zombie-wrapper.sh".to_string()),
-                                ..Default::default()
-                            },
-                            VolumeMount {
-                                name: "cfg".to_string(),
-                                mount_path: "/cfg".to_string(),
-                                read_only: Some(false),
-                                ..Default::default()
-                            },
-                            VolumeMount {
-                                name: "data".to_string(),
-                                mount_path: "/data".to_string(),
-                                read_only: Some(false),
-                                ..Default::default()
-                            },
-                            VolumeMount {
-                                name: "relay-data".to_string(),
-                                mount_path: "/relay-data".to_string(),
-                                read_only: Some(false),
-                                ..Default::default()
-                            },
-                        ]),
-                        resources: Some(ResourceRequirements {
-                            limits: if options.resources.is_some() {
-                                let mut limits = BTreeMap::new();
-
-                                if let Some(limit_cpu) = options
-                                    .resources
-                                    .clone()
-                                    .expect("safe to unwrap")
-                                    .limit_cpu()
-                                {
-                                    limits.insert(
-                                        "cpu".to_string(),
-                                        Quantity(limit_cpu.as_str().to_string()),
-                                    );
-                                }
-                                if let Some(limit_memory) = options
-                                    .resources
-                                    .clone()
-                                    .expect("safe to unwrap")
-                                    .request_memory()
-                                {
-                                    limits.insert(
-                                        "memory".to_string(),
-                                        Quantity(limit_memory.as_str().to_string()),
-                                    );
-                                }
-
-                                if !limits.is_empty() {
-                                    Some(limits)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            },
-                            requests: if options.resources.is_some() {
-                                let mut request = BTreeMap::new();
-
-                                if let Some(request_cpu) = options
-                                    .resources
-                                    .clone()
-                                    .expect("safe to unwrap")
-                                    .request_cpu()
-                                {
-                                    request.insert(
-                                        "cpu".to_string(),
-                                        Quantity(request_cpu.as_str().to_string()),
-                                    );
-                                }
-                                if let Some(request_memory) = options
-                                    .resources
-                                    .clone()
-                                    .expect("safe to unwrap")
-                                    .request_memory()
-                                {
-                                    request.insert(
-                                        "memory".to_string(),
-                                        Quantity(request_memory.as_str().to_string()),
-                                    );
-                                }
-
-                                if !request.is_empty() {
-                                    Some(request)
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            },
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    }],
-                    volumes: Some(vec![
-                        Volume {
-                            name: "cfg".to_string(),
-                            ..Default::default()
-                        },
-                        Volume {
-                            name: "data".to_string(),
-                            ..Default::default()
-                        },
-                        Volume {
-                            name: "relay-data".to_string(),
-                            ..Default::default()
-                        },
-                        Volume {
-                            name: "zombie-wrapper-volume".to_string(),
-                            config_map: Some(ConfigMapVolumeSource {
-                                name: Some("zombie-wrapper".to_string()),
-                                default_mode: Some(0o755),
-                                ..Default::default()
-                            }),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                },
-                BTreeMap::from([("some".to_string(), "labels".to_string())]),
-            )
-            .await
-            .map_err(|err| {
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to created pod {}", options.name),
-                    err.into(),
-                )
-            })?;
-
-        // store pod manifest
-        self.filesystem
-            .write(
-                PathBuf::from_iter([&base_dir, &PathBuf::from("pod_manifest.yaml")]),
-                serde_yaml::to_string(&manifest).map_err(|err| {
-                    ProviderError::NodeSpawningFailed(
-                        format!("failed to serialize pod manifest {}", options.name),
-                        err.into(),
-                    )
-                })?,
-            )
-            .await?;
-
-        // create paths
-        let ops_fut: Vec<_> = options
-            .created_paths
-            .clone()
-            .into_iter()
-            .map(|created_path| {
-                self.client.pod_exec(
-                    &self.name,
-                    &options.name,
-                    vec!["mkdir", "-p", &created_path.to_string_lossy()]
-                        .into_iter()
-                        .map(|s| s.to_string())
-                        .collect(),
-                )
-            })
-            .collect();
-
-        try_join_all(ops_fut).await.map_err(|err| {
-            ProviderError::NodeSpawningFailed(
-                format!("failed to create paths for pod {}", options.name),
-                err.into(),
-            )
-        })?;
-
-        // copy injected files
-        let ops_fut: Vec<_> = options
-            .injected_files
-            .iter()
-            .map(|file| {
-                self.client.copy_to_pod(
-                    &self.name,
-                    &options.name,
-                    &file.local_path,
-                    &file.remote_path,
-                    &file.mode,
-                )
-            })
-            .collect();
-
-        try_join_all(ops_fut).await.map_err(|err| {
-            ProviderError::NodeSpawningFailed(
-                format!("failed to copy injected files for pod {}", options.name),
-                err.into(),
-            )
-        })?;
-
-        // start process
-        self.client
-            .pod_exec(
-                &self.name,
-                &options.name,
-                vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
-            )
-            .await
-            .map_err(|err| {
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to start pod {} after spawning", options.name),
-                    err.into(),
-                )
-            })?
-            .map_err(|err| {
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to start pod {} after spawning", options.name,),
-                    anyhow!("command failed in container: status {}: {}", err.0, err.1),
-                )
-            })?;
-
-        // create node structure holding state
-        let node = KubernetesNode {
-            name: options.name.clone(),
-            namespace_name: self.name.clone(),
-            program: options.program.clone(),
-            args: options.args.clone(),
-            base_dir,
-            config_dir,
-            data_dir,
-            scripts_dir,
-            log_path,
-            filesystem: self.filesystem.clone(),
-            client: self.client.clone(),
-            namespace: WeakKubernetesNamespace {
+        let node = KubernetesNode::new(
+            &options.name,
+            &self.base_dir,
+            &self.filesystem,
+            &self.k8s_client,
+            WeakKubernetesNamespace {
                 inner: Arc::downgrade(&self.inner),
             },
-        };
+        )
+        .await?;
+
+        node.initialize(
+            options.image.as_ref(),
+            options.resources.as_ref(),
+            &options.program,
+            &options.args,
+            &options.env,
+        )
+        .await?;
+
+        node.start().await?;
 
         // store node inside namespace
         inner.nodes.insert(options.name.clone(), node.clone());
@@ -386,20 +274,20 @@ where
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
         debug!("options {:#?}", options);
-        let node_name = if let Some(name) = options.temp_name {
-            name
-        } else {
-            format!("temp-{}", Uuid::new_v4())
-        };
+
+        let node_name = options
+            .temp_name
+            .unwrap_or_else(|| format!("temp-{}", Uuid::new_v4()));
+        let node_image = options
+            .image
+            .expect("image should be present when generating files with kubernetes provider");
 
         // run dummy command in new pod
         let temp_node = self
             .spawn_node(
                 &SpawnNodeOptions::new(node_name, "cat".to_string())
                     .injected_files(options.injected_files)
-                    .image(options.image.expect(
-                        "image should be present when generating files with kubernetes provider",
-                    )),
+                    .image(node_image),
             )
             .await?;
 
@@ -446,7 +334,7 @@ where
     async fn destroy(&self) -> Result<(), ProviderError> {
         // we need to clone nodes (behind an Arc, so cheaply) to avoid deadlock between the inner.write lock and the node.destroy
         // method acquiring a lock the namespace to remove the node from the nodes hashmap.
-        let nodes: Vec<KubernetesNode<FS, KC>> =
+        let nodes: Vec<KubernetesNode<FS>> =
             self.inner.write().await.nodes.values().cloned().collect();
         for node in nodes.iter() {
             node.destroy().await?;

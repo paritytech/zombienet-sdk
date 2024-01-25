@@ -4,7 +4,7 @@ use std::{
 
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
-use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec, Service, ServiceSpec};
+use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec};
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
     core::{ObjectMeta, WatchEvent},
@@ -12,10 +12,11 @@ use kube::{
     Api, Resource,
 };
 use serde::de::DeserializeOwned;
-use tokio::io::AsyncRead;
+use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tracing::debug;
 
-use crate::types::ExecutionResult;
+use crate::{constants::LOCALHOST, types::ExecutionResult};
 
 #[derive(thiserror::Error, Debug)]
 #[error(transparent)]
@@ -302,32 +303,36 @@ impl KubernetesClient {
         Ok(())
     }
 
-    pub(super) async fn create_service(
+    pub(super) async fn create_pod_port_forward(
         &self,
         namespace: &str,
         name: &str,
-        spec: ServiceSpec,
-        labels: BTreeMap<String, String>,
-    ) -> Result<Service> {
-        let services = Api::<Service>::namespaced(self.inner.clone(), namespace);
+        local_port: u16,
+        remote_port: u16,
+    ) -> Result<JoinHandle<()>> {
+        let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
+        let bind = TcpListener::bind((LOCALHOST, local_port)).await.unwrap();
+        let name = name.to_string();
 
-        let service = Service {
-            metadata: ObjectMeta {
-                name: Some(name.to_string()),
-                namespace: Some(namespace.to_string()),
-                labels: Some(labels),
-                ..Default::default()
-            },
-            spec: Some(spec),
-            ..Default::default()
-        };
+        Ok(tokio::spawn(async move {
+            loop {
+                let (mut client_conn, _) = bind.accept().await.unwrap();
+                let (name, pods) = (name.clone(), pods.clone());
 
-        services
-            .create(&PostParams::default(), &service)
-            .await
-            .map_err(|err| Error::from(anyhow!("error while creating service {name}: {err}")))?;
+                tokio::spawn(async move {
+                    let mut forwarder = pods.portforward(&name, &[remote_port]).await.unwrap();
+                    let mut upstream_conn = forwarder.take_stream(remote_port).unwrap();
 
-        Ok(service)
+                    tokio::io::copy_bidirectional(&mut client_conn, &mut upstream_conn)
+                        .await
+                        .unwrap();
+
+                    drop(upstream_conn);
+
+                    forwarder.join().await.unwrap();
+                });
+            }
+        }))
     }
 
     async fn wait_created<K>(&self, api: Api<K>, name: &str) -> Result<()>

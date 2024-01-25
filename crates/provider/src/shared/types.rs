@@ -25,7 +25,7 @@ pub struct SpawnNodeOptions {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
-    // TODO: naming
+    // TODO: rename startup_files
     pub injected_files: Vec<TransferedFile>,
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order

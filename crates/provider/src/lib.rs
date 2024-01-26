@@ -84,6 +84,9 @@ pub enum ProviderError {
 
     #[error("Failed to setup fileserver: {0}")]
     FileServerSetupError(anyhow::Error),
+
+    #[error("Error sending file: '{0}': {1}")]
+    SendFile(String, anyhow::Error),
 }
 
 #[async_trait]
@@ -133,6 +136,7 @@ pub trait ProviderNode {
     fn log_path(&self) -> &PathBuf;
 
     // Return the absolute path to the file in the `node` perspective
+    // TODO: purpose?
     fn path_in_node(&self, file: &Path) -> PathBuf;
 
     async fn logs(&self) -> Result<String, ProviderError>;
@@ -149,15 +153,15 @@ pub trait ProviderNode {
 
     async fn send_file(
         &self,
-        local_src: &PathBuf,
-        remote_dest: &PathBuf,
+        local_file_path: &PathBuf,
+        remote_file_path: &PathBuf,
         mode: &str,
     ) -> Result<(), ProviderError>;
 
     async fn receive_file(
         &self,
-        remote_src: PathBuf,
-        local_dest: PathBuf,
+        remote_file_path: &PathBuf,
+        local_file_path: &PathBuf,
     ) -> Result<(), ProviderError>;
 
     async fn pause(&self) -> Result<(), ProviderError>;

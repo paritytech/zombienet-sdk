@@ -17,12 +17,12 @@ pub struct KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub(super) namespaces: RwLock<HashMap<String, Arc<KubernetesNamespace<FS>>>>,
     weak: Weak<KubernetesProvider<FS>>,
     capabilities: ProviderCapabilities,
     tmp_dir: PathBuf,
     k8s_client: KubernetesClient,
     filesystem: FS,
+    pub(super) namespaces: RwLock<HashMap<String, Arc<KubernetesNamespace<FS>>>>,
 }
 
 impl<FS> KubernetesProvider<FS>
@@ -85,7 +85,7 @@ where
         self.namespaces
             .write()
             .await
-            .insert(namespace.name.to_string(), namespace.clone());
+            .insert(namespace.name().to_string(), namespace.clone());
 
         Ok(namespace)
     }

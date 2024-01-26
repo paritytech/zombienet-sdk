@@ -6,7 +6,10 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{Container, PodSpec};
+use k8s_openapi::{
+    api::core::v1::{Container, PodSpec, ServicePort, ServiceSpec},
+    apimachinery::pkg::util::intstr::IntOrString,
+};
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
@@ -26,14 +29,16 @@ pub(super) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub(super) name: String,
     pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
     weak: Weak<KubernetesNamespace<FS>>,
+    name: String,
     provider: Weak<KubernetesProvider<FS>>,
     base_dir: PathBuf,
     capabilities: ProviderCapabilities,
     k8s_client: KubernetesClient,
     filesystem: FS,
+    file_server_fw_task: Option<tokio::task::JoinHandle<()>>,
+    file_server_port: Option<u16>,
 }
 
 impl<FS> KubernetesNamespace<FS>
@@ -60,10 +65,12 @@ where
             filesystem: filesystem.clone(),
             k8s_client: k8s_client.clone(),
             nodes: RwLock::new(HashMap::new()),
+            file_server_port: None,
+            file_server_fw_task: None,
         }))
     }
 
-    pub(super) async fn initialize(&self) -> Result<(), ProviderError> {
+    pub(super) async fn initialize(&mut self) -> Result<(), ProviderError> {
         self.initialize_k8s().await?;
         self.initialize_file_server().await?;
 
@@ -86,6 +93,18 @@ where
         .await?;
 
         Ok(())
+    }
+
+    pub(super) fn file_server_local_host(&self) -> Option<String> {
+        self.file_server_fw_task
+            .as_ref()
+            .and_then(|_| Some(format!("localhost:{}", self.file_server_port.unwrap())))
+    }
+
+    pub(super) fn file_server_remote_host(&self) -> Option<String> {
+        self.file_server_fw_task
+            .as_ref()
+            .and_then(|_| Some("fileserver:80".to_string()))
     }
 
     async fn initialize_k8s(&self) -> Result<(), ProviderError> {
@@ -113,7 +132,7 @@ where
         Ok(())
     }
 
-    async fn initialize_file_server(&self) -> Result<(), ProviderError> {
+    async fn initialize_file_server(&mut self) -> Result<(), ProviderError> {
         let name = "fileserver".to_string();
         let labels = BTreeMap::from([(
             "app.kubernetes.io/name".to_string(),
@@ -131,27 +150,62 @@ where
             ..Default::default()
         };
 
-        let manifest = self
+        let pod_manifest = self
             .k8s_client
             .create_pod(&self.name, &name, pod_spec, labels.clone())
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
         // TODO: remove duplication across methods
-        let serialized_manifest = serde_yaml::to_string(&manifest).map_err(|err| {
-            ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
-        })?;
+        let pod_serialized_manifest = serde_yaml::to_string(&pod_manifest)
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
-        let dest_path =
-            PathBuf::from_iter([&self.base_dir, &PathBuf::from("namespace_manifest.yaml")]);
+        let pod_dest_path = PathBuf::from_iter([
+            &self.base_dir,
+            &PathBuf::from("file_server_pod_manifest.yaml"),
+        ]);
 
         self.filesystem
-            .write(dest_path, serialized_manifest)
+            .write(pod_dest_path, pod_serialized_manifest)
             .await?;
 
-        // self.k8s_client
-        //     .create_pod_port_forward(&self.name, &name, 0, 80)
-        //     .await?;
+        let service_spec = ServiceSpec {
+            selector: Some(labels.clone()),
+            ports: Some(vec![ServicePort {
+                name: Some("http".to_string()),
+                port: 80,
+                target_port: Some(IntOrString::Int(80)),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        let service_manifest = self
+            .k8s_client
+            .create_service(&self.name, &name, service_spec, labels)
+            .await
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        let serialized_service_manifest = serde_yaml::to_string(&service_manifest)
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        let service_dest_path = PathBuf::from_iter([
+            &self.base_dir,
+            &PathBuf::from("file_server_service_manifest.yaml"),
+        ]);
+
+        self.filesystem
+            .write(service_dest_path, serialized_service_manifest)
+            .await?;
+
+        let (port, task) = self
+            .k8s_client
+            .create_pod_port_forward(&self.name, &name, 0, 80)
+            .await
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        self.file_server_port = Some(port);
+        self.file_server_fw_task = Some(task);
 
         Ok(())
     }

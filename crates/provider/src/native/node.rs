@@ -169,15 +169,14 @@ where
 
     async fn receive_file(
         &self,
-        remote_src: PathBuf,
-        local_dest: PathBuf,
+        remote_file_path: &PathBuf,
+        local_file_path: &PathBuf,
     ) -> Result<(), ProviderError> {
-        let remote_file_path = format!(
-            "{}{}",
-            self.base_dir.to_string_lossy(),
-            remote_src.to_string_lossy()
-        );
-        self.filesystem.copy(remote_file_path, local_dest).await?;
+        let namespaced_remote_file_path = PathBuf::from_iter([&self.base_dir, remote_file_path]);
+
+        self.filesystem
+            .copy(remote_file_path, namespaced_remote_file_path)
+            .await?;
 
         Ok(())
     }
@@ -678,8 +677,8 @@ mod tests {
         .unwrap();
 
         node.receive_file(
-            PathBuf::from("/mynode.log"),
-            PathBuf::from("/nodelog.backup"),
+            &PathBuf::from("/mynode.log"),
+            &PathBuf::from("/nodelog.backup"),
         )
         .await
         .unwrap();

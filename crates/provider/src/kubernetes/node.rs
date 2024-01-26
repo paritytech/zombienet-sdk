@@ -1,202 +1,23 @@
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{Arc, Weak},
     time::Duration,
 };
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::shared::resources::{ResourceQuantity, Resources};
-use futures::future::try_join_all;
-use k8s_openapi::{
-    api::core::v1::{
-        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Volume,
-        VolumeMount,
-    },
-    apimachinery::pkg::api::resource::Quantity,
-};
+use configuration::shared::resources::Resources;
 use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
 
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions},
-    KubernetesClient, ProviderError, ProviderNode,
+    KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
 };
 
-use super::namespace::KubernetesNamespace;
-
-struct PodSpecBuilder;
-
-impl PodSpecBuilder {
-    fn build(
-        name: &str,
-        image: &str,
-        resources: Option<&Resources>,
-        program: &str,
-        args: &Vec<String>,
-        env: &Vec<(String, String)>,
-    ) -> PodSpec {
-        PodSpec {
-            hostname: Some(name.to_string()),
-            init_containers: Some(vec![Self::build_helper_binaries_setup_container()]),
-            containers: vec![Self::build_main_container(
-                name, image, resources, program, args, env,
-            )],
-            volumes: Some(Self::build_volumes()),
-            ..Default::default()
-        }
-    }
-
-    fn build_main_container(
-        name: &str,
-        image: &str,
-        resources: Option<&Resources>,
-        program: &str,
-        args: &Vec<String>,
-        env: &Vec<(String, String)>,
-    ) -> Container {
-        Container {
-            name: name.to_string(),
-            image: Some(image.to_string()),
-            image_pull_policy: Some("Always".to_string()),
-            command: Some(
-                [
-                    vec!["/zombie-wrapper.sh".to_string(), program.to_string()],
-                    args.clone(),
-                ]
-                .concat(),
-            ),
-            env: Some(
-                env.iter()
-                    .map(|(name, value)| EnvVar {
-                        name: name.clone(),
-                        value: Some(value.clone()),
-                        value_from: None,
-                    })
-                    .collect(),
-            ),
-            volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
-                name: "zombie-wrapper-volume".to_string(),
-                mount_path: "/zombie-wrapper.sh".to_string(),
-                sub_path: Some("zombie-wrapper.sh".to_string()),
-                ..Default::default()
-            }])),
-            resources: Self::build_resources_requirements(resources),
-            ..Default::default()
-        }
-    }
-
-    fn build_helper_binaries_setup_container() -> Container {
-        Container {
-            name: "helper-binaries-setup".to_string(),
-            image: Some("docker.io/alpine:latest".to_string()),
-            image_pull_policy: Some("Always".to_string()),
-            volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
-                name: "helper-binaries-downloader-volume".to_string(),
-                mount_path: "/helper-binaries-downloader.sh".to_string(),
-                sub_path: Some("helper-binaries-downloader.sh".to_string()),
-                ..Default::default()
-            }])),
-            command: Some(vec![
-                "ash".to_string(),
-                "/helper-binaries-downloader.sh".to_string(),
-            ]),
-            ..Default::default()
-        }
-    }
-
-    fn build_volumes() -> Vec<Volume> {
-        vec![
-            Volume {
-                name: "cfg".to_string(),
-                ..Default::default()
-            },
-            Volume {
-                name: "data".to_string(),
-                ..Default::default()
-            },
-            Volume {
-                name: "relay-data".to_string(),
-                ..Default::default()
-            },
-            Volume {
-                name: "zombie-wrapper-volume".to_string(),
-                config_map: Some(ConfigMapVolumeSource {
-                    name: Some("zombie-wrapper".to_string()),
-                    default_mode: Some(0o755),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        ]
-    }
-
-    fn build_volume_mounts(non_default_mounts: Vec<VolumeMount>) -> Vec<VolumeMount> {
-        vec![
-            vec![
-                VolumeMount {
-                    name: "cfg".to_string(),
-                    mount_path: "/cfg".to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-                VolumeMount {
-                    name: "data".to_string(),
-                    mount_path: "/data".to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-                VolumeMount {
-                    name: "relay-data".to_string(),
-                    mount_path: "/relay-data".to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-            ],
-            non_default_mounts,
-        ]
-        .concat()
-    }
-
-    fn build_resources_requirements(resources: Option<&Resources>) -> Option<ResourceRequirements> {
-        resources.and_then(|resources| {
-            Some(ResourceRequirements {
-                limits: Self::build_resources_requirements_quantities(
-                    resources.limit_cpu(),
-                    resources.limit_memory(),
-                ),
-                requests: Self::build_resources_requirements_quantities(
-                    resources.request_cpu(),
-                    resources.request_memory(),
-                ),
-                ..Default::default()
-            })
-        })
-    }
-
-    fn build_resources_requirements_quantities(
-        cpu: Option<&ResourceQuantity>,
-        memory: Option<&ResourceQuantity>,
-    ) -> Option<BTreeMap<String, Quantity>> {
-        let mut quantities = BTreeMap::new();
-
-        if let Some(cpu) = cpu {
-            quantities.insert("cpu".to_string(), Quantity(cpu.as_str().to_string()));
-        }
-
-        if let Some(memory) = memory {
-            quantities.insert("memory".to_string(), Quantity(memory.as_str().to_string()));
-        }
-
-        if !quantities.is_empty() {
-            Some(quantities)
-        } else {
-            None
-        }
-    }
-}
+use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 
 #[derive(Clone)]
 pub(super) struct KubernetesNode<FS>
@@ -316,10 +137,11 @@ where
         let manifest = self
             .k8s_client
             .create_pod(&self.namespace_name(), &self.name, pod_spec, labels)
-            .await?;
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
 
         let serialized_manifest = serde_yaml::to_string(&manifest)
-            .map_err(|err| ProviderError::SomeError(self.name.to_string(), err.into()))?;
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
 
         let dest_path = PathBuf::from_iter([
             &self.base_dir,
@@ -328,7 +150,8 @@ where
 
         self.filesystem
             .write(dest_path, serialized_manifest)
-            .await?;
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
 
         Ok(())
     }
@@ -355,20 +178,34 @@ where
         Ok(())
     }
 
-    async fn create_path(&self, path: &PathBuf) -> Result<(), ProviderError> {
-        self.k8s_client
+    fn get_remote_parent_dir(&self, remote_file_path: &PathBuf) -> Option<PathBuf> {
+        if let Some(remote_parent_dir) = remote_file_path.parent() {
+            if matches!(
+                remote_parent_dir.components().rev().peekable().peek(),
+                Some(Component::Normal(_))
+            ) {
+                return Some(remote_parent_dir.to_path_buf());
+            }
+        }
+
+        None
+    }
+
+    async fn create_remote_dir(&self, remote_dir: &PathBuf) -> Result<(), ProviderError> {
+        let _ = self
+            .k8s_client
             .pod_exec(
                 &self.namespace_name(),
                 &self.name,
-                vec!["mkdir", "-p", &path.to_string_lossy()],
+                vec!["mkdir", "-p", &remote_dir.to_string_lossy()],
             )
             .await
             .map_err(|err| {
                 ProviderError::NodeSpawningFailed(
-                    format!("failed to created path for pod {}", &self.name),
+                    format!("failed to created dirfor pod {}", &self.name),
                     err.into(),
                 )
-            });
+            })?;
 
         Ok(())
     }
@@ -376,7 +213,7 @@ where
     fn namespace_name(&self) -> String {
         self.namespace
             .upgrade()
-            .and_then(|namespace| Some(namespace.name.clone()))
+            .and_then(|namespace| Some(namespace.name().to_string()))
             .expect("namespace shouldn't be dropped")
     }
 }
@@ -479,20 +316,79 @@ where
 
     async fn send_file(
         &self,
-        local_src: &PathBuf,
-        remote_dest: &PathBuf,
+        local_file_path: &PathBuf,
+        remote_file_path: &PathBuf,
         mode: &str,
     ) -> Result<(), ProviderError> {
-        let data = self.filesystem.read(local_src).await.unwrap();
-        self.http_client.post("");
+        let data = self.filesystem.read(local_file_path).await.unwrap();
+
+        if let Some(remote_parent_dir) = self.get_remote_parent_dir(remote_file_path) {
+            self.create_remote_dir(&remote_parent_dir).await?;
+        }
+
+        let file_server_local_host = self
+            .namespace
+            .upgrade()
+            .and_then(|namespace| namespace.file_server_local_host())
+            .ok_or_else(|| {
+                ProviderError::SendFile(
+                    local_file_path.to_string_lossy().to_string(),
+                    anyhow!("file server local port not found"),
+                )
+            })?;
+
+        self.http_client
+            .post(format!(
+                "{}{}",
+                file_server_local_host,
+                remote_file_path.to_string_lossy()
+            ))
+            .body(data)
+            .send()
+            .await
+            .map_err(|err| {
+                ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
+            })?;
+
+        let file_server_remote_host = self
+            .namespace
+            .upgrade()
+            .and_then(|namespace| namespace.file_server_remote_host())
+            .ok_or_else(|| {
+                ProviderError::SendFile(
+                    local_file_path.to_string_lossy().to_string(),
+                    anyhow!("file server local port not found"),
+                )
+            })?;
+
+        self.k8s_client.pod_exec(
+            &self.namespace_name(),
+            &self.name,
+            vec![
+                "curl",
+                &format!(
+                    "{}{}",
+                    file_server_remote_host,
+                    remote_file_path.to_string_lossy()
+                ),
+                "--output",
+                &remote_file_path.to_string_lossy(),
+            ],
+        );
+
+        self.k8s_client.pod_exec(
+            &self.namespace_name(),
+            &self.name,
+            vec!["chmod", mode, &remote_file_path.to_string_lossy()],
+        );
 
         Ok(())
     }
 
     async fn receive_file(
         &self,
-        remote_src: PathBuf,
-        local_dest: PathBuf,
+        remote_src: &PathBuf,
+        local_dest: &PathBuf,
     ) -> Result<(), ProviderError> {
         Ok(())
     }

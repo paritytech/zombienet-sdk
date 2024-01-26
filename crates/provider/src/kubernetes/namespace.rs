@@ -30,6 +30,7 @@ where
     FS: FileSystem + Send + Sync + Clone,
 {
     pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
+    pub(super) file_server_port: RwLock<Option<u16>>,
     weak: Weak<KubernetesNamespace<FS>>,
     name: String,
     provider: Weak<KubernetesProvider<FS>>,
@@ -37,8 +38,7 @@ where
     capabilities: ProviderCapabilities,
     k8s_client: KubernetesClient,
     filesystem: FS,
-    file_server_fw_task: Option<tokio::task::JoinHandle<()>>,
-    file_server_port: Option<u16>,
+    file_server_fw_task: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl<FS> KubernetesNamespace<FS>
@@ -65,12 +65,12 @@ where
             filesystem: filesystem.clone(),
             k8s_client: k8s_client.clone(),
             nodes: RwLock::new(HashMap::new()),
-            file_server_port: None,
-            file_server_fw_task: None,
+            file_server_port: RwLock::new(None),
+            file_server_fw_task: RwLock::new(None),
         }))
     }
 
-    pub(super) async fn initialize(&mut self) -> Result<(), ProviderError> {
+    pub(super) async fn initialize(&self) -> Result<(), ProviderError> {
         self.initialize_k8s().await?;
         self.initialize_file_server().await?;
 
@@ -93,18 +93,6 @@ where
         .await?;
 
         Ok(())
-    }
-
-    pub(super) fn file_server_local_host(&self) -> Option<String> {
-        self.file_server_fw_task
-            .as_ref()
-            .and_then(|_| Some(format!("localhost:{}", self.file_server_port.unwrap())))
-    }
-
-    pub(super) fn file_server_remote_host(&self) -> Option<String> {
-        self.file_server_fw_task
-            .as_ref()
-            .and_then(|_| Some("fileserver:80".to_string()))
     }
 
     async fn initialize_k8s(&self) -> Result<(), ProviderError> {
@@ -132,7 +120,7 @@ where
         Ok(())
     }
 
-    async fn initialize_file_server(&mut self) -> Result<(), ProviderError> {
+    async fn initialize_file_server(&self) -> Result<(), ProviderError> {
         let name = "fileserver".to_string();
         let labels = BTreeMap::from([(
             "app.kubernetes.io/name".to_string(),
@@ -204,8 +192,8 @@ where
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
-        self.file_server_port = Some(port);
-        self.file_server_fw_task = Some(task);
+        *self.file_server_port.write().await = Some(port);
+        *self.file_server_fw_task.write().await = Some(task);
 
         Ok(())
     }

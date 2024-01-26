@@ -4,7 +4,6 @@ pub mod shared;
 
 use std::{
     collections::HashMap,
-    net::IpAddr,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -16,8 +15,6 @@ use shared::types::{
     RunScriptOptions, SpawnNodeOptions,
 };
 use support::fs::FileSystemError;
-
-use crate::shared::types::Port;
 
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]

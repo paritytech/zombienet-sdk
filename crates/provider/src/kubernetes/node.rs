@@ -216,6 +216,18 @@ where
             .and_then(|namespace| Some(namespace.name().to_string()))
             .expect("namespace shouldn't be dropped")
     }
+
+    pub(super) async fn file_server_local_host(&self) -> Result<String, ProviderError> {
+        if let Some(namespace) = self.namespace.upgrade() {
+            if let Some(port) = *namespace.file_server_port.read().await {
+                return Ok(format!("localhost:{port}"));
+            }
+        }
+
+        Err(ProviderError::FileServerSetupError(anyhow!(
+            "file server port not bound locally"
+        )))
+    }
 }
 
 #[async_trait]
@@ -326,21 +338,10 @@ where
             self.create_remote_dir(&remote_parent_dir).await?;
         }
 
-        let file_server_local_host = self
-            .namespace
-            .upgrade()
-            .and_then(|namespace| namespace.file_server_local_host())
-            .ok_or_else(|| {
-                ProviderError::SendFile(
-                    local_file_path.to_string_lossy().to_string(),
-                    anyhow!("file server local port not found"),
-                )
-            })?;
-
         self.http_client
             .post(format!(
                 "{}{}",
-                file_server_local_host,
+                self.file_server_local_host().await?,
                 remote_file_path.to_string_lossy()
             ))
             .body(data)
@@ -350,37 +351,34 @@ where
                 ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
             })?;
 
-        let file_server_remote_host = self
-            .namespace
-            .upgrade()
-            .and_then(|namespace| namespace.file_server_remote_host())
-            .ok_or_else(|| {
-                ProviderError::SendFile(
-                    local_file_path.to_string_lossy().to_string(),
-                    anyhow!("file server local port not found"),
-                )
+        let _ = self
+            .k8s_client
+            .pod_exec(
+                &self.namespace_name(),
+                &self.name,
+                vec![
+                    "curl",
+                    &format!("fileserver:80{}", remote_file_path.to_string_lossy()),
+                    "--output",
+                    &remote_file_path.to_string_lossy(),
+                ],
+            )
+            .await
+            .map_err(|err| {
+                ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
             })?;
 
-        self.k8s_client.pod_exec(
-            &self.namespace_name(),
-            &self.name,
-            vec![
-                "curl",
-                &format!(
-                    "{}{}",
-                    file_server_remote_host,
-                    remote_file_path.to_string_lossy()
-                ),
-                "--output",
-                &remote_file_path.to_string_lossy(),
-            ],
-        );
-
-        self.k8s_client.pod_exec(
-            &self.namespace_name(),
-            &self.name,
-            vec!["chmod", mode, &remote_file_path.to_string_lossy()],
-        );
+        let _ = self
+            .k8s_client
+            .pod_exec(
+                &self.namespace_name(),
+                &self.name,
+                vec!["chmod", mode, &remote_file_path.to_string_lossy()],
+            )
+            .await
+            .map_err(|err| {
+                ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
+            })?;
 
         Ok(())
     }

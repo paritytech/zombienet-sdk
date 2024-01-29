@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 pub use configuration::{NetworkConfig, NetworkConfigBuilder, RegistrationStrategy};
 pub use orchestrator::{
@@ -28,7 +30,7 @@ pub trait NetworkConfigExt {
 #[async_trait]
 impl NetworkConfigExt for NetworkConfig {
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
-        let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+        let provider = Arc::new(NativeProvider::new(LocalFileSystem {}, OsProcessManager {}));
         let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
         orchestrator.spawn(self).await
     }

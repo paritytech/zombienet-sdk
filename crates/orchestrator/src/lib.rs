@@ -18,7 +18,7 @@ use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
-use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
+use provider::{constants::LOCALHOST, types::TransferedFile, DynProvider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 use tracing::{debug, info};
@@ -27,21 +27,19 @@ use crate::{
     generators::chain_spec::ParaGenesisConfig, shared::types::RegisterParachainOptions,
     spawner::SpawnNodeCtx,
 };
-pub struct Orchestrator<T, P>
+pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
-    P: Provider,
 {
     filesystem: T,
-    provider: P,
+    provider: DynProvider,
 }
 
-impl<T, P> Orchestrator<T, P>
+impl<T> Orchestrator<T>
 where
     T: FileSystem + Sync + Send + Clone,
-    P: Provider,
 {
-    pub fn new(filesystem: T, provider: P) -> Self {
+    pub fn new(filesystem: T, provider: DynProvider) -> Self {
         Self {
             filesystem,
             provider,

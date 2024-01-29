@@ -95,7 +95,7 @@ pub trait Provider {
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
 }
 
-pub type DynProvider = Arc<dyn Provider>;
+pub type DynProvider = Arc<dyn Provider + Send + Sync>;
 
 #[async_trait]
 pub trait ProviderNamespace {

@@ -18,7 +18,7 @@ use super::{
     provider::WeakNativeProvider,
 };
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -100,12 +100,14 @@ where
         let log_path = PathBuf::from(format!("{}/{}.log", base_dir_raw, &options.name));
         let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
+        let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
         // NOTE: in native this base path already exist
         self.filesystem.create_dir_all(&base_dir).await?;
         try_join!(
             self.filesystem.create_dir(&config_dir),
             self.filesystem.create_dir(&data_dir),
+            self.filesystem.create_dir(&relay_data_dir),
             self.filesystem.create_dir(&scripts_dir),
         )?;
 
@@ -161,6 +163,7 @@ where
             base_dir,
             config_dir,
             data_dir,
+            relay_data_dir,
             scripts_dir,
             log_path,
             filesystem: self.filesystem.clone(),

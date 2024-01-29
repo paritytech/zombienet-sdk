@@ -32,6 +32,7 @@ where
     pub(super) base_dir: PathBuf,
     pub(super) config_dir: PathBuf,
     pub(super) data_dir: PathBuf,
+    pub(super) relay_data_dir: PathBuf,
     pub(super) scripts_dir: PathBuf,
     pub(super) log_path: PathBuf,
     pub(super) inner: Arc<RwLock<NativeNodeInner>>,
@@ -57,6 +58,10 @@ where
         &self.name
     }
 
+    fn args(&self) -> Vec<&str> {
+        self.args.iter().map(|arg| arg.as_str()).collect()
+    }
+
     fn base_dir(&self) -> &PathBuf {
         &self.base_dir
     }
@@ -67,6 +72,10 @@ where
 
     fn data_dir(&self) -> &PathBuf {
         &self.data_dir
+    }
+
+    fn relay_data_dir(&self) -> &PathBuf {
+        &self.relay_data_dir
     }
 
     fn scripts_dir(&self) -> &PathBuf {

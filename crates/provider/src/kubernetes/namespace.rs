@@ -268,6 +268,7 @@ where
         let node = KubernetesNode::new(
             &self.weak,
             &options.name,
+            &options.args,
             &self.base_dir,
             &self.k8s_client,
             &self.filesystem,
@@ -278,7 +279,6 @@ where
             options.image.as_ref(),
             options.resources.as_ref(),
             &options.program,
-            &options.args,
             &options.env,
         )
         .await?;

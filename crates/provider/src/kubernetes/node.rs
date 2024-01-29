@@ -19,13 +19,13 @@ use crate::{
 
 use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 
-#[derive(Clone)]
 pub(super) struct KubernetesNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
     pub(super) name: String,
     namespace: Weak<KubernetesNamespace<FS>>,
+    args: Vec<String>,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
@@ -44,6 +44,7 @@ where
     pub(super) async fn new(
         namespace: &Weak<KubernetesNamespace<FS>>,
         name: &str,
+        args: &Vec<String>,
         namespace_base_dir: &PathBuf,
         k8s_client: &KubernetesClient,
         filesystem: &FS,
@@ -67,6 +68,7 @@ where
         Ok(Arc::new(KubernetesNode {
             namespace: namespace.clone(),
             name: name.to_string(),
+            args: args.clone(),
             base_dir,
             config_dir,
             data_dir,
@@ -84,10 +86,9 @@ where
         image: Option<&String>,
         resources: Option<&Resources>,
         program: &str,
-        args: &Vec<String>,
         env: &Vec<(String, String)>,
     ) -> Result<(), ProviderError> {
-        self.initialize_k8s(image, resources, program, args, env)
+        self.initialize_k8s(image, resources, program, &self.args, env)
             .await?;
         self.initialize_startup_files().await?;
         self.start().await?;
@@ -239,6 +240,10 @@ where
         &self.name
     }
 
+    fn args(&self) -> Vec<&str> {
+        self.args.iter().map(|arg| arg.as_str()).collect()
+    }
+
     fn base_dir(&self) -> &PathBuf {
         &self.base_dir
     }
@@ -249,6 +254,10 @@ where
 
     fn data_dir(&self) -> &PathBuf {
         &self.data_dir
+    }
+
+    fn relay_data_dir(&self) -> &PathBuf {
+        &self.relay_data_dir
     }
 
     fn scripts_dir(&self) -> &PathBuf {

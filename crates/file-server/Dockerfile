@@ -12,7 +12,7 @@ RUN cargo build --release -p zombienet-file-server
 # run stage
 FROM alpine:latest
 
-ENV LISTENING_ADDRESS 127.0.0.1:80
+ENV LISTENING_ADDRESS 0.0.0.0:80
 ENV UPLOADS_DIRECTORY /uploads
 
 COPY --from=builder /tmp/target/release/zombienet-file-server /usr/local/bin/file-server

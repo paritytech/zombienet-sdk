@@ -4,7 +4,7 @@ use std::{
 };
 
 use provider::types::TransferedFile;
-use subxt::{dynamic::Value, OnlineClient, SubstrateConfig};
+use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::fs::FileSystem;
 use tracing::info;
@@ -138,13 +138,28 @@ impl Parachain {
 
         // TODO: uncomment below and fix the sign and submit (and follow afterwards until
         // finalized block) to register the parachain
-        let result = api
+        let mut tx = api
             .tx()
             .sign_and_submit_then_watch_default(&sudo_call, &sudo)
             .await?;
 
-        let result = result.wait_for_in_block().await?;
-        info!("In block: {:#?}", result.block_hash());
+        // Below we use the low level API to replicate the `wait_for_in_block` behaviour
+        // which was removed in subxt 0.33.0. See https://github.com/paritytech/subxt/pull/1237.
+        while let Some(status) = tx.next().await {
+            match status? {
+                TxStatus::InBestBlock(tx_in_block) | TxStatus::InFinalizedBlock(tx_in_block) => {
+                    let result = tx_in_block.wait_for_success().await?;
+                    info!("In block: {:#?}", result.block_hash());
+                },
+                TxStatus::Error { message }
+                | TxStatus::Invalid { message }
+                | TxStatus::Dropped { message } => {
+                    return Err(anyhow::format_err!("Error submitting tx: {message}"));
+                },
+                _ => continue,
+            }
+        }
+
         Ok(())
     }
 }

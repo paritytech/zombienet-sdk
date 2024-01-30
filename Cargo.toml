@@ -15,7 +15,7 @@ members = [
 [workspace.package]
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
-version = "0.1.0-alpha.0"
+version = "0.1.0-alpha.1"
 rust-version = "1.70.0"
 license = "Apache-2.0 OR GPL-3.0"
 repository = "https://github.com/paritytech/zombienet-sdk"
@@ -45,8 +45,8 @@ sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
 sp-core = "22.0.0"
 libp2p = { version = "0.52" }
-subxt = "0.32.0"
-subxt-signer = { version = "0.32.0", features = ["subxt"] }
+subxt = "0.33.0"
+subxt-signer = { version = "0.33.0", features = ["subxt"] }
 tracing = "0.1.35"
 pjs-rs = "0.1.2"
 kube = "0.87.1"
@@ -59,9 +59,9 @@ tower-http = { version = "0.5" }
 tracing-subscriber = { version = "0.3" }
 
 # Zombienet workspace crates:
-support = { package = "zombienet-support", version = "0.1.0-alpha.0", path = "crates/support" }
-configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.0", path = "crates/configuration" }
-orchestrator = { package = "zombienet-orchestrator", version = "0.1.0-alpha.0", path = "crates/orchestrator" }
-provider = { package = "zombienet-provider", version = "0.1.0-alpha.0", path = "crates/provider" }
-prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.1.0-alpha.0", path = "crates/prom-metrics-parser" }
-sdk = { package = "zombienet-sdk", version = "0.1.0-alpha.0", path = "crates/sdk" }
+support = { package = "zombienet-support", version = "0.1.0-alpha.1", path = "crates/support" }
+configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.1", path = "crates/configuration" }
+orchestrator = { package = "zombienet-orchestrator", version = "0.1.0-alpha.1", path = "crates/orchestrator" }
+provider = { package = "zombienet-provider", version = "0.1.0-alpha.1", path = "crates/provider" }
+prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.1.0-alpha.1", path = "crates/prom-metrics-parser" }
+zombienet-sdk = { version = "0.1.0-alpha.1", path = "crates/sdk" }

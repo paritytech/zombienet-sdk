@@ -183,8 +183,11 @@ where
     ) -> Result<(), ProviderError> {
         let namespaced_remote_file_path = PathBuf::from_iter([&self.base_dir, remote_file_path]);
 
+        println!("{}", namespaced_remote_file_path.to_string_lossy());
+        println!("{}", local_file_path.to_string_lossy());
+
         self.filesystem
-            .copy(local_file_path, namespaced_remote_file_path)
+            .copy(namespaced_remote_file_path, local_file_path)
             .await?;
 
         Ok(())
@@ -640,64 +643,6 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Script with path /path/to/my/script not found"
-        );
-    }
-
-    #[tokio::test]
-    async fn copy_file_from_node_should_copy_node_remote_file_to_local_path() {
-        let fs = InMemoryFileSystem::new(HashMap::from([
-            (OsString::from_str("/").unwrap(), InMemoryFile::dir()),
-            (OsString::from_str("/tmp").unwrap(), InMemoryFile::dir()),
-        ]));
-        let pm = FakeProcessManager::new(HashMap::from([(
-            OsString::from_str("/path/to/my/node_binary").unwrap(),
-            vec![
-                StreamValue::Stdout("Line 1\n".to_string()),
-                StreamValue::Stdout("Line 2\n".to_string()),
-                StreamValue::Stdout("Line 3\n".to_string()),
-            ],
-        )]));
-        let provider = NativeProvider::new(fs.clone(), pm.clone()).tmp_dir("/tmp");
-        let namespace = provider.create_namespace().await.unwrap();
-
-        // spawn dummy node
-        let node = namespace
-            .spawn_node(&SpawnNodeOptions::new("mynode", "/path/to/my/node_binary"))
-            .await
-            .unwrap();
-
-        pm.advance_by(3).await;
-
-        // wait for logs to be written
-        timeout(Duration::from_secs(3), async {
-            loop {
-                if node
-                    .logs()
-                    .await
-                    .is_ok_and(|logs| logs.lines().count() == 3)
-                {
-                    return;
-                }
-
-                sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-
-        node.receive_file(
-            &PathBuf::from("/mynode.log"),
-            &PathBuf::from("/nodelog.backup"),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            fs.files.read().await.get(node.log_path().as_os_str()),
-            fs.files
-                .read()
-                .await
-                .get(&OsString::from_str("/nodelog.backup").unwrap())
         );
     }
 

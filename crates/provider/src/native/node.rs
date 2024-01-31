@@ -168,8 +168,8 @@ where
 
     async fn send_file(
         &self,
-        _local_src: &PathBuf,
-        _remote_dest: &PathBuf,
+        _local_src: &Path,
+        _remote_dest: &Path,
         _mode: &str,
     ) -> Result<(), ProviderError> {
         // TODO: implement
@@ -178,8 +178,8 @@ where
 
     async fn receive_file(
         &self,
-        remote_file_path: &PathBuf,
-        local_file_path: &PathBuf,
+        remote_file_path: &Path,
+        local_file_path: &Path,
     ) -> Result<(), ProviderError> {
         let namespaced_remote_file_path = PathBuf::from_iter([&self.base_dir, remote_file_path]);
 

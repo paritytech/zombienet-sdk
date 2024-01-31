@@ -154,15 +154,15 @@ pub trait ProviderNode {
 
     async fn send_file(
         &self,
-        local_file_path: &PathBuf,
-        remote_file_path: &PathBuf,
+        local_file_path: &Path,
+        remote_file_path: &Path,
         mode: &str,
     ) -> Result<(), ProviderError>;
 
     async fn receive_file(
         &self,
-        remote_file_path: &PathBuf,
-        local_file_path: &PathBuf,
+        remote_file_path: &Path,
+        local_file_path: &Path,
     ) -> Result<(), ProviderError>;
 
     async fn pause(&self) -> Result<(), ProviderError>;

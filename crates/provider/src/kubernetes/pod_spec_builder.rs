@@ -17,8 +17,8 @@ impl PodSpecBuilder {
         image: &str,
         resources: Option<&Resources>,
         program: &str,
-        args: &Vec<String>,
-        env: &Vec<(String, String)>,
+        args: &[String],
+        env: &[(String, String)],
     ) -> PodSpec {
         PodSpec {
             hostname: Some(name.to_string()),
@@ -36,8 +36,8 @@ impl PodSpecBuilder {
         image: &str,
         resources: Option<&Resources>,
         program: &str,
-        args: &Vec<String>,
-        env: &Vec<(String, String)>,
+        args: &[String],
+        env: &[(String, String)],
     ) -> Container {
         Container {
             name: name.to_string(),
@@ -46,7 +46,7 @@ impl PodSpecBuilder {
             command: Some(
                 [
                     vec!["/zombie-wrapper.sh".to_string(), program.to_string()],
-                    args.clone(),
+                    args.to_vec(),
                 ]
                 .concat(),
             ),
@@ -125,7 +125,7 @@ impl PodSpecBuilder {
     }
 
     fn build_volume_mounts(non_default_mounts: Vec<VolumeMount>) -> Vec<VolumeMount> {
-        vec![
+        [
             vec![
                 VolumeMount {
                     name: "cfg".to_string(),
@@ -152,18 +152,16 @@ impl PodSpecBuilder {
     }
 
     fn build_resources_requirements(resources: Option<&Resources>) -> Option<ResourceRequirements> {
-        resources.and_then(|resources| {
-            Some(ResourceRequirements {
-                limits: Self::build_resources_requirements_quantities(
-                    resources.limit_cpu(),
-                    resources.limit_memory(),
-                ),
-                requests: Self::build_resources_requirements_quantities(
-                    resources.request_cpu(),
-                    resources.request_memory(),
-                ),
-                ..Default::default()
-            })
+        resources.map(|resources| ResourceRequirements {
+            limits: Self::build_resources_requirements_quantities(
+                resources.limit_cpu(),
+                resources.limit_memory(),
+            ),
+            requests: Self::build_resources_requirements_quantities(
+                resources.request_cpu(),
+                resources.request_memory(),
+            ),
+            ..Default::default()
         })
     }
 

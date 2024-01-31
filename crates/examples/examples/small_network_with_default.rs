@@ -1,9 +1,9 @@
-use zombienet_sdk::{AddCollatorOptions, AddNodeOptions, NetworkConfigBuilder, NetworkConfigExt};
+use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let mut network = NetworkConfigBuilder::new()
+    let mut _network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")

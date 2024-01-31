@@ -197,13 +197,13 @@ impl ChainSpec {
         let chain_spec_path_local = format!(
             "{}/{}",
             ns.base_dir().to_string_lossy(),
-            maybe_plain_path.display().to_string()
+            maybe_plain_path.display()
         );
         // Remote path to be injected
         let chain_spec_path_in_pod = format!(
             "{}/{}",
             NODE_CONFIG_DIR,
-            maybe_plain_path.display().to_string()
+            maybe_plain_path.display()
         );
         // Path in the context of the node, this can be different in the context of the providers (e.g native)
         let chain_spec_path_in_args = if ns.capabilities().prefix_with_full_path {

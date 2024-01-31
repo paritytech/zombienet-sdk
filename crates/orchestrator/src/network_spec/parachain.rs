@@ -87,14 +87,10 @@ impl ParachainSpec {
         };
 
         // TODO: internally we use image as String
-        let main_image = if let Some(image) = config
+        let main_image = config
             .default_image()
             .or(config.collators().first().and_then(|node| node.image()))
-        {
-            Some(image.as_str().to_string())
-        } else {
-            None
-        };
+            .map(|image| image.as_str().to_string());
 
         let chain_spec = if config.is_cumulus_based() {
             // we need a chain-spec

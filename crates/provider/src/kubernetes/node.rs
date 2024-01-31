@@ -44,7 +44,7 @@ where
     pub(super) async fn new(
         namespace: &Weak<KubernetesNamespace<FS>>,
         name: &str,
-        args: &Vec<String>,
+        args: &[String],
         namespace_base_dir: &PathBuf,
         k8s_client: &KubernetesClient,
         filesystem: &FS,
@@ -64,12 +64,12 @@ where
             filesystem.create_dir(&scripts_dir),
         )?;
 
-        let log_path = base_dir.join(format!("node.log"));
+        let log_path = base_dir.join("node.log");
 
         Ok(Arc::new(KubernetesNode {
             namespace: namespace.clone(),
             name: name.to_string(),
-            args: args.clone(),
+            args: args.to_vec(),
             base_dir,
             config_dir,
             data_dir,
@@ -87,8 +87,8 @@ where
         image: Option<&String>,
         resources: Option<&Resources>,
         program: &str,
-        env: &Vec<(String, String)>,
-        startup_files: &Vec<TransferedFile>,
+        env: &[(String, String)],
+        startup_files: &[TransferedFile],
     ) -> Result<(), ProviderError> {
         self.initialize_k8s(image, resources, program, &self.args, env)
             .await?;
@@ -127,8 +127,8 @@ where
         image: Option<&String>,
         resources: Option<&Resources>,
         program: &str,
-        args: &Vec<String>,
-        env: &Vec<(String, String)>,
+        args: &[String],
+        env: &[(String, String)],
     ) -> Result<(), ProviderError> {
         let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
         let image = image.ok_or_else(|| {
@@ -161,7 +161,7 @@ where
 
     async fn initialize_startup_files(
         &self,
-        files: &Vec<TransferedFile>,
+        files: &[TransferedFile],
     ) -> Result<(), ProviderError> {
         try_join_all(
             files
@@ -173,7 +173,7 @@ where
         Ok(())
     }
 
-    fn get_remote_parent_dir(&self, remote_file_path: &PathBuf) -> Option<PathBuf> {
+    fn get_remote_parent_dir(&self, remote_file_path: &Path) -> Option<PathBuf> {
         if let Some(remote_parent_dir) = remote_file_path.parent() {
             if matches!(
                 remote_parent_dir.components().rev().peekable().peek(),
@@ -186,7 +186,7 @@ where
         None
     }
 
-    async fn create_remote_dir(&self, remote_dir: &PathBuf) -> Result<(), ProviderError> {
+    async fn create_remote_dir(&self, remote_dir: &Path) -> Result<(), ProviderError> {
         let _ = self
             .k8s_client
             .pod_exec(
@@ -208,7 +208,7 @@ where
     fn namespace_name(&self) -> String {
         self.namespace
             .upgrade()
-            .and_then(|namespace| Some(namespace.name().to_string()))
+            .map(|namespace| namespace.name().to_string())
             .expect("namespace shouldn't be dropped")
     }
 
@@ -331,8 +331,8 @@ where
 
     async fn send_file(
         &self,
-        local_file_path: &PathBuf,
-        remote_file_path: &PathBuf,
+        local_file_path: &Path,
+        remote_file_path: &Path,
         mode: &str,
     ) -> Result<(), ProviderError> {
         let data = self.filesystem.read(local_file_path).await.unwrap();
@@ -388,8 +388,8 @@ where
 
     async fn receive_file(
         &self,
-        _remote_src: &PathBuf,
-        _local_dest: &PathBuf,
+        _remote_src: &Path,
+        _local_dest: &Path,
     ) -> Result<(), ProviderError> {
         Ok(())
     }

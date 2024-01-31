@@ -112,6 +112,15 @@ impl PodSpecBuilder {
                 }),
                 ..Default::default()
             },
+            Volume {
+                name: "helper-binaries-downloader-volume".to_string(),
+                config_map: Some(ConfigMapVolumeSource {
+                    name: Some("helper-binaries-downloader".to_string()),
+                    default_mode: Some(0o755),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
         ]
     }
 

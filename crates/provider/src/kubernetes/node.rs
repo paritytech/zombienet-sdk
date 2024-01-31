@@ -8,12 +8,13 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::shared::resources::Resources;
+use futures::future::try_join_all;
 use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
 
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
-    types::{ExecutionResult, RunCommandOptions, RunScriptOptions},
+    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -52,10 +53,11 @@ where
         let base_dir = PathBuf::from_iter([&namespace_base_dir, &PathBuf::from(name)]);
         filesystem.create_dir_all(&base_dir).await?;
 
-        let config_dir = PathBuf::from_iter([&base_dir, &PathBuf::from(NODE_CONFIG_DIR)]);
-        let data_dir = PathBuf::from_iter([&base_dir, &PathBuf::from(NODE_DATA_DIR)]);
-        let relay_data_dir = PathBuf::from_iter([&base_dir, &PathBuf::from(NODE_RELAY_DATA_DIR)]);
-        let scripts_dir = PathBuf::from_iter([&base_dir, &PathBuf::from(NODE_SCRIPTS_DIR)]);
+        let base_dir_raw = base_dir.to_string_lossy();
+        let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
+        let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
+        let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
+        let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
         try_join!(
             filesystem.create_dir(&config_dir),
             filesystem.create_dir(&data_dir),
@@ -63,7 +65,7 @@ where
             filesystem.create_dir(&scripts_dir),
         )?;
 
-        let log_path = PathBuf::from_iter([&base_dir, &PathBuf::from(format!("{name}.log"))]);
+        let log_path = base_dir.join(format!("node.log"));
 
         Ok(Arc::new(KubernetesNode {
             namespace: namespace.clone(),
@@ -87,10 +89,11 @@ where
         resources: Option<&Resources>,
         program: &str,
         env: &Vec<(String, String)>,
+        startup_files: &Vec<TransferedFile>,
     ) -> Result<(), ProviderError> {
         self.initialize_k8s(image, resources, program, &self.args, env)
             .await?;
-        self.initialize_startup_files().await?;
+        self.initialize_startup_files(startup_files).await?;
         self.start().await?;
 
         Ok(())
@@ -157,24 +160,16 @@ where
         Ok(())
     }
 
-    async fn initialize_startup_files(&self) -> Result<(), ProviderError> {
-        // create paths
-        // TODO: can be done when sending files ?
-        // try_join_all(
-        //     options
-        //         .created_paths
-        //         .iter()
-        //         .map(|path| node.create_path(path)),
-        // )
-        // .await?;
-
-        // try_join_all(
-        //     options
-        //         .injected_files
-        //         .iter()
-        //         .map(|file| node.send_file(&file.local_path, &file.remote_path, &file.mode)),
-        // )
-        // .await?;
+    async fn initialize_startup_files(
+        &self,
+        files: &Vec<TransferedFile>,
+    ) -> Result<(), ProviderError> {
+        try_join_all(
+            files
+                .iter()
+                .map(|file| self.send_file(&file.local_path, &file.remote_path, &file.mode)),
+        )
+        .await?;
 
         Ok(())
     }
@@ -218,7 +213,7 @@ where
             .expect("namespace shouldn't be dropped")
     }
 
-    pub(super) async fn file_server_local_host(&self) -> Result<String, ProviderError> {
+    async fn file_server_local_host(&self) -> Result<String, ProviderError> {
         if let Some(namespace) = self.namespace.upgrade() {
             if let Some(port) = *namespace.file_server_port.read().await {
                 return Ok(format!("localhost:{port}"));
@@ -349,7 +344,7 @@ where
 
         self.http_client
             .post(format!(
-                "{}{}",
+                "http://{}{}",
                 self.file_server_local_host().await?,
                 remote_file_path.to_string_lossy()
             ))
@@ -366,8 +361,8 @@ where
                 &self.namespace_name(),
                 &self.name,
                 vec![
-                    "curl",
-                    &format!("fileserver:80{}", remote_file_path.to_string_lossy()),
+                    "/cfg/curl",
+                    &format!("fileserver{}", remote_file_path.to_string_lossy()),
                     "--output",
                     &remote_file_path.to_string_lossy(),
                 ],

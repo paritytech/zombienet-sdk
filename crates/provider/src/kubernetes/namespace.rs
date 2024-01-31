@@ -6,10 +6,7 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use k8s_openapi::{
-    api::core::v1::{Container, PodSpec, ServicePort, ServiceSpec},
-    apimachinery::pkg::util::intstr::IntOrString,
-};
+use k8s_openapi::api::core::v1::{Container, ContainerPort, PodSpec, ServicePort, ServiceSpec};
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
@@ -24,6 +21,8 @@ use crate::{
     },
     DynNode, KubernetesClient, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
+
+const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
 
 pub(super) struct KubernetesNamespace<FS>
 where
@@ -75,7 +74,7 @@ where
         self.initialize_file_server().await?;
 
         self.setup_script_config_map(
-            "zombienet-wrapper",
+            "zombie-wrapper",
             include_str!("./scripts/zombie-wrapper.sh"),
             "zombie_wrapper_config_map_manifest.yaml",
             // TODO: add correct labels
@@ -131,8 +130,12 @@ where
             hostname: Some(name.clone()),
             containers: vec![Container {
                 name: name.clone(),
-                image: Some("fileserver:latest".to_string()),
+                image: Some(FILE_SERVER_IMAGE.to_string()),
                 image_pull_policy: Some("Always".to_string()),
+                ports: Some(vec![ContainerPort {
+                    container_port: 80,
+                    ..Default::default()
+                }]),
                 ..Default::default()
             }],
             ..Default::default()
@@ -160,9 +163,7 @@ where
         let service_spec = ServiceSpec {
             selector: Some(labels.clone()),
             ports: Some(vec![ServicePort {
-                name: Some("http".to_string()),
                 port: 80,
-                target_port: Some(IntOrString::Int(80)),
                 ..Default::default()
             }]),
             ..Default::default()
@@ -280,6 +281,7 @@ where
             options.resources.as_ref(),
             &options.program,
             &options.env,
+            &options.injected_files,
         )
         .await?;
 

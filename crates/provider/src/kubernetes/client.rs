@@ -38,6 +38,7 @@ impl KubernetesClient {
         })
     }
 
+    #[allow(dead_code)]
     pub(super) async fn get_namespace(&self, name: &str) -> Result<Option<Namespace>> {
         Api::<Namespace>::all(self.inner.clone())
             .get_opt(name.as_ref())
@@ -45,6 +46,7 @@ impl KubernetesClient {
             .map_err(|err| Error::from(anyhow!("error while getting namespace {name}: {err}")))
     }
 
+    #[allow(dead_code)]
     pub(super) async fn get_namespaces(&self) -> Result<Vec<Namespace>> {
         Ok(Api::<Namespace>::all(self.inner.clone())
             .list(&ListParams::default())
@@ -166,6 +168,7 @@ impl KubernetesClient {
             .map_err(|err| Error::from(anyhow!("error while getting logs for pod {name}: {err}")))
     }
 
+    #[allow(dead_code)]
     pub(super) async fn create_pod_logs_stream(
         &self,
         namespace: &str,

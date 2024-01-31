@@ -12,13 +12,12 @@ use futures::future::try_join_all;
 use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
 
+use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
 };
-
-use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 
 pub(super) struct KubernetesNode<FS>
 where
@@ -389,8 +388,8 @@ where
 
     async fn receive_file(
         &self,
-        remote_src: &PathBuf,
-        local_dest: &PathBuf,
+        _remote_src: &PathBuf,
+        _local_dest: &PathBuf,
     ) -> Result<(), ProviderError> {
         Ok(())
     }

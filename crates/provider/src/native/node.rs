@@ -184,7 +184,7 @@ where
         let namespaced_remote_file_path = PathBuf::from_iter([&self.base_dir, remote_file_path]);
 
         self.filesystem
-            .copy(remote_file_path, namespaced_remote_file_path)
+            .copy(local_file_path, namespaced_remote_file_path)
             .await?;
 
         Ok(())

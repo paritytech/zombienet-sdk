@@ -23,8 +23,8 @@ pub(super) struct KubernetesNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub(super) name: String,
     namespace: Weak<KubernetesNamespace<FS>>,
+    name: String,
     args: Vec<String>,
     base_dir: PathBuf,
     config_dir: PathBuf,
@@ -43,9 +43,14 @@ where
 {
     pub(super) async fn new(
         namespace: &Weak<KubernetesNamespace<FS>>,
-        name: &str,
-        args: &[String],
         namespace_base_dir: &PathBuf,
+        name: &str,
+        image: Option<&String>,
+        program: &str,
+        args: &[String],
+        env: &[(String, String)],
+        startup_files: &[TransferedFile],
+        resources: Option<&Resources>,
         k8s_client: &KubernetesClient,
         filesystem: &FS,
     ) -> Result<Arc<Self>, ProviderError> {
@@ -57,6 +62,8 @@ where
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
         let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
+        let log_path = base_dir.join("node.log");
+
         try_join!(
             filesystem.create_dir(&config_dir),
             filesystem.create_dir(&data_dir),
@@ -64,9 +71,7 @@ where
             filesystem.create_dir(&scripts_dir),
         )?;
 
-        let log_path = base_dir.join("node.log");
-
-        Ok(Arc::new(KubernetesNode {
+        let node = Arc::new(KubernetesNode {
             namespace: namespace.clone(),
             name: name.to_string(),
             args: args.to_vec(),
@@ -79,56 +84,25 @@ where
             filesystem: filesystem.clone(),
             k8s_client: k8s_client.clone(),
             http_client: reqwest::Client::new(),
-        }))
-    }
+        });
 
-    pub(super) async fn initialize(
-        &self,
-        image: Option<&String>,
-        resources: Option<&Resources>,
-        program: &str,
-        env: &[(String, String)],
-        startup_files: &[TransferedFile],
-    ) -> Result<(), ProviderError> {
-        self.initialize_k8s(image, resources, program, &self.args, env)
+        node.initialize_k8s(image, program, args, env, resources)
             .await?;
-        self.initialize_startup_files(startup_files).await?;
-        self.start().await?;
 
-        Ok(())
-    }
+        node.initialize_startup_files(startup_files).await?;
 
-    pub(super) async fn start(&self) -> Result<(), ProviderError> {
-        self.k8s_client
-            .pod_exec(
-                &self.namespace_name(),
-                &self.name,
-                vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
-            )
-            .await
-            .map_err(|err| {
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to start pod {} after spawning", self.name),
-                    err.into(),
-                )
-            })?
-            .map_err(|err| {
-                ProviderError::NodeSpawningFailed(
-                    format!("failed to start pod {} after spawning", self.name,),
-                    anyhow!("command failed in container: status {}: {}", err.0, err.1),
-                )
-            })?;
+        node.start().await?;
 
-        Ok(())
+        Ok(node)
     }
 
     async fn initialize_k8s(
         &self,
         image: Option<&String>,
-        resources: Option<&Resources>,
         program: &str,
         args: &[String],
         env: &[(String, String)],
+        resources: Option<&Resources>,
     ) -> Result<(), ProviderError> {
         let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
         let image = image.ok_or_else(|| {
@@ -161,14 +135,38 @@ where
 
     async fn initialize_startup_files(
         &self,
-        files: &[TransferedFile],
+        startup_files: &[TransferedFile],
     ) -> Result<(), ProviderError> {
         try_join_all(
-            files
+            startup_files
                 .iter()
                 .map(|file| self.send_file(&file.local_path, &file.remote_path, &file.mode)),
         )
         .await?;
+
+        Ok(())
+    }
+
+    pub(super) async fn start(&self) -> Result<(), ProviderError> {
+        self.k8s_client
+            .pod_exec(
+                &self.namespace_name(),
+                &self.name,
+                vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
+            )
+            .await
+            .map_err(|err| {
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to start pod {} after spawning", self.name),
+                    err.into(),
+                )
+            })?
+            .map_err(|err| {
+                ProviderError::NodeSpawningFailed(
+                    format!("failed to start pod {} after spawning", self.name,),
+                    anyhow!("command failed in container: status {}: {}", err.0, err.1),
+                )
+            })?;
 
         Ok(())
     }
@@ -277,10 +275,12 @@ where
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
         let logs = self.logs().await?;
+
         self.filesystem
             .write(local_dest, logs)
             .await
             .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?;
+
         Ok(())
     }
 

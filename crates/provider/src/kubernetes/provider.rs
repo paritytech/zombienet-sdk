@@ -80,8 +80,6 @@ where
         )
         .await?;
 
-        namespace.initialize().await?;
-
         self.namespaces
             .write()
             .await

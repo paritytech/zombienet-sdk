@@ -28,16 +28,16 @@ pub(super) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
-    pub(super) file_server_port: RwLock<Option<u16>>,
     weak: Weak<KubernetesNamespace<FS>>,
-    name: String,
     provider: Weak<KubernetesProvider<FS>>,
+    name: String,
     base_dir: PathBuf,
     capabilities: ProviderCapabilities,
     k8s_client: KubernetesClient,
     filesystem: FS,
     file_server_fw_task: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub(super) file_server_port: RwLock<Option<u16>>,
+    pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
 }
 
 impl<FS> KubernetesNamespace<FS>
@@ -55,7 +55,7 @@ where
         let base_dir = PathBuf::from_iter([&tmp_dir, &PathBuf::from(&name)]);
         filesystem.create_dir(&base_dir).await?;
 
-        Ok(Arc::new_cyclic(|weak| KubernetesNamespace {
+        let namespace = Arc::new_cyclic(|weak| KubernetesNamespace {
             weak: weak.clone(),
             provider: provider.clone(),
             name,
@@ -63,10 +63,14 @@ where
             capabilities: capabilities.clone(),
             filesystem: filesystem.clone(),
             k8s_client: k8s_client.clone(),
-            nodes: RwLock::new(HashMap::new()),
             file_server_port: RwLock::new(None),
             file_server_fw_task: RwLock::new(None),
-        }))
+            nodes: RwLock::new(HashMap::new()),
+        });
+
+        namespace.initialize().await?;
+
+        Ok(namespace)
     }
 
     pub(super) async fn initialize(&self) -> Result<(), ProviderError> {
@@ -268,29 +272,23 @@ where
 
         let node = KubernetesNode::new(
             &self.weak,
-            &options.name,
-            &options.args,
             &self.base_dir,
+            &options.name,
+            options.image.as_ref(),
+            &options.program,
+            &options.args,
+            &options.env,
+            &options.injected_files,
+            options.resources.as_ref(),
             &self.k8s_client,
             &self.filesystem,
         )
         .await?;
 
-        node.initialize(
-            options.image.as_ref(),
-            options.resources.as_ref(),
-            &options.program,
-            &options.env,
-            &options.injected_files,
-        )
-        .await?;
-
-        node.start().await?;
-
         self.nodes
             .write()
             .await
-            .insert(node.name.clone(), node.clone());
+            .insert(node.name().to_string(), node.clone());
 
         Ok(node)
     }

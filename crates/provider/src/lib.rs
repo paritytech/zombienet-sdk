@@ -70,6 +70,9 @@ pub enum ProviderError {
     #[error("Failed to restart node '{0}': {1}")]
     RestartNodeFailed(String, anyhow::Error),
 
+    #[error("Failed to destroy node '{0}': {1}")]
+    DestroyNodeFailed(String, anyhow::Error),
+
     #[error("Failed to get logs for node '{0}': {1}")]
     GetLogsFailed(String, anyhow::Error),
 

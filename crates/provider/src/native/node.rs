@@ -58,6 +58,7 @@ impl<FS> NativeNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn new(
         namespace: &Weak<NativeNamespace<FS>>,
         namespace_base_dir: &PathBuf,
@@ -434,7 +435,7 @@ where
 
         self.abort()
             .await
-            .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err))?;
 
         let (stdout, stderr) = self
             .initialize_process()
@@ -449,7 +450,7 @@ where
     async fn destroy(&self) -> Result<(), ProviderError> {
         self.abort()
             .await
-            .map_err(|err| ProviderError::DestroyNodeFailed(self.name.clone(), err.into()))?;
+            .map_err(|err| ProviderError::DestroyNodeFailed(self.name.clone(), err))?;
 
         if let Some(namespace) = self.namespace.upgrade() {
             namespace.nodes.write().await.remove(&self.name);

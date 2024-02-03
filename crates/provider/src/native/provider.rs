@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 
 use super::namespace::NativeNamespace;
 use crate::{
-    constants::NAMESPACE_PREFIX, types::ProviderCapabilities, DynNamespace, Provider,
+    types::ProviderCapabilities, DynNamespace, Provider,
     ProviderError, ProviderNamespace,
 };
 

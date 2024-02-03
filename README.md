@@ -1,4 +1,4 @@
-# 🚧⚠️ [WIP] ZombieNet SDK  ⚠️🚧
+# 🚧 ⚠️  [WIP] ZombieNet SDK  ⚠️  🚧
 
 
 [Rust Docs](https://paritytech.github.io/zombienet-sdk)

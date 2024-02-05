@@ -15,6 +15,7 @@ use uuid::Uuid;
 use super::node::KubernetesNode;
 use crate::{
     constants::NAMESPACE_PREFIX,
+    kubernetes::node::KubernetesNodeOptions,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -270,19 +271,19 @@ where
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
 
-        let node = KubernetesNode::new(
-            &self.weak,
-            &self.base_dir,
-            &options.name,
-            options.image.as_ref(),
-            &options.program,
-            &options.args,
-            &options.env,
-            &options.injected_files,
-            options.resources.as_ref(),
-            &self.k8s_client,
-            &self.filesystem,
-        )
+        let node = KubernetesNode::new(KubernetesNodeOptions {
+            namespace: &self.weak,
+            namespace_base_dir: &self.base_dir,
+            name: &options.name,
+            image: options.image.as_ref(),
+            program: &options.program,
+            args: &options.args,
+            env: &options.env,
+            startup_files: &options.injected_files,
+            resources: options.resources.as_ref(),
+            k8s_client: &self.k8s_client,
+            filesystem: &self.filesystem,
+        })
         .await?;
 
         self.nodes

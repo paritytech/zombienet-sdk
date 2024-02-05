@@ -19,6 +19,23 @@ use crate::{
     KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
 };
 
+pub(super) struct KubernetesNodeOptions<'a, FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub(super) namespace: &'a Weak<KubernetesNamespace<FS>>,
+    pub(super) namespace_base_dir: &'a PathBuf,
+    pub(super) name: &'a str,
+    pub(super) image: Option<&'a String>,
+    pub(super) program: &'a str,
+    pub(super) args: &'a [String],
+    pub(super) env: &'a [(String, String)],
+    pub(super) startup_files: &'a [TransferedFile],
+    pub(super) resources: Option<&'a Resources>,
+    pub(super) k8s_client: &'a KubernetesClient,
+    pub(super) filesystem: &'a FS,
+}
+
 pub(super) struct KubernetesNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
@@ -42,19 +59,12 @@ where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub(super) async fn new(
-        namespace: &Weak<KubernetesNamespace<FS>>,
-        namespace_base_dir: &PathBuf,
-        name: &str,
-        image: Option<&String>,
-        program: &str,
-        args: &[String],
-        env: &[(String, String)],
-        startup_files: &[TransferedFile],
-        resources: Option<&Resources>,
-        k8s_client: &KubernetesClient,
-        filesystem: &FS,
+        options: KubernetesNodeOptions<'_, FS>,
     ) -> Result<Arc<Self>, ProviderError> {
-        let base_dir = PathBuf::from_iter([&namespace_base_dir, &PathBuf::from(name)]);
+        let filesystem = options.filesystem.clone();
+
+        let base_dir =
+            PathBuf::from_iter([&options.namespace_base_dir, &PathBuf::from(options.name)]);
         filesystem.create_dir_all(&base_dir).await?;
 
         let base_dir_raw = base_dir.to_string_lossy();
@@ -72,9 +82,9 @@ where
         )?;
 
         let node = Arc::new(KubernetesNode {
-            namespace: namespace.clone(),
-            name: name.to_string(),
-            args: args.to_vec(),
+            namespace: options.namespace.clone(),
+            name: options.name.to_string(),
+            args: options.args.to_vec(),
             base_dir,
             config_dir,
             data_dir,
@@ -82,14 +92,20 @@ where
             scripts_dir,
             log_path,
             filesystem: filesystem.clone(),
-            k8s_client: k8s_client.clone(),
+            k8s_client: options.k8s_client.clone(),
             http_client: reqwest::Client::new(),
         });
 
-        node.initialize_k8s(image, program, args, env, resources)
-            .await?;
+        node.initialize_k8s(
+            options.image,
+            options.program,
+            options.args,
+            options.env,
+            options.resources,
+        )
+        .await?;
 
-        node.initialize_startup_files(startup_files).await?;
+        node.initialize_startup_files(options.startup_files).await?;
 
         node.start().await?;
 

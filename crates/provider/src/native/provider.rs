@@ -10,8 +10,7 @@ use tokio::sync::RwLock;
 
 use super::namespace::NativeNamespace;
 use crate::{
-    types::ProviderCapabilities, DynNamespace, Provider,
-    ProviderError, ProviderNamespace,
+    types::ProviderCapabilities, DynNamespace, Provider, ProviderError, ProviderNamespace,
 };
 
 pub struct NativeProvider<FS>

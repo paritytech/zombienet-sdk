@@ -89,11 +89,11 @@ impl<T: FileSystem> Network<T> {
     /// # Example:
     /// ```rust
     /// # use provider::NativeProvider;
-    /// # use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+    /// # use support::{fs::local::LocalFileSystem};
     /// # use zombienet_orchestrator::{errors, AddNodeOptions, Orchestrator};
     /// # use configuration::NetworkConfig;
     /// # async fn example() -> Result<(), errors::OrchestratorError> {
-    /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
     /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
     /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
     /// let mut network = orchestrator.spawn(config).await?;
@@ -188,11 +188,11 @@ impl<T: FileSystem> Network<T> {
     /// # Example:
     /// ```rust
     /// # use provider::NativeProvider;
-    /// # use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+    /// # use support::{fs::local::LocalFileSystem};
     /// # use zombienet_orchestrator::{errors, AddCollatorOptions, Orchestrator};
     /// # use configuration::NetworkConfig;
     /// # async fn example() -> Result<(), anyhow::Error> {
-    /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
     /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
     /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
     /// let mut network = orchestrator.spawn(config).await?;
@@ -313,11 +313,11 @@ impl<T: FileSystem> Network<T> {
     /// ```rust
     /// # use anyhow::anyhow;
     /// # use provider::NativeProvider;
-    /// # use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+    /// # use support::{fs::local::LocalFileSystem};
     /// # use zombienet_orchestrator::{errors, AddCollatorOptions, Orchestrator};
     /// # use configuration::NetworkConfig;
     /// # async fn example() -> Result<(), anyhow::Error> {
-    /// #   let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
     /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
     /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
     /// let mut network = orchestrator.spawn(config).await?;

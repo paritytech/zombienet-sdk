@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 pub use configuration::{NetworkConfig, NetworkConfigBuilder, RegistrationStrategy};
 pub use orchestrator::{
@@ -7,7 +5,7 @@ pub use orchestrator::{
     PjsResult,
 };
 use provider::{KubernetesProvider, NativeProvider};
-use support::{fs::local::LocalFileSystem, process::os::OsProcessManager};
+use support::fs::local::LocalFileSystem;
 
 #[async_trait]
 pub trait NetworkConfigExt {
@@ -30,7 +28,7 @@ pub trait NetworkConfigExt {
 #[async_trait]
 impl NetworkConfigExt for NetworkConfig {
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
-        let provider = Arc::new(NativeProvider::new(LocalFileSystem {}, OsProcessManager {}));
+        let provider = NativeProvider::new(LocalFileSystem {});
         let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
         orchestrator.spawn(self).await
     }

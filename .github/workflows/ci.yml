@@ -18,8 +18,7 @@ jobs:
       matrix:
         toolchain:
           - stable
-          # TODO 24-02-06: this is pinned due to tkaitchuck/aHash#200.
-          - nightly-2024-02-01
+          # TODO 24-02-08: Disable nightly due to tkaitchuck/aHash#200.
           #- nightly
     steps:
       - uses: actions/checkout@v3

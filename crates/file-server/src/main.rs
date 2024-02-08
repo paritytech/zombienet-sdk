@@ -4,7 +4,7 @@ use std::io;
 use axum::{
     extract::{Path, Request, State},
     http::StatusCode,
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use futures::TryStreamExt;
@@ -34,6 +34,7 @@ async fn main() {
         .expect(&format!("failed to create '{uploads_directory}' directory"));
 
     let app = Router::new()
+        .route("/", get(|| async { "Ok" }))
         .route(
             "/*file_path",
             post(upload).get_service(ServeDir::new(&uploads_directory)),

@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    env,
     path::{Component, Path, PathBuf},
     sync::{Arc, Weak},
     time::Duration,
@@ -7,14 +8,18 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::shared::resources::Resources;
+use configuration::shared::{constants::THIS_IS_A_BUG, resources::Resources};
 use futures::future::try_join_all;
+use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
 
 use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::{
+        LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
+        PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
+    },
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -120,16 +125,27 @@ where
         env: &[(String, String)],
         resources: Option<&Resources>,
     ) -> Result<(), ProviderError> {
-        let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
+        let labels = BTreeMap::from([
+            (
+                "app.kubernetes.io/name".to_string(),
+                self.name().to_string(),
+            ),
+            (
+                "x-infra-instance".to_string(),
+                env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()),
+            ),
+        ]);
+
         let image = image.ok_or_else(|| {
             ProviderError::MissingNodeInfo(self.name.to_string(), "missing image".to_string())
         })?;
 
+        // Create pod
         let pod_spec = PodSpecBuilder::build(&self.name, image, resources, program, args, env);
 
         let manifest = self
             .k8s_client
-            .create_pod(&self.namespace_name(), &self.name, pod_spec, labels)
+            .create_pod(&self.namespace_name(), &self.name, pod_spec, labels.clone())
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
 
@@ -145,6 +161,52 @@ where
             .write(dest_path, serialized_manifest)
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
+
+        // Create service for pod
+        let service_spec = ServiceSpec {
+            selector: Some(labels.clone()),
+            ports: Some(vec![
+                ServicePort {
+                    port: P2P_PORT.into(),
+                    name: Some("p2p".into()),
+                    ..Default::default()
+                },
+                ServicePort {
+                    port: RPC_WS_PORT.into(),
+                    name: Some("rpc".into()),
+                    ..Default::default()
+                },
+                ServicePort {
+                    port: RPC_HTTP_PORT.into(),
+                    name: Some("rpc-http".into()),
+                    ..Default::default()
+                },
+                ServicePort {
+                    port: PROMETHEUS_PORT.into(),
+                    name: Some("prom".into()),
+                    ..Default::default()
+                },
+            ]),
+            ..Default::default()
+        };
+
+        let service_manifest = self
+            .k8s_client
+            .create_service(&self.namespace_name(), &self.name, service_spec, labels)
+            .await
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        let serialized_service_manifest = serde_yaml::to_string(&service_manifest)
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        let service_dest_path = PathBuf::from_iter([
+            &self.base_dir,
+            &PathBuf::from(format!("{}_svc_manifest.yaml", &self.name)),
+        ]);
+
+        self.filesystem
+            .write(service_dest_path, serialized_service_manifest)
+            .await?;
 
         Ok(())
     }
@@ -223,7 +285,10 @@ where
         self.namespace
             .upgrade()
             .map(|namespace| namespace.name().to_string())
-            .expect("namespace shouldn't be dropped")
+            .expect(&format!(
+                "namespace shouldn't be dropped, {}",
+                THIS_IS_A_BUG
+            ))
     }
 
     async fn file_server_local_host(&self) -> Result<String, ProviderError> {
@@ -408,6 +473,26 @@ where
         _local_dest: &Path,
     ) -> Result<(), ProviderError> {
         Ok(())
+    }
+
+    async fn ip(&self) -> Result<String, ProviderError> {
+        let status = self
+            .k8s_client
+            .pod_status(&self.namespace_name(), &self.name)
+            .await
+            .map_err(|_err| {
+                ProviderError::PauseNodeFailed(
+                    self.name.to_string(),
+                    anyhow!("error when pausing node: status"),
+                )
+            })?;
+
+        if let Some(ip) = status.pod_ip {
+            Ok(ip)
+        } else {
+            // TODO: review this
+            Ok(LOCALHOST.to_string())
+        }
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {

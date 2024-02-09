@@ -4,10 +4,13 @@ use std::{
 
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
-use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, PodSpec, Service, ServiceSpec};
+use k8s_openapi::api::core::v1::{
+    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
+};
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
-    core::{ObjectMeta, WatchEvent},
+    core::{DynamicObject, GroupVersionKind, ObjectMeta, TypeMeta, WatchEvent},
+    discovery::ApiResource,
     runtime::{conditions, wait::await_condition},
     Api, Resource,
 };
@@ -145,7 +148,7 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        await_condition(pods, name, conditions::is_pod_running())
+        await_condition(pods, name, helpers::is_pod_ready())
             .await
             .map_err(|err| {
                 Error::from(anyhow!("error while awaiting pod {name} running: {err}"))
@@ -166,6 +169,18 @@ impl KubernetesClient {
             )
             .await
             .map_err(|err| Error::from(anyhow!("error while getting logs for pod {name}: {err}")))
+    }
+
+    pub(super) async fn pod_status(&self, namespace: &str, name: &str) -> Result<PodStatus> {
+        let pod = Api::<Pod>::namespaced(self.inner.clone(), namespace)
+            .get(name)
+            .await
+            .map_err(|err| Error::from(anyhow!("error while getting pod {name}: {err}")))?;
+
+        let status = pod.status.ok_or(Error::from(anyhow!(
+            "error while getting status for pod {name}"
+        )))?;
+        Ok(status)
     }
 
     #[allow(dead_code)]
@@ -333,6 +348,8 @@ impl KubernetesClient {
         Ok(service)
     }
 
+    // TODO: remove `unwrap` and add logic to handle panic in spawned task.
+    // We should try to recreate the port-fw at least a couple of times before give up.
     pub(super) async fn create_pod_port_forward(
         &self,
         namespace: &str,
@@ -369,6 +386,40 @@ impl KubernetesClient {
         ))
     }
 
+    /// Create resources from yamls in `static-configs` directory
+    pub(super) async fn create_static_resource(
+        &self,
+        namespace: &str,
+        raw_manifest: &str,
+    ) -> Result<()> {
+        let tm: TypeMeta = serde_yaml::from_str(raw_manifest).map_err(|err| {
+            Error::from(anyhow!(
+                "error while extracting TypeMeta from manifest: {raw_manifest}: {err}"
+            ))
+        })?;
+        let gvk = GroupVersionKind::try_from(&tm).map_err(|err| {
+            Error::from(anyhow!(
+                "error while extracting GroupVersionKind from manifest: {raw_manifest}: {err}"
+            ))
+        })?;
+
+        let ar = ApiResource::from_gvk(&gvk);
+        let api: Api<DynamicObject> = Api::namespaced_with(self.inner.clone(), namespace, &ar);
+
+        api.create(
+            &PostParams::default(),
+            &serde_yaml::from_str(raw_manifest).unwrap(),
+        )
+        .await
+        .map_err(|err| {
+            Error::from(anyhow!(
+                "error while creating static-config {raw_manifest}: {err}"
+            ))
+        })?;
+
+        Ok(())
+    }
+
     async fn wait_created<K>(&self, api: Api<K>, name: &str) -> Result<()>
     where
         K: Clone + DeserializeOwned + Debug,
@@ -399,5 +450,27 @@ impl KubernetesClient {
         }
 
         Ok(())
+    }
+}
+
+mod helpers {
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::runtime::wait::Condition;
+
+    /// An await condition for `Pod` that returns `true` once it is ready
+    /// based on [`kube::runtime::wait::conditions::is_pod_running`]
+    pub fn is_pod_ready() -> impl Condition<Pod> {
+        |obj: Option<&Pod>| {
+            if let Some(pod) = &obj {
+                if let Some(status) = &pod.status {
+                    if let Some(conditions) = &status.conditions {
+                        return conditions
+                            .iter()
+                            .any(|cond| cond.status == "True" && cond.type_ == "Ready");
+                    }
+                }
+            }
+            false
+        }
     }
 }

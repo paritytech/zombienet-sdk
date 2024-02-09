@@ -10,9 +10,12 @@ use std::{
 };
 
 use async_trait::async_trait;
-use shared::types::{
-    ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
-    RunScriptOptions, SpawnNodeOptions,
+use shared::{
+    constants::LOCALHOST,
+    types::{
+        ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+        RunScriptOptions, SpawnNodeOptions,
+    },
 };
 use support::fs::FileSystemError;
 
@@ -146,6 +149,11 @@ pub trait ProviderNode {
     async fn logs(&self) -> Result<String, ProviderError>;
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
+
+    // By default return localhost, should be overrided for k8s
+    async fn ip(&self) -> Result<String, ProviderError> {
+        Ok(LOCALHOST.to_string())
+    }
 
     async fn run_command(
         &self,

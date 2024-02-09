@@ -11,7 +11,9 @@ pub type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProviderCapabilities {
+    /// Ensure that we have an image for each node (k8s/podman/docker)
     pub requires_image: bool,
+    /// Allow to customize the resources through manifest (k8s).
     pub has_resources: bool,
     // Used in native to prefix filepath with fullpath
     pub prefix_with_full_path: bool,

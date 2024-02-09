@@ -20,7 +20,7 @@ fi
 echo "COMMANDS DEFINED"
 
 # add /cfg as first `looking dir` to allow to overrides commands.
-export PATH="{{REMOTE_DIR}}":$PATH
+export PATH="/cfg":$PATH
 
 echo "EXPORT PATH"
 

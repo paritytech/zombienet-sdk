@@ -1,13 +1,12 @@
-use std::{fmt::Display, net::IpAddr};
+use std::fmt::Display;
 
 use super::errors::GeneratorError;
 
 pub fn generate<T: AsRef<str> + Display>(
     peer_id: &str,
-    ip: &IpAddr,
+    ip: &str,
     port: u16,
     args: &[T],
-    // args: &[&String],
     p2p_cert: &Option<String>,
 ) -> Result<String, GeneratorError> {
     let addr = if let Some(index) = args.iter().position(|arg| arg.as_ref().eq("--listen-addr")) {
@@ -19,10 +18,9 @@ pub fn generate<T: AsRef<str> + Display>(
             ))?
             .to_string();
 
-        let ip_str = ip.to_string();
         let port_str = port.to_string();
         let mut parts = listen_value.split('/').collect::<Vec<&str>>();
-        parts[2] = ip_str.as_str();
+        parts[2] = ip;
         parts[4] = port_str.as_str();
         parts.join("/")
     } else {
@@ -47,7 +45,7 @@ mod tests {
     fn generate_for_alice_without_args() {
         let peer_id = "12D3KooWQCkBm1BYtkHpocxCwMgR8yjitEeHGx8spzcDLGt2gkBm"; // from alice as seed
         let args: Vec<&str> = vec![];
-        let bootnode_addr = generate(peer_id, &LOCALHOST, 5678, &args, &None).unwrap();
+        let bootnode_addr = generate(peer_id, &LOCALHOST.to_string(), 5678, &args, &None).unwrap();
         assert_eq!(
             &bootnode_addr,
             "/ip4/127.0.0.1/tcp/5678/ws/p2p/12D3KooWQCkBm1BYtkHpocxCwMgR8yjitEeHGx8spzcDLGt2gkBm"
@@ -67,8 +65,14 @@ mod tests {
         .iter()
         .map(|x| x.to_string())
         .collect();
-        let bootnode_addr =
-            generate(peer_id, &LOCALHOST, 5678, args.iter().as_ref(), &None).unwrap();
+        let bootnode_addr = generate(
+            peer_id,
+            &LOCALHOST.to_string(),
+            5678,
+            args.iter().as_ref(),
+            &None,
+        )
+        .unwrap();
         assert_eq!(
             &bootnode_addr,
             "/ip4/127.0.0.1/tcp/5678/ws/p2p/12D3KooWQCkBm1BYtkHpocxCwMgR8yjitEeHGx8spzcDLGt2gkBm"
@@ -83,7 +87,13 @@ mod tests {
             .iter()
             .map(|x| x.to_string())
             .collect();
-        let bootnode_addr = generate(peer_id, &LOCALHOST, 5678, args.iter().as_ref(), &None);
+        let bootnode_addr = generate(
+            peer_id,
+            &LOCALHOST.to_string(),
+            5678,
+            args.iter().as_ref(),
+            &None,
+        );
 
         assert!(bootnode_addr.is_err());
         assert!(matches!(
@@ -98,7 +108,7 @@ mod tests {
         let args: Vec<&str> = vec![];
         let bootnode_addr = generate(
             peer_id,
-            &LOCALHOST,
+            &LOCALHOST.to_string(),
             5678,
             &args,
             &Some(String::from("data")),

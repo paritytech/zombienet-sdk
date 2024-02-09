@@ -12,7 +12,7 @@ use provider::{
 };
 use serde_json::json;
 use support::fs::FileSystem;
-use tracing::{debug, warn};
+use tracing::{debug, warn, trace};
 
 use super::errors::GeneratorError;
 use crate::{
@@ -222,7 +222,6 @@ impl ChainSpec {
             "--disable-default-bootnode".into(),
         ];
 
-        debug!("args: {:#?}", args);
         let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
         let options = GenerateFilesOptions::with_files(
             vec![generate_command],
@@ -233,9 +232,8 @@ impl ChainSpec {
             )],
         )
         .temp_name(temp_name);
-        debug!("calling generate_files!");
+        trace!("calling generate_files with options: {:#?}", options);
         ns.generate_files(options).await?;
-        debug!("done generate_files!");
 
         self.raw_path = Some(raw_spec_path);
 

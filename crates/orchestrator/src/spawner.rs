@@ -117,11 +117,7 @@ where
         use_wrapper: false,                // TODO: get from provider
         bootnode_addr: ctx.bootnodes_addr.clone(),
         // IFF the provider require an image (e.g k8s) we should use the default ports in the cmd.
-        use_default_ports_in_cmd: if ctx.ns.capabilities().requires_image {
-            true
-        } else {
-            false
-        },
+        use_default_ports_in_cmd: ctx.ns.capabilities().requires_image,
     };
 
     let (program, args) = match ctx.role {

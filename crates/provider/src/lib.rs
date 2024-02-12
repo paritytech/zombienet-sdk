@@ -4,6 +4,7 @@ pub mod shared;
 
 use std::{
     collections::HashMap,
+    net::IpAddr,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -151,8 +152,8 @@ pub trait ProviderNode {
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
 
     // By default return localhost, should be overrided for k8s
-    async fn ip(&self) -> Result<String, ProviderError> {
-        Ok(LOCALHOST.to_string())
+    async fn ip(&self) -> Result<IpAddr, ProviderError> {
+        Ok(LOCALHOST)
     }
 
     async fn run_command(

@@ -41,7 +41,10 @@ pub enum ProviderError {
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
 
-    #[error("Can recover node: {0} info, field: {1}")]
+    #[error("Can not recover node: {0}")]
+    MissingNode(String),
+
+    #[error("Can not recover node: {0} info, field: {1}")]
     MissingNodeInfo(String, String),
 
     #[error("Duplicated node name: {0}")]

@@ -481,12 +481,7 @@ where
             .k8s_client
             .pod_status(&self.namespace_name(), &self.name)
             .await
-            .map_err(|_err| {
-                ProviderError::PauseNodeFailed(
-                    self.name.to_string(),
-                    anyhow!("error when pausing node: status"),
-                )
-            })?;
+            .map_err(|_| {ProviderError::MissingNode(self.name.clone())})?;
 
         if let Some(ip) = status.pod_ip {
             // Pod ip should be parseable

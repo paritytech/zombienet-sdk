@@ -231,7 +231,7 @@ where
                 generators::generate_node_bootnode_addr(
                     &node.spec.peer_id,
                     &ip,
-                    if ctx.ns.capabilities().requires_image {
+                    if ctx.ns.capabilities().use_default_ports_in_cmd {
                         P2P_PORT
                     } else {
                         node.spec.p2p_port.0

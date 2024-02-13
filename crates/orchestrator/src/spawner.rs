@@ -96,7 +96,7 @@ where
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
 
-    let (cfg_path, data_path, relay_data_path) = if ctx.ns.capabilities().requires_image {
+    let (cfg_path, data_path, relay_data_path) = if !ctx.ns.capabilities().prefix_with_full_path {
         (
             NODE_CONFIG_DIR.into(),
             NODE_DATA_DIR.into(),
@@ -116,6 +116,8 @@ where
         relay_data_path: &relay_data_path, // TODO: get from provider
         use_wrapper: false,                // TODO: get from provider
         bootnode_addr: ctx.bootnodes_addr.clone(),
+        // IFF the provider require an image (e.g k8s) we should use the default ports in the cmd.
+        use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
     };
 
     let (program, args) = match ctx.role {

@@ -7,7 +7,6 @@ pub fn generate<T: AsRef<str> + Display>(
     ip: &IpAddr,
     port: u16,
     args: &[T],
-    // args: &[&String],
     p2p_cert: &Option<String>,
 ) -> Result<String, GeneratorError> {
     let addr = if let Some(index) = args.iter().position(|arg| arg.as_ref().eq("--listen-addr")) {
@@ -22,7 +21,7 @@ pub fn generate<T: AsRef<str> + Display>(
         let ip_str = ip.to_string();
         let port_str = port.to_string();
         let mut parts = listen_value.split('/').collect::<Vec<&str>>();
-        parts[2] = ip_str.as_str();
+        parts[2] = &ip_str;
         parts[4] = port_str.as_str();
         parts.join("/")
     } else {

@@ -1,12 +1,18 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    env,
     path::PathBuf,
     sync::{Arc, Weak},
 };
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{Container, ContainerPort, PodSpec, ServicePort, ServiceSpec};
+use k8s_openapi::{
+    api::core::v1::{
+        Container, ContainerPort, HTTPGetAction, PodSpec, Probe, ServicePort, ServiceSpec,
+    },
+    apimachinery::pkg::util::intstr::IntOrString,
+};
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
@@ -16,6 +22,7 @@ use super::node::KubernetesNode;
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
+    shared::helpers::{self, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -100,7 +107,21 @@ where
     }
 
     async fn initialize_k8s(&self) -> Result<(), ProviderError> {
-        let labels = BTreeMap::from([("foo".to_string(), "bar".to_string())]);
+        // TODO (javier): check with Hamid if we are using this labels in any scheduling logic.
+        let labels = BTreeMap::from([
+            (
+                "jobId".to_string(),
+                env::var("CI_JOB_ID").unwrap_or("".to_string()),
+            ),
+            (
+                "projectName".to_string(),
+                env::var("CI_PROJECT_NAME").unwrap_or("".to_string()),
+            ),
+            (
+                "projectId".to_string(),
+                env::var("CI_PROJECT_ID").unwrap_or("".to_string()),
+            ),
+        ]);
 
         let manifest = self
             .k8s_client
@@ -121,15 +142,49 @@ where
             .write(dest_path, serialized_manifest)
             .await?;
 
+        // Ensure namespace isolation and minimal resources IFF we are running in CI
+        if running_in_ci() {
+            self.initialize_static_resources().await?
+        }
+        Ok(())
+    }
+
+    async fn initialize_static_resources(&self) -> Result<(), ProviderError> {
+        let np_manifest = helpers::apply_replacements(
+            include_str!("./static-configs/namespace-network-policy.yaml"),
+            &HashMap::from([("namespace", self.name())]),
+        );
+
+        // Apply NetworkPolicy manifest
+        self.k8s_client
+            .create_static_resource(&self.name, &np_manifest)
+            .await
+            .map_err(|err| {
+                ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+            })?;
+
+        // Apply LimitRange manifest
+        self.k8s_client
+            .create_static_resource(
+                &self.name,
+                include_str!("./static-configs/baseline-resources.yaml"),
+            )
+            .await
+            .map_err(|err| {
+                ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+        })?;
         Ok(())
     }
 
     async fn initialize_file_server(&self) -> Result<(), ProviderError> {
         let name = "fileserver".to_string();
-        let labels = BTreeMap::from([(
-            "app.kubernetes.io/name".to_string(),
-            "fileserver".to_string(),
-        )]);
+        let labels = BTreeMap::from([
+            ("app.kubernetes.io/name".to_string(), name.clone()),
+            (
+                "x-infra-instance".to_string(),
+                env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()),
+            ),
+        ]);
 
         let pod_spec = PodSpec {
             hostname: Some(name.clone()),
@@ -141,8 +196,20 @@ where
                     container_port: 80,
                     ..Default::default()
                 }]),
+                startup_probe: Some(Probe {
+                    http_get: Some(HTTPGetAction {
+                        path: Some("/".to_string()),
+                        port: IntOrString::Int(80),
+                        ..Default::default()
+                    }),
+                    initial_delay_seconds: Some(5),
+                    period_seconds: Some(3),
+                    failure_threshold: Some(15),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }],
+            restart_policy: Some("OnFailure".into()),
             ..Default::default()
         };
 

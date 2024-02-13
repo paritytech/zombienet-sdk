@@ -18,13 +18,14 @@ use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
-use provider::{constants::LOCALHOST, types::TransferedFile, DynProvider};
+use provider::{types::TransferedFile, DynProvider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 use tracing::{debug, info};
 
 use crate::{
-    generators::chain_spec::ParaGenesisConfig, shared::types::RegisterParachainOptions,
+    generators::chain_spec::ParaGenesisConfig,
+    shared::{constants::P2P_PORT, types::RegisterParachainOptions},
     spawner::SpawnNodeCtx,
 };
 pub struct Orchestrator<T>
@@ -224,12 +225,17 @@ where
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
         for node in futures::future::try_join_all(spawning_tasks).await? {
+            let ip = node.inner.ip().await?;
             bootnodes_addr.push(
                 // TODO: we just use localhost for now
                 generators::generate_node_bootnode_addr(
                     &node.spec.peer_id,
-                    &LOCALHOST,
-                    node.spec.p2p_port.0,
+                    &ip,
+                    if ctx.ns.capabilities().use_default_ports_in_cmd {
+                        P2P_PORT
+                    } else {
+                        node.spec.p2p_port.0
+                    },
                     node.inner.args().as_ref(),
                     &node.spec.p2p_cert_hash,
                 )?,

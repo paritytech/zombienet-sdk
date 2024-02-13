@@ -4,15 +4,19 @@ pub mod shared;
 
 use std::{
     collections::HashMap,
+    net::IpAddr,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
 use async_trait::async_trait;
-use shared::types::{
-    ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
-    RunScriptOptions, SpawnNodeOptions,
+use shared::{
+    constants::LOCALHOST,
+    types::{
+        ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+        RunScriptOptions, SpawnNodeOptions,
+    },
 };
 use support::fs::FileSystemError;
 
@@ -37,7 +41,10 @@ pub enum ProviderError {
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
 
-    #[error("Can recover node: {0} info, field: {1}")]
+    #[error("Can not recover node: {0}")]
+    MissingNode(String),
+
+    #[error("Can not recover node: {0} info, field: {1}")]
     MissingNodeInfo(String, String),
 
     #[error("Duplicated node name: {0}")]
@@ -146,6 +153,11 @@ pub trait ProviderNode {
     async fn logs(&self) -> Result<String, ProviderError>;
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
+
+    // By default return localhost, should be overrided for k8s
+    async fn ip(&self) -> Result<IpAddr, ProviderError> {
+        Ok(LOCALHOST)
+    }
 
     async fn run_command(
         &self,

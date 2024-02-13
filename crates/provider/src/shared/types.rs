@@ -11,10 +11,16 @@ pub type ExecutionResult = Result<String, (ExitStatus, String)>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProviderCapabilities {
+    // default ports internal
+    /// Ensure that we have an image for each node (k8s/podman/docker)
     pub requires_image: bool,
+    /// Allow to customize the resources through manifest (k8s).
     pub has_resources: bool,
-    // Used in native to prefix filepath with fullpath
+    /// Used in native to prefix filepath with fullpath
     pub prefix_with_full_path: bool,
+    /// Use default ports in node cmd/args.
+    /// NOTE: generally used in k8s/dockers since the images expose those ports.
+    pub use_default_ports_in_cmd: bool,
 }
 
 #[derive(Debug, Clone)]

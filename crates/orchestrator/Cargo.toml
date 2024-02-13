@@ -16,7 +16,7 @@ keywords = ["zombienet", "orchestrator", "sdk"]
 tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
 multiaddr = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
 futures = { workspace = true }
 anyhow = { workspace = true }
 rand = { workspace = true }

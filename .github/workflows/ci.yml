@@ -18,7 +18,8 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - nightly
+          # TODO 24-02-08: Disable nightly due to tkaitchuck/aHash#200.
+          #- nightly
     steps:
       - uses: actions/checkout@v3
 
@@ -31,13 +32,18 @@ jobs:
       - name: Init install
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
 
+      - name: Fetch cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          shared-key: "zombie-cache"
+
       - name: Clippy
         run: cargo clippy --all-targets --all-features
 
       - name: Build
         run: cargo build
 
-      - name: Tests 
+      - name: Tests
         run: cargo test --workspace
 
   coverage:
@@ -52,6 +58,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Fetch cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          shared-key: "zombie-cache"
 
       - name: Install latest nextest release
         uses: taiki-e/install-action@nextest

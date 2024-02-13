@@ -1,6 +1,11 @@
 [settings]
 timeout = 1000
 
+[relaychain.runtime_genesis_patch.configuration.config]
+max_validators_per_core = 1
+needed_approvals = 2
+group_rotation_frequency = 10
+
 [relaychain]
 default_image = "{{ZOMBIENET_INTEGRATION_TEST_IMAGE}}"
 chain = "rococo-local"
@@ -18,7 +23,7 @@ command = "polkadot"
 id = 100
 addToGenesis = false
 
-  [parachains.collator]
+  [[parachains.collators]]
   name = "collator01"
   image = "{{COL_IMAGE}}"
   command = "adder-collator"

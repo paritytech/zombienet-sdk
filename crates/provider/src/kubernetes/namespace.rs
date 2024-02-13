@@ -22,7 +22,7 @@ use super::node::KubernetesNode;
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
-    shared::helpers,
+    shared::helpers::{self, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -143,31 +143,36 @@ where
             .await?;
 
         // Ensure namespace isolation and minimal resources IFF we are running in CI
-        if env::var("RUN_IN_CI").unwrap_or_default() == "1" {
-            let np_manifest = helpers::apply_replacements(
-                include_str!("./static-configs/namespace-network-policy.yaml"),
-                &HashMap::from([("namespace", self.name())]),
-            );
-
-            // Apply NetworkPolicy manifest
-            self.k8s_client
-                .create_static_resource(&self.name, &np_manifest)
-                .await
-                .map_err(|err| {
-                    ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
-                })?;
-
-            // Apply LimitRange manifest
-            self.k8s_client
-                .create_static_resource(
-                    &self.name,
-                    include_str!("./static-configs/baseline-resources.yaml"),
-                )
-                .await
-                .map_err(|err| {
-                    ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
-                })?;
+        if running_in_ci() {
+            self.initialize_static_resources().await?
         }
+        Ok(())
+    }
+
+    async fn initialize_static_resources(&self) -> Result<(), ProviderError> {
+        let np_manifest = helpers::apply_replacements(
+            include_str!("./static-configs/namespace-network-policy.yaml"),
+            &HashMap::from([("namespace", self.name())]),
+        );
+
+        // Apply NetworkPolicy manifest
+        self.k8s_client
+            .create_static_resource(&self.name, &np_manifest)
+            .await
+            .map_err(|err| {
+                ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+            })?;
+
+        // Apply LimitRange manifest
+        self.k8s_client
+            .create_static_resource(
+                &self.name,
+                include_str!("./static-configs/baseline-resources.yaml"),
+            )
+            .await
+            .map_err(|err| {
+                ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
+        })?;
         Ok(())
     }
 

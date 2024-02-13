@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
 
 use configuration::shared::constants::VALID_REGEX;
 use regex::{Captures, Regex};
@@ -19,6 +19,11 @@ pub(crate) fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>)
     });
 
     augmented_text.to_string()
+}
+
+/// Check if we are running in `CI` by checking the 'RUN_IN_CI' env var
+pub fn running_in_ci() -> bool {
+    env::var("RUN_IN_CI").unwrap_or_default() == "1"
 }
 
 #[cfg(test)]
@@ -71,5 +76,15 @@ mod tests {
         replacements.insert("other".into(), "demo-123".into());
         let res = apply_replacements(text, &replacements);
         assert_eq!(text.to_string(), res);
+    }
+
+    #[test]
+    fn check_runing_in_ci_env_var(){
+        assert_eq!(running_in_ci(), false);
+        // now set the env var
+        env::set_var("RUN_IN_CI", "1");
+        assert_eq!(running_in_ci(), true);
+        // reset
+        env::set_var("RUN_IN_CI", "");
     }
 }

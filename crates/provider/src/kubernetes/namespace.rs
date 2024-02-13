@@ -172,7 +172,7 @@ where
             .await
             .map_err(|err| {
                 ProviderError::CreateNamespaceFailed(self.name.to_string(), err.into())
-        })?;
+            })?;
         Ok(())
     }
 

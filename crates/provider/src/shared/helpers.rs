@@ -79,7 +79,7 @@ mod tests {
     }
 
     #[test]
-    fn check_runing_in_ci_env_var(){
+    fn check_runing_in_ci_env_var() {
         assert_eq!(running_in_ci(), false);
         // now set the env var
         env::set_var("RUN_IN_CI", "1");

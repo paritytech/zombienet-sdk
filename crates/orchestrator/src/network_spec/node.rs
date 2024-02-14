@@ -26,6 +26,7 @@ macro_rules! impl_from_for_add_node_opts {
                 Self {
                     image: value.image,
                     command: value.command,
+                    subcommand: value.subcommand,
                     args: value.args,
                     env: value.env,
                     is_validator: value.is_validator,
@@ -61,6 +62,9 @@ pub struct NodeSpec {
 
     /// Command to run the node. Override the default.
     pub(crate) command: Command,
+
+    /// Optional subcommand for the node.
+    pub(crate) subcommand: Option<Command>,
 
     /// Arguments to use for node. Appended to default.
     pub(crate) args: Vec<Arg>,
@@ -125,6 +129,8 @@ impl NodeSpec {
             ));
         };
 
+        let subcommand = node_config.subcommand().cloned();
+
         // If `args` is set at `node` level use them
         // otherwise use the default_args (can be empty).
         let args: Vec<Arg> = if node_config.args().is_empty() {
@@ -150,6 +156,7 @@ impl NodeSpec {
             peer_id,
             image,
             command,
+            subcommand,
             args,
             is_validator: node_config.is_validator(),
             is_invulnerable: node_config.is_invulnerable(),
@@ -197,6 +204,8 @@ impl NodeSpec {
             ));
         };
 
+        let subcommand = options.subcommand.clone();
+
         // If `args` is set at `node` level use them
         // otherwise use the default_args (can be empty).
         let args: Vec<Arg> = if options.args.is_empty() {
@@ -226,6 +235,7 @@ impl NodeSpec {
             peer_id,
             image,
             command,
+            subcommand,
             args,
             is_validator: options.is_validator,
             is_invulnerable: false,

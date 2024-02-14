@@ -65,6 +65,7 @@ pub struct NodeConfig {
     name: String,
     pub(crate) image: Option<Image>,
     pub(crate) command: Option<Command>,
+    pub(crate) subcommand: Option<Command>,
     #[serde(default)]
     args: Vec<Arg>,
     #[serde(alias = "validator", default = "default_as_true")]
@@ -110,6 +111,12 @@ impl Serialize for NodeConfig {
             state.skip_field("command")?;
         } else {
             state.serialize_field("command", &self.command)?;
+        }
+
+        if self.subcommand.is_none() {
+            state.skip_field("subcommand")?;
+        } else {
+            state.serialize_field("subcommand", &self.subcommand)?;
         }
 
         if self.args.is_empty() || self.args == self.chain_context.default_args {
@@ -172,6 +179,11 @@ impl NodeConfig {
     /// Command to run the node.
     pub fn command(&self) -> Option<&Command> {
         self.command.as_ref()
+    }
+
+    /// Subcommand to run the node.
+    pub fn subcommand(&self) -> Option<&Command> {
+        self.subcommand.as_ref()
     }
 
     /// Arguments to use for node.
@@ -265,6 +277,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 name: "".into(),
                 image: None,
                 command: None,
+                subcommand: None,
                 args: vec![],
                 is_validator: true,
                 is_invulnerable: true,
@@ -358,6 +371,29 @@ impl NodeConfigBuilder<Buildable> {
             Ok(command) => Self::transition(
                 NodeConfig {
                     command: Some(command),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Command(error.into()).into()),
+            ),
+        }
+    }
+
+    /// Set the subcommand that will be executed to launch the node.
+    pub fn with_subcommand<T>(self, subcommand: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + Send + Sync + 'static,
+    {
+        match subcommand.try_into() {
+            Ok(subcommand) => Self::transition(
+                NodeConfig {
+                    subcommand: Some(subcommand),
                     ..self.config
                 },
                 self.validation_context,

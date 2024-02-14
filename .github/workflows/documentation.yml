@@ -17,7 +17,9 @@ jobs:
     strategy:
       matrix:
         toolchain:
-          - nightly
+          # TODO 24-02-08: Disable nightly due to tkaitchuck/aHash#200.
+          #- nightly
+          - stable
     steps:
       - uses: actions/checkout@v3
 

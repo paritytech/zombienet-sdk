@@ -286,10 +286,8 @@ where
         self.namespace
             .upgrade()
             .map(|namespace| namespace.name().to_string())
-            .expect(&format!(
-                "namespace shouldn't be dropped, {}",
-                THIS_IS_A_BUG
-            ))
+            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}",
+                THIS_IS_A_BUG))
     }
 
     async fn file_server_local_host(&self) -> Result<String, ProviderError> {
@@ -489,7 +487,7 @@ where
                 ProviderError::InvalidConfig(format!(
                     "Can not parse the pod ip: {}, err: {}",
                     ip,
-                    err.to_string()
+                    err
                 ))
             })?)
         } else {

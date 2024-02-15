@@ -8,3 +8,5 @@ polkadot-integration-test:
     - zombienet-polkadot-integration-test
   script:
     - kubectl get ns
+  rules:
+    - when: manual

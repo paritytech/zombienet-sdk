@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR},
+    shared::helpers::running_in_ci,
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
@@ -13,6 +14,7 @@ use crate::{
     generators,
     network::node::NetworkNode,
     network_spec::{node::NodeSpec, parachain::ParachainSpec},
+    shared::constants::{PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
 };
 
@@ -174,14 +176,31 @@ where
         )
     })?;
 
-    let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
-    let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
+    // Create port-forward iff we are not in CI
+    let (rpc_port_external, prometheus_port_external) = if !running_in_ci() {
+        let ports = futures::future::try_join_all(vec![
+            running_node.create_port_forward(node.ws_port.0, RPC_PORT),
+            running_node.create_port_forward(node.prometheus_port.0, PROMETHEUS_PORT),
+        ])
+        .await?;
+
+        (
+            ports[0].unwrap_or(node.ws_port.0),
+            ports[0].unwrap_or(node.prometheus_port.0),
+        )
+    } else {
+        (node.ws_port.0, node.prometheus_port.0)
+    };
+
+    let ws_uri = format!("ws://{}:{}", LOCALHOST, rpc_port_external);
+    let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, prometheus_port_external);
     info!("🚀 {}, should be running now", node.name);
     info!(
         "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
         node.name
     );
     info!("🚀 {}: metrics link {prometheus_uri}", node.name);
+    // TODO: the cmd for the logs should live on the node or ns.
     if ctx.ns.capabilities().requires_image {
         info!(
             "📓 logs cmd: kubectl -n {} logs {}",

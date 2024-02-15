@@ -159,6 +159,15 @@ pub trait ProviderNode {
         Ok(LOCALHOST)
     }
 
+    // Noop by default (native provider)
+    async fn create_port_forward(
+        &self,
+        _local_port: u16,
+        _remote_port: u16,
+    ) -> Result<Option<u16>, ProviderError> {
+        Ok(None)
+    }
+
     async fn run_command(
         &self,
         options: RunCommandOptions,

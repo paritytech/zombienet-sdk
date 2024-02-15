@@ -4,9 +4,13 @@ use configuration::shared::constants::VALID_REGEX;
 use regex::{Captures, Regex};
 
 pub(crate) fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>) -> String {
-    let re = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#).unwrap_or_else(|_| panic!("{} {}",
-        VALID_REGEX,
-        configuration::shared::constants::THIS_IS_A_BUG));
+    let re = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#).unwrap_or_else(|_| {
+        panic!(
+            "{} {}",
+            VALID_REGEX,
+            configuration::shared::constants::THIS_IS_A_BUG
+        )
+    });
 
     let augmented_text = re.replace_all(text, |caps: &Captures| {
         if let Some(replacements_value) = replacements.get(&caps[1]) {

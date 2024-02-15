@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     env,
     net::IpAddr,
     path::{Component, Path, PathBuf},
@@ -13,7 +13,7 @@ use configuration::shared::{constants::THIS_IS_A_BUG, resources::Resources};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use support::fs::FileSystem;
-use tokio::{time::sleep, try_join};
+use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
 
 use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 use crate::{
@@ -42,6 +42,8 @@ where
     pub(super) filesystem: &'a FS,
 }
 
+type FwdInfo = (u16, JoinHandle<()>);
+
 pub(super) struct KubernetesNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
@@ -58,6 +60,7 @@ where
     k8s_client: KubernetesClient,
     http_client: reqwest::Client,
     filesystem: FS,
+    port_fwds: RwLock<HashMap<u16, FwdInfo>>,
 }
 
 impl<FS> KubernetesNode<FS>
@@ -100,6 +103,7 @@ where
             filesystem: filesystem.clone(),
             k8s_client: options.k8s_client.clone(),
             http_client: reqwest::Client::new(),
+            port_fwds: Default::default(),
         });
 
         node.initialize_k8s(
@@ -286,8 +290,7 @@ where
         self.namespace
             .upgrade()
             .map(|namespace| namespace.name().to_string())
-            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}",
-                THIS_IS_A_BUG))
+            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}", THIS_IS_A_BUG))
     }
 
     async fn file_server_local_host(&self) -> Result<String, ProviderError> {
@@ -362,6 +365,30 @@ where
             .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?;
 
         Ok(())
+    }
+
+    async fn create_port_forward(
+        &self,
+        local_port: u16,
+        remote_port: u16,
+    ) -> Result<Option<u16>, ProviderError> {
+        // If the fwd exist just return the local port
+        if let Some(fwd_info) = self.port_fwds.read().await.get(&remote_port) {
+            return Ok(Some(fwd_info.0));
+        };
+
+        let (port, task) = self
+            .k8s_client
+            .create_pod_port_forward(&self.namespace_name(), &self.name, local_port, remote_port)
+            .await
+            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+
+        self.port_fwds
+            .write()
+            .await
+            .insert(remote_port, (port, task));
+
+        Ok(Some(port))
     }
 
     async fn run_command(
@@ -486,8 +513,7 @@ where
             Ok(ip.parse::<IpAddr>().map_err(|err| {
                 ProviderError::InvalidConfig(format!(
                     "Can not parse the pod ip: {}, err: {}",
-                    ip,
-                    err
+                    ip, err
                 ))
             })?)
         } else {

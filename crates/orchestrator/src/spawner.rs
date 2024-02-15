@@ -176,21 +176,17 @@ where
         )
     })?;
 
+    let (mut rpc_port_external, mut prometheus_port_external) =  (node.ws_port.0, node.prometheus_port.0);
     // Create port-forward iff we are not in CI
-    let (rpc_port_external, prometheus_port_external) = if !running_in_ci() {
+     if !running_in_ci() {
         let ports = futures::future::try_join_all(vec![
             running_node.create_port_forward(node.ws_port.0, RPC_PORT),
             running_node.create_port_forward(node.prometheus_port.0, PROMETHEUS_PORT),
         ])
         .await?;
 
-        (
-            ports[0].unwrap_or(node.ws_port.0),
-            ports[0].unwrap_or(node.prometheus_port.0),
-        )
-    } else {
-        (node.ws_port.0, node.prometheus_port.0)
-    };
+        (rpc_port_external, prometheus_port_external) = (ports[0].unwrap_or(node.ws_port.0), ports[1].unwrap_or(node.prometheus_port.0));
+    }
 
     let ws_uri = format!("ws://{}:{}", LOCALHOST, rpc_port_external);
     let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, prometheus_port_external);

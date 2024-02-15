@@ -1,0 +1,10 @@
+stages:
+  - integration-test
+
+polkadot-integration-test:
+  stage: integration-test
+  image: paritytech/zombienet:v1.3.91
+  tags:
+    - zombienet-polkadot-integration-test
+  script:
+    - kubectl get ns

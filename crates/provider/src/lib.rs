@@ -94,6 +94,9 @@ pub enum ProviderError {
 
     #[error("Error sending file: '{0}': {1}")]
     SendFile(String, anyhow::Error),
+
+    #[error("Error creating port-forward '{0}:{1}': {2}")]
+    PortForwardError(u16, u16, anyhow::Error),
 }
 
 #[async_trait]

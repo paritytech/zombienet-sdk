@@ -381,7 +381,7 @@ where
             .k8s_client
             .create_pod_port_forward(&self.namespace_name(), &self.name, local_port, remote_port)
             .await
-            .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
+            .map_err(|err| ProviderError::PortForwardError(local_port, remote_port, err.into()))?;
 
         self.port_fwds
             .write()

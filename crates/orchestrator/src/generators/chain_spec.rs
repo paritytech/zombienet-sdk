@@ -6,12 +6,13 @@ use std::{
 use anyhow::anyhow;
 use configuration::{types::AssetLocation, HrmpChannelConfig};
 use provider::{
+    constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace, ProviderError,
 };
 use serde_json::json;
 use support::fs::FileSystem;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use super::errors::GeneratorError;
 use crate::{
@@ -54,8 +55,11 @@ pub struct ChainSpec {
     raw_path: Option<PathBuf>,
     // The binary to build the chain-spec
     command: Option<String>,
+    // Imgae to use for build the chain-spec
+    image: Option<String>,
     // full command to build the spec, we will use as provided
     build_command: Option<String>,
+    // Contex of the network (e.g relay or para)
     context: Context,
 }
 
@@ -69,6 +73,7 @@ impl ChainSpec {
             asset_location: None,
             raw_path: None,
             command: None,
+            image: None,
             context,
         }
     }
@@ -96,6 +101,11 @@ impl ChainSpec {
         self
     }
 
+    pub(crate) fn image(mut self, image: Option<String>) -> Self {
+        self.image = image;
+        self
+    }
+
     /// Build the chain-spec
     pub async fn build<'a, T>(
         &mut self,
@@ -118,10 +128,8 @@ impl ChainSpec {
         if let Some(location) = self.asset_location.as_ref() {
             match location {
                 AssetLocation::FilePath(path) => {
-                    let file_to_transfer = TransferedFile {
-                        local_path: path.clone(),
-                        remote_path: maybe_plain_spec_path.clone(),
-                    };
+                    let file_to_transfer =
+                        TransferedFile::new(path.clone(), maybe_plain_spec_path.clone());
 
                     scoped_fs
                         .copy_files(vec![&file_to_transfer])
@@ -149,7 +157,7 @@ impl ChainSpec {
 
             let generate_command =
                 GenerateFileCommand::new(cmd.as_str(), maybe_plain_spec_path.clone()).args(args);
-            let options = GenerateFilesOptions::new(vec![generate_command]);
+            let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
             ns.generate_files(options).await?;
         }
 
@@ -166,6 +174,11 @@ impl ChainSpec {
             return Ok(());
         };
         // build raw
+        let temp_name = format!(
+            "temp-build-raw-{}-{}",
+            self.chain_spec_name,
+            rand::random::<u8>()
+        );
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
         let cmd = self
             .command
@@ -179,21 +192,47 @@ impl ChainSpec {
                 .ok_or(GeneratorError::ChainSpecGeneration(
                     "Invalid plain path".into(),
                 ))?;
+
+        // TODO: we should get the full path from the scoped filesystem
+        let chain_spec_path_local = format!(
+            "{}/{}",
+            ns.base_dir().to_string_lossy(),
+            maybe_plain_path.display()
+        );
+        // Remote path to be injected
+        let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
+        // Path in the context of the node, this can be different in the context of the providers (e.g native)
+        let chain_spec_path_in_args = if ns.capabilities().prefix_with_full_path {
+            // In native
+            format!(
+                "{}/{}{}",
+                ns.base_dir().to_string_lossy(),
+                &temp_name,
+                &chain_spec_path_in_pod
+            )
+        } else {
+            chain_spec_path_in_pod.clone()
+        };
+
         let args: Vec<String> = vec![
             "build-spec".into(),
             "--chain".into(),
-            // TODO: we should get the full path from the scoped filesystem
-            format!(
-                "{}/{}",
-                ns.base_dir().to_string_lossy(),
-                maybe_plain_path.display().to_string()
-            ),
+            chain_spec_path_in_args,
             "--raw".into(),
             "--disable-default-bootnode".into(),
         ];
 
         let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
-        let options = GenerateFilesOptions::new(vec![generate_command]);
+        let options = GenerateFilesOptions::with_files(
+            vec![generate_command],
+            self.image.clone(),
+            &[TransferedFile::new(
+                chain_spec_path_local,
+                chain_spec_path_in_pod,
+            )],
+        )
+        .temp_name(temp_name);
+        trace!("calling generate_files with options: {:#?}", options);
         ns.generate_files(options).await?;
 
         self.raw_path = Some(raw_spec_path);
@@ -325,9 +364,14 @@ impl ChainSpec {
                 .is_some()
             {
                 add_authorities(&pointer, &mut chain_spec_json, &validators, false);
-            } else {
+            } else if chain_spec_json
+                .pointer(&format!("{}/aura", pointer))
+                .is_some()
+            {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
                 // await addParaCustom(chainSpecFullPathPlain, node);
+            } else {
+                warn!("Can't customize keys, not `session` or `aura` find in the chain-spec file");
             };
 
             // Add nodes to collator

@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use provider::{
-    constants::LOCALHOST,
+    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR},
+    shared::helpers::running_in_ci,
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
@@ -13,6 +14,7 @@ use crate::{
     generators,
     network::node::NetworkNode,
     network_spec::{node::NodeSpec, parachain::ParachainSpec},
+    shared::constants::{PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
 };
 
@@ -73,19 +75,19 @@ where
         };
 
         for key_filename in key_filenames {
-            let f = TransferedFile {
-                local_path: PathBuf::from(format!(
+            let f = TransferedFile::new(
+                PathBuf::from(format!(
                     "{}/{}/{}",
                     ctx.ns.base_dir().to_string_lossy(),
                     node_files_path,
                     key_filename.to_string_lossy()
                 )),
-                remote_path: PathBuf::from(format!(
+                PathBuf::from(format!(
                     "/data/chains/{}/keystore/{}",
                     remote_keystore_chain_id,
                     key_filename.to_string_lossy()
                 )),
-            };
+            );
             files_to_inject.push(f);
         }
         created_paths.push(PathBuf::from(format!(
@@ -95,9 +97,20 @@ where
     }
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
-    let cfg_path = format!("{}/cfg", &base_dir);
-    let data_path = format!("{}/data", &base_dir);
-    let relay_data_path = format!("{}/relay-data", &base_dir);
+
+    let (cfg_path, data_path, relay_data_path) = if !ctx.ns.capabilities().prefix_with_full_path {
+        (
+            NODE_CONFIG_DIR.into(),
+            NODE_DATA_DIR.into(),
+            NODE_RELAY_DATA_DIR.into(),
+        )
+    } else {
+        let cfg_path = format!("{}/{NODE_CONFIG_DIR}", &base_dir);
+        let data_path = format!("{}/{NODE_DATA_DIR}", &base_dir);
+        let relay_data_path = format!("{}/{NODE_RELAY_DATA_DIR}", &base_dir);
+        (cfg_path, data_path, relay_data_path)
+    };
+
     let gen_opts = generators::GenCmdOptions {
         relay_chain_name: ctx.chain,
         cfg_path: &cfg_path,               // TODO: get from provider/ns
@@ -105,6 +118,8 @@ where
         relay_data_path: &relay_data_path, // TODO: get from provider
         use_wrapper: false,                // TODO: get from provider
         bootnode_addr: ctx.bootnodes_addr.clone(),
+        // IFF the provider require an image (e.g k8s) we should use the default ports in the cmd.
+        use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
     };
 
     let (program, args) = match ctx.role {
@@ -133,17 +148,20 @@ where
         args.join(" ")
     );
 
-    let spawn_ops = SpawnNodeOptions {
-        name: node.name.clone(),
-        program,
-        args,
-        env: node
-            .env
-            .iter()
-            .map(|env| (env.name.clone(), env.value.clone()))
-            .collect(),
-        injected_files: files_to_inject,
-        created_paths,
+    let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
+        .args(args)
+        .env(
+            node.env
+                .iter()
+                .map(|var| (var.name.clone(), var.value.clone())),
+        )
+        .injected_files(files_to_inject)
+        .created_paths(created_paths);
+
+    let spawn_ops = if let Some(image) = node.image.as_ref() {
+        spawn_ops.image(image.as_str())
+    } else {
+        spawn_ops
     };
 
     // Drops the port parking listeners before spawn
@@ -158,15 +176,40 @@ where
         )
     })?;
 
-    let ws_uri = format!("ws://{}:{}", LOCALHOST, node.rpc_port.0);
-    let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, node.prometheus_port.0);
+    let (mut rpc_port_external, mut prometheus_port_external) =
+        (node.ws_port.0, node.prometheus_port.0);
+    // Create port-forward iff we are not in CI
+    if !running_in_ci() {
+        let ports = futures::future::try_join_all(vec![
+            running_node.create_port_forward(node.ws_port.0, RPC_PORT),
+            running_node.create_port_forward(node.prometheus_port.0, PROMETHEUS_PORT),
+        ])
+        .await?;
+
+        (rpc_port_external, prometheus_port_external) = (
+            ports[0].unwrap_or(node.ws_port.0),
+            ports[1].unwrap_or(node.prometheus_port.0),
+        );
+    }
+
+    let ws_uri = format!("ws://{}:{}", LOCALHOST, rpc_port_external);
+    let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, prometheus_port_external);
     info!("🚀 {}, should be running now", node.name);
     info!(
         "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
         node.name
     );
     info!("🚀 {}: metrics link {prometheus_uri}", node.name);
-    info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
+    // TODO: the cmd for the logs should live on the node or ns.
+    if ctx.ns.capabilities().requires_image {
+        info!(
+            "📓 logs cmd: kubectl -n {} logs {}",
+            ctx.ns.name(),
+            node.name
+        );
+    } else {
+        info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
+    }
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,

@@ -18,30 +18,29 @@ use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
-use provider::{constants::LOCALHOST, types::TransferedFile, Provider};
+use provider::{types::TransferedFile, DynProvider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 use tracing::{debug, info};
 
 use crate::{
-    generators::chain_spec::ParaGenesisConfig, shared::types::RegisterParachainOptions,
+    generators::chain_spec::ParaGenesisConfig,
+    shared::{constants::P2P_PORT, types::RegisterParachainOptions},
     spawner::SpawnNodeCtx,
 };
-pub struct Orchestrator<T, P>
+pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
-    P: Provider,
 {
     filesystem: T,
-    provider: P,
+    provider: DynProvider,
 }
 
-impl<T, P> Orchestrator<T, P>
+impl<T> Orchestrator<T>
 where
     T: FileSystem + Sync + Send + Clone,
-    P: Provider,
 {
-    pub fn new(filesystem: T, provider: P) -> Self {
+    pub fn new(filesystem: T, provider: DynProvider) -> Self {
         Self {
             filesystem,
             provider,
@@ -55,12 +54,13 @@ where
         let global_timeout = network_config.global_settings().network_spawn_timeout();
         let network_spec = NetworkSpec::from_config(&network_config).await?;
 
-        timeout(
+        let res = timeout(
             Duration::from_secs(global_timeout.into()),
             self.spawn_inner(network_spec),
         )
         .await
-        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout))?
+        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout));
+        res?
     }
 
     async fn spawn_inner(
@@ -89,6 +89,7 @@ where
             .build(&ns, &scoped_fs)
             .await?;
 
+        debug!("relaychain spec built!");
         // Create parachain artifacts (chain-spec, wasm, state)
         let relay_chain_id = network_spec
             .relaychain
@@ -101,6 +102,7 @@ where
             let chain_spec_raw_path = para
                 .build_chain_spec(&relay_chain_id, &ns, &scoped_fs)
                 .await?;
+            debug!("parachain chain-spec built!");
 
             // TODO: this need to be abstracted in a single call to generate_files.
             scoped_fs.create_dir(para.id.to_string()).await?;
@@ -113,6 +115,7 @@ where
                     &scoped_fs,
                 )
                 .await?;
+            debug!("parachain genesis state built!");
             para.genesis_wasm
                 .build(
                     chain_spec_raw_path,
@@ -121,6 +124,7 @@ where
                     &scoped_fs,
                 )
                 .await?;
+            debug!("parachain genesis wasm built!");
         }
 
         // Gather the parachains to register in genesis and the ones to register with extrinsic
@@ -193,13 +197,13 @@ where
             wait_ready: false,
         };
 
-        let global_files_to_inject = vec![TransferedFile {
-            local_path: PathBuf::from(format!(
+        let global_files_to_inject = vec![TransferedFile::new(
+            PathBuf::from(format!(
                 "{}/{relay_chain_name}.json",
                 ns.base_dir().to_string_lossy()
             )),
-            remote_path: PathBuf::from(format!("/cfg/{relay_chain_name}.json")),
-        }];
+            PathBuf::from(format!("/cfg/{relay_chain_name}.json")),
+        )];
 
         let r = Relaychain::new(
             relay_chain_name.to_string(),
@@ -221,12 +225,17 @@ where
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
         for node in futures::future::try_join_all(spawning_tasks).await? {
+            let ip = node.inner.ip().await?;
             bootnodes_addr.push(
                 // TODO: we just use localhost for now
                 generators::generate_node_bootnode_addr(
                     &node.spec.peer_id,
-                    &LOCALHOST,
-                    node.spec.p2p_port.0,
+                    &ip,
+                    if ctx.ns.capabilities().use_default_ports_in_cmd {
+                        P2P_PORT
+                    } else {
+                        node.spec.p2p_port.0
+                    },
                     node.inner.args().as_ref(),
                     &node.spec.p2p_cert_hash,
                 )?,
@@ -279,6 +288,18 @@ where
                 ..ctx.clone()
             };
 
+            let mut para_files_to_inject = global_files_to_inject.clone();
+            if para.is_cumulus_based {
+                para_files_to_inject.push(TransferedFile::new(
+                    PathBuf::from(format!(
+                        "{}/{}.json",
+                        ns.base_dir().to_string_lossy(),
+                        para.id
+                    )),
+                    PathBuf::from(format!("/cfg/{}.json", para.id)),
+                ));
+            }
+
             // Spawn the nodes
             let spawning_tasks = para.collators.iter().map(|node| {
                 spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
@@ -296,7 +317,7 @@ where
         // - add-ons (introspector/tracing/etc)
 
         // verify nodes
-        network_helper::verifier::verify_nodes(&network.nodes()).await?;
+        // network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {

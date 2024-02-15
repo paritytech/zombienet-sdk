@@ -1,30 +1,37 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::ExitStatus,
+};
+
+use configuration::shared::resources::Resources;
 
 pub type Port = u16;
 
-#[derive(Debug, Default, Clone, PartialEq)]
+pub type ExecutionResult = Result<String, (ExitStatus, String)>;
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProviderCapabilities {
+    // default ports internal
+    /// Ensure that we have an image for each node (k8s/podman/docker)
     pub requires_image: bool,
-}
-
-impl ProviderCapabilities {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn requires_image(mut self) -> Self {
-        self.requires_image = true;
-        self
-    }
+    /// Allow to customize the resources through manifest (k8s).
+    pub has_resources: bool,
+    /// Used in native to prefix filepath with fullpath
+    pub prefix_with_full_path: bool,
+    /// Use default ports in node cmd/args.
+    /// NOTE: generally used in k8s/dockers since the images expose those ports.
+    pub use_default_ports_in_cmd: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct SpawnNodeOptions {
     pub name: String,
+    pub image: Option<String>,
+    pub resources: Option<Resources>,
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
-    // TODO: naming
+    // TODO: rename startup_files
     pub injected_files: Vec<TransferedFile>,
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order
@@ -39,12 +46,27 @@ impl SpawnNodeOptions {
     {
         Self {
             name: name.as_ref().to_string(),
+            image: None,
+            resources: None,
             program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
             injected_files: vec![],
             created_paths: vec![],
         }
+    }
+
+    pub fn image<S>(mut self, image: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.image = Some(image.as_ref().to_string());
+        self
+    }
+
+    pub fn resources(mut self, resources: Resources) -> Self {
+        self.resources = Some(resources);
+        self
     }
 
     pub fn args<S, I>(mut self, args: I) -> Self
@@ -73,6 +95,18 @@ impl SpawnNodeOptions {
         I: IntoIterator<Item = TransferedFile>,
     {
         self.injected_files = injected_files.into_iter().collect();
+        self
+    }
+
+    pub fn created_paths<P, I>(mut self, created_paths: I) -> Self
+    where
+        P: AsRef<Path>,
+        I: IntoIterator<Item = P>,
+    {
+        self.created_paths = created_paths
+            .into_iter()
+            .map(|path| path.as_ref().into())
+            .collect();
         self
     }
 }
@@ -124,18 +158,47 @@ impl GenerateFileCommand {
 #[derive(Debug)]
 pub struct GenerateFilesOptions {
     pub commands: Vec<GenerateFileCommand>,
+    pub image: Option<String>,
     pub injected_files: Vec<TransferedFile>,
+    // Allow to control the name of the node used to create the files.
+    pub temp_name: Option<String>,
 }
 
 impl GenerateFilesOptions {
-    pub fn new<I>(commands: I) -> Self
+    pub fn new<I>(commands: I, image: Option<String>) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
         Self {
             commands: commands.into_iter().collect(),
             injected_files: vec![],
+            image,
+            temp_name: None,
         }
+    }
+
+    pub fn with_files<I>(
+        commands: I,
+        image: Option<String>,
+        injected_files: &[TransferedFile],
+    ) -> Self
+    where
+        I: IntoIterator<Item = GenerateFileCommand>,
+    {
+        Self {
+            commands: commands.into_iter().collect(),
+            injected_files: injected_files.into(),
+            image,
+            temp_name: None,
+        }
+    }
+
+    pub fn image<S>(mut self, image: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.image = Some(image.as_ref().to_string());
+        self
     }
 
     pub fn injected_files<I>(mut self, injected_files: I) -> Self
@@ -143,6 +206,11 @@ impl GenerateFilesOptions {
         I: IntoIterator<Item = TransferedFile>,
     {
         self.injected_files = injected_files.into_iter().collect();
+        self
+    }
+
+    pub fn temp_name(mut self, name: impl Into<String>) -> Self {
+        self.temp_name = Some(name.into());
         self
     }
 }
@@ -232,6 +300,8 @@ impl RunScriptOptions {
 pub struct TransferedFile {
     pub local_path: PathBuf,
     pub remote_path: PathBuf,
+    // TODO: Can be narrowed to have strict typing on this?
+    pub mode: String,
 }
 
 impl TransferedFile {
@@ -242,7 +312,16 @@ impl TransferedFile {
         Self {
             local_path: local_path.as_ref().into(),
             remote_path: remote_path.as_ref().into(),
+            mode: "0644".to_string(), // default to rw-r--r--
         }
+    }
+
+    pub fn mode<S>(mut self, mode: S) -> Self
+    where
+        S: AsRef<str>,
+    {
+        self.mode = mode.as_ref().to_string();
+        self
     }
 }
 

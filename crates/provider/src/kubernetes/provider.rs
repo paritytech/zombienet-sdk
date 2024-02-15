@@ -8,40 +8,40 @@ use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 
-use super::namespace::NativeNamespace;
+use super::{client::KubernetesClient, namespace::KubernetesNamespace};
 use crate::{
     types::ProviderCapabilities, DynNamespace, Provider, ProviderError, ProviderNamespace,
 };
 
-pub struct NativeProvider<FS>
+pub struct KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    weak: Weak<NativeProvider<FS>>,
+    weak: Weak<KubernetesProvider<FS>>,
     capabilities: ProviderCapabilities,
     tmp_dir: PathBuf,
+    k8s_client: KubernetesClient,
     filesystem: FS,
-    pub(super) namespaces: RwLock<HashMap<String, Arc<NativeNamespace<FS>>>>,
+    pub(super) namespaces: RwLock<HashMap<String, Arc<KubernetesNamespace<FS>>>>,
 }
 
-impl<FS> NativeProvider<FS>
+impl<FS> KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
-    pub fn new(filesystem: FS) -> Arc<Self> {
-        Arc::new_cyclic(|weak| NativeProvider {
+    pub async fn new(filesystem: FS) -> Arc<Self> {
+        let k8s_client = KubernetesClient::new().await.unwrap();
+
+        Arc::new_cyclic(|weak| KubernetesProvider {
             weak: weak.clone(),
             capabilities: ProviderCapabilities {
-                has_resources: false,
-                requires_image: false,
-                prefix_with_full_path: true,
-                use_default_ports_in_cmd: false,
+                requires_image: true,
+                has_resources: true,
+                prefix_with_full_path: false,
+                use_default_ports_in_cmd: true,
             },
-            // NOTE: temp_dir in linux return `/tmp` but on mac something like
-            //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having
-            // one `trailing slash` and the other no can cause issues if
-            // you try to build a fullpath by concatenate. Use Pathbuf to prevent the issue.
             tmp_dir: std::env::temp_dir(),
+            k8s_client,
             filesystem,
             namespaces: RwLock::new(HashMap::new()),
         })
@@ -54,7 +54,7 @@ where
 }
 
 #[async_trait]
-impl<FS> Provider for NativeProvider<FS>
+impl<FS> Provider for KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
@@ -72,10 +72,11 @@ where
     }
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError> {
-        let namespace = NativeNamespace::new(
+        let namespace = KubernetesNamespace::new(
             &self.weak,
             &self.tmp_dir,
             &self.capabilities,
+            &self.k8s_client,
             &self.filesystem,
         )
         .await?;

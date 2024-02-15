@@ -1,6 +1,6 @@
 use configuration::types::Arg;
 
-use crate::network_spec::node::NodeSpec;
+use crate::{network_spec::node::NodeSpec, shared::constants::*};
 
 pub struct GenCmdOptions<'a> {
     pub relay_chain_name: &'a str,
@@ -9,6 +9,7 @@ pub struct GenCmdOptions<'a> {
     pub relay_data_path: &'a str,
     pub use_wrapper: bool,
     pub bootnode_addr: Vec<String>,
+    pub use_default_ports_in_cmd: bool,
 }
 
 impl<'a> Default for GenCmdOptions<'a> {
@@ -20,6 +21,7 @@ impl<'a> Default for GenCmdOptions<'a> {
             relay_data_path: "/relay-data",
             use_wrapper: true,
             bootnode_addr: vec![],
+            use_default_ports_in_cmd: false,
         }
     }
 }
@@ -229,7 +231,8 @@ pub fn generate_for_node(
     }
 
     if *is_validator && !args.contains(&Arg::Flag("--validator".into())) {
-        tmp_args.push("--validator".into())
+        tmp_args.push("--validator".into());
+        // tmp_args.push("--insecure-validator-i-know-what-i-do".into());
     }
 
     if !bootnodes_addresses.is_empty() {
@@ -243,12 +246,30 @@ pub fn generate_for_node(
     }
 
     // ports
+
+    // Prometheus
     tmp_args.push("--prometheus-port".into());
-    tmp_args.push(node.prometheus_port.0.to_string());
+    tmp_args.push(if options.use_default_ports_in_cmd {
+        PROMETHEUS_PORT.to_string()
+    } else {
+        node.prometheus_port.0.to_string()
+    });
 
+    // RPC
+    // TODO (team): do we want to support old --ws-port?
     tmp_args.push("--rpc-port".into());
-    tmp_args.push(node.rpc_port.0.to_string());
+    tmp_args.push(if options.use_default_ports_in_cmd {
+        RPC_PORT.to_string()
+    } else {
+        node.rpc_port.0.to_string()
+    });
 
+    // P2P
+    let p2p_port = if options.use_default_ports_in_cmd {
+        P2P_PORT
+    } else {
+        node.p2p_port.0
+    };
     let listen_value = if let Some(listen_val) = args.iter().find_map(|arg| match arg {
         Arg::Flag(_) => None,
         Arg::Option(k, v) => {
@@ -264,11 +285,11 @@ pub fn generate_for_node(
         let port_part = parts
             .get_mut(4)
             .expect("should have at least 5 parts, this is a bug");
-        let port_to_use = node.p2p_port.0.to_string();
+        let port_to_use = p2p_port.to_string();
         *port_part = port_to_use.as_str();
         parts.join("/")
     } else {
-        format!("/ip4/0.0.0.0/tcp/{}/ws", node.p2p_port.0)
+        format!("/ip4/0.0.0.0/tcp/{}/ws", p2p_port)
     };
 
     tmp_args.push("--listen-addr".into());

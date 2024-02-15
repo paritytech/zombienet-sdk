@@ -7,6 +7,7 @@ use configuration::{
 };
 use provider::DynNamespace;
 use support::fs::FileSystem;
+use tracing::debug;
 
 use super::node::NodeSpec;
 use crate::{
@@ -85,6 +86,12 @@ impl ParachainSpec {
             ));
         };
 
+        // TODO: internally we use image as String
+        let main_image = config
+            .default_image()
+            .or(config.collators().first().and_then(|node| node.image()))
+            .map(|image| image.as_str().to_string());
+
         let chain_spec = if config.is_cumulus_based() {
             // we need a chain-spec
             let chain_name = if let Some(chain_name) = config.chain() {
@@ -106,7 +113,11 @@ impl ParachainSpec {
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.
-                Some(chain_spec_builder.command(main_cmd.as_str()))
+                Some(
+                    chain_spec_builder
+                        .command(main_cmd.as_str())
+                        .image(main_image.clone()),
+                )
             }
         } else {
             None
@@ -146,6 +157,7 @@ impl ParachainSpec {
                 ParaArtifactType::State,
                 ParaArtifactBuildOption::Command(cmd.as_str().into()),
             )
+            .image(main_image.clone())
         };
 
         let genesis_wasm = if let Some(path) = config.genesis_wasm_path() {
@@ -163,6 +175,7 @@ impl ParachainSpec {
                 ParaArtifactType::Wasm,
                 ParaArtifactBuildOption::Command(cmd.as_str().into()),
             )
+            .image(main_image.clone())
         };
 
         let para_spec = ParachainSpec {
@@ -204,13 +217,16 @@ impl ParachainSpec {
     {
         let cloned = self.clone();
         let chain_spec_raw_path = if let Some(chain_spec) = self.chain_spec.as_mut() {
+            debug!("parachain chain-spec building!");
             chain_spec.build(ns, scoped_fs).await?;
+            debug!("parachain chain-spec built!");
 
             chain_spec
                 .customize_para(&cloned, relay_chain_id, scoped_fs)
                 .await?;
+            debug!("parachain chain-spec customized!");
             chain_spec.build_raw(ns).await?;
-
+            debug!("parachain chain-spec raw built!");
             let chain_spec_raw_path =
                 chain_spec
                     .raw_path()

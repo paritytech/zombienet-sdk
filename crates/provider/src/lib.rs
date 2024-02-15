@@ -1,33 +1,50 @@
-pub mod native;
+mod kubernetes;
+mod native;
 pub mod shared;
 
 use std::{
-    collections::HashMap, net::IpAddr, path::PathBuf, process::ExitStatus, sync::Arc,
+    collections::HashMap,
+    net::IpAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
 use async_trait::async_trait;
-use shared::types::{
-    GenerateFilesOptions, ProviderCapabilities, RunCommandOptions, RunScriptOptions,
-    SpawnNodeOptions,
+use shared::{
+    constants::LOCALHOST,
+    types::{
+        ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
+        RunScriptOptions, SpawnNodeOptions,
+    },
 };
 use support::fs::FileSystemError;
-
-use crate::shared::types::Port;
 
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum ProviderError {
+    #[error("Failed to create client '{0}': {1}")]
+    CreateClientFailed(String, anyhow::Error),
+
+    #[error("Failed to create namespace '{0}': {1}")]
+    CreateNamespaceFailed(String, anyhow::Error),
+
     #[error("Failed to spawn node '{0}': {1}")]
     NodeSpawningFailed(String, anyhow::Error),
 
     #[error("Error running command '{0}': {1}")]
     RunCommandError(String, anyhow::Error),
 
+    #[error("Error running script'{0}': {1}")]
+    RunScriptError(String, anyhow::Error),
+
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
 
-    #[error("Can recover node: {0} info, field: {1}")]
+    #[error("Can not recover node: {0}")]
+    MissingNode(String),
+
+    #[error("Can not recover node: {0} info, field: {1}")]
     MissingNodeInfo(String, String),
 
     #[error("Duplicated node name: {0}")]
@@ -48,14 +65,38 @@ pub enum ProviderError {
     #[error("Failed to retrieve process ID for node '{0}'")]
     ProcessIdRetrievalFailed(String),
 
-    #[error("Failed to pause node '{0}'")]
-    PauseNodeFailed(String),
+    #[error("Failed to pause node '{0}': {1}")]
+    PauseNodeFailed(String, anyhow::Error),
 
-    #[error("Failed to resume node '{0}'")]
-    ResumeNodeFaied(String),
+    #[error("Failed to resume node '{0}': {1}")]
+    ResumeNodeFailed(String, anyhow::Error),
 
-    #[error("Failed to kill node '{0}'")]
-    KillNodeFailed(String),
+    #[error("Failed to kill node '{0}': {1}")]
+    KillNodeFailed(String, anyhow::Error),
+
+    #[error("Failed to restart node '{0}': {1}")]
+    RestartNodeFailed(String, anyhow::Error),
+
+    #[error("Failed to destroy node '{0}': {1}")]
+    DestroyNodeFailed(String, anyhow::Error),
+
+    #[error("Failed to get logs for node '{0}': {1}")]
+    GetLogsFailed(String, anyhow::Error),
+
+    #[error("Failed to dump logs for node '{0}': {1}")]
+    DumpLogsFailed(String, anyhow::Error),
+
+    #[error("Failed to copy file from node '{0}': {1}")]
+    CopyFileFromNodeError(String, anyhow::Error),
+
+    #[error("Failed to setup fileserver: {0}")]
+    FileServerSetupError(anyhow::Error),
+
+    #[error("Error sending file: '{0}': {1}")]
+    SendFile(String, anyhow::Error),
+
+    #[error("Error creating port-forward '{0}:{1}': {2}")]
+    PortForwardError(u16, u16, anyhow::Error),
 }
 
 #[async_trait]
@@ -67,13 +108,15 @@ pub trait Provider {
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
 }
 
-pub type DynProvider = Arc<dyn Provider>;
+pub type DynProvider = Arc<dyn Provider + Send + Sync>;
 
 #[async_trait]
 pub trait ProviderNamespace {
     fn name(&self) -> &str;
 
     fn base_dir(&self) -> &PathBuf;
+
+    fn capabilities(&self) -> &ProviderCapabilities;
 
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
@@ -88,17 +131,11 @@ pub trait ProviderNamespace {
 
 pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 
-type ExecutionResult = Result<String, (ExitStatus, String)>;
-
 #[async_trait]
 pub trait ProviderNode {
     fn name(&self) -> &str;
 
-    fn program(&self) -> &str;
-
     fn args(&self) -> Vec<&str>;
-
-    async fn ip(&self) -> Result<IpAddr, ProviderError>;
 
     fn base_dir(&self) -> &PathBuf;
 
@@ -106,17 +143,33 @@ pub trait ProviderNode {
 
     fn data_dir(&self) -> &PathBuf;
 
+    fn relay_data_dir(&self) -> &PathBuf;
+
     fn scripts_dir(&self) -> &PathBuf;
 
     fn log_path(&self) -> &PathBuf;
 
-    async fn endpoint(&self) -> Result<(IpAddr, Port), ProviderError>;
-
-    async fn mapped_port(&self, port: Port) -> Result<Port, ProviderError>;
+    // Return the absolute path to the file in the `node` perspective
+    // TODO: purpose?
+    fn path_in_node(&self, file: &Path) -> PathBuf;
 
     async fn logs(&self) -> Result<String, ProviderError>;
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
+
+    // By default return localhost, should be overrided for k8s
+    async fn ip(&self) -> Result<IpAddr, ProviderError> {
+        Ok(LOCALHOST)
+    }
+
+    // Noop by default (native provider)
+    async fn create_port_forward(
+        &self,
+        _local_port: u16,
+        _remote_port: u16,
+    ) -> Result<Option<u16>, ProviderError> {
+        Ok(None)
+    }
 
     async fn run_command(
         &self,
@@ -126,10 +179,17 @@ pub trait ProviderNode {
     async fn run_script(&self, options: RunScriptOptions)
         -> Result<ExecutionResult, ProviderError>;
 
-    async fn copy_file_from_node(
+    async fn send_file(
         &self,
-        remote_src: PathBuf,
-        local_dest: PathBuf,
+        local_file_path: &Path,
+        remote_file_path: &Path,
+        mode: &str,
+    ) -> Result<(), ProviderError>;
+
+    async fn receive_file(
+        &self,
+        remote_file_path: &Path,
+        local_file_path: &Path,
     ) -> Result<(), ProviderError>;
 
     async fn pause(&self) -> Result<(), ProviderError>;
@@ -144,5 +204,6 @@ pub trait ProviderNode {
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 
 // re-export
-pub use native::NativeProvider;
+pub use kubernetes::*;
+pub use native::*;
 pub use shared::{constants, types};

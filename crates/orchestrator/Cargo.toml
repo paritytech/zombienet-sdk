@@ -29,6 +29,7 @@ subxt-signer = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
 pjs-rs = { workspace = true }
+uuid = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }

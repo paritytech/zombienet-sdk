@@ -5,9 +5,8 @@ pub use orchestrator::{
     network::{node::NetworkNode, Network},
     AddCollatorOptions, AddNodeOptions, Orchestrator, PjsResult,
 };
-use provider::NativeProvider;
-pub use support::fs::local::LocalFileSystem;
-use support::process::os::OsProcessManager;
+use provider::{KubernetesProvider, NativeProvider};
+use support::fs::local::LocalFileSystem;
 
 #[async_trait]
 pub trait NetworkConfigExt {
@@ -24,12 +23,19 @@ pub trait NetworkConfigExt {
     /// # }
     /// ```
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
+    async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
 }
 
 #[async_trait]
 impl NetworkConfigExt for NetworkConfig {
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
-        let provider = NativeProvider::new(LocalFileSystem {}, OsProcessManager {});
+        let provider = NativeProvider::new(LocalFileSystem {});
+        let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+        orchestrator.spawn(self).await
+    }
+
+    async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
+        let provider = KubernetesProvider::new(LocalFileSystem {}).await;
         let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
         orchestrator.spawn(self).await
     }

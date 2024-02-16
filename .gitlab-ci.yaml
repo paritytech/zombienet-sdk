@@ -3,7 +3,7 @@ stages:
 
 polkadot-integration-test:
   stage: integration-test
-  image: paritytech/zombienet:v1.3.91
+  image: paritytech/ci-unified:latest
   tags:
     - zombienet-polkadot-integration-test
   script:

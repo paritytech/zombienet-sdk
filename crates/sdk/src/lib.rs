@@ -10,7 +10,7 @@ use support::fs::local::LocalFileSystem;
 
 #[async_trait]
 pub trait NetworkConfigExt {
-    /// Spawns a network using the native provider.
+    /// Spawns a network using the native or k8s provider.
     ///
     /// # Example:
     /// ```rust

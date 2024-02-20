@@ -86,6 +86,17 @@ impl KubernetesClient {
         Ok(namespace)
     }
 
+    pub(super) async fn delete_namespace(&self, name: &str) -> Result<()> {
+        let namespaces = Api::<Namespace>::all(self.inner.clone());
+
+        namespaces
+            .delete(&name, &DeleteParams::default())
+            .await
+            .map_err(|err| Error::from(anyhow!("error while deleting namespace {name}: {err}")))?;
+
+        Ok(())
+    }
+
     pub(super) async fn create_config_map_from_file(
         &self,
         namespace: &str,

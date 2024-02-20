@@ -10,7 +10,7 @@ use configuration::{
     types::{Arg, Command, Image, Port},
     ParachainConfig, ParachainConfigBuilder,
 };
-use provider::{types::TransferedFile, DynNamespace};
+use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use support::fs::FileSystem;
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
@@ -73,13 +73,18 @@ impl<T: FileSystem> Network<T> {
     }
 
     // Pubic API
+    pub fn ns_name(&self) -> String {
+        self.ns.name().to_string()
+    }
 
     pub fn relaychain(&self) -> &Relaychain {
         &self.relay
     }
 
     // Teardown the network
-    // destroy()
+    pub async fn destroy(self) -> Result<(), ProviderError> {
+        self.ns.destroy().await
+    }
 
     /// Add a node to the relaychain
     ///

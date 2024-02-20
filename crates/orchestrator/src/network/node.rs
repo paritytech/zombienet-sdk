@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc, thread, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
 use pjs_rs::ReturnValue;
@@ -7,6 +7,7 @@ use provider::DynNode;
 use serde_json::json;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use tokio::sync::RwLock;
+use tracing::trace;
 
 use crate::{network_spec::node::NodeSpec, shared::types::PjsResult};
 
@@ -79,10 +80,8 @@ impl NetworkNode {
         args: Vec<serde_json::Value>,
     ) -> Result<PjsResult, anyhow::Error> {
         let code = pjs_build_template(self.ws_uri(), code.as_ref(), args);
-        let value = match thread::spawn(|| pjs_inner(code))
-            .join()
-            .map_err(|_| anyhow!("[pjs] Thread panicked"))??
-        {
+        trace!("Code to execute: {code}");
+        let value = match pjs_inner(code)? {
             ReturnValue::Deserialized(val) => Ok(val),
             ReturnValue::CantDeserialize(msg) => Err(msg),
         };
@@ -102,10 +101,9 @@ impl NetworkNode {
     ) -> Result<PjsResult, anyhow::Error> {
         let content = std::fs::read_to_string(file)?;
         let code = pjs_build_template(self.ws_uri(), content.as_ref(), args);
-        let value = match thread::spawn(|| pjs_inner(code))
-            .join()
-            .map_err(|_| anyhow!("[pjs] Thread panicked"))??
-        {
+        trace!("Code to execute: {code}");
+
+        let value = match pjs_inner(code)? {
             ReturnValue::Deserialized(val) => Ok(val),
             ReturnValue::CantDeserialize(msg) => Err(msg),
         };
@@ -222,8 +220,18 @@ fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>)
 
 // Since pjs-rs run a custom javascript runtime (using deno_core) we need to
 // execute in an isolated thread.
-#[tokio::main(flavor = "current_thread")]
-async fn pjs_inner(code: String) -> Result<ReturnValue, anyhow::Error> {
-    // Arguments are already encoded in the code built from the template.
-    pjs_rs::run_ts_code(code, None).await
+fn pjs_inner(code: String) -> Result<ReturnValue, anyhow::Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+    .enable_all()
+    .build()?;
+
+    std::thread::spawn(move || {
+        rt.block_on(async move {
+            let value =  pjs_rs::run_ts_code(code, None).await;
+            trace!("ts_code return: {:?}", value);
+            value
+        })
+    })
+    .join()
+    .map_err(|_| anyhow!("[pjs] Thread panicked"))?
 }

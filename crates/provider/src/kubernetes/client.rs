@@ -90,7 +90,7 @@ impl KubernetesClient {
         let namespaces = Api::<Namespace>::all(self.inner.clone());
 
         namespaces
-            .delete(&name, &DeleteParams::default())
+            .delete(name, &DeleteParams::default())
             .await
             .map_err(|err| Error::from(anyhow!("error while deleting namespace {name}: {err}")))?;
 

@@ -222,12 +222,12 @@ fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>)
 // execute in an isolated thread.
 fn pjs_inner(code: String) -> Result<ReturnValue, anyhow::Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
-    .enable_all()
-    .build()?;
+        .enable_all()
+        .build()?;
 
     std::thread::spawn(move || {
         rt.block_on(async move {
-            let value =  pjs_rs::run_ts_code(code, None).await;
+            let value = pjs_rs::run_ts_code(code, None).await;
             trace!("ts_code return: {:?}", value);
             value
         })

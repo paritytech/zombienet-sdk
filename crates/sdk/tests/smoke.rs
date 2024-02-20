@@ -9,7 +9,7 @@ use support::fs::local::LocalFileSystem;
 use zombienet_sdk::{Network, NetworkConfigExt};
 
 fn small_network() -> NetworkConfig {
-    let config = NetworkConfigBuilder::new()
+    NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
@@ -27,12 +27,10 @@ fn small_network() -> NetworkConfig {
             })
         })
         .build()
-        .unwrap();
-
-    config
+        .unwrap()
 }
 
-pub fn run_k8s_test<T>(config: NetworkConfig, test: T) -> ()
+pub fn run_k8s_test<T>(config: NetworkConfig, test: T)
 where
     T: panic::UnwindSafe,
     T: FnOnce(Network<LocalFileSystem>) -> Pin<Box<dyn Future<Output = ()> + 'static + Send>>,

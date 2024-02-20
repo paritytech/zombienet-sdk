@@ -7,14 +7,22 @@ include:
     ref: main
     file: /common/ci-unified.yml
 
+# run jobs always
+.common-refs: &common-refs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_REF_NAME == "main"
+    - if: $CI_COMMIT_REF_NAME =~ /^[0-9]+$/ # PRs
+    - if: $CI_COMMIT_REF_NAME =~ /^v[0-9]+\.[0-9]+.*$/ # i.e. v1.0, v2.1rc1
+
 polkadot-integration-test:
   stage: integration-test
+  <<: *common-refs
   image: "${CI_IMAGE}"
   tags:
     - zombienet-polkadot-integration-test
   script:
-    - kubectl get ns
-  rules:
-    - when: manual
+    - cargo test --features ci-k8s --test smoke -- --nocapture
   variables:
     CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]

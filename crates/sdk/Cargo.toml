@@ -24,6 +24,9 @@ orchestrator = { workspace = true }
 provider = { workspace = true }
 support = { workspace = true }
 
+[features]
+ci-k8s = []
+
 [dev-dependencies]
 tracing-subscriber = "0.3"
 kube = { workspace = true, features = ["ws", "runtime"] }

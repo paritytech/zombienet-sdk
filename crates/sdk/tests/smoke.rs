@@ -77,6 +77,7 @@ where
 }
 
 #[test]
+#[cfg_attr(not(feature = "ci-k8s"), ignore = "Run with k8s")]
 fn basic_functionalities_should_works() {
     tracing_subscriber::fmt::init();
     let config = small_network();

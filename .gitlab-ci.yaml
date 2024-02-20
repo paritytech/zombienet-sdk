@@ -1,0 +1,20 @@
+stages:
+  - integration-test
+
+include:
+  # ci image
+  - project: parity/infrastructure/ci_cd/shared
+    ref: main
+    file: /common/ci-unified.yml
+
+polkadot-integration-test:
+  stage: integration-test
+  image: "${CI_IMAGE}"
+  tags:
+    - zombienet-polkadot-integration-test
+  script:
+    - kubectl get ns
+  rules:
+    - when: manual
+  variables:
+    CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]

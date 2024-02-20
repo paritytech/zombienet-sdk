@@ -421,9 +421,11 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        for node in self.nodes.read().await.values() {
-            node.destroy().await?;
-        }
+        let _ = self
+            .k8s_client
+            .delete_namespace(&self.name)
+            .await
+            .map_err(|err| ProviderError::DeleteNamespaceFailed(self.name.clone(), err.into()))?;
 
         if let Some(provider) = self.provider.upgrade() {
             provider.namespaces.write().await.remove(&self.name);

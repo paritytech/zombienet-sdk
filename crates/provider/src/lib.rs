@@ -97,6 +97,9 @@ pub enum ProviderError {
 
     #[error("Error creating port-forward '{0}:{1}': {2}")]
     PortForwardError(u16, u16, anyhow::Error),
+
+    #[error("Failed to delete namespace '{0}': {1}")]
+    DeleteNamespaceFailed(String, anyhow::Error),
 }
 
 #[async_trait]

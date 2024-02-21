@@ -17,6 +17,7 @@ use kube::{
 use serde::de::DeserializeOwned;
 use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tracing::debug;
 
 use crate::{constants::LOCALHOST, types::ExecutionResult};
 
@@ -159,12 +160,13 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        await_condition(pods, name, helpers::is_pod_running_and_ready())
+        await_condition(pods, name, helpers::is_pod_ready())
             .await
             .map_err(|err| {
                 Error::from(anyhow!("error while awaiting pod {name} running: {err}"))
             })?;
 
+        debug!("Pod {name} is Ready!");
         Ok(pod)
     }
 
@@ -476,14 +478,14 @@ mod helpers {
 
     /// An await condition for `Pod` that returns `true` once it is ready
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]
-    pub fn is_pod_running_and_ready() -> impl Condition<Pod> {
+    pub fn is_pod_ready() -> impl Condition<Pod> {
         |obj: Option<&Pod>| {
-            let conditions_to_be_true = ["Ready".to_string(), "Running".to_string()];
             if let Some(pod) = &obj {
                 if let Some(status) = &pod.status {
                     if let Some(conditions) = &status.conditions {
-                        let filtered_conditions: Vec<_> = conditions.iter().filter(|cond| conditions_to_be_true.contains(&cond.type_) && cond.status == "True" ).collect();
-                        return filtered_conditions.len() == 2
+                        return conditions
+                            .iter()
+                            .any(|cond| cond.status == "True" && cond.type_ == "Ready");
                     }
                 }
             }

@@ -369,7 +369,9 @@ impl KubernetesClient {
         remote_port: u16,
     ) -> Result<(u16, JoinHandle<()>)> {
         let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
-        let bind = TcpListener::bind((LOCALHOST, local_port)).await.unwrap();
+        let bind = TcpListener::bind((LOCALHOST, local_port))
+            .await
+            .map_err(|err| Error::from(anyhow!("error binding port {local_port} for  pod {name}: {err}")))?;
         let local_port = bind.local_addr().map_err(|err| Error(err.into()))?.port();
         let name = name.to_string();
 

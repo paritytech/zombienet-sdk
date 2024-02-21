@@ -315,7 +315,13 @@ where
             .current_dir(&self.base_dir)
             .output()
             .await
-            .map_err(|err| ProviderError::RunCommandError(format!("{} {}", &options.program, &options.args.join(" ")), options.program, err.into()))?;
+            .map_err(|err| {
+                ProviderError::RunCommandError(
+                    format!("{} {}", &options.program, &options.args.join(" ")),
+                    options.program,
+                    err.into(),
+                )
+            })?;
 
         if result.status.success() {
             Ok(Ok(String::from_utf8_lossy(&result.stdout).to_string()))

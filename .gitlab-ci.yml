@@ -23,7 +23,7 @@ k8s-integration-test-smoke:
   tags:
     - zombienet-polkadot-integration-test
   script:
-    - sleep 600
+    - sleep 6000
     #- cargo test --features ci-k8s --test smoke -- --nocapture
   variables:
     CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]

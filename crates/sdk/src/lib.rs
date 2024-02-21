@@ -6,7 +6,7 @@ pub use orchestrator::{
     AddCollatorOptions, AddNodeOptions, Orchestrator, PjsResult,
 };
 use provider::{KubernetesProvider, NativeProvider};
-use support::fs::local::LocalFileSystem;
+pub use support::fs::local::LocalFileSystem;
 
 #[async_trait]
 pub trait NetworkConfigExt {

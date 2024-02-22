@@ -483,9 +483,14 @@ mod helpers {
             if let Some(pod) = &obj {
                 if let Some(status) = &pod.status {
                     if let Some(conditions) = &status.conditions {
-                        return conditions
+                        let ready = conditions
                             .iter()
                             .any(|cond| cond.status == "True" && cond.type_ == "Ready");
+
+                        if ready {
+                            println!("{:#?}", status);
+                            return  ready;
+                        }
                     }
                 }
             }

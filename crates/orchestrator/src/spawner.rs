@@ -179,7 +179,6 @@ where
     let mut ip_to_use = LOCALHOST;
 
     let (rpc_port_external, prometheus_port_external);
-        // (node.ws_port.0, node.prometheus_port.0);
 
     // Create port-forward iff we are not in CI
     if !running_in_ci() {

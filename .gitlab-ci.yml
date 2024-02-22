@@ -1,6 +1,14 @@
 stages:
   - integration-test
 
+cache:
+  - key:
+      files:
+      - Cargo.lock
+  - paths:
+    - target
+    - ${CARGO_HOME}
+
 include:
   # ci image
   - project: parity/infrastructure/ci_cd/shared

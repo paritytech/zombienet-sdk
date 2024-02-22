@@ -1,6 +1,14 @@
 stages:
   - integration-test
 
+cache:
+  - key:
+      files:
+      - Cargo.lock
+  - paths:
+    - target
+    - ${CARGO_HOME}
+
 include:
   # ci image
   - project: parity/infrastructure/ci_cd/shared
@@ -23,6 +31,7 @@ k8s-integration-test-smoke:
   tags:
     - zombienet-polkadot-integration-test
   script:
-    - cargo test --features ci-k8s --test smoke -- --nocapture
+    - RUST_LOG=zombienet_orchestrator=debug cargo test --features ci-k8s --test smoke -- --nocapture
   variables:
     CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
+    RUN_IN_CI: "1"

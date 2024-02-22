@@ -414,7 +414,13 @@ where
                 vec!["sh", "-c", &command.join(" ")],
             )
             .await
-            .map_err(|err| ProviderError::RunCommandError(self.name.to_string(), err.into()))
+            .map_err(|err| {
+                ProviderError::RunCommandError(
+                    format!("sh -c {}", &command.join(" ")),
+                    self.name.to_string(),
+                    err.into(),
+                )
+            })
     }
 
     async fn run_script(

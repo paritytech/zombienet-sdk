@@ -17,6 +17,7 @@ use kube::{
 use serde::de::DeserializeOwned;
 use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tracing::debug;
 
 use crate::{constants::LOCALHOST, types::ExecutionResult};
 
@@ -165,6 +166,7 @@ impl KubernetesClient {
                 Error::from(anyhow!("error while awaiting pod {name} running: {err}"))
             })?;
 
+        debug!("Pod {name} is Ready!");
         Ok(pod)
     }
 
@@ -230,6 +232,15 @@ impl KubernetesClient {
     where
         S: Into<String> + std::fmt::Debug + Send,
     {
+        let _pod = Api::<Pod>::namespaced(self.inner.clone(), namespace)
+            .get(name)
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while trying to exec in the pod {name}, can't find it: {err}"
+                ))
+            })?;
+
         let mut process = Api::<Pod>::namespaced(self.inner.clone(), namespace)
             .exec(
                 name,
@@ -296,8 +307,8 @@ impl KubernetesClient {
                         Ok(Err((exit_status, stderr)))
                     },
                     // due to other unknown reason
-                    Some(reason) => Err(Error::from(anyhow!(
-                        "unhandled reason while exec for {name}: {reason}"
+                    Some(ref reason) => Err(Error::from(anyhow!(
+                        format!("unhandled reason while exec for {name}: {reason}, stderr: {stderr}, status: {:?}", status)
                     ))),
                     None => {
                         panic!("command had status but no reason was present, this is a bug")
@@ -369,7 +380,13 @@ impl KubernetesClient {
         remote_port: u16,
     ) -> Result<(u16, JoinHandle<()>)> {
         let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
-        let bind = TcpListener::bind((LOCALHOST, local_port)).await.unwrap();
+        let bind = TcpListener::bind((LOCALHOST, local_port))
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error binding port {local_port} for  pod {name}: {err}"
+                ))
+            })?;
         let local_port = bind.local_addr().map_err(|err| Error(err.into()))?.port();
         let name = name.to_string();
 
@@ -467,6 +484,7 @@ impl KubernetesClient {
 mod helpers {
     use k8s_openapi::api::core::v1::Pod;
     use kube::runtime::wait::Condition;
+    use tracing::trace;
 
     /// An await condition for `Pod` that returns `true` once it is ready
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]
@@ -475,9 +493,14 @@ mod helpers {
             if let Some(pod) = &obj {
                 if let Some(status) = &pod.status {
                     if let Some(conditions) = &status.conditions {
-                        return conditions
+                        let ready = conditions
                             .iter()
                             .any(|cond| cond.status == "True" && cond.type_ == "Ready");
+
+                        if ready {
+                            trace!("{:#?}", status);
+                            return ready;
+                        }
                     }
                 }
             }

@@ -176,8 +176,10 @@ where
         )
     })?;
 
-    let (mut rpc_port_external, mut prometheus_port_external) =
-        (node.ws_port.0, node.prometheus_port.0);
+    let mut ip_to_use = LOCALHOST;
+
+    let (rpc_port_external, prometheus_port_external);
+
     // Create port-forward iff we are not in CI
     if !running_in_ci() {
         let ports = futures::future::try_join_all(vec![
@@ -190,10 +192,14 @@ where
             ports[0].unwrap_or(node.ws_port.0),
             ports[1].unwrap_or(node.prometheus_port.0),
         );
+    } else {
+        // running in ci requrire to use ip and default port
+        (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
+        ip_to_use = running_node.ip().await?;
     }
 
-    let ws_uri = format!("ws://{}:{}", LOCALHOST, rpc_port_external);
-    let prometheus_uri = format!("http://{}:{}/metrics", LOCALHOST, prometheus_port_external);
+    let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);
+    let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
     info!("🚀 {}, should be running now", node.name);
     info!(
         "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",

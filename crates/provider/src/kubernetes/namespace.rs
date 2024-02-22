@@ -401,8 +401,7 @@ where
 
             match temp_node
                 .run_command(RunCommandOptions { program, args, env })
-                .await
-                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
+                .await?
             {
                 Ok(contents) => self
                     .filesystem

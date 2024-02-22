@@ -484,6 +484,7 @@ impl KubernetesClient {
 mod helpers {
     use k8s_openapi::api::core::v1::Pod;
     use kube::runtime::wait::Condition;
+    use tracing::trace;
 
     /// An await condition for `Pod` that returns `true` once it is ready
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]
@@ -497,7 +498,7 @@ mod helpers {
                             .any(|cond| cond.status == "True" && cond.type_ == "Ready");
 
                         if ready {
-                            println!("{:#?}", status);
+                            trace!("{:#?}", status);
                             return ready;
                         }
                     }

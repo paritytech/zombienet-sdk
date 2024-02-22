@@ -232,6 +232,15 @@ impl KubernetesClient {
     where
         S: Into<String> + std::fmt::Debug + Send,
     {
+        let _pod = Api::<Pod>::namespaced(self.inner.clone(), namespace)
+            .get(name)
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while trying to exec in the pod {name}, can't find it: {err}"
+                ))
+            })?;
+
         let mut process = Api::<Pod>::namespaced(self.inner.clone(), namespace)
             .exec(
                 name,
@@ -489,7 +498,7 @@ mod helpers {
 
                         if ready {
                             println!("{:#?}", status);
-                            return  ready;
+                            return ready;
                         }
                     }
                 }

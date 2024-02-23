@@ -24,6 +24,7 @@ use tokio::{
     time::sleep,
     try_join,
 };
+use tracing::trace;
 
 use super::namespace::NativeNamespace;
 use crate::{
@@ -67,24 +68,29 @@ where
         args: &[String],
         env: &[(String, String)],
         startup_files: &[TransferedFile],
+        created_paths: &[PathBuf],
         filesystem: &FS,
     ) -> Result<Arc<Self>, ProviderError> {
         let base_dir = PathBuf::from_iter([&namespace_base_dir, &PathBuf::from(name)]);
+        trace!("creating base_dir {:?}", base_dir);
         filesystem.create_dir_all(&base_dir).await?;
+        trace!("created base_dir {:?}", base_dir);
 
         let base_dir_raw = base_dir.to_string_lossy();
         let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
         let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
-        let log_path = base_dir.join("node.log");
+        let log_path = base_dir.join(format!("{name}.log"));
 
+        trace!("creating dirs {:?}", config_dir);
         try_join!(
             filesystem.create_dir(&config_dir),
             filesystem.create_dir(&data_dir),
             filesystem.create_dir(&relay_data_dir),
             filesystem.create_dir(&scripts_dir),
         )?;
+        trace!("created!");
 
         let node = Arc::new(NativeNode {
             namespace: namespace.clone(),
@@ -105,6 +111,7 @@ where
             filesystem: filesystem.clone(),
         });
 
+        node.initialize_startup_paths(created_paths).await?;
         node.initialize_startup_files(startup_files).await?;
 
         let (stdout, stderr) = node.initialize_process().await?;
@@ -114,16 +121,38 @@ where
         Ok(node)
     }
 
+    async fn initialize_startup_paths(
+        &self,
+        paths: &[PathBuf]
+    ) -> Result<(), ProviderError> {
+        trace!("creating paths {:?}", paths);
+        let base_dir_raw = self.base_dir.to_string_lossy();
+        try_join_all(
+            paths
+                .iter()
+                .map(|file| {
+                    let full_path = format!("{base_dir_raw}{}", file.to_string_lossy());
+                    self.filesystem.create_dir_all(full_path)
+                })
+        )
+        .await?;
+        trace!("paths created!");
+
+        Ok(())
+    }
+
     async fn initialize_startup_files(
         &self,
         startup_files: &[TransferedFile],
     ) -> Result<(), ProviderError> {
+        trace!("creating files {:?}", startup_files);
         try_join_all(
             startup_files
                 .iter()
                 .map(|file| self.send_file(&file.local_path, &file.remote_path, &file.mode)),
         )
         .await?;
+        trace!("files created!");
 
         Ok(())
     }

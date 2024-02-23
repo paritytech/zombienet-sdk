@@ -81,6 +81,10 @@ pub enum FieldError {
 
     #[error("p2p_port: {0}")]
     P2pPort(anyhow::Error),
+
+    #[error("registration_strategy: {0}")]
+    RegistrationStrategy(anyhow::Error),
+
 }
 
 /// A conversion error for shared types across fields.

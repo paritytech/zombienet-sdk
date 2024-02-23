@@ -99,6 +99,7 @@ where
             &options.args,
             &options.env,
             &options.injected_files,
+            &options.created_paths,
             &self.filesystem,
         )
         .await?;

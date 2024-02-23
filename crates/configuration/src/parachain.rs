@@ -1,5 +1,6 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
 
+use anyhow::anyhow;
 use multiaddr::Multiaddr;
 use serde::{
     de::{self, Visitor},
@@ -24,6 +25,7 @@ use crate::{
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
+    Manual,
 }
 
 impl Serialize for RegistrationStrategy {
@@ -36,6 +38,10 @@ impl Serialize for RegistrationStrategy {
         match self {
             Self::InGenesis => state.serialize_field("add_to_genesis", &true)?,
             Self::UsingExtrinsic => state.serialize_field("register_para", &true)?,
+            Self::Manual => {
+                state.serialize_field("add_to_genesis", &false)?;
+                state.serialize_field("register_para", &false)?;
+            },
         }
 
         state.end()
@@ -322,7 +328,8 @@ impl ParachainConfigBuilder<Initial, Bootstrap> {
 }
 
 impl ParachainConfigBuilder<WithId, Bootstrap> {
-    /// Set the registration strategy for the parachain, could be without registration, using extrinsic or in genesis.
+    /// Set the registration strategy for the parachain, could be Manual (no registered by zombienet) or automatic
+    ///  using an extrinsic or in genesis.
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         Self::transition(
             ParachainConfig {
@@ -332,6 +339,36 @@ impl ParachainConfigBuilder<WithId, Bootstrap> {
             self.validation_context,
             self.errors,
         )
+    }
+}
+
+impl ParachainConfigBuilder<WithId, Running> {
+    /// Set the registration strategy for the parachain, could be Manual (no registered by zombienet) or automatic
+    ///  using an extrinsic. Genesis option is not allowed in `Running` context.
+    pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
+        match strategy {
+            RegistrationStrategy::InGenesis => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(
+                    self.errors,
+                    FieldError::RegistrationStrategy(anyhow!(
+                        "Can be set to InGenesis in Running context"
+                    ))
+                    .into(),
+                ),
+            ),
+            RegistrationStrategy::Manual | RegistrationStrategy::UsingExtrinsic => {
+                Self::transition(
+                    ParachainConfig {
+                        registration_strategy: Some(strategy),
+                        ..self.config
+                    },
+                    self.validation_context,
+                    self.errors,
+                )
+            },
+        }
     }
 }
 

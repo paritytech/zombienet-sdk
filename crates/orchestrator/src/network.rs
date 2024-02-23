@@ -8,7 +8,7 @@ use configuration::{
     para_states::{Initial, Running},
     shared::node::EnvVar,
     types::{Arg, Command, Image, Port},
-    ParachainConfig, ParachainConfigBuilder,
+    ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use support::fs::FileSystem;
@@ -426,30 +426,33 @@ impl<T: FileSystem> Network<T> {
                 "At least one node of the relaychain should be running"
             ))?
             .ws_uri();
-        let register_para_options = RegisterParachainOptions {
-            id: parachain.para_id,
-            // This needs to resolve correctly
-            wasm_path: para_spec
-                .genesis_wasm
-                .artifact_path()
-                .ok_or(anyhow::anyhow!(
-                    "artifact path for wasm must be set at this point",
-                ))?
-                .to_path_buf(),
-            state_path: para_spec
-                .genesis_state
-                .artifact_path()
-                .ok_or(anyhow::anyhow!(
-                    "artifact path for state must be set at this point",
-                ))?
-                .to_path_buf(),
-            node_ws_url: first_node_url.to_string(),
-            onboard_as_para: para_spec.onboard_as_parachain,
-            seed: None, // TODO: Seed is passed by?
-            finalization: false,
-        };
 
-        Parachain::register(register_para_options, &scoped_fs).await?;
+        if para_config.registration_strategy() == Some(&RegistrationStrategy::UsingExtrinsic) {
+            let register_para_options = RegisterParachainOptions {
+                id: parachain.para_id,
+                // This needs to resolve correctly
+                wasm_path: para_spec
+                    .genesis_wasm
+                    .artifact_path()
+                    .ok_or(anyhow::anyhow!(
+                        "artifact path for wasm must be set at this point",
+                    ))?
+                    .to_path_buf(),
+                state_path: para_spec
+                    .genesis_state
+                    .artifact_path()
+                    .ok_or(anyhow::anyhow!(
+                        "artifact path for state must be set at this point",
+                    ))?
+                    .to_path_buf(),
+                node_ws_url: first_node_url.to_string(),
+                onboard_as_para: para_spec.onboard_as_parachain,
+                seed: None, // TODO: Seed is passed by?
+                finalization: false,
+            };
+
+            Parachain::register(register_para_options, &scoped_fs).await?;
+        }
 
         // Spawn the nodes
         let spawning_tasks = para_spec

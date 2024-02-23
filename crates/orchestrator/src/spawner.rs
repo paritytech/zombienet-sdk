@@ -105,9 +105,9 @@ where
             NODE_RELAY_DATA_DIR.into(),
         )
     } else {
-        let cfg_path = format!("{}/{NODE_CONFIG_DIR}", &base_dir);
-        let data_path = format!("{}/{NODE_DATA_DIR}", &base_dir);
-        let relay_data_path = format!("{}/{NODE_RELAY_DATA_DIR}", &base_dir);
+        let cfg_path = format!("{}{NODE_CONFIG_DIR}", &base_dir);
+        let data_path = format!("{}{NODE_DATA_DIR}", &base_dir);
+        let relay_data_path = format!("{}{NODE_RELAY_DATA_DIR}", &base_dir);
         (cfg_path, data_path, relay_data_path)
     };
 
@@ -165,6 +165,7 @@ where
     };
 
     // Drops the port parking listeners before spawn
+    node.ws_port.drop_listener();
     node.p2p_port.drop_listener();
     node.rpc_port.drop_listener();
     node.prometheus_port.drop_listener();
@@ -183,13 +184,13 @@ where
     // Create port-forward iff we are not in CI
     if !running_in_ci() {
         let ports = futures::future::try_join_all(vec![
-            running_node.create_port_forward(node.ws_port.0, RPC_PORT),
+            running_node.create_port_forward(node.rpc_port.0, RPC_PORT),
             running_node.create_port_forward(node.prometheus_port.0, PROMETHEUS_PORT),
         ])
         .await?;
 
         (rpc_port_external, prometheus_port_external) = (
-            ports[0].unwrap_or(node.ws_port.0),
+            ports[0].unwrap_or(node.rpc_port.0),
             ports[1].unwrap_or(node.prometheus_port.0),
         );
     } else {

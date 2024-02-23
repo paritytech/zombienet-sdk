@@ -71,7 +71,7 @@ where
         created_paths: &[PathBuf],
         filesystem: &FS,
     ) -> Result<Arc<Self>, ProviderError> {
-        let base_dir = PathBuf::from_iter([&namespace_base_dir, &PathBuf::from(name)]);
+        let base_dir = PathBuf::from_iter([namespace_base_dir, &PathBuf::from(name)]);
         trace!("creating base_dir {:?}", base_dir);
         filesystem.create_dir_all(&base_dir).await?;
         trace!("created base_dir {:?}", base_dir);

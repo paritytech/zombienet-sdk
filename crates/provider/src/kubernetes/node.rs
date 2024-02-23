@@ -73,7 +73,7 @@ where
         let filesystem = options.filesystem.clone();
 
         let base_dir =
-            PathBuf::from_iter([&options.namespace_base_dir, &PathBuf::from(options.name)]);
+            PathBuf::from_iter([(options.namespace_base_dir), &PathBuf::from(options.name)]);
         filesystem.create_dir_all(&base_dir).await?;
 
         let base_dir_raw = base_dir.to_string_lossy();

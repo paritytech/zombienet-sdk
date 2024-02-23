@@ -13,7 +13,7 @@ fn small_network() -> NetworkConfig {
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
-                .with_default_image("docker.io/parity/polkadot:v1.4.0")
+                .with_default_image("docker.io/parity/polkadot:v1.7.0")
                 .with_node(|node| node.with_name("alice"))
                 .with_node(|node| node.with_name("bob"))
         })

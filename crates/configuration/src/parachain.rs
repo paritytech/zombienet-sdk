@@ -1,6 +1,6 @@
 use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
-use anyhow::anyhow;
 
+use anyhow::anyhow;
 use multiaddr::Multiaddr;
 use serde::{
     de::{self, Visitor},
@@ -25,7 +25,7 @@ use crate::{
 pub enum RegistrationStrategy {
     InGenesis,
     UsingExtrinsic,
-    Manual
+    Manual,
 }
 
 impl Serialize for RegistrationStrategy {
@@ -41,8 +41,7 @@ impl Serialize for RegistrationStrategy {
             Self::Manual => {
                 state.serialize_field("add_to_genesis", &false)?;
                 state.serialize_field("register_para", &false)?;
-
-            }
+            },
         }
 
         state.end()
@@ -348,13 +347,17 @@ impl ParachainConfigBuilder<WithId, Running> {
     ///  using an extrinsic. Genesis option is not allowed in `Running` context.
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         match strategy {
-            RegistrationStrategy::InGenesis => {
-                Self::transition(
-                    self.config,
-                    self.validation_context,
-                    merge_errors(self.errors, FieldError::RegistrationStrategy(anyhow!("Can be set to InGenesis in Running context")).into())
-                )
-            },
+            RegistrationStrategy::InGenesis => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(
+                    self.errors,
+                    FieldError::RegistrationStrategy(anyhow!(
+                        "Can be set to InGenesis in Running context"
+                    ))
+                    .into(),
+                ),
+            ),
             RegistrationStrategy::Manual | RegistrationStrategy::UsingExtrinsic => {
                 Self::transition(
                     ParachainConfig {

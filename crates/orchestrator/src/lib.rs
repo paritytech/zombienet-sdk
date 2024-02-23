@@ -131,11 +131,13 @@ where
         let (para_to_register_in_genesis, para_to_register_with_extrinsic): (
             Vec<&ParachainSpec>,
             Vec<&ParachainSpec>,
-        ) = network_spec.parachains.iter()
+        ) = network_spec
+            .parachains
+            .iter()
             .filter(|para| para.registration_strategy != RegistrationStrategy::Manual)
             .partition(|para| {
                 matches!(para.registration_strategy, RegistrationStrategy::InGenesis)
-        });
+            });
 
         let mut para_artifacts = vec![];
         for para in para_to_register_in_genesis {

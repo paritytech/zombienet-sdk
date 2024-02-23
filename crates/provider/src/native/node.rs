@@ -121,20 +121,13 @@ where
         Ok(node)
     }
 
-    async fn initialize_startup_paths(
-        &self,
-        paths: &[PathBuf]
-    ) -> Result<(), ProviderError> {
+    async fn initialize_startup_paths(&self, paths: &[PathBuf]) -> Result<(), ProviderError> {
         trace!("creating paths {:?}", paths);
         let base_dir_raw = self.base_dir.to_string_lossy();
-        try_join_all(
-            paths
-                .iter()
-                .map(|file| {
-                    let full_path = format!("{base_dir_raw}{}", file.to_string_lossy());
-                    self.filesystem.create_dir_all(full_path)
-                })
-        )
+        try_join_all(paths.iter().map(|file| {
+            let full_path = format!("{base_dir_raw}{}", file.to_string_lossy());
+            self.filesystem.create_dir_all(full_path)
+        }))
         .await?;
         trace!("paths created!");
 

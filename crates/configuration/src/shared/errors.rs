@@ -84,7 +84,6 @@ pub enum FieldError {
 
     #[error("registration_strategy: {0}")]
     RegistrationStrategy(anyhow::Error),
-
 }
 
 /// A conversion error for shared types across fields.

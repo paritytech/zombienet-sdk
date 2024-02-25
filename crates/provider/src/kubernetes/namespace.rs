@@ -202,9 +202,9 @@ where
                         port: IntOrString::Int(80),
                         ..Default::default()
                     }),
-                    initial_delay_seconds: Some(5),
-                    period_seconds: Some(3),
-                    failure_threshold: Some(15),
+                    initial_delay_seconds: Some(1),
+                    period_seconds: Some(2),
+                    failure_threshold: Some(3),
                     ..Default::default()
                 }),
                 ..Default::default()

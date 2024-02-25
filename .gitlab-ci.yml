@@ -31,8 +31,8 @@ k8s-integration-test-smoke:
   tags:
     - zombienet-polkadot-integration-test
   script:
-    - sleep 3600
-    # - RUST_LOG=zombienet_orchestrator=debug cargo test --features ci-k8s --test smoke -- --nocapture
+    # - sleep 3600
+    - RUST_LOG=zombienet_orchestrator=debug,zombienet_provider=debug cargo test --features ci-k8s --test smoke -- --nocapture
   variables:
     CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
     RUN_IN_CI: "1"

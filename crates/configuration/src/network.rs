@@ -324,7 +324,7 @@ impl NetworkConfigBuilder<Initial> {
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
     pub fn with_relaychain(
         self,
-        f: fn(
+        f: impl FnOnce(
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
@@ -350,7 +350,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     /// Set the global settings using a nested [`GlobalSettingsBuilder`].
     pub fn with_global_settings(
         self,
-        f: fn(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
+        f: impl FnOnce(GlobalSettingsBuilder) -> GlobalSettingsBuilder,
     ) -> Self {
         match f(GlobalSettingsBuilder::new()).build() {
             Ok(global_settings) => Self::transition(
@@ -372,7 +372,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     /// Add a parachain using a nested [`ParachainConfigBuilder`].
     pub fn with_parachain(
         self,
-        f: fn(
+        f: impl FnOnce(
             ParachainConfigBuilder<parachain::states::Initial, parachain::states::Bootstrap>,
         ) -> ParachainConfigBuilder<
             parachain::states::WithAtLeastOneCollator,
@@ -399,7 +399,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     /// Add an HRMP channel using a nested [`HrmpChannelConfigBuilder`].
     pub fn with_hrmp_channel(
         self,
-        f: fn(
+        f: impl FnOnce(
             HrmpChannelConfigBuilder<hrmp_channel::Initial>,
         ) -> HrmpChannelConfigBuilder<hrmp_channel::WithRecipient>,
     ) -> Self {

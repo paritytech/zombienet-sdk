@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     env,
     path::PathBuf,
-    sync::{Arc, Weak},
+    sync::{Arc, Weak}, time::Duration,
 };
 
 use anyhow::anyhow;
@@ -381,6 +381,9 @@ where
             .await?;
 
         debug!("temp ready!");
+        trace!("adding 500ms sleep as workaround!");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
         for GenerateFileCommand {
             program,
             args,

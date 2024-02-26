@@ -8,6 +8,7 @@ if [ -f /cfg/coreutils ]; then
     LS="/cfg/coreutils ls"
     KILL="/cfg/coreutils kill"
     SLEEP="/cfg/coreutils sleep"
+    ECHO="/cfg/coreutils echo"
 else
     RM="rm"
     MKFIFO="mkfifo"
@@ -15,6 +16,7 @@ else
     LS="ls"
     KILL="kill"
     SLEEP="sleep"
+    ECHO="echo"
 fi
 
 echo "COMMANDS DEFINED"
@@ -52,8 +54,17 @@ CMD=($@)
 echo "COMMAND TO RUN IS: $CMD"
 
 start() {
-    "${CMD[@]}" &
+    # redirect the output to be expored to loki
+    "${CMD[@]}" >> /proc/1/fd/1 2 >> /proc/1/fd/2 &
     child_pid="$!"
+
+    # store pid
+    $ECHO ${child_pid} > /cfg/zombie.pid
+
+    # check if the process is running
+    if ! $LS /proc/$child_pid > /dev/null 2>&1 ; then
+        exit 1
+    fi;
 }
 
 restart() {

@@ -30,8 +30,6 @@ pub fn running_in_ci() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
 
     #[test]

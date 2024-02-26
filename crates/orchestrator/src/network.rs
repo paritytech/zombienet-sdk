@@ -312,7 +312,11 @@ impl<T: FileSystem> Network<T> {
 
     /// Add a new parachain to the running network
     ///
-    /// NOTE: para_id must be unique in the whole network.
+    /// # Arguments
+    /// * `para_config` - Parachain configuration to deploy
+    /// * `custom_relaychain_spec` - Optional path to a custom relaychain spec to use
+    /// * `custom_parchain_fs_prefix` - Optional prefix to use when artifacts are created
+    ///
     ///
     /// # Example:
     /// ```rust
@@ -334,7 +338,7 @@ impl<T: FileSystem> Network<T> {
     ///     .build()
     ///     .map_err(|_e| anyhow!("Building config"))?;
     ///
-    /// network.add_parachain(&para_config, None).await?;
+    /// network.add_parachain(&para_config, None, None).await?;
     ///
     /// #   Ok(())
     /// # }
@@ -343,6 +347,7 @@ impl<T: FileSystem> Network<T> {
         &mut self,
         para_config: &ParachainConfig,
         custom_relaychain_spec: Option<PathBuf>,
+        custom_parchain_fs_prefix: Option<String>,
     ) -> Result<(), anyhow::Error> {
         // build
         let mut para_spec = network_spec::parachain::ParachainSpec::from_config(para_config)?;
@@ -375,13 +380,21 @@ impl<T: FileSystem> Network<T> {
         let chain_spec_raw_path = para_spec
             .build_chain_spec(&relay_chain_id, &self.ns, &scoped_fs)
             .await?;
-        scoped_fs.create_dir(para_spec.id.to_string()).await?;
+
+        // Para artifacts
+        let para_path_prefix = if let Some(custom_prefix) = custom_parchain_fs_prefix {
+            custom_prefix
+        } else {
+            para_spec.id.to_string()
+        };
+
+        scoped_fs.create_dir(&para_path_prefix).await?;
         // create wasm/state
         para_spec
             .genesis_state
             .build(
                 chain_spec_raw_path.as_ref(),
-                format!("{}/genesis-state", para_spec.id),
+                format!("{}/genesis-state", &para_path_prefix),
                 &self.ns,
                 &scoped_fs,
             )
@@ -390,7 +403,7 @@ impl<T: FileSystem> Network<T> {
             .genesis_wasm
             .build(
                 chain_spec_raw_path.as_ref(),
-                format!("{}/para_spec-wasm", para_spec.id),
+                format!("{}/para_spec-wasm", &para_path_prefix),
                 &self.ns,
                 &scoped_fs,
             )

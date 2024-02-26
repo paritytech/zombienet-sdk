@@ -45,7 +45,7 @@ where
         filesystem: &FS,
     ) -> Result<Arc<Self>, ProviderError> {
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
-        let base_dir = PathBuf::from_iter([&tmp_dir, &PathBuf::from(&name)]);
+        let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
         filesystem.create_dir(&base_dir).await?;
 
         Ok(Arc::new_cyclic(|weak| NativeNamespace {

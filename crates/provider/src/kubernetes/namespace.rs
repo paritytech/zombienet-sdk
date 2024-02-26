@@ -2,7 +2,8 @@ use std::{
     collections::{BTreeMap, HashMap},
     env,
     path::PathBuf,
-    sync::{Arc, Weak}, time::Duration,
+    sync::{Arc, Weak},
+    time::Duration,
 };
 
 use anyhow::anyhow;

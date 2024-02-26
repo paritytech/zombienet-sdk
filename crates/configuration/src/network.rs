@@ -427,8 +427,6 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use super::*;
     use crate::parachain::RegistrationStrategy;
 

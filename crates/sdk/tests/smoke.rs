@@ -1,4 +1,4 @@
-use std::{panic, pin::Pin};
+use std::{panic, pin::Pin, time::Duration};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, Future};
@@ -83,6 +83,8 @@ fn basic_functionalities_should_works() {
     let config = small_network();
     run_k8s_test(config, |network| {
         Box::pin(async move {
+            // give some time to node bootstrap
+            tokio::time::sleep(Duration::from_secs(3));
             // Get a ref to the node
             let alice = network.get_node("alice").unwrap();
 

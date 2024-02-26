@@ -55,7 +55,7 @@ echo "COMMAND TO RUN IS: $CMD"
 
 start() {
     # redirect the output to be expored to loki
-    "${CMD[@]}" >> /proc/1/fd/1 2 >> /proc/1/fd/2 &
+    "${CMD[@]}" >> /proc/1/fd/1 2>> /proc/1/fd/2 &
     child_pid="$!"
 
     # store pid

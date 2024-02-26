@@ -84,7 +84,7 @@ fn basic_functionalities_should_works() {
     run_k8s_test(config, |network| {
         Box::pin(async move {
             // give some time to node bootstrap
-            tokio::time::sleep(Duration::from_secs(3));
+            tokio::time::sleep(Duration::from_secs(3)).await;
             // Get a ref to the node
             let alice = network.get_node("alice").unwrap();
 

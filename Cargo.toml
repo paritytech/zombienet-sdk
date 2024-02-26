@@ -28,7 +28,7 @@ futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-toml = "0.7"
+toml = "0.8"
 tokio = "1.28"
 tokio-util = "0.7"
 reqwest = "0.11"
@@ -37,20 +37,20 @@ lazy_static = "1.4"
 multiaddr = "0.18"
 url = "2.3"
 uuid = "1.4"
-nix = "0.27"
+nix = "0.28"
 pest = "2.7"
 pest_derive = "2.7"
 rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
-sp-core = "22.0.0"
-libp2p = { version = "0.52" }
-subxt = "0.33.0"
-subxt-signer = { version = "0.33.0", features = ["subxt"] }
+sp-core = "30.0.0"
+libp2p = { version = "0.53" }
+subxt = "0.34.0"
+subxt-signer = { version = "0.34.0", features = ["subxt"] }
 tracing = "0.1.35"
 pjs-rs = "0.1.2"
-kube = "0.87.1"
-k8s-openapi = "0.20.0"
+kube = "0.88.1"
+k8s-openapi = "0.21.1"
 tar = "0.4"
 axum = { version = "0.7" }
 axum-extra = { version = "0.9" }

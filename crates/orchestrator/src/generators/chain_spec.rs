@@ -343,8 +343,7 @@ impl ChainSpec {
 
             // make genesis overrides first.
             if let Some(overrides) = &para.genesis_overrides {
-                if let Some(genesis) = chain_spec_json.pointer_mut(&format!("{}/genesis", pointer))
-                {
+                if let Some(genesis) = chain_spec_json.pointer_mut(&pointer) {
                     merge(genesis, overrides);
                 }
             }

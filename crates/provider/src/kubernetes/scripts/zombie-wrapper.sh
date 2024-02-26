@@ -8,6 +8,7 @@ if [ -f /cfg/coreutils ]; then
     LS="/cfg/coreutils ls"
     KILL="/cfg/coreutils kill"
     SLEEP="/cfg/coreutils sleep"
+    ECHO="/cfg/coreutils echo"
 else
     RM="rm"
     MKFIFO="mkfifo"
@@ -15,6 +16,7 @@ else
     LS="ls"
     KILL="kill"
     SLEEP="sleep"
+    ECHO="echo"
 fi
 
 echo "COMMANDS DEFINED"
@@ -49,11 +51,36 @@ child_pid=""
 # get the command to exec
 CMD=($@)
 
+# File to store CMD (and update from there)
+ZOMBIE_CMD_FILE=/cfg/zombie.cmd
+
+# Store the cmd and make it available to later usage
+# NOTE: echo without new line to allow to customize the cmd later
+$ECHO -n "${CMD[@]}" > $ZOMBIE_CMD_FILE
+
 echo "COMMAND TO RUN IS: $CMD"
 
 start() {
-    "${CMD[@]}" &
-    child_pid="$!"
+    # redirect the output to be expored to loki
+    "${CMD[@]}" >> /proc/1/fd/1 2>> /proc/1/fd/2 &
+    if [[ "$CMD" != "cat" ]]; then
+        child_pid="$!"
+
+        $ECHO $(cat $ZOMBIE_CMD_FILE)
+        # store pid
+        $ECHO ${child_pid} > /cfg/zombie.pid
+
+        # check if the process is running
+        if ! $LS /proc/$child_pid > /dev/null 2>&1 ; then
+            echo "child process doesn't exist, quiting...";
+            exit 1;
+        else
+            echo "PID: $child_pid alive";
+        fi;
+    else
+        echo "PID not stored, since was 'cat'";
+    fi;
+
 }
 
 restart() {
@@ -85,9 +112,9 @@ resume() {
 # keep listening from the pipe
 while read line <$pipe
 do
-    if [[ "$line" == 'start' ]]; then
+    if [[ "$line" == "start" ]]; then
         start
-    elif [[ "$line" == 'quit' ]]; then
+    elif [[ "$line" == "quit" ]]; then
         break
     elif [[ "$line" =~ "restart" ]]; then
         # check if we have timeout between restart
@@ -102,10 +129,5 @@ do
         resume
     fi
 done
-
-# exit
-if [ ! -z "${child_pid}" ]; then
-    $KILL -9 "$child_pid"
-fi
 
 exit 0

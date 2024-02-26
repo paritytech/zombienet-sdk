@@ -3,6 +3,7 @@ use std::{
     env,
     path::PathBuf,
     sync::{Arc, Weak},
+    time::Duration,
 };
 
 use anyhow::anyhow;
@@ -202,9 +203,9 @@ where
                         port: IntOrString::Int(80),
                         ..Default::default()
                     }),
-                    initial_delay_seconds: Some(5),
-                    period_seconds: Some(3),
-                    failure_threshold: Some(15),
+                    initial_delay_seconds: Some(1),
+                    period_seconds: Some(2),
+                    failure_threshold: Some(3),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -381,6 +382,9 @@ where
             .await?;
 
         debug!("temp ready!");
+        trace!("adding 500ms sleep as workaround!");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
         for GenerateFileCommand {
             program,
             args,

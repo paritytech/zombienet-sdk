@@ -3,7 +3,6 @@ use std::{
     env,
     path::PathBuf,
     sync::{Arc, Weak},
-    time::Duration,
 };
 
 use anyhow::anyhow;

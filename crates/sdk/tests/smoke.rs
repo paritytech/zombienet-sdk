@@ -20,9 +20,9 @@ fn small_network() -> NetworkConfig {
         .with_parachain(|p| {
             p.with_id(2000).cumulus_based(true).with_collator(|n| {
                 n.with_name("collator")
-                    .with_command("test-parachain")
+                    .with_command("polkadot-parachain")
                     .with_image(
-                    "docker.io/paritypr/test-parachain:c90f9713b5bc73a9620b2e72b226b4d11e018190",
+                    "docker.io/parity/polkadot-parachain:1.7.0",
                 )
             })
         })
@@ -44,12 +44,19 @@ where
         .build()
         .unwrap();
 
+    let spanw_fn = if cfg!(feature = "ci-k8s") {
+        zombienet_sdk::NetworkConfig::spawn_k8s
+    } else {
+        zombienet_sdk::NetworkConfig::spawn_native
+    };
+
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         runtime.block_on(async {
             let now = Instant::now();
 
             #[allow(unused_mut)]
-            let mut network = config.spawn_k8s().await.unwrap();
+            // let mut network = config.spawn_k8s().await.unwrap();
+            let mut network = spanw_fn(config).await.unwrap();
 
             let elapsed = now.elapsed();
             println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);
@@ -62,22 +69,25 @@ where
         })
     }));
 
-    // IF we created a new namespace, allway cleanup
-    if let Some(ns_name) = ns_name {
-        // remove the ns
-        runtime.block_on(async {
-            let k8s_client = kube::Client::try_default().await.unwrap();
-            let namespaces = Api::<Namespace>::all(k8s_client);
 
-            _ = namespaces.delete(&ns_name, &DeleteParams::default()).await;
-        })
+    if cfg!(feature = "ci-k8s") {
+        // IF we created a new namespace, allway cleanup
+        if let Some(ns_name) = ns_name {
+            // remove the ns
+            runtime.block_on(async {
+                let k8s_client = kube::Client::try_default().await.unwrap();
+                let namespaces = Api::<Namespace>::all(k8s_client);
+
+                _ = namespaces.delete(&ns_name, &DeleteParams::default()).await;
+            })
+        }
     }
 
     assert!(result.is_ok());
 }
 
+
 #[test]
-#[cfg_attr(not(feature = "ci-k8s"), ignore = "Run with k8s")]
 fn basic_functionalities_should_works() {
     tracing_subscriber::fmt::init();
     let config = small_network();

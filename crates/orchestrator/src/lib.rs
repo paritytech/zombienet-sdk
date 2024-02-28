@@ -385,7 +385,7 @@ fn validate_spec_with_provider_capabilities(
         }
     };
 
-    // paras
+    // Paras
     for para in &network_spec.parachains {
         if para.default_image.is_none() {
             let nodes = &para.collators;

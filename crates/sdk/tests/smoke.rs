@@ -21,9 +21,7 @@ fn small_network() -> NetworkConfig {
             p.with_id(2000).cumulus_based(true).with_collator(|n| {
                 n.with_name("collator")
                     .with_command("polkadot-parachain")
-                    .with_image(
-                    "docker.io/parity/polkadot-parachain:1.7.0",
-                )
+                    .with_image("docker.io/parity/polkadot-parachain:1.7.0")
             })
         })
         .build()
@@ -46,7 +44,11 @@ where
         .unwrap();
 
     let provider = env::var(PROVIDER_KEY).unwrap_or(String::from("k8s"));
-    assert!(PROVIDERS.contains(&provider.as_str()), "Invalid provider, available options {}", PROVIDERS.join(", "));
+    assert!(
+        PROVIDERS.contains(&provider.as_str()),
+        "Invalid provider, available options {}",
+        PROVIDERS.join(", ")
+    );
 
     // TODO: revisit this
     let spanw_fn = if provider == "k8s" {
@@ -74,7 +76,6 @@ where
         })
     }));
 
-
     if provider == "k8s" {
         // IF we created a new namespace, allway cleanup
         if let Some(ns_name) = ns_name {
@@ -90,7 +91,6 @@ where
 
     assert!(result.is_ok());
 }
-
 
 #[test]
 fn basic_functionalities_should_works() {

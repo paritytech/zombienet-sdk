@@ -18,7 +18,10 @@ use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use network::{parachain::Parachain, relaychain::Relaychain, Network};
 use network_spec::{parachain::ParachainSpec, NetworkSpec};
-use provider::{types::TransferedFile, DynProvider};
+use provider::{
+    types::{ProviderCapabilities, TransferedFile},
+    DynProvider,
+};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 use tracing::{debug, info};
@@ -70,15 +73,20 @@ where
         // main driver for spawn the network
         debug!("Network spec to spawn, {:#?}", network_spec);
 
+        // TODO: move to Provider trait
+        validate_spec_with_provider_capabilities(&network_spec, self.provider.capabilities())
+            .map_err(|err| {
+                OrchestratorError::InvalidConfigForProvider(
+                    self.provider.name().into(),
+                    err.to_string(),
+                )
+            })?;
+
         // create namespace
         let ns = self.provider.create_namespace().await?;
 
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());
-
-        // TODO: noop for native
-        // Static setup
-        // ns.static_setup().await?;
 
         let base_dir = ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
@@ -357,6 +365,41 @@ where
     }
 }
 
+// Validate that the config fulfill all the requirements of the provider
+fn validate_spec_with_provider_capabilities(
+    network_spec: &NetworkSpec,
+    capabilities: &ProviderCapabilities,
+) -> Result<(), anyhow::Error> {
+    if !capabilities.requires_image {
+        return Ok(());
+    }
+
+    // Relaychain
+    if network_spec.relaychain.default_image.is_none() {
+        // we should check if each node have an image
+        let nodes = &network_spec.relaychain.nodes;
+        if nodes.iter().any(|node| node.image.is_none()) {
+            return Err(anyhow::anyhow!(
+                "missing image for node, and not default is set at relaychain"
+            ));
+        }
+    };
+
+    // paras
+    for para in &network_spec.parachains {
+        if para.default_image.is_none() {
+            let nodes = &para.collators;
+            if nodes.iter().any(|node| node.image.is_none()) {
+                return Err(anyhow::anyhow!(
+                    "missing image for node, and not default is set at parachain {}",
+                    para.id
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
 // TODO: get the fs from `DynNamespace` will make this not needed
 // but the FileSystem trait isn't object-safe so we can't pass around
 // as `dyn FileSystem`. We can refactor or using some `erase` techniques
@@ -444,3 +487,69 @@ pub enum ZombieRole {
 // re-export
 pub use network::{AddCollatorOptions, AddNodeOptions};
 pub use shared::types::PjsResult;
+
+#[cfg(test)]
+mod tests {
+    use configuration::NetworkConfigBuilder;
+
+    use super::*;
+
+    fn generate(with_image: bool) -> Result<NetworkConfig, Vec<anyhow::Error>> {
+
+
+        NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                let mut relay = r
+                    .with_chain("rococo-local")
+                    .with_default_command("polkadot");
+                if with_image {
+                    relay = relay.with_default_image("docker.io/parity/polkadot")
+                }
+
+                relay
+                    .with_node(|node| node.with_name("alice"))
+                    .with_node(|node| node.with_name("bob"))
+            })
+            .with_parachain(|p| {
+                p.with_id(2000).cumulus_based(true).with_collator(|n| {
+                    let node = n.with_name("collator").with_command("polkadot-parachain");
+                    if with_image {
+                        node.with_image("docker.io/paritypr/test-parachain")
+                    } else {
+                        node
+                    }
+                })
+            })
+            .build()
+    }
+
+    #[tokio::test]
+    async fn valid_config_with_image() {
+        let network_config = generate(true).unwrap();
+        let spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let caps = ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: false,
+        };
+
+        let valid = validate_spec_with_provider_capabilities(&spec, &caps);
+        assert!(valid.is_ok())
+    }
+
+    #[tokio::test]
+    async fn invalid_config() {
+        let network_config = generate(false).unwrap();
+        let spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let caps = ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: false,
+        };
+
+        let valid = validate_spec_with_provider_capabilities(&spec, &caps);
+        assert!(valid.is_err())
+    }
+}

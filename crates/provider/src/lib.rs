@@ -104,6 +104,8 @@ pub enum ProviderError {
 
 #[async_trait]
 pub trait Provider {
+    fn name(&self) -> &str;
+
     fn capabilities(&self) -> &ProviderCapabilities;
 
     async fn namespaces(&self) -> HashMap<String, DynNamespace>;

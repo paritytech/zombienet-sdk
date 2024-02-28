@@ -687,7 +687,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
         match f(NodeConfigBuilder::new(
             self.default_chain_context(),

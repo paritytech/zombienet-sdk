@@ -1,4 +1,4 @@
-use std::{panic, pin::Pin, time::Duration};
+use std::{env, panic, pin::Pin, time::Duration};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, Future};
@@ -6,7 +6,7 @@ use k8s_openapi::api::core::v1::Namespace;
 use kube::{api::DeleteParams, Api};
 use serde_json::json;
 use support::fs::local::LocalFileSystem;
-use zombienet_sdk::{Network, NetworkConfigExt};
+use zombienet_sdk::{Network, NetworkConfigExt, PROVIDERS};
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
@@ -30,12 +30,13 @@ fn small_network() -> NetworkConfig {
         .unwrap()
 }
 
-pub fn run_k8s_test<T>(config: NetworkConfig, test: T)
+pub fn run_test<T>(config: NetworkConfig, test: T)
 where
     T: panic::UnwindSafe,
     T: FnOnce(Network<LocalFileSystem>) -> Pin<Box<dyn Future<Output = ()> + 'static + Send>>,
 {
     use std::time::Instant;
+    const PROVIDER_KEY: &str = "ZOMBIE_PROVIDER";
 
     let mut ns_name: Option<String> = None;
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -44,7 +45,11 @@ where
         .build()
         .unwrap();
 
-    let spanw_fn = if cfg!(feature = "ci-k8s") {
+    let provider = env::var(PROVIDER_KEY).unwrap_or(String::from("k8s"));
+    assert!(PROVIDERS.contains(&provider.as_str()), "Invalid provider, available options {}", PROVIDERS.join(", "));
+
+    // TODO: revisit this
+    let spanw_fn = if provider == "k8s" {
         zombienet_sdk::NetworkConfig::spawn_k8s
     } else {
         zombienet_sdk::NetworkConfig::spawn_native
@@ -70,7 +75,7 @@ where
     }));
 
 
-    if cfg!(feature = "ci-k8s") {
+    if provider == "k8s" {
         // IF we created a new namespace, allway cleanup
         if let Some(ns_name) = ns_name {
             // remove the ns
@@ -91,7 +96,7 @@ where
 fn basic_functionalities_should_works() {
     tracing_subscriber::fmt::init();
     let config = small_network();
-    run_k8s_test(config, |network| {
+    run_test(config, |network| {
         Box::pin(async move {
             // give some time to node bootstrap
             tokio::time::sleep(Duration::from_secs(3)).await;

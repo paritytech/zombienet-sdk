@@ -495,8 +495,6 @@ mod tests {
     use super::*;
 
     fn generate(with_image: bool) -> Result<NetworkConfig, Vec<anyhow::Error>> {
-
-
         NetworkConfigBuilder::new()
             .with_relaychain(|r| {
                 let mut relay = r

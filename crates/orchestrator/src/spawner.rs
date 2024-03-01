@@ -156,7 +156,8 @@ where
                 .map(|var| (var.name.clone(), var.value.clone())),
         )
         .injected_files(files_to_inject)
-        .created_paths(created_paths);
+        .created_paths(created_paths)
+        .db_snapshot(node.db_snapshot.clone());
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())

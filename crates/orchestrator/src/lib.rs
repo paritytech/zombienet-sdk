@@ -21,7 +21,7 @@ use network_spec::{parachain::ParachainSpec, NetworkSpec};
 use provider::{types::TransferedFile, DynProvider};
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::{
     generators::chain_spec::ParaGenesisConfig,
@@ -382,6 +382,7 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
                 self.base_dir,
                 file.remote_path.to_string_lossy()
             ));
+            trace!("coping file: {file}");
             self.fs
                 .copy(file.local_path.as_path(), full_remote_path)
                 .await?;

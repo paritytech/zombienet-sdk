@@ -150,6 +150,13 @@ impl NodeSpec {
         let accounts = generators::generate_node_keys(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
+        let db_snapshot = match (node_config.db_snapshot(), chain_context.default_db_snapshot) {
+            (Some(db_snapshot), _) => { Some(db_snapshot) },
+            (None, Some(db_snapshot)) => { Some(db_snapshot)},
+            _ => None,
+        };
+
+
         Ok(Self {
             name: node_config.name().to_string(),
             key,
@@ -170,7 +177,7 @@ impl NodeSpec {
                 .collect(),
             resources: node_config.resources().cloned(),
             p2p_cert_hash: node_config.p2p_cert_hash().map(str::to_string),
-            db_snapshot: node_config.db_snapshot().cloned(),
+            db_snapshot: db_snapshot.cloned(),
             accounts,
             ws_port: generators::generate_node_port(node_config.ws_port())?,
             rpc_port: generators::generate_node_port(node_config.rpc_port())?,

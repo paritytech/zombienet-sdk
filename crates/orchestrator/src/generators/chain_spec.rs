@@ -163,13 +163,14 @@ impl ChainSpec {
 
         if is_raw(maybe_plain_spec_path.clone(), scoped_fs).await? {
             let spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
-            let tf_file = TransferedFile::new(&PathBuf::from_iter([ns.base_dir(), &maybe_plain_spec_path]), &spec_path);
-            scoped_fs
-            .copy_files(vec![&tf_file])
-            .await
-            .map_err(|e| {
+            let tf_file = TransferedFile::new(
+                &PathBuf::from_iter([ns.base_dir(), &maybe_plain_spec_path]),
+                &spec_path,
+            );
+            scoped_fs.copy_files(vec![&tf_file]).await.map_err(|e| {
                 GeneratorError::ChainSpecGeneration(format!(
-                    "Error copying file: {}, err: {}", tf_file, e
+                    "Error copying file: {}, err: {}",
+                    tf_file, e
                 ))
             })?;
 

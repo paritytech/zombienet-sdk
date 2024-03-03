@@ -151,11 +151,10 @@ impl NodeSpec {
         let accounts = NodeAccounts { seed, accounts };
 
         let db_snapshot = match (node_config.db_snapshot(), chain_context.default_db_snapshot) {
-            (Some(db_snapshot), _) => { Some(db_snapshot) },
-            (None, Some(db_snapshot)) => { Some(db_snapshot)},
+            (Some(db_snapshot), _) => Some(db_snapshot),
+            (None, Some(db_snapshot)) => Some(db_snapshot),
             _ => None,
         };
-
 
         Ok(Self {
             name: node_config.name().to_string(),

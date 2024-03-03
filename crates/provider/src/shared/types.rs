@@ -46,7 +46,7 @@ pub struct SpawnNodeOptions {
     pub created_paths: Vec<PathBuf>,
     /// Database snapshot to be injected (should be a tgz file)
     /// Could be a local or remote asset
-    pub db_snapshot: Option<AssetLocation>
+    pub db_snapshot: Option<AssetLocation>,
 }
 
 impl SpawnNodeOptions {
@@ -63,7 +63,7 @@ impl SpawnNodeOptions {
             env: vec![],
             injected_files: vec![],
             created_paths: vec![],
-            db_snapshot: None
+            db_snapshot: None,
         }
     }
 
@@ -80,8 +80,7 @@ impl SpawnNodeOptions {
         self
     }
 
-    pub fn db_snapshot(mut self, db_snap: Option<AssetLocation>) -> Self
-    {
+    pub fn db_snapshot(mut self, db_snap: Option<AssetLocation>) -> Self {
         self.db_snapshot = db_snap;
         self
     }

@@ -1,5 +1,8 @@
 use std::{
-    path::{Path, PathBuf}, process::Stdio, sync::{Arc, Weak}, time::Duration
+    path::{Path, PathBuf},
+    process::Stdio,
+    sync::{Arc, Weak},
+    time::Duration,
 };
 
 use anyhow::anyhow;
@@ -29,7 +32,9 @@ use tracing::trace;
 
 use super::namespace::NativeNamespace;
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR}, types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile}, ProviderError, ProviderNamespace, ProviderNode
+    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
+    ProviderError, ProviderNamespace, ProviderNode,
 };
 
 pub(super) struct NativeNode<FS>
@@ -115,7 +120,7 @@ where
         node.initialize_startup_files(startup_files).await?;
 
         if let Some(db_snap) = db_snapshot {
-           node.initialize_db_snapshot(db_snap).await?;
+            node.initialize_db_snapshot(db_snap).await?;
         }
 
         let (stdout, stderr) = node.initialize_process().await?;
@@ -154,7 +159,10 @@ where
         Ok(())
     }
 
-    async fn initialize_db_snapshot(&self, db_snapshot: &AssetLocation) -> Result<(), ProviderError> {
+    async fn initialize_db_snapshot(
+        &self,
+        db_snapshot: &AssetLocation,
+    ) -> Result<(), ProviderError> {
         trace!("snap: {db_snapshot}");
 
         // check if we need to get the db or is already in the ns
@@ -163,41 +171,46 @@ where
             AssetLocation::Url(location) => {
                 hex::encode(sha2::Sha256::digest(&location.to_string()))
             },
-            AssetLocation::FilePath(filepath) => {
-                hex::encode(sha2::Sha256::digest(&filepath.to_string_lossy().to_string()))
-            }
+            AssetLocation::FilePath(filepath) => hex::encode(sha2::Sha256::digest(
+                &filepath.to_string_lossy().to_string(),
+            )),
         };
 
-        let full_path = format!("{}/{}.tgz", ns_base_dir, hashed_location );
+        let full_path = format!("{}/{}.tgz", ns_base_dir, hashed_location);
         trace!("db_snap fullpath in ns: {full_path}");
-        if ! self.filesystem.exists(&full_path).await {
+        if !self.filesystem.exists(&full_path).await {
             // needs to download/copy
             self.get_db_snapshot(db_snapshot, &full_path).await?;
         }
 
-        let contents  =self.filesystem.read(full_path).await.unwrap();
+        let contents = self.filesystem.read(full_path).await.unwrap();
         let gz = GzDecoder::new(&contents[..]);
         let mut archive = Archive::new(gz);
-        archive.unpack(self.base_dir.to_string_lossy().as_ref()).unwrap();
+        archive
+            .unpack(self.base_dir.to_string_lossy().as_ref())
+            .unwrap();
 
         Ok(())
     }
 
-    async fn get_db_snapshot(&self, location: &AssetLocation, full_path: &str) -> Result<(), ProviderError> {
+    async fn get_db_snapshot(
+        &self,
+        location: &AssetLocation,
+        full_path: &str,
+    ) -> Result<(), ProviderError> {
         trace!("getting db_snapshot from: {:?} to: {full_path}", location);
         match location {
             AssetLocation::Url(location) => {
                 let res = reqwest::get(location.as_ref())
-                .await
-                .map_err(|err| ProviderError::DownloadFile(location.to_string(), err.into()))?;
+                    .await
+                    .map_err(|err| ProviderError::DownloadFile(location.to_string(), err.into()))?;
 
                 let contents: &[u8] = &res.bytes().await.unwrap();
                 trace!("writing: {full_path}");
-                self.filesystem.write( full_path, contents).await?;
-
+                self.filesystem.write(full_path, contents).await?;
             },
             AssetLocation::FilePath(filepath) => {
-                self.filesystem.copy( filepath, full_path).await?;
+                self.filesystem.copy(filepath, full_path).await?;
             },
         };
 

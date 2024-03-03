@@ -10,6 +10,8 @@ pub enum OrchestratorError {
     // TODO: improve invalid config reporting
     #[error("Invalid network configuration: {0}")]
     InvalidConfig(String),
+    #[error("Invalid network config to use provider {0}: {1}")]
+    InvalidConfigForProvider(String, String),
     #[error("Invalid configuration for node: {0}, field: {1}")]
     InvalidNodeConfig(String, String),
     #[error("Invariant not fulfilled {0}")]

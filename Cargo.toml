@@ -1,15 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/sdk",
-  "crates/examples",
-  "crates/support",
   "crates/configuration",
+  "crates/e2e",
+  "crates/examples",
+  "crates/file-server",
   "crates/orchestrator",
-  "crates/provider",
-  "crates/test-runner",
   "crates/prom-metrics-parser",
-  "crates/file-server"
+  "crates/provider",
+  "crates/sdk",
+  "crates/support",
+  "crates/test-runner",
 ]
 
 [workspace.package]
@@ -21,47 +22,48 @@ license = "Apache-2.0 OR GPL-3.0"
 repository = "https://github.com/paritytech/zombienet-sdk"
 
 [workspace.dependencies]
-thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
+axum = "0.7"
+axum-extra = "0.9"
 futures = "0.3"
+hex = "0.4"
+k8s-openapi = "0.21"
+kube = "0.88"
+lazy_static = "1.4"
+libp2p = "0.53"
+multiaddr = "0.18"
+nix = "0.28"
+pest = "2.7"
+pest_derive = "2.7"
+pjs-rs = "0.1.2"
+rand = "0.8"
+regex = "1.8"
+reqwest = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-toml = "0.7"
+sha2 = { version = "0.10.2", default-features = false }
+sp-core = "30.0"
+subxt = "0.34"
+subxt-signer = "0.34"
+sysinfo = "0.30"
+tar = "0.4"
+thiserror = "1.0"
 tokio = "1.28"
 tokio-util = "0.7"
-reqwest = "0.11"
-regex = "1.8"
-lazy_static = "1.4"
-multiaddr = "0.18"
+toml = "0.8"
+tower = "0.4"
+tower-http = "0.5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 url = "2.3"
 uuid = "1.4"
-nix = "0.27"
-pest = "2.7"
-pest_derive = "2.7"
-rand = "0.8"
-sha2 = { version = "0.10.2", default-features = false }
-hex = "0.4"
-sp-core = "22.0.0"
-libp2p = { version = "0.52" }
-subxt = "0.33.0"
-subxt-signer = { version = "0.33.0", features = ["subxt"] }
-tracing = "0.1.35"
-pjs-rs = "0.1.2"
-kube = "0.87.1"
-k8s-openapi = "0.20.0"
-tar = "0.4"
-axum = { version = "0.7" }
-axum-extra = { version = "0.9" }
-tower = { version = "0.4" }
-tower-http = { version = "0.5" }
-tracing-subscriber = { version = "0.3" }
 
 # Zombienet workspace crates:
-support = { package = "zombienet-support", version = "0.1.0-alpha.1", path = "crates/support" }
 configuration = { package = "zombienet-configuration", version = "0.1.0-alpha.1", path = "crates/configuration" }
 orchestrator = { package = "zombienet-orchestrator", version = "0.1.0-alpha.1", path = "crates/orchestrator" }
-provider = { package = "zombienet-provider", version = "0.1.0-alpha.1", path = "crates/provider" }
 prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.1.0-alpha.1", path = "crates/prom-metrics-parser" }
+provider = { package = "zombienet-provider", version = "0.1.0-alpha.1", path = "crates/provider" }
+support = { package = "zombienet-support", version = "0.1.0-alpha.1", path = "crates/support" }
 zombienet-sdk = { version = "0.1.0-alpha.1", path = "crates/sdk" }

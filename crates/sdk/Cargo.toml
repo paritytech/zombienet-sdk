@@ -28,7 +28,9 @@ support = { workspace = true }
 ci-k8s = []
 
 [dev-dependencies]
-tracing-subscriber = "0.3"
+tracing-subscriber = { workspace = true }
 kube = { workspace = true, features = ["ws", "runtime"] }
 k8s-openapi = { workspace = true, features = ["v1_27"] }
-serde_json = {workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+reqwest = { workspace = true }

@@ -14,7 +14,7 @@ use nix::{
 };
 use support::fs::FileSystem;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncRead, BufReader},
     process::{Child, ChildStderr, ChildStdout, Command},
     sync::{
         mpsc::{self, Sender},
@@ -24,7 +24,7 @@ use tokio::{
     time::sleep,
     try_join,
 };
-use tracing::trace;
+use tracing::{error, trace};
 
 use super::namespace::NativeNamespace;
 use crate::{
@@ -171,7 +171,7 @@ where
     }
 
     async fn initialize_log_writing(&self, stdout: ChildStdout, stderr: ChildStderr) {
-        let (stdout_tx, mut rx) = mpsc::channel(10);
+        let (stdout_tx, mut rx) = mpsc::channel(1000);
         let stderr_tx = stdout_tx.clone();
 
         self.stdout_reading_task
@@ -190,12 +190,10 @@ where
             .write()
             .await
             .replace(tokio::spawn(async move {
-                loop {
-                    while let Some(Ok(data)) = rx.recv().await {
-                        // TODO: find a better way instead of ignoring error ?
-                        let _ = filesystem.append(&log_path, data).await;
+                while let Some(Ok(Some(data))) = rx.recv().await {
+                    if let Err(err) = filesystem.append(&log_path, data).await {
+                        error!("failed to write log file: {err}");
                     }
-                    sleep(Duration::from_millis(250)).await;
                 }
             }));
     }
@@ -203,23 +201,31 @@ where
     fn create_stream_polling_task(
         &self,
         stream: impl AsyncRead + Unpin + Send + 'static,
-        tx: Sender<Result<Vec<u8>, std::io::Error>>,
+        tx: Sender<Result<Option<String>, std::io::Error>>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let mut reader = BufReader::new(stream);
-            let mut buffer = vec![0u8; 1024];
+            let mut reader = BufReader::new(stream).lines();
 
             loop {
-                match reader.read(&mut buffer).await {
-                    Ok(0) => {
-                        let _ = tx.send(Ok(Vec::new())).await;
+                match reader.next_line().await {
+                    Ok(None) => {
+                        if let Err(err) = tx.send(Ok(None)).await {
+                            error!("failed to send end of stream to log writing task: {err}");
+                        }
                         break;
                     },
-                    Ok(n) => {
-                        let _ = tx.send(Ok(buffer[..n].to_vec())).await;
+                    Ok(Some(line)) => {
+                        if let Err(err) = tx.send(Ok(Some(format!("{line}\n")))).await {
+                            error!("failed to send line to log writing task: {err}");
+                        }
                     },
-                    Err(e) => {
-                        let _ = tx.send(Err(e)).await;
+                    Err(err) => {
+                        error!("failed to read line from stream: {err}");
+
+                        if let Err(err) = tx.send(Err(err)).await {
+                            error!("failed to send error to log writing task: {err}");
+                        }
+
                         break;
                     },
                 }

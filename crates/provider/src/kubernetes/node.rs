@@ -239,7 +239,7 @@ where
 
         // we need to get the snapshot from a public access
         // and extract to /data
-        let opts = RunCommandOptions::new("mkdir").args(&[
+        let opts = RunCommandOptions::new("mkdir").args([
             "-p",
             "/data/",
             "&&",
@@ -249,7 +249,7 @@ where
             "&&",
             // Use our version of curl
             "/cfg/curl",
-            &url_of_snap.to_string(),
+            url_of_snap.as_ref(),
             "--output",
             "/data/db.tgz",
             "&&",

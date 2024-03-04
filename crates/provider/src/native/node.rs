@@ -168,12 +168,10 @@ where
         // check if we need to get the db or is already in the ns
         let ns_base_dir = self.namespace_base_dir();
         let hashed_location = match db_snapshot {
-            AssetLocation::Url(location) => {
-                hex::encode(sha2::Sha256::digest(location.to_string()))
+            AssetLocation::Url(location) => hex::encode(sha2::Sha256::digest(location.to_string())),
+            AssetLocation::FilePath(filepath) => {
+                hex::encode(sha2::Sha256::digest(filepath.to_string_lossy().to_string()))
             },
-            AssetLocation::FilePath(filepath) => hex::encode(sha2::Sha256::digest(
-                filepath.to_string_lossy().to_string(),
-            )),
         };
 
         let full_path = format!("{}/{}.tgz", ns_base_dir, hashed_location);

@@ -113,10 +113,10 @@ mod helpers {
     }
 
     pub(super) fn get_arg_value<'a>(process: &'a Process, arg_name: &str) -> Option<&'a String> {
-        let mut args = process.cmd().into_iter().enumerate();
+        let mut args = process.cmd().iter().enumerate();
 
         args.find(|(_, arg)| arg.as_str() == arg_name)
-            .and_then(|(index, _)| Some(&process.cmd()[index + 1]))
+            .map(|(index, _)| &process.cmd()[index + 1])
     }
 
     pub(super) fn get_namespace_path(process: &Process) -> PathBuf {

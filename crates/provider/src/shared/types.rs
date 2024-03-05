@@ -3,7 +3,7 @@ use std::{
     process::ExitStatus,
 };
 
-use configuration::shared::resources::Resources;
+use configuration::{shared::resources::Resources, types::AssetLocation};
 
 pub type Port = u16;
 
@@ -25,18 +25,28 @@ pub struct ProviderCapabilities {
 
 #[derive(Debug, Clone)]
 pub struct SpawnNodeOptions {
+    /// Name of the node
     pub name: String,
+    /// Image of the node (IFF is supported by the provider)
     pub image: Option<String>,
+    /// Resources to apply to the node (IFF is supported by the provider)
     pub resources: Option<Resources>,
+    /// Main command to execute
     pub program: String,
+    /// Arguments to pass to the main command
     pub args: Vec<String>,
+    /// Environment to set when runnning the `program`
     pub env: Vec<(String, String)>,
     // TODO: rename startup_files
+    /// Files to inject at startup
     pub injected_files: Vec<TransferedFile>,
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order
     /// to create the full path even when we have missing parts
     pub created_paths: Vec<PathBuf>,
+    /// Database snapshot to be injected (should be a tgz file)
+    /// Could be a local or remote asset
+    pub db_snapshot: Option<AssetLocation>,
 }
 
 impl SpawnNodeOptions {
@@ -53,6 +63,7 @@ impl SpawnNodeOptions {
             env: vec![],
             injected_files: vec![],
             created_paths: vec![],
+            db_snapshot: None,
         }
     }
 
@@ -66,6 +77,11 @@ impl SpawnNodeOptions {
 
     pub fn resources(mut self, resources: Resources) -> Self {
         self.resources = Some(resources);
+        self
+    }
+
+    pub fn db_snapshot(mut self, db_snap: Option<AssetLocation>) -> Self {
+        self.db_snapshot = db_snap;
         self
     }
 
@@ -215,6 +231,7 @@ impl GenerateFilesOptions {
     }
 }
 
+#[derive(Debug)]
 pub struct RunCommandOptions {
     pub program: String,
     pub args: Vec<String>,

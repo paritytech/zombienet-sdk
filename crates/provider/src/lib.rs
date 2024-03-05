@@ -92,6 +92,12 @@ pub enum ProviderError {
     #[error("Failed to setup fileserver: {0}")]
     FileServerSetupError(anyhow::Error),
 
+    #[error("Error uploading file: '{0}': {1}")]
+    UploadFile(String, anyhow::Error),
+
+    #[error("Error downloading file: '{0}': {1}")]
+    DownloadFile(String, anyhow::Error),
+
     #[error("Error sending file: '{0}': {1}")]
     SendFile(String, anyhow::Error),
 

@@ -49,6 +49,13 @@ jobs:
       - name: Build
         run: cargo build
 
+      - name: Download polkadot binaries for native tests
+        shell: bash
+        run: |
+          wget https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-v1.7.1/polkadot -O /usr/bin/polkadot
+          wget https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-v1.7.1/polkadot-execute-worker -O /usr/bin/polkadot-execute-worker
+          wget https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-v1.7.1/polkadot-prepare-worker -O /usr/bin/polkadot-prepare-worker
+
       - name: Tests
         run: cargo test --workspace
 

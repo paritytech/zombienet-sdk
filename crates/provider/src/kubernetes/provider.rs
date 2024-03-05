@@ -13,6 +13,8 @@ use crate::{
     types::ProviderCapabilities, DynNamespace, Provider, ProviderError, ProviderNamespace,
 };
 
+const PROVIDER_NAME: &str = "k8s";
+
 pub struct KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
@@ -58,6 +60,10 @@ impl<FS> Provider for KubernetesProvider<FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
+    fn name(&self) -> &str {
+        PROVIDER_NAME
+    }
+
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
     }

@@ -100,6 +100,7 @@ where
             &options.env,
             &options.injected_files,
             &options.created_paths,
+            &options.db_snapshot.as_ref(),
             &self.filesystem,
         )
         .await?;

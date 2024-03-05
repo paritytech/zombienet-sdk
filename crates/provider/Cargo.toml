@@ -38,6 +38,8 @@ hex = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
 regex = { workspace = true }
+url = { workspace = true }
+flate2 = "1.0"
 
 # Zomebienet deps
 support = { workspace = true }

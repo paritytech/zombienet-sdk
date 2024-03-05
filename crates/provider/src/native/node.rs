@@ -7,12 +7,16 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation};
+use flate2::read::GzDecoder;
 use futures::future::try_join_all;
 use nix::{
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
+use sha2::Digest;
 use support::fs::FileSystem;
+use tar::Archive;
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, BufReader},
     process::{Child, ChildStderr, ChildStdout, Command},
@@ -30,7 +34,7 @@ use super::namespace::NativeNamespace;
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
-    ProviderError, ProviderNode,
+    ProviderError, ProviderNamespace, ProviderNode,
 };
 
 pub(super) struct NativeNode<FS>
@@ -69,6 +73,7 @@ where
         env: &[(String, String)],
         startup_files: &[TransferedFile],
         created_paths: &[PathBuf],
+        db_snapshot: &Option<&AssetLocation>,
         filesystem: &FS,
     ) -> Result<Arc<Self>, ProviderError> {
         let base_dir = PathBuf::from_iter([namespace_base_dir, &PathBuf::from(name)]);
@@ -114,6 +119,10 @@ where
         node.initialize_startup_paths(created_paths).await?;
         node.initialize_startup_files(startup_files).await?;
 
+        if let Some(db_snap) = db_snapshot {
+            node.initialize_db_snapshot(db_snap).await?;
+        }
+
         let (stdout, stderr) = node.initialize_process().await?;
 
         node.initialize_log_writing(stdout, stderr).await;
@@ -146,6 +155,62 @@ where
         )
         .await?;
         trace!("files created!");
+
+        Ok(())
+    }
+
+    async fn initialize_db_snapshot(
+        &self,
+        db_snapshot: &AssetLocation,
+    ) -> Result<(), ProviderError> {
+        trace!("snap: {db_snapshot}");
+
+        // check if we need to get the db or is already in the ns
+        let ns_base_dir = self.namespace_base_dir();
+        let hashed_location = match db_snapshot {
+            AssetLocation::Url(location) => hex::encode(sha2::Sha256::digest(location.to_string())),
+            AssetLocation::FilePath(filepath) => {
+                hex::encode(sha2::Sha256::digest(filepath.to_string_lossy().to_string()))
+            },
+        };
+
+        let full_path = format!("{}/{}.tgz", ns_base_dir, hashed_location);
+        trace!("db_snap fullpath in ns: {full_path}");
+        if !self.filesystem.exists(&full_path).await {
+            // needs to download/copy
+            self.get_db_snapshot(db_snapshot, &full_path).await?;
+        }
+
+        let contents = self.filesystem.read(full_path).await.unwrap();
+        let gz = GzDecoder::new(&contents[..]);
+        let mut archive = Archive::new(gz);
+        archive
+            .unpack(self.base_dir.to_string_lossy().as_ref())
+            .unwrap();
+
+        Ok(())
+    }
+
+    async fn get_db_snapshot(
+        &self,
+        location: &AssetLocation,
+        full_path: &str,
+    ) -> Result<(), ProviderError> {
+        trace!("getting db_snapshot from: {:?} to: {full_path}", location);
+        match location {
+            AssetLocation::Url(location) => {
+                let res = reqwest::get(location.as_ref())
+                    .await
+                    .map_err(|err| ProviderError::DownloadFile(location.to_string(), err.into()))?;
+
+                let contents: &[u8] = &res.bytes().await.unwrap();
+                trace!("writing: {full_path}");
+                self.filesystem.write(full_path, contents).await?;
+            },
+            AssetLocation::FilePath(filepath) => {
+                self.filesystem.copy(filepath, full_path).await?;
+            },
+        };
 
         Ok(())
     }
@@ -276,6 +341,13 @@ where
             .await?;
 
         Ok(())
+    }
+
+    fn namespace_base_dir(&self) -> String {
+        self.namespace
+            .upgrade()
+            .map(|namespace| namespace.base_dir().to_string_lossy().to_string())
+            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}", THIS_IS_A_BUG))
     }
 }
 

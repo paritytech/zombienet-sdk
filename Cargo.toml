@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
   "crates/configuration",
-  "crates/e2e",
   "crates/examples",
   "crates/file-server",
   "crates/orchestrator",

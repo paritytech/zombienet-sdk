@@ -1,12 +1,14 @@
-use std::{env, panic, pin::Pin, time::Duration};
+use std::{
+    env,
+    pin::Pin,
+    time::{Duration, Instant},
+};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, Future};
-use k8s_openapi::api::core::v1::Namespace;
-use kube::{api::DeleteParams, Api};
 use serde_json::json;
 use support::fs::local::LocalFileSystem;
-use zombienet_sdk::{Network, NetworkConfigExt, PROVIDERS};
+use zombienet_sdk::{Network, NetworkConfigExt, OrchestratorError, PROVIDERS};
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
@@ -28,21 +30,13 @@ fn small_network() -> NetworkConfig {
         .unwrap()
 }
 
-pub fn run_test<T>(config: NetworkConfig, test: T)
-where
-    T: panic::UnwindSafe,
-    T: FnOnce(Network<LocalFileSystem>) -> Pin<Box<dyn Future<Output = ()> + 'static + Send>>,
-{
-    use std::time::Instant;
+type SpawnResult = Result<Network<LocalFileSystem>, OrchestratorError>;
+fn get_spawn_fn() -> fn(
+    NetworkConfig,
+) -> Pin<
+    Box<dyn Future<Output =  SpawnResult> + Send>,
+> {
     const PROVIDER_KEY: &str = "ZOMBIE_PROVIDER";
-
-    let mut ns_name: Option<String> = None;
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .unwrap();
-
     let provider = env::var(PROVIDER_KEY).unwrap_or(String::from("k8s"));
     assert!(
         PROVIDERS.contains(&provider.as_str()),
@@ -51,109 +45,83 @@ where
     );
 
     // TODO: revisit this
-    let spanw_fn = if provider == "k8s" {
+
+
+    if provider == "k8s" {
         zombienet_sdk::NetworkConfig::spawn_k8s
     } else {
         zombienet_sdk::NetworkConfig::spawn_native
-    };
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        runtime.block_on(async {
-            let now = Instant::now();
-
-            #[allow(unused_mut)]
-            // let mut network = config.spawn_k8s().await.unwrap();
-            let mut network = spanw_fn(config).await.unwrap();
-
-            let elapsed = now.elapsed();
-            println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);
-
-            // get ns name to cleanup if test fails
-            ns_name = Some(network.ns_name());
-
-            // run some tests on the newly started network
-            test(network).await;
-        })
-    }));
-
-    if provider == "k8s" {
-        // IF we created a new namespace, allway cleanup
-        if let Some(ns_name) = ns_name {
-            // remove the ns
-            runtime.block_on(async {
-                let k8s_client = kube::Client::try_default().await.unwrap();
-                let namespaces = Api::<Namespace>::all(k8s_client);
-
-                _ = namespaces.delete(&ns_name, &DeleteParams::default()).await;
-            })
-        }
     }
-
-    assert!(result.is_ok());
 }
 
-#[test]
-fn basic_functionalities_should_works() {
+#[tokio::test(flavor = "multi_thread")]
+async fn basic_functionalities_should_works() {
     tracing_subscriber::fmt::init();
+    let now = Instant::now();
+
     let config = small_network();
-    run_test(config, |network| {
-        Box::pin(async move {
-            // give some time to node bootstrap
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            // Get a ref to the node
-            let alice = network.get_node("alice").unwrap();
+    let spawn_fn = get_spawn_fn();
 
-            let role = alice.reports("node_roles").await.unwrap();
-            println!("Role is {role}");
-            assert_eq!(role, 4.0);
+    #[allow(unused_mut)]
+    let mut network = spawn_fn(config).await.unwrap();
 
-            // subxt
-            let client = alice.client::<subxt::PolkadotConfig>().await.unwrap();
+    let elapsed = now.elapsed();
+    println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);
 
-            // wait 3 blocks
-            let mut blocks = client.blocks().subscribe_finalized().await.unwrap().take(3);
-            while let Some(block) = blocks.next().await {
-                println!("Block #{}", block.unwrap().header().number);
-            }
+    // give some time to node bootstrap
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    // Get a ref to the node
+    let alice = network.get_node("alice").unwrap();
 
-            // drop the client
-            drop(client);
+    let role = alice.reports("node_roles").await.unwrap();
+    println!("Role is {role}");
+    assert_eq!(role, 4.0);
 
-            // check best block through metrics
-            let best_block = alice
-                .reports("block_height{status=\"best\"}")
-                .await
-                .unwrap();
+    // subxt
+    let client = alice.client::<subxt::PolkadotConfig>().await.unwrap();
 
-            assert!(best_block >= 2.0, "Current best {}", best_block);
+    // wait 3 blocks
+    let mut blocks = client.blocks().subscribe_finalized().await.unwrap().take(3);
+    while let Some(block) = blocks.next().await {
+        println!("Block #{}", block.unwrap().header().number);
+    }
 
-            // pjs
-            let para_is_registered = r#"
-            const paraId = arguments[0];
-            const parachains: number[] = (await api.query.paras.parachains()) || [];
-            const isRegistered = parachains.findIndex((id) => id.toString() == paraId.toString()) >= 0;
-            return isRegistered;
-            "#;
+    // drop the client
+    drop(client);
 
-            let is_registered = alice
-                .pjs(para_is_registered, vec![json!(2000)])
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(is_registered, json!(true));
+    // check best block through metrics
+    let best_block = alice
+        .reports("block_height{status=\"best\"}")
+        .await
+        .unwrap();
 
-            // run pjs with code
-            let query_paras = r#"
-            const parachains: number[] = (await api.query.paras.parachains()) || [];
-            return parachains.toJSON()
-            "#;
+    assert!(best_block >= 2.0, "Current best {}", best_block);
 
-            let paras = alice.pjs(query_paras, vec![]).await.unwrap();
+    // pjs
+    let para_is_registered = r#"
+    const paraId = arguments[0];
+    const parachains: number[] = (await api.query.paras.parachains()) || [];
+    const isRegistered = parachains.findIndex((id) => id.toString() == paraId.toString()) >= 0;
+    return isRegistered;
+    "#;
 
-            println!("parachains registered: {:?}", paras);
+    let is_registered = alice
+        .pjs(para_is_registered, vec![json!(2000)])
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(is_registered, json!(true));
 
-            // tear down
-            network.destroy().await.unwrap();
-        })
-    });
+    // run pjs with code
+    let query_paras = r#"
+    const parachains: number[] = (await api.query.paras.parachains()) || [];
+    return parachains.toJSON()
+    "#;
+
+    let paras = alice.pjs(query_paras, vec![]).await.unwrap();
+
+    println!("parachains registered: {:?}", paras);
+
+    // tear down (optional if you don't detach the network)
+    // network.destroy().await.unwrap();
 }

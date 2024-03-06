@@ -14,7 +14,7 @@ use k8s_openapi::{
     apimachinery::pkg::util::intstr::IntOrString,
 };
 use support::fs::FileSystem;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace};
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ use crate::{
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
 
-pub(super) struct KubernetesNamespace<FS>
+pub(crate) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
@@ -44,6 +44,7 @@ where
     k8s_client: KubernetesClient,
     filesystem: FS,
     file_server_fw_task: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    delete_on_drop: Arc<Mutex<bool>>,
     pub(super) file_server_port: RwLock<Option<u16>>,
     pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
 }
@@ -74,6 +75,7 @@ where
             file_server_port: RwLock::new(None),
             file_server_fw_task: RwLock::new(None),
             nodes: RwLock::new(HashMap::new()),
+            delete_on_drop: Arc::new(Mutex::new(true)),
         });
 
         namespace.initialize().await?;
@@ -304,6 +306,33 @@ where
 
         Ok(())
     }
+
+    pub async fn delete_on_drop(&self, delete_on_drop: bool) -> &Self {
+        let mut v = self.delete_on_drop.lock().await;
+        *v = delete_on_drop;
+        self
+    }
+}
+
+impl<FS> Drop for KubernetesNamespace<FS>
+where
+    FS: FileSystem + Send + Sync + Clone,
+{
+    fn drop(&mut self) {
+        let ns_name = self.name.clone();
+        if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
+            if *delete_on_drop {
+                let client = self.k8s_client.clone();
+                futures::executor::block_on(async move {
+                    trace!("🧟 deleting ns {ns_name} from cluster");
+                    let _ = client.delete_namespace(&ns_name).await;
+                    trace!("✅ deleted");
+                });
+            } else {
+                trace!("⚠️ leaking ns {ns_name} in cluster");
+            }
+        };
+    }
 }
 
 #[async_trait]
@@ -321,6 +350,11 @@ where
 
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
+    }
+
+    async fn detach(&self) -> Result<(), ProviderError> {
+        self.delete_on_drop(false).await;
+        Ok(())
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {

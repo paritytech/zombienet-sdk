@@ -121,6 +121,12 @@ pub trait ProviderNamespace {
 
     fn capabilities(&self) -> &ProviderCapabilities;
 
+    async fn detach(&self) -> Result<(), ProviderError> {
+        // noop by default
+        warn!("Detach is not implemented for {}", self.name());
+        Ok(())
+    }
+
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
@@ -210,3 +216,4 @@ pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 pub use kubernetes::*;
 pub use native::*;
 pub use shared::{constants, types};
+use tracing::warn;

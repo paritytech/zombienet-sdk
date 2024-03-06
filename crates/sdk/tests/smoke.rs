@@ -59,6 +59,8 @@ async fn basic_functionalities_should_works() {
 
     #[allow(unused_mut)]
     let mut network = spawn_fn(config).await.unwrap();
+    // Optionally detach the network
+    // network.detach().await;
 
     let elapsed = now.elapsed();
     println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);

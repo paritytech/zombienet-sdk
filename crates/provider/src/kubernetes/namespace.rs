@@ -32,7 +32,7 @@ use crate::{
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
 
-pub(crate) struct KubernetesNamespace<FS>
+pub(super) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
@@ -307,10 +307,8 @@ where
         Ok(())
     }
 
-    pub async fn delete_on_drop(&self, delete_on_drop: bool) -> &Self {
-        let mut v = self.delete_on_drop.lock().await;
-        *v = delete_on_drop;
-        self
+    pub async fn delete_on_drop(&self, delete_on_drop: bool) {
+        *self.delete_on_drop.lock().await = delete_on_drop;
     }
 }
 
@@ -352,9 +350,8 @@ where
         &self.capabilities
     }
 
-    async fn detach(&self) -> Result<(), ProviderError> {
+    async fn detach(&self) {
         self.delete_on_drop(false).await;
-        Ok(())
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {

@@ -121,10 +121,9 @@ pub trait ProviderNamespace {
 
     fn capabilities(&self) -> &ProviderCapabilities;
 
-    async fn detach(&self) -> Result<(), ProviderError> {
+    async fn detach(&self) {
         // noop by default
         warn!("Detach is not implemented for {}", self.name());
-        Ok(())
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode>;

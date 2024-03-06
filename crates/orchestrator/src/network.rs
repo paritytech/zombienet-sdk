@@ -509,7 +509,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub async fn detach(&self) {
-        let _ = self.ns.detach().await;
+        self.ns.detach().await
     }
 
     // Internal API

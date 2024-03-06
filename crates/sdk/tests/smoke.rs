@@ -31,21 +31,16 @@ fn small_network() -> NetworkConfig {
 }
 
 type SpawnResult = Result<Network<LocalFileSystem>, OrchestratorError>;
-fn get_spawn_fn() -> fn(
-    NetworkConfig,
-) -> Pin<
-    Box<dyn Future<Output =  SpawnResult> + Send>,
-> {
+fn get_spawn_fn() -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResult> + Send>> {
     const PROVIDER_KEY: &str = "ZOMBIE_PROVIDER";
     let provider = env::var(PROVIDER_KEY).unwrap_or(String::from("k8s"));
     assert!(
         PROVIDERS.contains(&provider.as_str()),
-        "Invalid provider, available options {}",
+        "\n❌ Invalid provider, available options {}\n",
         PROVIDERS.join(", ")
     );
 
     // TODO: revisit this
-
 
     if provider == "k8s" {
         zombienet_sdk::NetworkConfig::spawn_k8s

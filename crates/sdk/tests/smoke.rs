@@ -50,7 +50,7 @@ fn get_spawn_fn() -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResul
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn basic_functionalities_should_works() {
+async fn ci_k8s_basic_functionalities_should_works() {
     tracing_subscriber::fmt::init();
     let now = Instant::now();
 

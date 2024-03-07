@@ -85,6 +85,11 @@ where
         // create namespace
         let ns = self.provider.create_namespace().await?;
 
+        network_spec
+            .populate_nodes_available_args(ns.clone())
+            .await
+            .unwrap();
+
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());
 

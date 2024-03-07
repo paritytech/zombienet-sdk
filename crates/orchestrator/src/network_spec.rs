@@ -1,4 +1,8 @@
+use std::{collections::HashMap, sync::Arc};
+
 use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
+use futures::future::try_join_all;
+use provider::ProviderNamespace;
 
 use crate::errors::OrchestratorError;
 
@@ -6,7 +10,7 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use self::{parachain::ParachainSpec, relaychain::RelaychainSpec};
+use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec};
 
 #[derive(Debug, Clone)]
 pub struct NetworkSpec {
@@ -49,6 +53,109 @@ impl NetworkSpec {
                 .collect(),
             global_settings: network_config.global_settings().clone(),
         })
+    }
+
+    pub async fn populate_nodes_available_args(
+        &mut self,
+        ns: Arc<dyn ProviderNamespace + Send + Sync>,
+    ) -> Result<(), OrchestratorError> {
+        let network_nodes = self.collect_network_nodes();
+
+        let mut image_command_to_nodes_mapping =
+            Self::create_image_command_to_nodes_mapping(network_nodes);
+
+        let available_args_outputs =
+            Self::retrieve_all_nodes_available_args_output(ns, &image_command_to_nodes_mapping)
+                .await?;
+
+        Self::update_nodes_available_args_output(
+            &mut image_command_to_nodes_mapping,
+            available_args_outputs,
+        );
+
+        Ok(())
+    }
+
+    // collect mutable references to all nodes from relaychain and parachains
+    fn collect_network_nodes(&mut self) -> Vec<&mut NodeSpec> {
+        vec![
+            self.relaychain.nodes.iter_mut().collect::<Vec<_>>(),
+            self.parachains
+                .iter_mut()
+                .flat_map(|para| para.collators.iter_mut())
+                .collect(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+    }
+
+    // initialize the mapping of all possible node image/commands to corresponding nodes
+    fn create_image_command_to_nodes_mapping(
+        network_nodes: Vec<&mut NodeSpec>,
+    ) -> HashMap<(Option<String>, String), Vec<&mut NodeSpec>> {
+        network_nodes.into_iter().fold(
+            HashMap::new(),
+            |mut acc: HashMap<(Option<String>, String), Vec<&mut node::NodeSpec>>, node| {
+                // build mapping key using image and command if image is present or command only
+                let key = node
+                    .image
+                    .as_ref()
+                    .and_then(|image| {
+                        Some((
+                            Some(image.as_str().to_string()),
+                            node.command.as_str().to_string(),
+                        ))
+                    })
+                    .unwrap_or_else(|| (None, node.command.as_str().to_string()));
+
+                // append the node to the vector of nodes for this image/command tuple
+                if acc.contains_key(&key) {
+                    acc.get_mut(&key).unwrap().push(node);
+                } else {
+                    acc.insert(key, vec![node]);
+                }
+
+                acc
+            },
+        )
+    }
+
+    async fn retrieve_all_nodes_available_args_output(
+        ns: Arc<dyn ProviderNamespace + Send + Sync>,
+        image_command_to_nodes_mapping: &HashMap<(Option<String>, String), Vec<&mut NodeSpec>>,
+    ) -> Result<Vec<(Option<String>, String, String)>, OrchestratorError> {
+        try_join_all(
+            image_command_to_nodes_mapping
+                .keys()
+                .cloned()
+                .map(|(image, command)| async {
+                    // get node available args output from image/command
+                    let available_args = ns
+                        .get_node_available_args((command.clone(), image.clone()))
+                        .await?;
+
+                    // map the result to include image and command
+                    Ok::<_, OrchestratorError>((image, command, available_args))
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await
+    }
+
+    fn update_nodes_available_args_output(
+        image_command_to_nodes_mapping: &mut HashMap<(Option<String>, String), Vec<&mut NodeSpec>>,
+        available_args_outputs: Vec<(Option<String>, String, String)>,
+    ) {
+        for (image, command, available_args_output) in available_args_outputs {
+            let nodes = image_command_to_nodes_mapping
+                .get_mut(&(image, command))
+                .expect("node image/command key should exist");
+
+            for node in nodes {
+                node.available_args_output = Some(available_args_output.clone());
+            }
+        }
     }
 }
 

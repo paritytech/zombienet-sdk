@@ -41,6 +41,9 @@ pub enum ProviderError {
     #[error("Invalid network configuration field {0}")]
     InvalidConfig(String),
 
+    #[error("Failed to retrieve node available args using image {0} and command {1}: {2}")]
+    NodeAvailableArgsError(String, String, String),
+
     #[error("Can not recover node: {0}")]
     MissingNode(String),
 
@@ -135,6 +138,11 @@ pub trait ProviderNamespace {
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode>;
+
+    async fn get_node_available_args(
+        &self,
+        options: (String, Option<String>),
+    ) -> Result<String, ProviderError>;
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 

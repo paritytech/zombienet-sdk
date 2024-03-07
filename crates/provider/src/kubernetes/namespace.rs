@@ -363,6 +363,32 @@ where
             .collect()
     }
 
+    async fn get_node_available_args(
+        &self,
+        (command, image): (String, Option<String>),
+    ) -> Result<String, ProviderError> {
+        let node_image = image.expect(
+            "image should be present when getting node available args with kubernetes provider",
+        );
+
+        // run dummy command in new pod
+        let temp_node = self
+            .spawn_node(
+                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
+                    .image(node_image.clone()),
+            )
+            .await?;
+
+        let available_args_output = temp_node
+            .run_command(RunCommandOptions::new(command.clone()).args(vec!["--help"]))
+            .await?
+            .map_err(|(_exit, status)| {
+                ProviderError::NodeAvailableArgsError(node_image, command, status)
+            })?;
+
+        Ok(available_args_output)
+    }
+
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         trace!("spawn option {:?}", options);
         if self.nodes.read().await.contains_key(&options.name) {

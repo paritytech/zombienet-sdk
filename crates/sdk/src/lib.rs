@@ -8,6 +8,8 @@ pub use orchestrator::{
 use provider::{KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;
 
+pub const PROVIDERS: [&str; 2] = ["k8s", "native"];
+
 #[async_trait]
 pub trait NetworkConfigExt {
     /// Spawns a network using the native or k8s provider.

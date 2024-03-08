@@ -250,7 +250,10 @@ impl RelaychainConfigBuilder<WithChain> {
     }
 
     /// Set the default resources limits used for nodes. Can be overridden.
-    pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
+    pub fn with_default_resources(
+        self,
+        f: impl FnOnce(ResourcesBuilder) -> ResourcesBuilder,
+    ) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
                 RelaychainConfig {
@@ -349,7 +352,7 @@ impl RelaychainConfigBuilder<WithChain> {
     /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
         match f(NodeConfigBuilder::new(
             self.default_chain_context(),
@@ -384,7 +387,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
     /// Add a new node using a nested [`NodeConfigBuilder`].
     pub fn with_node(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
         match f(NodeConfigBuilder::new(
             self.default_chain_context(),

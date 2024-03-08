@@ -530,7 +530,7 @@ impl NodeConfigBuilder<Buildable> {
     }
 
     /// Set the resources limits what will be used for the node (only podman/k8s). Override the default.
-    pub fn with_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
+    pub fn with_resources(self, f: impl FnOnce(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(resources) => Self::transition(
                 NodeConfig {

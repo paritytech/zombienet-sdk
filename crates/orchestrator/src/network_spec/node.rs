@@ -5,7 +5,6 @@ use configuration::shared::{
 };
 use multiaddr::Multiaddr;
 use provider::types::Port;
-use tracing::debug;
 
 use crate::{
     errors::OrchestratorError,

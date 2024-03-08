@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
 use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
@@ -102,19 +105,19 @@ impl NetworkSpec {
                 let key = node
                     .image
                     .as_ref()
-                    .and_then(|image| {
-                        Some((
+                    .map(|image| {
+                        (
                             Some(image.as_str().to_string()),
                             node.command.as_str().to_string(),
-                        ))
+                        )
                     })
                     .unwrap_or_else(|| (None, node.command.as_str().to_string()));
 
                 // append the node to the vector of nodes for this image/command tuple
-                if acc.contains_key(&key) {
-                    acc.get_mut(&key).unwrap().push(node);
+                if let Entry::Vacant(entry) = acc.entry(key.clone()) {
+                    entry.insert(vec![node]);
                 } else {
-                    acc.insert(key, vec![node]);
+                    acc.get_mut(&key).unwrap().push(node);
                 }
 
                 acc

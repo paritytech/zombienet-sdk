@@ -5,6 +5,7 @@ use configuration::shared::{
 };
 use multiaddr::Multiaddr;
 use provider::types::Port;
+use tracing::debug;
 
 use crate::{
     errors::OrchestratorError,
@@ -264,5 +265,12 @@ impl NodeSpec {
             prometheus_port: generators::generate_node_port(options.prometheus_port)?,
             p2p_port: generators::generate_node_port(options.p2p_port)?,
         })
+    }
+
+    pub(crate) fn supports_arg(&self, arg: impl AsRef<str>) -> bool {
+        self.available_args_output
+            .as_ref()
+            .expect("available args should be present at this point")
+            .contains(arg.as_ref())
     }
 }

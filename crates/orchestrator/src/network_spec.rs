@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
 use provider::ProviderNamespace;
+use tracing::debug;
 
 use crate::errors::OrchestratorError;
 
@@ -134,6 +135,10 @@ impl NetworkSpec {
                     let available_args = ns
                         .get_node_available_args((command.clone(), image.clone()))
                         .await?;
+                    debug!(
+                        "retrieved available args for image: {:?}, command: {}",
+                        image, command
+                    );
 
                     // map the result to include image and command
                     Ok::<_, OrchestratorError>((image, command, available_args))

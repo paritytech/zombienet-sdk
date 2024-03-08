@@ -9,11 +9,17 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::shared::{constants::THIS_IS_A_BUG, resources::Resources};
+use configuration::{
+    shared::{constants::THIS_IS_A_BUG, resources::Resources},
+    types::AssetLocation,
+};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
+use sha2::Digest;
 use support::fs::FileSystem;
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
+use tracing::trace;
+use url::Url;
 
 use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
 use crate::{
@@ -38,6 +44,7 @@ where
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
+    pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -114,6 +121,10 @@ where
             options.resources,
         )
         .await?;
+
+        if let Some(db_snap) = options.db_snapshot {
+            node.initialize_db_snapshot(db_snap).await?;
+        }
 
         node.initialize_startup_files(options.startup_files).await?;
 
@@ -216,6 +227,47 @@ where
         Ok(())
     }
 
+    async fn initialize_db_snapshot(
+        &self,
+        db_snapshot: &AssetLocation,
+    ) -> Result<(), ProviderError> {
+        trace!("snap: {db_snapshot}");
+        let url_of_snap = match db_snapshot {
+            AssetLocation::Url(location) => location.clone(),
+            AssetLocation::FilePath(filepath) => self.upload_to_fileserver(filepath).await?,
+        };
+
+        // we need to get the snapshot from a public access
+        // and extract to /data
+        let opts = RunCommandOptions::new("mkdir").args([
+            "-p",
+            "/data/",
+            "&&",
+            "mkdir",
+            "-p",
+            "/relay-data/",
+            "&&",
+            // Use our version of curl
+            "/cfg/curl",
+            url_of_snap.as_ref(),
+            "--output",
+            "/data/db.tgz",
+            "&&",
+            "cd",
+            "/",
+            "&&",
+            "tar",
+            "--skip-old-files",
+            "-xzvf",
+            "/data/db.tgz",
+        ]);
+
+        trace!("cmd opts: {:#?}", opts);
+        let _ = self.run_command(opts).await?;
+
+        Ok(())
+    }
+
     async fn initialize_startup_files(
         &self,
         startup_files: &[TransferedFile],
@@ -291,6 +343,40 @@ where
             .upgrade()
             .map(|namespace| namespace.name().to_string())
             .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}", THIS_IS_A_BUG))
+    }
+
+    async fn upload_to_fileserver(&self, location: &Path) -> Result<Url, ProviderError> {
+        let data = self.filesystem.read(location).await?;
+        let hashed_path = hex::encode(sha2::Sha256::digest(&data));
+        let req = self
+            .http_client
+            .head(format!(
+                "http://{}/{hashed_path}",
+                self.file_server_local_host().await?
+            ))
+            .build()
+            .map_err(|err| {
+                ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
+            })?;
+
+        let url = req.url().clone();
+        let res = self.http_client.execute(req).await.map_err(|err| {
+            ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
+        })?;
+
+        if res.status() != reqwest::StatusCode::OK {
+            // we need to upload the file
+            self.http_client
+                .post(url.as_ref())
+                .body(data)
+                .send()
+                .await
+                .map_err(|err| {
+                    ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
+                })?;
+        }
+
+        Ok(url)
     }
 
     async fn file_server_local_host(&self) -> Result<String, ProviderError> {

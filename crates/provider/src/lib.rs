@@ -92,6 +92,12 @@ pub enum ProviderError {
     #[error("Failed to setup fileserver: {0}")]
     FileServerSetupError(anyhow::Error),
 
+    #[error("Error uploading file: '{0}': {1}")]
+    UploadFile(String, anyhow::Error),
+
+    #[error("Error downloading file: '{0}': {1}")]
+    DownloadFile(String, anyhow::Error),
+
     #[error("Error sending file: '{0}': {1}")]
     SendFile(String, anyhow::Error),
 
@@ -104,6 +110,8 @@ pub enum ProviderError {
 
 #[async_trait]
 pub trait Provider {
+    fn name(&self) -> &str;
+
     fn capabilities(&self) -> &ProviderCapabilities;
 
     async fn namespaces(&self) -> HashMap<String, DynNamespace>;
@@ -120,6 +128,11 @@ pub trait ProviderNamespace {
     fn base_dir(&self) -> &PathBuf;
 
     fn capabilities(&self) -> &ProviderCapabilities;
+
+    async fn detach(&self) {
+        // noop by default
+        warn!("Detach is not implemented for {}", self.name());
+    }
 
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
@@ -210,3 +223,4 @@ pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 pub use kubernetes::*;
 pub use native::*;
 pub use shared::{constants, types};
+use tracing::warn;

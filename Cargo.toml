@@ -7,7 +7,7 @@ members = [
   "crates/configuration",
   "crates/orchestrator",
   "crates/provider",
-  "crates/test-runner",
+  #"crates/test-runner",
   "crates/prom-metrics-parser",
   "crates/file-server"
 ]

@@ -232,7 +232,6 @@ pub fn generate_for_node(
 
     if *is_validator && !args.contains(&Arg::Flag("--validator".into())) {
         tmp_args.push("--validator".into());
-        // TODO: we need to impl cli args checking
         if node.supports_arg("--insecure-validator-i-know-what-i-do") {
             tmp_args.push("--insecure-validator-i-know-what-i-do".into());
         }

@@ -1,5 +1,5 @@
 // TODO(Javier): Remove when we implement the logic in the orchestrator to spawn with the provider.
-#![allow(dead_code)]
+#![allow(dead_code, clippy::expect_fun_call)]
 
 pub mod errors;
 mod generators;

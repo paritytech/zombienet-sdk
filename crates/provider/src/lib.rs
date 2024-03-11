@@ -1,3 +1,4 @@
+#![allow(clippy::expect_fun_call)]
 mod kubernetes;
 mod native;
 pub mod shared;

@@ -83,7 +83,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Collect coverage data
-        run: cargo llvm-cov nextest --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --exclude zombienet-sdk --lcov --output-path lcov.info
 
       - name: Report code coverage
         uses: Nef10/lcov-reporter-action@v0.4.0

@@ -121,7 +121,7 @@ pub fn generate_for_cumulus_node(
                 if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
-                    Some(flag.to_owned())
+                    Some(vec![flag.to_owned()])
                 }
             },
             Arg::Option(k, v) => {
@@ -131,11 +131,11 @@ pub fn generate_for_cumulus_node(
                     full_node_p2p_needs_to_be_injected = true;
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
         })
+        .flatten()
         .collect::<Vec<String>>();
 
     // change p2p port if is the default
@@ -149,18 +149,18 @@ pub fn generate_for_cumulus_node(
                 if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
-                    Some(flag.to_owned())
+                    Some(vec![flag.to_owned()])
                 }
             },
             Arg::Option(k, v) => {
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
         })
+        .flatten()
         .collect::<Vec<String>>();
 
     tmp_args.append(&mut args_filtered);
@@ -320,18 +320,18 @@ pub fn generate_for_node(
                 if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
-                    Some(flag.to_owned())
+                    Some(vec![flag.to_owned()])
                 }
             },
             Arg::Option(k, v) => {
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
         })
+        .flatten()
         .collect::<Vec<String>>();
 
     tmp_args.append(&mut args_filtered);

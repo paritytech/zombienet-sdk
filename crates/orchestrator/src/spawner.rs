@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
+use configuration::shared::constants::THIS_IS_A_BUG;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR},
     shared::helpers::running_in_ci,
@@ -17,7 +18,6 @@ use crate::{
     shared::constants::{PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
 };
-use configuration::shared::constants::THIS_IS_A_BUG;
 
 #[derive(Clone)]
 pub struct SpawnNodeCtx<'a, T: FileSystem> {

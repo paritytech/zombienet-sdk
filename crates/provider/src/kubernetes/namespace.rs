@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use configuration::shared::constants::THIS_IS_A_BUG;
 use k8s_openapi::{
     api::core::v1::{
         Container, ContainerPort, HTTPGetAction, PodSpec, Probe, ServicePort, ServiceSpec,
@@ -29,7 +30,6 @@ use crate::{
     },
     DynNode, KubernetesClient, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
-use configuration::shared::constants::THIS_IS_A_BUG;
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
 

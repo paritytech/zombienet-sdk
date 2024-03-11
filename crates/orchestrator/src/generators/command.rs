@@ -284,9 +284,9 @@ pub fn generate_for_node(
     }) {
         let mut parts = listen_val.split('/').collect::<Vec<&str>>();
         // TODO: move this to error
-        let port_part = parts.get_mut(4).expect(&format!(
-            "should have at least 5 parts {THIS_IS_A_BUG}"
-        ));
+        let port_part = parts
+            .get_mut(4)
+            .expect(&format!("should have at least 5 parts {THIS_IS_A_BUG}"));
         let port_to_use = p2p_port.to_string();
         *port_part = port_to_use.as_str();
         parts.join("/")

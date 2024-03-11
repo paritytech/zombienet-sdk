@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::AssetLocation, HrmpChannelConfig};
+use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation, HrmpChannelConfig};
 use provider::{
     constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
@@ -19,7 +19,6 @@ use crate::{
     network_spec::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec},
     ScopedFilesystem,
 };
-use configuration::shared::constants::THIS_IS_A_BUG;
 
 // TODO: (javier) move to state
 #[derive(Debug, Clone)]
@@ -836,7 +835,9 @@ fn add_aura_authorities(
                 node.accounts
                     .accounts
                     .get("sr")
-                    .expect(&format!("'sr' account should be set at spec computation {THIS_IS_A_BUG}"))
+                    .expect(&format!(
+                        "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
+                    ))
                     .address
                     .clone()
             })

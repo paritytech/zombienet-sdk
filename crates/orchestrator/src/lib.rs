@@ -87,8 +87,7 @@ where
 
         network_spec
             .populate_nodes_available_args(ns.clone())
-            .await
-            .unwrap();
+            .await?;
 
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());

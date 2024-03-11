@@ -1,4 +1,5 @@
 use configuration::shared::{
+    constants::THIS_IS_A_BUG,
     node::{EnvVar, NodeConfig},
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
@@ -269,7 +270,9 @@ impl NodeSpec {
     pub(crate) fn supports_arg(&self, arg: impl AsRef<str>) -> bool {
         self.available_args_output
             .as_ref()
-            .expect("available args should be present at this point")
+            .expect(&format!(
+                "available args should be present at this point {THIS_IS_A_BUG}"
+            ))
             .contains(arg.as_ref())
     }
 }

@@ -3,7 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
+use configuration::{
+    shared::constants::THIS_IS_A_BUG, GlobalSettings, HrmpChannelConfig, NetworkConfig,
+};
 use futures::future::try_join_all;
 use provider::ProviderNamespace;
 use tracing::debug;
@@ -158,7 +160,9 @@ impl NetworkSpec {
         for (image, command, available_args_output) in available_args_outputs {
             let nodes = image_command_to_nodes_mapping
                 .get_mut(&(image, command))
-                .expect("node image/command key should exist");
+                .expect(&format!(
+                    "node image/command key should exist {THIS_IS_A_BUG}"
+                ));
 
             for node in nodes {
                 node.available_args_output = Some(available_args_output.clone());

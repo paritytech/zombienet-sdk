@@ -29,6 +29,7 @@ use crate::{
     },
     DynNode, KubernetesClient, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
+use configuration::shared::constants::THIS_IS_A_BUG;
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
 
@@ -367,9 +368,7 @@ where
         &self,
         (command, image): (String, Option<String>),
     ) -> Result<String, ProviderError> {
-        let node_image = image.expect(
-            "image should be present when getting node available args with kubernetes provider",
-        );
+        let node_image = image.expect(&format!("image should be present when getting node available args with kubernetes provider {THIS_IS_A_BUG}"));
 
         // run dummy command in new pod
         let temp_node = self
@@ -427,7 +426,7 @@ where
             .unwrap_or_else(|| format!("temp-{}", Uuid::new_v4()));
         let node_image = options
             .image
-            .expect("image should be present when generating files with kubernetes provider");
+            .expect(&format!("image should be present when generating files with kubernetes provider {THIS_IS_A_BUG}"));
 
         // run dummy command in new pod
         let temp_node = self

@@ -19,6 +19,7 @@ use crate::{
     network_spec::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec},
     ScopedFilesystem,
 };
+use configuration::shared::constants::THIS_IS_A_BUG;
 
 // TODO: (javier) move to state
 #[derive(Debug, Clone)]
@@ -835,7 +836,7 @@ fn add_aura_authorities(
                 node.accounts
                     .accounts
                     .get("sr")
-                    .expect("'sr' account should be set at spec computation, this is a bug")
+                    .expect(&format!("'sr' account should be set at spec computation {THIS_IS_A_BUG}"))
                     .address
                     .clone()
             })
@@ -880,7 +881,9 @@ fn add_collator_selection(
                 node.accounts
                     .accounts
                     .get("sr")
-                    .expect("'sr' account should be set at spec computation, this is a bug")
+                    .expect(&format!(
+                        "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
+                    ))
                     .address
                     .clone()
             })

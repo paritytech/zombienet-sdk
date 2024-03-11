@@ -516,7 +516,9 @@ where
         let file_name = options
             .local_script_path
             .file_name()
-            .expect("file name should be present at this point")
+            .expect(&format!(
+                "file name should be present at this point {THIS_IS_A_BUG}"
+            ))
             .to_string_lossy();
 
         self.run_command(RunCommandOptions {

@@ -9,7 +9,7 @@ pub enum GeneratorError {
     PortGeneration(u16, String),
     #[error("Chain-spec build error: {0}")]
     ChainSpecGeneration(String),
-    #[error("Provider error")]
+    #[error("Provider error: {0}")]
     ProviderError(#[from] ProviderError),
     #[error("FileSystem error")]
     FileSystemError(#[from] FileSystemError),

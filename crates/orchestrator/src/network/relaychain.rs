@@ -24,4 +24,8 @@ impl Relaychain {
     pub fn chain(&self) -> &str {
         &self.chain
     }
+
+    pub fn nodes(&self) -> Vec<&NetworkNode> {
+        self.nodes.iter().collect()
+    }
 }

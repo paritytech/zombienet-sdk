@@ -42,6 +42,14 @@ impl NetworkNode {
         }
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn args(&self) -> Vec<&str> {
+        self.inner.args()
+    }
+
     pub fn spec(&self) -> &NodeSpec {
         &self.spec
     }

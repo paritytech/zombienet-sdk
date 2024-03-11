@@ -275,4 +275,8 @@ impl NodeSpec {
             ))
             .contains(arg.as_ref())
     }
+
+    pub fn command(&self) -> &str {
+        self.command.as_str()
+    }
 }

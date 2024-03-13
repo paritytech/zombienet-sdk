@@ -3,6 +3,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use configuration::shared::constants::THIS_IS_A_BUG;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
     ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
@@ -241,17 +242,17 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while exec in the pod {name}: {err}")))?;
 
-        let stdout_stream = process
-            .stdout()
-            .expect("stdout shouldn't be None when true passed to exec");
+        let stdout_stream = process.stdout().expect(&format!(
+            "stdout shouldn't be None when true passed to exec {THIS_IS_A_BUG}"
+        ));
         let stdout = tokio_util::io::ReaderStream::new(stdout_stream)
             .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
             .collect::<Vec<_>>()
             .await
             .join("");
-        let stderr_stream = process
-            .stderr()
-            .expect("stderr shouldn't be None when true passed to exec");
+        let stderr_stream = process.stderr().expect(&format!(
+            "stderr shouldn't be None when true passed to exec {THIS_IS_A_BUG}"
+        ));
         let stderr = tokio_util::io::ReaderStream::new(stderr_stream)
             .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
             .collect::<Vec<_>>()
@@ -260,7 +261,9 @@ impl KubernetesClient {
 
         let status = process
             .take_status()
-            .expect("first call to status shouldn't fail")
+            .expect(&format!(
+                "first call to status shouldn't fail {THIS_IS_A_BUG}"
+            ))
             .await;
 
         // await process to finish
@@ -292,7 +295,7 @@ impl KubernetesClient {
                                 })
                             })
                             .expect(
-                                "command with non-zero exit code should have exit code present",
+                                &format!("command with non-zero exit code should have exit code present {THIS_IS_A_BUG}")
                             );
 
                         Ok(Err((exit_status, stderr)))
@@ -464,7 +467,10 @@ impl KubernetesClient {
                 WatchEvent::Error(err) => Err(Error::from(anyhow!(
                     "error while awaiting resource {name} is created: {err}"
                 )))?,
-                _ => panic!("Unexpected event happened while creating '{}'", name),
+                _ => panic!(
+                    "Unexpected event happened while creating '{}' {THIS_IS_A_BUG}",
+                    name
+                ),
             }
         }
 

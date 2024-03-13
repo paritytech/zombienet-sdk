@@ -508,6 +508,10 @@ impl<T: FileSystem> Network<T> {
         self.nodes_by_name.values().collect::<Vec<&NetworkNode>>()
     }
 
+    pub async fn detach(&self) {
+        self.ns.detach().await
+    }
+
     // Internal API
     pub(crate) fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
         if let Some(para_id) = para_id {

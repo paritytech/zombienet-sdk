@@ -9,7 +9,7 @@ members = [
   "crates/provider",
   "crates/sdk",
   "crates/support",
-  "crates/test-runner",
+  #"crates/test-runner",
 ]
 
 [workspace.package]

@@ -496,7 +496,10 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     }
 
     /// Set the default resources limits used for collators. Can be overridden.
-    pub fn with_default_resources(self, f: fn(ResourcesBuilder) -> ResourcesBuilder) -> Self {
+    pub fn with_default_resources(
+        self,
+        f: impl FnOnce(ResourcesBuilder) -> ResourcesBuilder,
+    ) -> Self {
         match f(ResourcesBuilder::new()).build() {
             Ok(default_resources) => Self::transition(
                 ParachainConfig {
@@ -722,7 +725,7 @@ impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
     /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
-        f: fn(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
         match f(NodeConfigBuilder::new(
             ChainDefaultContext::default(),

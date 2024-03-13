@@ -17,15 +17,13 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 subxt = { workspace = true }
+lazy_static = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }
 orchestrator = { workspace = true }
 provider = { workspace = true }
 support = { workspace = true }
-
-[features]
-ci-k8s = []
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }

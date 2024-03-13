@@ -3,6 +3,7 @@ use std::{
     vec,
 };
 
+use configuration::shared::constants::THIS_IS_A_BUG;
 use hex::encode;
 use support::fs::FileSystem;
 
@@ -40,7 +41,7 @@ where
                 let pk = acc
                     .accounts
                     .get("sr")
-                    .expect("Key 'sr' should be set for node, this is a bug.")
+                    .expect(&format!("Key 'sr' should be set for node {THIS_IS_A_BUG}"))
                     .public_key
                     .as_str();
                 format!("{}{}", encode(k), pk)
@@ -49,7 +50,7 @@ where
                 let pk = acc
                     .accounts
                     .get("ed")
-                    .expect("Key 'ed' should be set for node, this is a bug.")
+                    .expect(&format!("Key 'ed' should be set for node {THIS_IS_A_BUG}"))
                     .public_key
                     .as_str();
                 format!("{}{}", encode(k), pk)
@@ -58,7 +59,7 @@ where
                 let pk = acc
                     .accounts
                     .get("ec")
-                    .expect("Key 'ec' should be set for node, this is a bug.")
+                    .expect(&format!("Key 'ec' should be set for node {THIS_IS_A_BUG}"))
                     .public_key
                     .as_str();
                 format!("{}{}", encode(k), pk)

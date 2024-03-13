@@ -3,6 +3,7 @@ use std::{
     str::FromStr,
 };
 
+use configuration::shared::constants::THIS_IS_A_BUG;
 use provider::types::TransferedFile;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
@@ -98,7 +99,8 @@ impl Parachain {
         // get the seed
         let sudo: Keypair;
         if let Some(possible_seed) = options.seed {
-            sudo = Keypair::from_seed(possible_seed).expect("seed should return a Keypair.");
+            sudo = Keypair::from_seed(possible_seed)
+                .expect(&format!("seed should return a Keypair {THIS_IS_A_BUG}"));
         } else {
             let uri = SecretUri::from_str("//Alice")?;
             sudo = Keypair::from_uri(&uri)?;
@@ -107,11 +109,15 @@ impl Parachain {
         let genesis_state = scoped_fs
             .read_to_string(options.state_path)
             .await
-            .expect("State Path should be ok by this point.");
+            .expect(&format!(
+                "State Path should be ok by this point {THIS_IS_A_BUG}"
+            ));
         let wasm_data = scoped_fs
             .read_to_string(options.wasm_path)
             .await
-            .expect("Wasm Path should be ok by this point.");
+            .expect(&format!(
+                "Wasm Path should be ok by this point {THIS_IS_A_BUG}"
+            ));
 
         let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
 

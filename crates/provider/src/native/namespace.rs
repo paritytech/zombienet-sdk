@@ -86,6 +86,27 @@ where
             .collect()
     }
 
+    async fn get_node_available_args(
+        &self,
+        (command, _image): (String, Option<String>),
+    ) -> Result<String, ProviderError> {
+        let temp_node = self
+            .spawn_node(
+                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "bash".to_string())
+                    .args(vec!["-c", "while :; do sleep 1; done"]),
+            )
+            .await?;
+
+        let available_args_output = temp_node
+            .run_command(RunCommandOptions::new(command.clone()).args(vec!["--help"]))
+            .await?
+            .map_err(|(_exit, status)| {
+                ProviderError::NodeAvailableArgsError("".to_string(), command, status)
+            })?;
+
+        Ok(available_args_output)
+    }
+
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         if self.nodes.read().await.contains_key(&options.name) {
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));

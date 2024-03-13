@@ -1,4 +1,4 @@
-use configuration::types::Arg;
+use configuration::{shared::constants::THIS_IS_A_BUG, types::Arg};
 
 use crate::{network_spec::node::NodeSpec, shared::constants::*};
 
@@ -121,7 +121,7 @@ pub fn generate_for_cumulus_node(
                 if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
-                    Some(flag.to_owned())
+                    Some(vec![flag.to_owned()])
                 }
             },
             Arg::Option(k, v) => {
@@ -131,11 +131,11 @@ pub fn generate_for_cumulus_node(
                     full_node_p2p_needs_to_be_injected = true;
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
         })
+        .flatten()
         .collect::<Vec<String>>();
 
     // change p2p port if is the default
@@ -149,18 +149,18 @@ pub fn generate_for_cumulus_node(
                 if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
-                    Some(flag.to_owned())
+                    Some(vec![flag.to_owned()])
                 }
             },
             Arg::Option(k, v) => {
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
         })
+        .flatten()
         .collect::<Vec<String>>();
 
     tmp_args.append(&mut args_filtered);
@@ -232,8 +232,9 @@ pub fn generate_for_node(
 
     if *is_validator && !args.contains(&Arg::Flag("--validator".into())) {
         tmp_args.push("--validator".into());
-        // TODO: we need to impl cli args checking
-        tmp_args.push("--insecure-validator-i-know-what-i-do".into());
+        if node.supports_arg("--insecure-validator-i-know-what-i-do") {
+            tmp_args.push("--insecure-validator-i-know-what-i-do".into());
+        }
     }
 
     if !bootnodes_addresses.is_empty() {
@@ -285,7 +286,7 @@ pub fn generate_for_node(
         // TODO: move this to error
         let port_part = parts
             .get_mut(4)
-            .expect("should have at least 5 parts, this is a bug");
+            .expect(&format!("should have at least 5 parts {THIS_IS_A_BUG}"));
         let port_to_use = p2p_port.to_string();
         *port_part = port_to_use.as_str();
         parts.join("/")
@@ -319,18 +320,18 @@ pub fn generate_for_node(
                 if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
-                    Some(flag.to_owned())
+                    Some(vec![flag.to_owned()])
                 }
             },
             Arg::Option(k, v) => {
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
                 } else {
-                    let kv_str = format!("{} {}", k, v);
-                    Some(kv_str)
+                    Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
         })
+        .flatten()
         .collect::<Vec<String>>();
 
     tmp_args.append(&mut args_filtered);

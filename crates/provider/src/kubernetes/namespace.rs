@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use configuration::shared::constants::THIS_IS_A_BUG;
 use k8s_openapi::{
     api::core::v1::{
         Container, ContainerPort, HTTPGetAction, PodSpec, Probe, ServicePort, ServiceSpec,
@@ -14,7 +15,7 @@ use k8s_openapi::{
     apimachinery::pkg::util::intstr::IntOrString,
 };
 use support::fs::FileSystem;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace};
 use uuid::Uuid;
 
@@ -44,6 +45,7 @@ where
     k8s_client: KubernetesClient,
     filesystem: FS,
     file_server_fw_task: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    delete_on_drop: Arc<Mutex<bool>>,
     pub(super) file_server_port: RwLock<Option<u16>>,
     pub(super) nodes: RwLock<HashMap<String, Arc<KubernetesNode<FS>>>>,
 }
@@ -74,6 +76,7 @@ where
             file_server_port: RwLock::new(None),
             file_server_fw_task: RwLock::new(None),
             nodes: RwLock::new(HashMap::new()),
+            delete_on_drop: Arc::new(Mutex::new(true)),
         });
 
         namespace.initialize().await?;
@@ -304,6 +307,31 @@ where
 
         Ok(())
     }
+
+    pub async fn delete_on_drop(&self, delete_on_drop: bool) {
+        *self.delete_on_drop.lock().await = delete_on_drop;
+    }
+}
+
+impl<FS> Drop for KubernetesNamespace<FS>
+where
+    FS: FileSystem + Send + Sync + Clone,
+{
+    fn drop(&mut self) {
+        let ns_name = self.name.clone();
+        if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
+            if *delete_on_drop {
+                let client = self.k8s_client.clone();
+                futures::executor::block_on(async move {
+                    trace!("🧟 deleting ns {ns_name} from cluster");
+                    let _ = client.delete_namespace(&ns_name).await;
+                    trace!("✅ deleted");
+                });
+            } else {
+                trace!("⚠️ leaking ns {ns_name} in cluster");
+            }
+        };
+    }
 }
 
 #[async_trait]
@@ -323,6 +351,10 @@ where
         &self.capabilities
     }
 
+    async fn detach(&self) {
+        self.delete_on_drop(false).await;
+    }
+
     async fn nodes(&self) -> HashMap<String, DynNode> {
         self.nodes
             .read()
@@ -330,6 +362,30 @@ where
             .iter()
             .map(|(name, node)| (name.clone(), node.clone() as DynNode))
             .collect()
+    }
+
+    async fn get_node_available_args(
+        &self,
+        (command, image): (String, Option<String>),
+    ) -> Result<String, ProviderError> {
+        let node_image = image.expect(&format!("image should be present when getting node available args with kubernetes provider {THIS_IS_A_BUG}"));
+
+        // run dummy command in new pod
+        let temp_node = self
+            .spawn_node(
+                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
+                    .image(node_image.clone()),
+            )
+            .await?;
+
+        let available_args_output = temp_node
+            .run_command(RunCommandOptions::new(command.clone()).args(vec!["--help"]))
+            .await?
+            .map_err(|(_exit, status)| {
+                ProviderError::NodeAvailableArgsError(node_image, command, status)
+            })?;
+
+        Ok(available_args_output)
     }
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
@@ -370,7 +426,7 @@ where
             .unwrap_or_else(|| format!("temp-{}", Uuid::new_v4()));
         let node_image = options
             .image
-            .expect("image should be present when generating files with kubernetes provider");
+            .expect(&format!("image should be present when generating files with kubernetes provider {THIS_IS_A_BUG}"));
 
         // run dummy command in new pod
         let temp_node = self

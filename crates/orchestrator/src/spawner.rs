@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
+use configuration::shared::constants::THIS_IS_A_BUG;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR},
     shared::helpers::running_in_ci,
@@ -130,9 +131,9 @@ where
             generators::generate_node_command(node, gen_opts, maybe_para_id)
         },
         ZombieRole::CumulusCollator => {
-            let para = ctx
-                .parachain
-                .expect("parachain must be part of the context, this is a bug");
+            let para = ctx.parachain.expect(&format!(
+                "parachain must be part of the context {THIS_IS_A_BUG}"
+            ));
             let full_p2p = generators::generate_node_port(None)?;
             generators::generate_node_command_cumulus(node, gen_opts, para.id, full_p2p.0)
         },

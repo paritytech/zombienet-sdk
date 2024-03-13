@@ -1,5 +1,5 @@
 // TODO(Javier): Remove when we implement the logic in the orchestrator to spawn with the provider.
-#![allow(dead_code)]
+#![allow(dead_code, clippy::expect_fun_call)]
 
 pub mod errors;
 mod generators;
@@ -84,6 +84,10 @@ where
 
         // create namespace
         let ns = self.provider.create_namespace().await?;
+
+        network_spec
+            .populate_nodes_available_args(ns.clone())
+            .await?;
 
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());

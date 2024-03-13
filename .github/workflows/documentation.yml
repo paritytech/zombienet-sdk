@@ -35,7 +35,7 @@ jobs:
       - name: Create docs
         run: |
           cargo doc --no-deps
-          echo "<meta http-equiv=\"refresh\" content=\"0; url=configuration\">" > target/doc/index.html
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=zombienet_sdk\">" > target/doc/index.html
 
 
 

@@ -226,9 +226,14 @@ where
             .current_dir(&self.base_dir)
             .spawn()
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
-
-        let stdout = process.stdout.take().expect("infaillible, stdout is piped");
-        let stderr = process.stderr.take().expect("infaillible, stderr is piped");
+        let stdout = process
+            .stdout
+            .take()
+            .expect(&format!("infaillible, stdout is piped {THIS_IS_A_BUG}"));
+        let stderr = process
+            .stderr
+            .take()
+            .expect(&format!("infaillible, stderr is piped {THIS_IS_A_BUG}"));
 
         self.process.write().await.replace(process);
 

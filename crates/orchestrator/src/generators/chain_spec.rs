@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::AssetLocation, HrmpChannelConfig};
+use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation, HrmpChannelConfig};
 use provider::{
     constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
@@ -835,7 +835,9 @@ fn add_aura_authorities(
                 node.accounts
                     .accounts
                     .get("sr")
-                    .expect("'sr' account should be set at spec computation, this is a bug")
+                    .expect(&format!(
+                        "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
+                    ))
                     .address
                     .clone()
             })
@@ -880,7 +882,9 @@ fn add_collator_selection(
                 node.accounts
                     .accounts
                     .get("sr")
-                    .expect("'sr' account should be set at spec computation, this is a bug")
+                    .expect(&format!(
+                        "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
+                    ))
                     .address
                     .clone()
             })

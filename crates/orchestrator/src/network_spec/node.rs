@@ -1,4 +1,5 @@
 use configuration::shared::{
+    constants::THIS_IS_A_BUG,
     node::{EnvVar, NodeConfig},
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
@@ -68,6 +69,9 @@ pub struct NodeSpec {
 
     /// Arguments to use for node. Appended to default.
     pub(crate) args: Vec<Arg>,
+
+    // The help command output containing the available arguments.
+    pub(crate) available_args_output: Option<String>,
 
     /// Wether the node is a validator.
     pub(crate) is_validator: bool,
@@ -164,6 +168,7 @@ impl NodeSpec {
             command,
             subcommand,
             args,
+            available_args_output: None,
             is_validator: node_config.is_validator(),
             is_invulnerable: node_config.is_invulnerable(),
             is_bootnode: node_config.is_bootnode(),
@@ -243,6 +248,7 @@ impl NodeSpec {
             command,
             subcommand,
             args,
+            available_args_output: None,
             is_validator: options.is_validator,
             is_invulnerable: false,
             is_bootnode: false,
@@ -259,5 +265,14 @@ impl NodeSpec {
             prometheus_port: generators::generate_node_port(options.prometheus_port)?,
             p2p_port: generators::generate_node_port(options.p2p_port)?,
         })
+    }
+
+    pub(crate) fn supports_arg(&self, arg: impl AsRef<str>) -> bool {
+        self.available_args_output
+            .as_ref()
+            .expect(&format!(
+                "available args should be present at this point {THIS_IS_A_BUG}"
+            ))
+            .contains(arg.as_ref())
     }
 }

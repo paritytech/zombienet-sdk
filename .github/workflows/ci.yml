@@ -55,7 +55,7 @@ jobs:
   coverage:
     name: Zombienet SDK - coverage
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: github.event_name == 'pull_request'
 
     permissions:
@@ -83,7 +83,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Collect coverage data
-        run: cargo llvm-cov nextest --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --exclude zombienet-sdk --test-threads 1 --lcov --output-path lcov.info
 
       - name: Report code coverage
         uses: Nef10/lcov-reporter-action@v0.4.0

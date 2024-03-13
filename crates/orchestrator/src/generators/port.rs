@@ -1,6 +1,6 @@
 use std::net::TcpListener;
 
-use configuration::shared::types::Port;
+use configuration::shared::{constants::THIS_IS_A_BUG, types::Port};
 
 use super::errors::GeneratorError;
 use crate::shared::types::ParkedPort;
@@ -18,7 +18,9 @@ pub fn generate(port: Option<Port>) -> Result<ParkedPort, GeneratorError> {
         .map_err(|_e| GeneratorError::PortGeneration(port, "Can't bind".into()))?;
     let port = listener
         .local_addr()
-        .expect("We should always get the local_addr from the listener, please report as bug")
+        .expect(&format!(
+            "We should always get the local_addr from the listener {THIS_IS_A_BUG}"
+        ))
         .port();
     Ok(ParkedPort::new(port, listener))
 }

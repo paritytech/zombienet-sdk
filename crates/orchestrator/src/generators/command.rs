@@ -1,4 +1,4 @@
-use configuration::types::Arg;
+use configuration::{shared::constants::THIS_IS_A_BUG, types::Arg};
 
 use crate::{network_spec::node::NodeSpec, shared::constants::*};
 
@@ -232,8 +232,9 @@ pub fn generate_for_node(
 
     if *is_validator && !args.contains(&Arg::Flag("--validator".into())) {
         tmp_args.push("--validator".into());
-        // TODO: we need to impl cli args checking
-        tmp_args.push("--insecure-validator-i-know-what-i-do".into());
+        if node.supports_arg("--insecure-validator-i-know-what-i-do") {
+            tmp_args.push("--insecure-validator-i-know-what-i-do".into());
+        }
     }
 
     if !bootnodes_addresses.is_empty() {
@@ -285,7 +286,7 @@ pub fn generate_for_node(
         // TODO: move this to error
         let port_part = parts
             .get_mut(4)
-            .expect("should have at least 5 parts, this is a bug");
+            .expect(&format!("should have at least 5 parts {THIS_IS_A_BUG}"));
         let port_to_use = p2p_port.to_string();
         *port_part = port_to_use.as_str();
         parts.join("/")

@@ -21,10 +21,14 @@ use crate::{
     utils::{default_as_true, default_initial_balance},
 };
 
+/// The registration strategy that will be used for the parachain.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegistrationStrategy {
+    /// The parachain will be added to the genesis before spawning.
     InGenesis,
+    /// The parachain will be registered using an extrinsic after spawning.
     UsingExtrinsic,
+    /// The parachaing will be registered manually.
     Manual,
 }
 
@@ -129,7 +133,7 @@ pub struct ParachainConfig {
     bootnodes_addresses: Vec<Multiaddr>,
     genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
-    pub collators: Vec<NodeConfig>,
+    pub(crate) collators: Vec<NodeConfig>,
 }
 
 impl ParachainConfig {
@@ -317,6 +321,7 @@ impl<A, C> ParachainConfigBuilder<A, C> {
 }
 
 impl ParachainConfigBuilder<Initial, Bootstrap> {
+    /// Instantiate a new builder that can be used to build a [`ParachainConfig`] during the bootstrap phase.
     pub fn new(
         validation_context: Rc<RefCell<ValidationContext>>,
     ) -> ParachainConfigBuilder<Initial, Bootstrap> {
@@ -329,7 +334,7 @@ impl ParachainConfigBuilder<Initial, Bootstrap> {
 
 impl ParachainConfigBuilder<WithId, Bootstrap> {
     /// Set the registration strategy for the parachain, could be Manual (no registered by zombienet) or automatic
-    ///  using an extrinsic or in genesis.
+    /// using an extrinsic or in genesis.
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         Self::transition(
             ParachainConfig {
@@ -344,7 +349,7 @@ impl ParachainConfigBuilder<WithId, Bootstrap> {
 
 impl ParachainConfigBuilder<WithId, Running> {
     /// Set the registration strategy for the parachain, could be Manual (no registered by zombienet) or automatic
-    ///  using an extrinsic. Genesis option is not allowed in `Running` context.
+    /// using an extrinsic. Genesis option is not allowed in `Running` context.
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         match strategy {
             RegistrationStrategy::InGenesis => Self::transition(

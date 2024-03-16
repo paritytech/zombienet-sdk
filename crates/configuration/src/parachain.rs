@@ -28,7 +28,7 @@ pub enum RegistrationStrategy {
     InGenesis,
     /// The parachain will be registered using an extrinsic after spawning.
     UsingExtrinsic,
-    /// The parachaing will be registered manually.
+    /// The parachaing will not be registered and the user can doit after spawning manually.
     Manual,
 }
 

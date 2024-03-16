@@ -349,7 +349,7 @@ impl ParachainConfigBuilder<WithId, Bootstrap> {
 
 impl ParachainConfigBuilder<WithId, Running> {
     /// Set the registration strategy for the parachain, could be Manual (no registered by zombienet) or automatic
-    /// using an extrinsic. Genesis option is not allowed in `Running` context.
+    /// Using an extrinsic. Genesis option is not allowed in `Running` context.
     pub fn with_registration_strategy(self, strategy: RegistrationStrategy) -> Self {
         match strategy {
             RegistrationStrategy::InGenesis => Self::transition(

@@ -149,16 +149,26 @@ impl NetworkNode {
         metric_name: impl Into<String>,
         value: impl Into<f64>,
     ) -> Result<bool, anyhow::Error> {
+        let value: f64 = value.into();
+        self.assert_with(metric_name, |v| v == value).await
+    }
+
+    /// Assert on a metric value using a given predicate.
+    /// See [`assert`] description for details.
+    pub async fn assert_with(
+        &self,
+        metric_name: impl Into<String>,
+        predicate: impl Fn(f64) -> bool,
+    ) -> Result<bool, anyhow::Error> {
         let metric_name = metric_name.into();
-        let value = value.into();
         let val = self.metric(&metric_name).await?;
-        if val == value {
+        if predicate(val) {
             Ok(true)
         } else {
             // reload metrics
             self.fetch_metrics().await?;
             let val = self.metric(&metric_name).await?;
-            Ok(val == value)
+            Ok(predicate(val))
         }
     }
 

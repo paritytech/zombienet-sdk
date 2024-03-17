@@ -520,7 +520,8 @@ impl<T: FileSystem> Network<T> {
         }
 
         let list = self
-        .nodes_iter().map(|n| &n.name)
+            .nodes_iter()
+            .map(|n| &n.name)
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");

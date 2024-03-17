@@ -44,7 +44,7 @@ where
     namespace: Weak<NativeNamespace<FS>>,
     name: String,
     program: String,
-    args: Vec<String>,
+    args: RwLock<Vec<String>>,
     env: Vec<(String, String)>,
     base_dir: PathBuf,
     config_dir: PathBuf,
@@ -101,7 +101,7 @@ where
             namespace: namespace.clone(),
             name: name.to_string(),
             program: program.to_string(),
-            args: args.to_vec(),
+            args: RwLock::new(args.to_vec()),
             env: env.to_vec(),
             base_dir,
             config_dir,
@@ -128,6 +128,10 @@ where
         node.initialize_log_writing(stdout, stderr).await;
 
         Ok(node)
+    }
+
+    pub(super) async fn set_args(&self, args: &[String]) {
+        *(self.args.write().await) = args.to_vec().into();
     }
 
     async fn initialize_startup_paths(&self, paths: &[PathBuf]) -> Result<(), ProviderError> {
@@ -217,7 +221,7 @@ where
 
     async fn initialize_process(&self) -> Result<(ChildStdout, ChildStderr), ProviderError> {
         let mut process = Command::new(&self.program)
-            .args(&self.args)
+            .args(self.args.read().await.iter())
             .envs(self.env.to_vec())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -359,8 +363,8 @@ where
         &self.name
     }
 
-    fn args(&self) -> Vec<&str> {
-        self.args.iter().map(|arg| arg.as_str()).collect()
+    async fn args(&self) -> Vec<String> {
+        self.args.read().await.clone()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -529,6 +533,19 @@ where
 
         nix::sys::signal::kill(process_id, Signal::SIGCONT)
             .map_err(|err| ProviderError::ResumeNodeFailed(self.name.clone(), err.into()))?;
+
+        Ok(())
+    }
+
+    async fn kill(&self) -> Result<(), ProviderError> {
+        self.abort()
+            .await
+            .map_err(|err| ProviderError::KillNodeFailed(self.name.clone(), err))
+    }
+
+    async fn respawn(&self) -> Result<(), ProviderError> {
+        let (stdout, stderr) = self.initialize_process().await?;
+        self.initialize_log_writing(stdout, stderr).await;
 
         Ok(())
     }

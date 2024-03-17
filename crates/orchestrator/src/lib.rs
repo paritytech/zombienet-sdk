@@ -2,7 +2,7 @@
 #![allow(dead_code, clippy::expect_fun_call)]
 
 pub mod errors;
-mod generators;
+pub mod generators;
 pub mod network;
 mod network_helper;
 mod network_spec;
@@ -252,7 +252,7 @@ where
                     } else {
                         node.spec.p2p_port.0
                     },
-                    node.inner.args().as_ref(),
+                    node.inner.args().await.as_ref(),
                     &node.spec.p2p_cert_hash,
                 )?,
             );

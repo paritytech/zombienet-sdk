@@ -418,6 +418,14 @@ where
         Ok(node)
     }
 
+    async fn respawn_node(
+        &self,
+        _name: &str,
+        _args: Vec<String>,
+    ) -> Result<DynNode, ProviderError> {
+        todo!()
+    }
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
         debug!("options {:#?}", options);
 

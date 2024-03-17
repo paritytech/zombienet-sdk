@@ -16,7 +16,7 @@ use support::fs::FileSystem;
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
     generators::chain_spec::ChainSpec,
-    network_spec::{self, NetworkSpec},
+    network_spec::{self, node::NodeSpec, NetworkSpec},
     shared::{
         macros,
         types::{ChainDefaultContext, RegisterParachainOptions},
@@ -31,7 +31,6 @@ pub struct Network<T: FileSystem> {
     relay: Relaychain,
     initial_spec: NetworkSpec,
     parachains: HashMap<u32, Parachain>,
-    nodes_by_name: HashMap<String, NetworkNode>,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -41,7 +40,6 @@ impl<T: FileSystem> std::fmt::Debug for Network<T> {
             .field("relay", &self.relay)
             .field("initial_spec", &self.initial_spec)
             .field("parachains", &self.parachains)
-            .field("nodes_by_name", &self.nodes_by_name)
             .finish()
     }
 }
@@ -68,7 +66,6 @@ impl<T: FileSystem> Network<T> {
             relay,
             initial_spec,
             parachains: Default::default(),
-            nodes_by_name: Default::default(),
         }
     }
 
@@ -122,7 +119,7 @@ impl<T: FileSystem> Network<T> {
         let name = name.into();
         let relaychain = self.relaychain();
 
-        if self.nodes_by_name.contains_key(&name) {
+        if self.nodes_iter().any(|n| n.name == name) {
             return Err(anyhow::anyhow!("Name: {} is already used.", name));
         }
 
@@ -178,10 +175,42 @@ impl<T: FileSystem> Network<T> {
         //     // tx_helper::validator_actions::register(vec![&node], &running_node.ws_uri, None).await?;
         // }
 
-        // Add node to the global hash
+        // Add node to relay
         self.add_running_node(node.clone(), None);
-        // add node to relay
-        self.relay.nodes.push(node);
+
+        Ok(())
+    }
+
+    /// Replace an already existing but now dead node spawning a new node with a given spec
+    /// (which can be obtained from the old node and modified if needed).
+    /// The spec should contain a node name already existing in the network, otherwise the call
+    /// fails.
+    ///
+    /// TODO: It doesn't currently check if the node in question is actually dead. Trying to
+    /// replace a running node is a possible UD.
+    pub async fn replace_node(&mut self, spec: NodeSpec) -> Result<(), anyhow::Error> {
+        if self.nodes_iter().all(|n| n.name != spec.name) {
+            return Err(anyhow::anyhow!("Name: {} is not found.", spec.name));
+        }
+
+        let relaychain = self.relaychain();
+        let base_dir = self.ns.base_dir().to_string_lossy();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+
+        let ctx = SpawnNodeCtx {
+            chain_id: &relaychain.chain_id,
+            parachain_id: None,
+            chain: &relaychain.chain,
+            role: ZombieRole::Node,
+            ns: &self.ns,
+            scoped_fs: &scoped_fs,
+            parachain: None,
+            bootnodes_addr: &vec![],
+            wait_ready: true,
+        };
+
+        let node = spawner::respawn_node(&spec, &ctx).await?;
+        self.replace_running_node(node)?;
 
         Ok(())
     }
@@ -294,8 +323,6 @@ impl<T: FileSystem> Network<T> {
             network_spec::node::NodeSpec::from_ad_hoc(name.into(), options.into(), &chain_context)?;
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
-        let para = self.parachains.get_mut(&para_id).unwrap();
-        para.collators.push(node.clone());
         self.add_running_node(node, None);
 
         Ok(())
@@ -487,14 +514,13 @@ impl<T: FileSystem> Network<T> {
     // remove_parachain()
 
     pub fn get_node(&self, name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
-        let name = &name.into();
-        if let Some(node) = self.nodes_by_name.get(name) {
+        let name = name.into();
+        if let Some(node) = self.nodes_iter().find(|&n| n.name == name) {
             return Ok(node);
         }
 
         let list = self
-            .nodes_by_name
-            .keys()
+        .nodes_iter().map(|n| &n.name)
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");
@@ -504,8 +530,18 @@ impl<T: FileSystem> Network<T> {
         ))
     }
 
+    pub fn get_node_mut(
+        &mut self,
+        name: impl Into<String>,
+    ) -> Result<&mut NetworkNode, anyhow::Error> {
+        let name = name.into();
+        self.nodes_iter_mut()
+            .find(|n| n.name == name)
+            .ok_or(anyhow::anyhow!("can't find node with name: {name:?}"))
+    }
+
     pub fn nodes(&self) -> Vec<&NetworkNode> {
-        self.nodes_by_name.values().collect::<Vec<&NetworkNode>>()
+        self.nodes_iter().collect()
     }
 
     pub async fn detach(&self) {
@@ -524,9 +560,12 @@ impl<T: FileSystem> Network<T> {
         } else {
             self.relay.nodes.push(node.clone());
         }
-        // TODO: we should hold a ref to the node in the vec in the future.
-        let node_name = node.name.clone();
-        self.nodes_by_name.insert(node_name, node);
+    }
+
+    pub(crate) fn replace_running_node(&mut self, node: NetworkNode) -> Result<(), anyhow::Error> {
+        let old_node = self.get_node_mut(&node.name)?;
+        *old_node = node;
+        Ok(())
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {
@@ -543,5 +582,21 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn parachains(&self) -> Vec<&Parachain> {
         self.parachains.values().collect()
+    }
+
+    pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
+        self.relay
+            .nodes
+            .iter()
+            .chain(self.parachains.iter().map(|(_, p)| &p.collators).flatten())
+    }
+
+    pub(crate) fn nodes_iter_mut(&mut self) -> impl Iterator<Item = &mut NetworkNode> {
+        self.relay.nodes.iter_mut().chain(
+            self.parachains
+                .iter_mut()
+                .map(|(_, p)| &mut p.collators)
+                .flatten(),
+        )
     }
 }

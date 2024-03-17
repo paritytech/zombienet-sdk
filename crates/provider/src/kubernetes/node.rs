@@ -401,8 +401,8 @@ where
         &self.name
     }
 
-    fn args(&self) -> Vec<&str> {
-        self.args.iter().map(|arg| arg.as_str()).collect()
+    async fn args(&self) -> Vec<String> {
+        self.args.clone()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -654,6 +654,14 @@ where
             })?;
 
         Ok(())
+    }
+
+    async fn kill(&self) -> Result<(), ProviderError> {
+        todo!()
+    }
+
+    async fn respawn(&self) -> Result<(), ProviderError> {
+        todo!()
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {

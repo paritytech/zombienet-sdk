@@ -118,6 +118,11 @@ impl NetworkNode {
         Ok(())
     }
 
+    pub async fn kill(&self) -> Result<(), anyhow::Error> {
+        self.inner.kill().await?;
+        Ok(())
+    }
+
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
         self.inner.restart(after).await?;

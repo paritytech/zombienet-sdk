@@ -227,3 +227,125 @@ where
         running_node,
     ))
 }
+
+// TODO: Effectively it's a cut down copy-pasted version of `spawn_node`. Code duplication
+// should be addressed.
+pub async fn respawn_node<'a, T>(
+    node: &NodeSpec,
+    ctx: &SpawnNodeCtx<'a, T>,
+) -> Result<NetworkNode, anyhow::Error>
+where
+    T: FileSystem,
+{
+    let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
+
+    let (cfg_path, data_path, relay_data_path) = if !ctx.ns.capabilities().prefix_with_full_path {
+        (
+            NODE_CONFIG_DIR.into(),
+            NODE_DATA_DIR.into(),
+            NODE_RELAY_DATA_DIR.into(),
+        )
+    } else {
+        let cfg_path = format!("{}{NODE_CONFIG_DIR}", &base_dir);
+        let data_path = format!("{}{NODE_DATA_DIR}", &base_dir);
+        let relay_data_path = format!("{}{NODE_RELAY_DATA_DIR}", &base_dir);
+        (cfg_path, data_path, relay_data_path)
+    };
+
+    let gen_opts = generators::GenCmdOptions {
+        relay_chain_name: ctx.chain,
+        cfg_path: &cfg_path,               // TODO: get from provider/ns
+        data_path: &data_path,             // TODO: get from provider
+        relay_data_path: &relay_data_path, // TODO: get from provider
+        use_wrapper: false,                // TODO: get from provider
+        bootnode_addr: ctx.bootnodes_addr.clone(),
+        // IFF the provider require an image (e.g k8s) we should use the default ports in the cmd.
+        use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
+    };
+
+    let (program, args) = match ctx.role {
+        // Collator should be `non-cumulus` one (e.g adder/undying)
+        ZombieRole::Node | ZombieRole::Collator => {
+            let maybe_para_id = ctx.parachain.map(|para| para.id);
+
+            generators::generate_node_command(node, gen_opts, maybe_para_id)
+        },
+        ZombieRole::CumulusCollator => {
+            let para = ctx.parachain.expect(&format!(
+                "parachain must be part of the context {THIS_IS_A_BUG}"
+            ));
+            let full_p2p = generators::generate_node_port(None)?;
+            generators::generate_node_command_cumulus(node, gen_opts, para.id, full_p2p.0)
+        },
+        _ => unreachable!(), /* TODO: do we need those?
+                              * ZombieRole::Bootnode => todo!(),
+                              * ZombieRole::Companion => todo!(), */
+    };
+
+    info!(
+        "🚀 {}, respawning.... with command: {} {}",
+        node.name,
+        program,
+        args.join(" ")
+    );
+
+    // Drops the port parking listeners before spawn
+    node.ws_port.drop_listener();
+    node.p2p_port.drop_listener();
+    node.rpc_port.drop_listener();
+    node.prometheus_port.drop_listener();
+
+    let running_node = ctx
+        .ns
+        .respawn_node(&node.name, args)
+        .await
+        .with_context(|| format!("Failed to respawn node: {}", node.name))?;
+
+    let mut ip_to_use = LOCALHOST;
+
+    let (rpc_port_external, prometheus_port_external);
+
+    // Create port-forward iff we are not in CI
+    if !running_in_ci() {
+        let ports = futures::future::try_join_all(vec![
+            running_node.create_port_forward(node.rpc_port.0, RPC_PORT),
+            running_node.create_port_forward(node.prometheus_port.0, PROMETHEUS_PORT),
+        ])
+        .await?;
+
+        (rpc_port_external, prometheus_port_external) = (
+            ports[0].unwrap_or(node.rpc_port.0),
+            ports[1].unwrap_or(node.prometheus_port.0),
+        );
+    } else {
+        // running in ci requrire to use ip and default port
+        (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
+        ip_to_use = running_node.ip().await?;
+    }
+
+    let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);
+    let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
+    info!("🚀 {}, should be running now", node.name);
+    info!(
+        "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
+        node.name
+    );
+    info!("🚀 {}: metrics link {prometheus_uri}", node.name);
+    // TODO: the cmd for the logs should live on the node or ns.
+    if ctx.ns.capabilities().requires_image {
+        info!(
+            "📓 logs cmd: kubectl -n {} logs {}",
+            ctx.ns.name(),
+            node.name
+        );
+    } else {
+        info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
+    }
+    Ok(NetworkNode::new(
+        node.name.clone(),
+        ws_uri,
+        prometheus_uri,
+        node.clone(),
+        running_node,
+    ))
+}

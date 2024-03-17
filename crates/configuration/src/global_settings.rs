@@ -72,6 +72,7 @@ impl GlobalSettingsBuilder {
         Self::default()
     }
 
+    // Transition to the next state of the builder.
     fn transition(config: GlobalSettings, errors: Vec<anyhow::Error>) -> Self {
         Self { config, errors }
     }

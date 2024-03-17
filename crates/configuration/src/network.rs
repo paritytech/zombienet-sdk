@@ -56,6 +56,7 @@ impl NetworkConfig {
         self.hrmp_channels.iter().collect::<Vec<_>>()
     }
 
+    /// A helper function to dump the network configuration to a TOML string.
     pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
         // This regex is used to replace the "" enclosed u128 value to a raw u128 because u128 is not supported for TOML serialization/deserialization.
         let re = Regex::new(r#""U128%(?<u128_value>\d+)""#)
@@ -65,6 +66,7 @@ impl NetworkConfig {
         Ok(re.replace_all(&toml_string, "$u128_value").to_string())
     }
 
+    /// A helper function to load a network configuration from a TOML file.
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
         let file_str = fs::read_to_string(path).expect(&format!("{} {}", RW_FAILED, THIS_IS_A_BUG));
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")

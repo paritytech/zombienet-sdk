@@ -9,9 +9,9 @@
 //!
 //! # Example
 //! ```
-//! use zombienet_configuration::{NetworkConfigBuilder};
+//! use zombienet_configuration::NetworkConfigBuilder;
 //!
-//! let simple_configuration = NetworkConfigBuilder::new();
+//! let simple_configuration = NetworkConfigBuilder::new()
 //!     .with_relaychain(|relaychain| {
 //!         relaychain
 //!             .with_chain("polkadot")
@@ -74,7 +74,7 @@
 //!     })
 //!     .build();
 //!
-//! assert!(network_config.is_ok())
+//! assert!(simple_configuration.is_ok())
 //! ```
 
 #![allow(clippy::expect_fun_call)]

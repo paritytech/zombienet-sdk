@@ -21,14 +21,16 @@ use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
 use tracing::trace;
 use url::Url;
 
-use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
+use super::{
+    client::KubernetesClient, namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder,
+};
 use crate::{
     constants::{
         NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
         PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
     },
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
-    KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
+    ProviderError, ProviderNamespace, ProviderNode,
 };
 
 pub(super) struct KubernetesNodeOptions<'a, FS>

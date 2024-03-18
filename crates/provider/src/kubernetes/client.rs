@@ -29,7 +29,7 @@ pub struct Error(#[from] anyhow::Error);
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Clone)]
-pub struct KubernetesClient {
+pub(super) struct KubernetesClient {
     inner: kube::Client,
 }
 

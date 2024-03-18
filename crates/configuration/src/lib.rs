@@ -11,7 +11,7 @@
 //! ```
 //! use zombienet_configuration::{NetworkConfigBuilder};
 //!
-//! let simple_configuration = NetworkConfigBuilder::new();
+//! let network_config = NetworkConfigBuilder::new()
 //!     .with_relaychain(|relaychain| {
 //!         relaychain
 //!             .with_chain("polkadot")

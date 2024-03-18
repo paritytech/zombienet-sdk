@@ -1,3 +1,16 @@
+//! This crate provide the differents providers that can be used to spawn a network with Zombienet.
+//! They are responsible to spawn nodes, run commands, copy files, etc and are mostly used
+//! by the orchestrator to spawn a network.
+//!
+//! # Example
+//! ```
+//! use zombienet_provider::{NativeProvider};
+//! use support::{LocalFileSystem};
+//!
+//! let filesystem = LocalFileSystem {};
+//! let provider = NativeProvider::new(filesystem);
+//! ```
+
 #![allow(clippy::expect_fun_call)]
 mod kubernetes;
 mod native;

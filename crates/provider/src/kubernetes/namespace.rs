@@ -19,7 +19,7 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace};
 use uuid::Uuid;
 
-use super::node::KubernetesNode;
+use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
@@ -28,7 +28,7 @@ use crate::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
     },
-    DynNode, KubernetesClient, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
+    DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";

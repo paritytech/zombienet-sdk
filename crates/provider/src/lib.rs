@@ -147,6 +147,8 @@ pub trait ProviderNamespace {
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
+    async fn respawn_node(&self, name: &str, args: Vec<String>) -> Result<DynNode, ProviderError>;
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
@@ -160,7 +162,7 @@ pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 pub trait ProviderNode {
     fn name(&self) -> &str;
 
-    fn args(&self) -> Vec<&str>;
+    async fn args(&self) -> Vec<String>;
 
     fn base_dir(&self) -> &PathBuf;
 
@@ -220,6 +222,10 @@ pub trait ProviderNode {
     async fn pause(&self) -> Result<(), ProviderError>;
 
     async fn resume(&self) -> Result<(), ProviderError>;
+
+    async fn kill(&self) -> Result<(), ProviderError>;
+
+    async fn respawn(&self) -> Result<(), ProviderError>;
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError>;
 

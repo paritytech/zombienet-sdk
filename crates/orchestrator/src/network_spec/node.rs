@@ -50,10 +50,10 @@ pub struct NodeSpec {
     pub(crate) name: String,
 
     /// Node key, used for compute the p2p identity.
-    pub(crate) key: String,
+    pub key: String,
 
     // libp2p local identity
-    pub(crate) peer_id: String,
+    pub peer_id: String,
 
     /// Accounts to be injected in the keystore.
     pub(crate) accounts: NodeAccounts,

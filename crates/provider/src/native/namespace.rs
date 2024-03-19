@@ -134,6 +134,19 @@ where
         Ok(node)
     }
 
+    async fn respawn_node(&self, name: &str, args: Vec<String>) -> Result<DynNode, ProviderError> {
+        let nodes = self.nodes.read().await;
+
+        let node = nodes
+            .get(&name.to_owned())
+            .ok_or(ProviderError::MissingNode(name.to_owned()))?
+            .clone();
+        node.set_args(&args).await;
+        node.respawn().await?;
+
+        Ok(node)
+    }
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
         let node_name = if let Some(name) = options.temp_name {
             name

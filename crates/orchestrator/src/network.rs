@@ -122,7 +122,7 @@ impl<T: FileSystem> Network<T> {
         let name = name.into();
         let relaychain = self.relaychain();
 
-        if self.nodes_by_name.contains_key(&name) {
+        if self.nodes_iter().any(|n| n.name == name) {
             return Err(anyhow::anyhow!("Name: {} is already used.", name));
         }
 
@@ -178,10 +178,8 @@ impl<T: FileSystem> Network<T> {
         //     // tx_helper::validator_actions::register(vec![&node], &running_node.ws_uri, None).await?;
         // }
 
-        // Add node to the global hash
+        // Add node to relaychain data
         self.add_running_node(node.clone(), None);
-        // add node to relay
-        self.relay.nodes.push(node);
 
         Ok(())
     }
@@ -487,14 +485,14 @@ impl<T: FileSystem> Network<T> {
     // remove_parachain()
 
     pub fn get_node(&self, name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
-        let name = &name.into();
-        if let Some(node) = self.nodes_by_name.get(name) {
+        let name = name.into();
+        if let Some(node) = self.nodes_iter().find(|&n| n.name == name) {
             return Ok(node);
         }
 
         let list = self
-            .nodes_by_name
-            .keys()
+            .nodes_iter()
+            .map(|n| &n.name)
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");
@@ -502,6 +500,16 @@ impl<T: FileSystem> Network<T> {
         Err(anyhow::anyhow!(
             "can't find node with name: {name:?}, should be one of {list}"
         ))
+    }
+
+    pub fn get_node_mut(
+        &mut self,
+        name: impl Into<String>,
+    ) -> Result<&mut NetworkNode, anyhow::Error> {
+        let name = name.into();
+        self.nodes_iter_mut()
+            .find(|n| n.name == name)
+            .ok_or(anyhow::anyhow!("can't find node with name: {name:?}"))
     }
 
     pub fn nodes(&self) -> Vec<&NetworkNode> {
@@ -543,5 +551,21 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn parachains(&self) -> Vec<&Parachain> {
         self.parachains.values().collect()
+    }
+
+    pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
+        self.relay
+            .nodes
+            .iter()
+            .chain(self.parachains.iter().map(|(_, p)| &p.collators).flatten())
+    }
+
+    pub(crate) fn nodes_iter_mut(&mut self) -> impl Iterator<Item = &mut NetworkNode> {
+        self.relay.nodes.iter_mut().chain(
+            self.parachains
+                .iter_mut()
+                .map(|(_, p)| &mut p.collators)
+                .flatten(),
+        )
     }
 }

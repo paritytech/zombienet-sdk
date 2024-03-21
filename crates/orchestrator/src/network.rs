@@ -557,15 +557,14 @@ impl<T: FileSystem> Network<T> {
         self.relay
             .nodes
             .iter()
-            .chain(self.parachains.iter().map(|(_, p)| &p.collators).flatten())
+            .chain(self.parachains.values().flat_map(|p| &p.collators))
     }
 
     pub(crate) fn nodes_iter_mut(&mut self) -> impl Iterator<Item = &mut NetworkNode> {
         self.relay.nodes.iter_mut().chain(
             self.parachains
                 .iter_mut()
-                .map(|(_, p)| &mut p.collators)
-                .flatten(),
+                .flat_map(|(_, p)| &mut p.collators),
         )
     }
 }

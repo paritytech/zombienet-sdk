@@ -78,7 +78,8 @@ pub fn generate_for_cumulus_node(
     }
 
     // ports
-    let (prometheus_port, rpc_port, p2p_port) = resolve_ports(&node, options.use_default_ports_in_cmd);
+    let (prometheus_port, rpc_port, p2p_port) =
+        resolve_ports(node, options.use_default_ports_in_cmd);
 
     tmp_args.push("--prometheus-port".into());
     tmp_args.push(prometheus_port.to_string());
@@ -250,7 +251,8 @@ pub fn generate_for_node(
     }
 
     // ports
-    let (prometheus_port, rpc_port, p2p_port) = resolve_ports(&node, options.use_default_ports_in_cmd);
+    let (prometheus_port, rpc_port, p2p_port) =
+        resolve_ports(node, options.use_default_ports_in_cmd);
 
     // Prometheus
     tmp_args.push("--prometheus-port".into());

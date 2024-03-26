@@ -78,14 +78,17 @@ pub fn generate_for_cumulus_node(
     }
 
     // ports
+    let (prometheus_port, rpc_port, p2p_port) =
+        resolve_ports(node, options.use_default_ports_in_cmd);
+
     tmp_args.push("--prometheus-port".into());
-    tmp_args.push(node.prometheus_port.0.to_string());
+    tmp_args.push(prometheus_port.to_string());
 
     tmp_args.push("--rpc-port".into());
-    tmp_args.push(node.rpc_port.0.to_string());
+    tmp_args.push(rpc_port.to_string());
 
     tmp_args.push("--listen-addr".into());
-    tmp_args.push(format!("/ip4/0.0.0.0/tcp/{}/ws", node.p2p_port.0));
+    tmp_args.push(format!("/ip4/0.0.0.0/tcp/{}/ws", p2p_port));
 
     let mut collator_args: &[Arg] = &[];
     let mut full_node_args: &[Arg] = &[];
@@ -248,30 +251,18 @@ pub fn generate_for_node(
     }
 
     // ports
+    let (prometheus_port, rpc_port, p2p_port) =
+        resolve_ports(node, options.use_default_ports_in_cmd);
 
     // Prometheus
     tmp_args.push("--prometheus-port".into());
-    tmp_args.push(if options.use_default_ports_in_cmd {
-        PROMETHEUS_PORT.to_string()
-    } else {
-        node.prometheus_port.0.to_string()
-    });
+    tmp_args.push(prometheus_port.to_string());
 
     // RPC
     // TODO (team): do we want to support old --ws-port?
     tmp_args.push("--rpc-port".into());
-    tmp_args.push(if options.use_default_ports_in_cmd {
-        RPC_PORT.to_string()
-    } else {
-        node.rpc_port.0.to_string()
-    });
+    tmp_args.push(rpc_port.to_string());
 
-    // P2P
-    let p2p_port = if options.use_default_ports_in_cmd {
-        P2P_PORT
-    } else {
-        node.p2p_port.0
-    };
     let listen_value = if let Some(listen_val) = args.iter().find_map(|arg| match arg {
         Arg::Flag(_) => None,
         Arg::Option(k, v) => {
@@ -360,5 +351,14 @@ pub fn generate_for_node(
         ("/cfg/zombie-wrapper.sh".to_string(), final_args)
     } else {
         (final_args.remove(0), final_args)
+    }
+}
+
+/// Returns (prometheus, rpc, p2p) ports to use in the command
+fn resolve_ports(node: &NodeSpec, use_default_ports_in_cmd: bool) -> (u16, u16, u16) {
+    if use_default_ports_in_cmd {
+        (PROMETHEUS_PORT, RPC_PORT, P2P_PORT)
+    } else {
+        (node.prometheus_port.0, node.rpc_port.0, node.p2p_port.0)
     }
 }

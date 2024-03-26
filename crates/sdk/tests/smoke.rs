@@ -119,6 +119,16 @@ async fn ci_k8s_basic_functionalities_should_works() {
 
     println!("parachains registered: {:?}", paras);
 
+    // collator
+    let collator = network.get_node("collator").unwrap();
+    let client = collator.client::<subxt::PolkadotConfig>().await.unwrap();
+
+    // wait 3 blocks
+    let mut blocks = client.blocks().subscribe_finalized().await.unwrap().take(3);
+    while let Some(block) = blocks.next().await {
+        println!("Block (para) #{}", block.unwrap().header().number);
+    }
+
     // tear down (optional if you don't detach the network)
     // network.destroy().await.unwrap();
 }

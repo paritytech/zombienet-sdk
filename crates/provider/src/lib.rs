@@ -1,4 +1,5 @@
 #![allow(clippy::expect_fun_call)]
+mod docker;
 mod kubernetes;
 mod native;
 pub mod shared;
@@ -102,8 +103,8 @@ pub enum ProviderError {
     #[error("Error downloading file: '{0}': {1}")]
     DownloadFile(String, anyhow::Error),
 
-    #[error("Error sending file: '{0}': {1}")]
-    SendFile(String, anyhow::Error),
+    #[error("Error sending file '{0}' to {1}: {2}")]
+    SendFile(String, String, anyhow::Error),
 
     #[error("Error creating port-forward '{0}:{1}': {2}")]
     PortForwardError(u16, u16, anyhow::Error),
@@ -231,5 +232,6 @@ pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 // re-export
 pub use kubernetes::*;
 pub use native::*;
+pub use docker::*;
 pub use shared::{constants, types};
 use tracing::warn;

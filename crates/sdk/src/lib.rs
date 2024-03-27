@@ -5,7 +5,7 @@ pub use orchestrator::{
     network::{node::NetworkNode, Network},
     AddCollatorOptions, AddNodeOptions, Orchestrator, PjsResult,
 };
-use provider::{KubernetesProvider, NativeProvider};
+use provider::{DockerProvider, KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;
 
 pub const PROVIDERS: [&str; 2] = ["k8s", "native"];
@@ -26,19 +26,29 @@ pub trait NetworkConfigExt {
     /// ```
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
     async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
+    async fn spawn_docker(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
 }
 
 #[async_trait]
 impl NetworkConfigExt for NetworkConfig {
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
-        let provider = NativeProvider::new(LocalFileSystem {});
-        let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+        let filesystem = LocalFileSystem;
+        let provider = NativeProvider::new(filesystem.clone());
+        let orchestrator = Orchestrator::new(filesystem, provider);
         orchestrator.spawn(self).await
     }
 
     async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
-        let provider = KubernetesProvider::new(LocalFileSystem {}).await;
-        let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+        let filesystem = LocalFileSystem;
+        let provider = KubernetesProvider::new(filesystem.clone()).await;
+        let orchestrator = Orchestrator::new(filesystem, provider);
+        orchestrator.spawn(self).await
+    }
+
+    async fn spawn_docker(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
+        let filesystem = LocalFileSystem;
+        let provider = DockerProvider::new(filesystem.clone()).await;
+        let orchestrator = Orchestrator::new(filesystem, provider);
         orchestrator.spawn(self).await
     }
 }

@@ -144,8 +144,15 @@ impl<T: FileSystem> Network<T> {
             default_args: self.initial_spec.relaychain.default_args.iter().collect(),
         };
 
-        let node_spec =
+        let mut node_spec =
             network_spec::node::NodeSpec::from_ad_hoc(&name, options.into(), &chain_context)?;
+
+        node_spec.available_args_output = Some(
+            self.initial_spec
+                .node_available_args_output(&node_spec, self.ns.clone())
+                .await?,
+        );
+
         let base_dir = self.ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
@@ -288,8 +295,14 @@ impl<T: FileSystem> Network<T> {
             ));
         }
 
-        let node_spec =
+        let mut node_spec =
             network_spec::node::NodeSpec::from_ad_hoc(name.into(), options.into(), &chain_context)?;
+
+        node_spec.available_args_output = Some(
+            self.initial_spec
+                .node_available_args_output(&node_spec, self.ns.clone())
+                .await?,
+        );
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
         let para = self.parachains.get_mut(&para_id).unwrap();

@@ -7,7 +7,7 @@ use configuration::{
     shared::constants::THIS_IS_A_BUG, GlobalSettings, HrmpChannelConfig, NetworkConfig,
 };
 use futures::future::try_join_all;
-use provider::ProviderNamespace;
+use provider::{ProviderError, ProviderNamespace};
 use tracing::debug;
 
 use crate::errors::OrchestratorError;
@@ -80,6 +80,48 @@ impl NetworkSpec {
         );
 
         Ok(())
+    }
+
+    //
+    pub async fn node_available_args_output(
+        &self,
+        node_spec: &NodeSpec,
+        ns: Arc<dyn ProviderNamespace + Send + Sync>,
+    ) -> Result<String, ProviderError> {
+        // try to find a node that use the same combination of image/cmd
+        let cmp_fn = |ad_hoc: &&NodeSpec| -> bool {
+            ad_hoc.image == node_spec.image && ad_hoc.command == node_spec.command
+        };
+
+        // check if we already had computed the args output for this cmd/[image]
+        let node = self.relaychain.nodes.iter().find(cmp_fn);
+        let node = if let Some(node) = node {
+            Some(node)
+        } else {
+            let node = self
+                .parachains
+                .iter()
+                .find_map(|para| para.collators.iter().find(cmp_fn));
+
+            node
+        };
+
+        let output = if let Some(node) = node {
+            node.available_args_output.clone().expect(&format!(
+                "args_output should be set for running nodes {THIS_IS_A_BUG}"
+            ))
+        } else {
+            // we need to compute the args output
+            let image = node_spec
+                .image
+                .as_ref()
+                .map(|image| image.as_str().to_string());
+            let command = node_spec.command.as_str().to_string();
+
+            ns.get_node_available_args((command, image)).await?
+        };
+
+        Ok(output)
     }
 
     // collect mutable references to all nodes from relaychain and parachains

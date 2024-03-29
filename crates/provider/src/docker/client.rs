@@ -29,6 +29,84 @@ pub struct DockerClient {
     using_podman: bool,
 }
 
+#[derive(Debug)]
+pub struct ContainerRunOptions {
+    image: String,
+    command: Vec<String>,
+    env: Option<Vec<(String, String)>>,
+    volume_mounts: Option<HashMap<String, String>>,
+    name: Option<String>,
+    entrypoint: Option<String>,
+    rm: bool,
+}
+
+impl ContainerRunOptions {
+    pub fn new<S>(image: &str, command: Vec<S>) -> Self
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        ContainerRunOptions {
+            image: image.to_string(),
+            command: command
+                .clone()
+                .into_iter()
+                .map(|s| s.into())
+                .collect::<Vec<_>>(),
+            env: None,
+            volume_mounts: None,
+            name: None,
+            entrypoint: None,
+            rm: false,
+        }
+    }
+
+    pub fn env<S>(mut self, env: Vec<(S, S)>) -> Self
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        self.env = Some(
+            env.into_iter()
+                .map(|(name, value)| (name.into(), value.into()))
+                .collect(),
+        );
+        self
+    }
+
+    pub fn volume_mounts<S>(mut self, volume_mounts: HashMap<S, S>) -> Self
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        self.volume_mounts = Some(
+            volume_mounts
+                .into_iter()
+                .map(|(source, target)| (source.into(), target.into()))
+                .collect(),
+        );
+        self
+    }
+
+    pub fn name<S>(mut self, name: S) -> Self
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn entrypoint<S>(mut self, entrypoint: S) -> Self
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        self.entrypoint = Some(entrypoint.into());
+        self
+    }
+
+    pub fn rm(mut self) -> Self {
+        self.rm = true;
+        self
+    }
+}
+
 impl DockerClient {
     pub async fn new() -> Result<Self> {
         let using_podman = Self::is_using_podman().await?;
@@ -74,69 +152,54 @@ impl DockerClient {
         Ok(())
     }
 
-    pub async fn container_run<S>(
-        &self,
-        image: &str,
-        rm: bool,
-        command: Vec<S>,
-        env: Option<Vec<(S, S)>>,
-        volume_mounts: Option<HashMap<S, S>>,
-        name: Option<&str>,
-        entrypoint: Option<&str>,
-    ) -> Result<String>
-    where
-        S: Into<String> + std::fmt::Debug + Send + Clone,
-    {
+    pub async fn container_run(&self, options: ContainerRunOptions) -> Result<String> {
         let mut cmd = tokio::process::Command::new("docker");
-        cmd.args(["run"]);
+        cmd.args(["run", "-d"]);
 
-        if rm {
+        if options.rm {
             cmd.arg("--rm");
         }
 
-        if let Some(volume_mounts) = volume_mounts {
+        if let Some(entrypoint) = options.entrypoint {
+            cmd.args(["--entrypoint", &entrypoint]);
+        }
+
+        if let Some(volume_mounts) = options.volume_mounts {
             for (source, target) in volume_mounts {
-                cmd.args(["-v", &format!("{}:{}", source.into(), target.into())]);
+                cmd.args(["-v", &format!("{source}:{target}")]);
             }
         }
 
-        if let Some(name) = name {
-            cmd.args(["--name", name]);
+        if let Some(name) = options.name {
+            cmd.args(["--name", &name]);
         }
 
-        cmd.arg(image);
+        cmd.arg(&options.image);
 
-        for arg in command.clone() {
-            cmd.arg(arg.into());
+        for arg in &options.command {
+            cmd.arg(arg);
         }
 
-        if let Some(env) = env {
+        if let Some(env) = options.env {
             for env_var in env {
-                cmd.args(["-e", &format!("{}={}", env_var.0.into(), env_var.1.into())]);
+                cmd.args(["-e", &format!("{}={}", env_var.0, env_var.1)]);
             }
         }
 
         let result = cmd.output().await.map_err(|err| {
             anyhow!(
-                "Failed to run container with image '{image}' and command '{}': {err}",
-                command
-                    .clone()
-                    .into_iter()
-                    .map(|s| s.into())
-                    .collect::<Vec<_>>()
-                    .join(" "),
+                "Failed to run container with image '{image}' and command '{command}': {err}",
+                image = options.image,
+                command = options.command.join(" "),
             )
         })?;
 
         if !result.status.success() {
             return Err(anyhow!(
-                "Failed to run container with image '{image}' and command '{}': {}",
-                command
-                    .into_iter()
-                    .map(|s| s.into())
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                String::from_utf8_lossy(&result.stderr)
+                "Failed to run container with image '{image}' and command '{command}': {err}",
+                image = options.image,
+                command = options.command.join(" "),
+                err = String::from_utf8_lossy(&result.stderr)
             )
             .into());
         }
@@ -161,6 +224,8 @@ impl DockerClient {
                 cmd.args(["-e", &format!("{}={}", env_var.0.into(), env_var.1.into())]);
             }
         }
+
+        cmd.arg(name);
 
         cmd.args(
             command

@@ -248,6 +248,8 @@ where
                 ProviderError::NodeAvailableArgsError(node_image, command, status)
             })?;
 
+        temp_node.destroy().await?;
+
         Ok(available_args_output)
     }
 
@@ -339,6 +341,16 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        todo!()
+        let _ = self
+            .docker_client
+            .namespaced_containers_rm(&self.name)
+            .await
+            .map_err(|err| ProviderError::DeleteNamespaceFailed(self.name.clone(), err.into()))?;
+
+        if let Some(provider) = self.provider.upgrade() {
+            provider.namespaces.write().await.remove(&self.name);
+        }
+
+        Ok(())
     }
 }

@@ -385,6 +385,8 @@ where
                 ProviderError::NodeAvailableArgsError(node_image, command, status)
             })?;
 
+        temp_node.destroy().await?;
+
         Ok(available_args_output)
     }
 

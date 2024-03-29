@@ -513,6 +513,15 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
+        self.docker_client
+            .container_rm(&self.container_name)
+            .await
+            .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
+
+        if let Some(namespace) = self.namespace.upgrade() {
+            namespace.nodes.write().await.remove(&self.name);
+        }
+
         Ok(())
     }
 }

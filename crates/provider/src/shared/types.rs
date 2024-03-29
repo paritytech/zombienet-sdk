@@ -47,8 +47,6 @@ pub struct SpawnNodeOptions {
     /// Database snapshot to be injected (should be a tgz file)
     /// Could be a local or remote asset
     pub db_snapshot: Option<AssetLocation>,
-    /// Should the program be the entrypoint of the container (IFF is supported by the provider). Default to false.
-    pub program_as_entrypoint: bool,
 }
 
 impl SpawnNodeOptions {
@@ -66,7 +64,6 @@ impl SpawnNodeOptions {
             injected_files: vec![],
             created_paths: vec![],
             db_snapshot: None,
-            program_as_entrypoint: false,
         }
     }
 
@@ -126,11 +123,6 @@ impl SpawnNodeOptions {
             .into_iter()
             .map(|path| path.as_ref().into())
             .collect();
-        self
-    }
-
-    pub fn program_as_entrypoint(mut self) -> Self {
-        self.program_as_entrypoint = true;
         self
     }
 }

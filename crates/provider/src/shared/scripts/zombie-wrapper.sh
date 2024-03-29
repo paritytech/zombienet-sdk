@@ -9,6 +9,17 @@ if [ -f /cfg/coreutils ]; then
     KILL="/cfg/coreutils kill"
     SLEEP="/cfg/coreutils sleep"
     ECHO="/cfg/coreutils echo"
+elif [ -f /helpers/coreutils ]; then
+# used for docker/podman to have a single volume sharing helper binaries
+# across nodes independent from the /cfg where some files are stored 
+# by the node itself
+    RM="/helpers/coreutils rm"
+    MKFIFO="/helpers/coreutils mkfifo"
+    MKNOD="/helpers/coreutils mknod"
+    LS="/helpers/coreutils ls"
+    KILL="/helpers/coreutils kill"
+    SLEEP="/helpers/coreutils sleep"
+    ECHO="/helpers/coreutils echo"
 else
     RM="rm"
     MKFIFO="mkfifo"

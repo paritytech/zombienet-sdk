@@ -1,6 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{any, collections::HashMap, path::PathBuf};
 
 use anyhow::anyhow;
+use serde::{Deserialize, Deserializer};
 
 use crate::types::ExecutionResult;
 
@@ -9,20 +10,6 @@ use crate::types::ExecutionResult;
 pub struct Error(#[from] anyhow::Error);
 
 pub type Result<T> = core::result::Result<T, Error>;
-
-struct DockerContainer {
-    command: String,
-    created_at: String,
-    id: String,
-    image: String,
-    labels: String,
-    local_volumes: String,
-    mounts: String,
-    names: String,
-    networks: String,
-    ports: String,
-    state: String,
-}
 
 #[derive(Clone)]
 pub struct DockerClient {
@@ -38,6 +25,67 @@ pub struct ContainerRunOptions {
     name: Option<String>,
     entrypoint: Option<String>,
     rm: bool,
+}
+
+enum Container {
+    Docker(DockerContainer),
+    Podman(PodmanContainer),
+}
+
+#[derive(Deserialize, Debug)]
+struct DockerContainer {
+    #[serde(alias = "Names", deserialize_with = "deserialize_list")]
+    names: Vec<String>,
+    #[serde(alias = "Ports", deserialize_with = "deserialize_list")]
+    ports: Vec<String>,
+    #[serde(alias = "State")]
+    state: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct PodmanPort {
+    host_ip: String,
+    container_port: u16,
+    host_port: u16,
+    range: u16,
+    protocol: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct PodmanContainer {
+    #[serde(alias = "Id")]
+    id: String,
+    #[serde(alias = "Image")]
+    image: String,
+    #[serde(alias = "Mounts")]
+    mounts: Vec<String>,
+    #[serde(alias = "Names")]
+    names: Vec<String>,
+    #[serde(alias = "Ports", deserialize_with = "deserialize_null_as_default")]
+    ports: Vec<PodmanPort>,
+    #[serde(alias = "State")]
+    state: String,
+}
+
+fn deserialize_list<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let str_sequence = String::deserialize(deserializer)?;
+    Ok(str_sequence
+        .split(',')
+        .filter(|item| !item.is_empty())
+        .map(|item| item.to_owned())
+        .collect())
+}
+
+fn deserialize_null_as_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    T: Default + Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
 }
 
 impl ContainerRunOptions {
@@ -270,17 +318,127 @@ impl DockerClient {
             ])
             .output()
             .await
-            .map_err(|err| anyhow!("Failed to create volume '{name}': {err}"))?;
+            .map_err(|err| {
+                anyhow!(
+                    "Failed copy file '{file}' to container '{name}': {err}",
+                    file = local_path.to_string_lossy(),
+                )
+            })?;
 
         if !result.status.success() {
             return Err(anyhow!(
-                "Failed to copy file '{}' to container '{name}': {}",
-                local_path.to_string_lossy(),
-                String::from_utf8_lossy(&result.stderr)
+                "Failed to copy file '{file}' to container '{name}': {err}",
+                file = local_path.to_string_lossy(),
+                err = String::from_utf8_lossy(&result.stderr)
             )
             .into());
         }
 
         Ok(())
+    }
+
+    pub async fn container_rm(&self, name: &str) -> Result<()> {
+        let result = tokio::process::Command::new("docker")
+            .args(["rm", "--force", "--volumes", name])
+            .output()
+            .await
+            .map_err(|err| anyhow!("Failed do remove container '{name}: {err}"))?;
+
+        if !result.status.success() {
+            return Err(anyhow!(
+                "Failed to remove container '{name}': {err}",
+                err = String::from_utf8_lossy(&result.stderr)
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
+    pub async fn namespaced_containers_rm(&self, namespace: &str) -> Result<()> {
+        let container_names: Vec<String> = self
+            .get_containers()
+            .await?
+            .into_iter()
+            .filter_map(|container| match container {
+                Container::Docker(container) => {
+                    if let Some(name) = container.names.first() {
+                        if name.starts_with(namespace) {
+                            return Some(name.to_string());
+                        }
+                    }
+
+                    None
+                },
+                Container::Podman(container) => {
+                    if let Some(name) = container.names.first() {
+                        if name.starts_with(namespace) {
+                            return Some(name.to_string());
+                        }
+                    }
+
+                    None
+                },
+            })
+            .collect();
+
+        for name in container_names {
+            self.container_rm(&name).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_containers(&self) -> Result<Vec<Container>> {
+        let containers = if self.using_podman {
+            self.get_podman_containers()
+                .await?
+                .into_iter()
+                .map(Container::Podman)
+                .collect()
+        } else {
+            self.get_docker_containers()
+                .await?
+                .into_iter()
+                .map(Container::Docker)
+                .collect()
+        };
+
+        Ok(containers)
+    }
+
+    async fn get_podman_containers(&self) -> Result<Vec<PodmanContainer>> {
+        let res = tokio::process::Command::new("docker")
+            .args(vec!["ps", "--all", "--no-trunc", "--format", "json"])
+            .output()
+            .await
+            .map_err(|err| anyhow!("Failed to get podman containers output: {err}"))?;
+
+        let stdout = String::from_utf8_lossy(&res.stdout);
+
+        let containers = serde_json::from_str(&stdout)
+            .map_err(|err| anyhow!("Failed to parse podman containers output: {err}"))?;
+
+        Ok(containers)
+    }
+
+    async fn get_docker_containers(&self) -> Result<Vec<DockerContainer>> {
+        let res = tokio::process::Command::new("docker")
+            .args(vec!["ps", "--all", "--no-trunc", "--format", "json"])
+            .output()
+            .await
+            .unwrap();
+
+        let stdout = String::from_utf8_lossy(&res.stdout);
+
+        let mut containers = vec![];
+        for line in stdout.lines() {
+            containers.push(
+                serde_json::from_str::<DockerContainer>(line)
+                    .map_err(|err| anyhow!("Failed to parse docker container output: {err}"))?,
+            );
+        }
+
+        Ok(containers)
     }
 }

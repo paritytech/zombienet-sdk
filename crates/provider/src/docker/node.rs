@@ -12,15 +12,18 @@ use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation};
 use futures::future::try_join_all;
 use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
-use tracing::trace;
+use tracing::debug;
 
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     ProviderError, ProviderNamespace, ProviderNode,
 };
 
-use super::{client::DockerClient, namespace::DockerNamespace};
+use super::{
+    client::{ContainerRunOptions, DockerClient},
+    namespace::DockerNamespace,
+};
 
 pub(super) struct DockerNodeOptions<'a, FS>
 where
@@ -37,7 +40,6 @@ where
     pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) docker_client: &'a DockerClient,
     pub(super) filesystem: &'a FS,
-    pub(super) program_as_entrypoint: bool,
 }
 
 pub struct DockerNode<FS>
@@ -58,7 +60,6 @@ where
     log_path: PathBuf,
     docker_client: DockerClient,
     filesystem: FS,
-    program_as_entrypoint: bool,
 }
 
 impl<FS> DockerNode<FS>
@@ -107,7 +108,6 @@ where
             log_path,
             filesystem: filesystem.clone(),
             docker_client: options.docker_client.clone(),
-            program_as_entrypoint: options.program_as_entrypoint,
         });
 
         node.initialize_docker().await?;
@@ -124,33 +124,36 @@ where
     }
 
     async fn initialize_docker(&self) -> Result<(), ProviderError> {
-        let entrypoint = self
-            .program_as_entrypoint
-            .then(|| self.program.clone())
-            .or_else(|| Some("/scripts/zombie-wrapper.sh".into()));
-        let command = self
-            .program_as_entrypoint
-            .then(|| self.args.to_vec())
-            .unwrap_or_else(|| [vec![self.program.to_string()], self.args.to_vec()].concat());
+        let command = [vec![self.program.to_string()], self.args.to_vec()].concat();
 
         self.docker_client
             .container_run(
-                &self.image,
-                false,
-                command,
-                Some(self.env.clone()),
-                Some(HashMap::from([
-                    (
-                        format!("{}-zombie-wrapper", self.namespace_name(),),
-                        "/scripts".to_string(),
-                    ),
-                    (
-                        format!("{}-helper-binaries", self.namespace_name()),
-                        "/cfg".to_string(),
-                    ),
-                ])),
-                Some(&self.name),
-                entrypoint.as_deref(),
+                ContainerRunOptions::new(&self.image, command)
+                    .name(&self.name)
+                    .env(self.env.clone())
+                    .volume_mounts(HashMap::from([
+                        (
+                            format!("{}-zombie-wrapper", self.namespace_name(),),
+                            "/scripts".to_string(),
+                        ),
+                        (
+                            format!("{}-helper-binaries", self.namespace_name()),
+                            "/helpers".to_string(),
+                        ),
+                        (
+                            self.config_dir.to_string_lossy().into_owned(),
+                            "/cfg".to_string(),
+                        ),
+                        (
+                            self.data_dir.to_string_lossy().into_owned(),
+                            "/data".to_string(),
+                        ),
+                        (
+                            self.relay_data_dir.to_string_lossy().into_owned(),
+                            "/relay-data".to_string(),
+                        ),
+                    ]))
+                    .entrypoint("/scripts/zombie-wrapper.sh"),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -338,13 +341,14 @@ where
         local_port: u16,
         remote_port: u16,
     ) -> Result<Option<u16>, ProviderError> {
-        todo!()
+        Ok(None)
     }
 
     async fn run_command(
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
+        debug!("running command for {} with options {:?}", self.name, options);
         let command = [vec![options.program], options.args].concat();
 
         self.docker_client
@@ -385,6 +389,14 @@ where
         if let Some(remote_parent_dir) = self.get_remote_parent_dir(remote_file_path) {
             self.create_remote_dir(&remote_parent_dir).await?;
         }
+
+        debug!(
+            "starting sending file for {}: {} to {} with mode {}",
+            self.name,
+            local_file_path.to_string_lossy(),
+            remote_file_path.to_string_lossy(),
+            mode
+        );
 
         let _ = self
             .docker_client
@@ -430,7 +442,7 @@ where
     }
 
     async fn ip(&self) -> Result<IpAddr, ProviderError> {
-        todo!()
+        Ok(LOCALHOST)
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
@@ -495,6 +507,6 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        todo!()
+        Ok(())
     }
 }

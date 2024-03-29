@@ -22,7 +22,11 @@ use crate::{
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
 
-use super::{client::DockerClient, node::DockerNode, DockerProvider};
+use super::{
+    client::{ContainerRunOptions, DockerClient},
+    node::DockerNode,
+    DockerProvider,
+};
 
 pub struct DockerNamespace<FS>
 where
@@ -100,19 +104,18 @@ where
         // copy script to volume
         self.docker_client
             .container_run(
-                "alpine:latest",
-                true,
-                vec!["cp", "/zombie-wrapper.sh", "/scripts"],
-                None,
-                Some(HashMap::from([
+                ContainerRunOptions::new(
+                    "alpine:latest",
+                    vec!["cp", "/zombie-wrapper.sh", "/scripts"],
+                )
+                .volume_mounts(HashMap::from([
                     (
                         local_zombie_wrapper_path.to_string_lossy().as_ref(),
                         "/zombie-wrapper.sh",
                     ),
                     (&zombie_wrapper_volume_name, "/scripts"),
-                ])),
-                None,
-                None,
+                ]))
+                .rm(),
             )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
@@ -120,16 +123,12 @@ where
         // set permissions for rwx on whole volume recursively
         self.docker_client
             .container_run(
-                "alpine:latest",
-                true,
-                vec!["chmod", "-R", "777", "/scripts"],
-                None,
-                Some(HashMap::from([(
-                    zombie_wrapper_volume_name.as_ref(),
-                    "/scripts",
-                )])),
-                None,
-                None,
+                ContainerRunOptions::new("alpine:latest", vec!["chmod", "-R", "777", "/scripts"])
+                    .volume_mounts(HashMap::from([(
+                        zombie_wrapper_volume_name.as_ref(),
+                        "/scripts",
+                    )]))
+                    .rm(),
             )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
@@ -160,21 +159,20 @@ where
         // download binaries to volume
         self.docker_client
             .container_run(
-                "alpine:latest",
-                true,
-                vec!["ash", "/helper-binaries-downloader.sh"],
-                None,
-                Some(HashMap::from([
+                ContainerRunOptions::new(
+                    "alpine:latest",
+                    vec!["ash", "/helper-binaries-downloader.sh"],
+                )
+                .volume_mounts(HashMap::from([
                     (
                         local_helper_binaries_downloader_path
                             .to_string_lossy()
                             .as_ref(),
                         "/helper-binaries-downloader.sh",
                     ),
-                    (&helper_binaries_volume_name, "/cfg"),
-                ])),
-                None,
-                None,
+                    (&helper_binaries_volume_name, "/helpers"),
+                ]))
+                .rm(),
             )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
@@ -182,16 +180,12 @@ where
         // set permissions for rwx on whole volume recursively
         self.docker_client
             .container_run(
-                "alpine:latest",
-                true,
-                vec!["chmod", "-R", "777", "/cfg"],
-                None,
-                Some(HashMap::from([(
-                    helper_binaries_volume_name.as_ref(),
-                    "/cfg",
-                )])),
-                None,
-                None,
+                ContainerRunOptions::new("alpine:latest", vec!["chmod", "-R", "777", "/helpers"])
+                    .volume_mounts(HashMap::from([(
+                        helper_binaries_volume_name.as_ref(),
+                        "/helpers",
+                    )]))
+                    .rm(),
             )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
@@ -238,13 +232,12 @@ where
         &self,
         (command, image): (String, Option<String>),
     ) -> Result<String, ProviderError> {
-        let node_image = image.expect(&format!("image should be present when getting node available args with kubernetes provider {THIS_IS_A_BUG}"));
+        let node_image = image.expect(&format!("image should be present when getting node available args with docker provider {THIS_IS_A_BUG}"));
 
         let temp_node = self
             .spawn_node(
-                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "sh".to_string())
-                    .image(node_image.clone())
-                    .program_as_entrypoint(),
+                &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
+                    .image(node_image.clone()),
             )
             .await?;
 
@@ -276,7 +269,6 @@ where
             db_snapshot: options.db_snapshot.as_ref(),
             docker_client: &self.docker_client,
             filesystem: &self.filesystem,
-            program_as_entrypoint: options.program_as_entrypoint,
         })
         .await?;
 
@@ -301,10 +293,9 @@ where
         // run dummy command in a new container
         let temp_node = self
             .spawn_node(
-                &SpawnNodeOptions::new(node_name, "sh".to_string())
+                &SpawnNodeOptions::new(node_name, "cat".to_string())
                     .injected_files(options.injected_files)
-                    .image(node_image)
-                    .program_as_entrypoint(),
+                    .image(node_image),
             )
             .await?;
 

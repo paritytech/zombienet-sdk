@@ -268,6 +268,7 @@ where
             startup_files: &options.injected_files,
             db_snapshot: options.db_snapshot.as_ref(),
             docker_client: &self.docker_client,
+            container_name: format!("{}-{}", self.name, options.name),
             filesystem: &self.filesystem,
         })
         .await?;

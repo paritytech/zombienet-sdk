@@ -39,6 +39,7 @@ where
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) docker_client: &'a DockerClient,
+    pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
 }
 
@@ -59,6 +60,7 @@ where
     scripts_dir: PathBuf,
     log_path: PathBuf,
     docker_client: DockerClient,
+    container_name: String,
     filesystem: FS,
 }
 
@@ -108,6 +110,7 @@ where
             log_path,
             filesystem: filesystem.clone(),
             docker_client: options.docker_client.clone(),
+            container_name: options.container_name,
         });
 
         node.initialize_docker().await?;
@@ -129,7 +132,7 @@ where
         self.docker_client
             .container_run(
                 ContainerRunOptions::new(&self.image, command)
-                    .name(&self.name)
+                    .name(&self.container_name)
                     .env(self.env.clone())
                     .volume_mounts(HashMap::from([
                         (
@@ -220,7 +223,7 @@ where
     pub(super) async fn start(&self) -> Result<(), ProviderError> {
         self.docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["sh", "-c", "echo", ">", "/tmp/zombiepipe"],
                 None,
             )
@@ -258,7 +261,7 @@ where
         let _ = self
             .docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["mkdir", "-p", &remote_dir.to_string_lossy()],
                 None,
             )
@@ -348,12 +351,15 @@ where
         &self,
         options: RunCommandOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        debug!("running command for {} with options {:?}", self.name, options);
+        debug!(
+            "running command for {} with options {:?}",
+            self.name, options
+        );
         let command = [vec![options.program], options.args].concat();
 
         self.docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["sh", "-c", &command.join(" ")],
                 Some(
                     options
@@ -401,7 +407,7 @@ where
         let _ = self
             .docker_client
             .container_cp(
-                &self.name,
+                &self.container_name,
                 &local_file_path.to_path_buf(),
                 &remote_file_path.to_path_buf(),
             )
@@ -417,7 +423,7 @@ where
         let _ = self
             .docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["chmod", mode, &remote_file_path.to_string_lossy()],
                 None,
             )
@@ -448,7 +454,7 @@ where
     async fn pause(&self) -> Result<(), ProviderError> {
         self.docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["echo", "pause", ">", "/tmp/zombiepipe"],
                 None,
             )
@@ -467,7 +473,7 @@ where
     async fn resume(&self) -> Result<(), ProviderError> {
         self.docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["echo", "resume", ">", "/tmp/zombiepipe"],
                 None,
             )
@@ -490,7 +496,7 @@ where
 
         self.docker_client
             .container_exec(
-                &self.name,
+                &self.container_name,
                 vec!["echo", "restart", ">", "/tmp/zombiepipe"],
                 None,
             )

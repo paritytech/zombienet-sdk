@@ -227,7 +227,7 @@ fn pjs_build_template(
         }
     } else {
         // No custom types, just an emtpy json
-        json!("{}")
+        json!({})
     };
 
     let tmpl = format!(

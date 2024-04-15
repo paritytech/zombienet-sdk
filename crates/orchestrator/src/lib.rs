@@ -71,7 +71,7 @@ where
         mut network_spec: NetworkSpec,
     ) -> Result<Network<T>, OrchestratorError> {
         // main driver for spawn the network
-        debug!("Network spec to spawn, {:#?}", network_spec);
+        debug!(network_spec = ?network_spec,"Network spec to spawn");
 
         // TODO: move to Provider trait
         validate_spec_with_provider_capabilities(&network_spec, self.provider.capabilities())
@@ -84,13 +84,12 @@ where
 
         // create namespace
         let ns = self.provider.create_namespace().await?;
+        info!("🧰 ns: {}", ns.name());
+        info!("🧰 base_dir: {:?}", ns.base_dir());
 
         network_spec
             .populate_nodes_available_args(ns.clone())
             .await?;
-
-        info!("🧰 ns: {}", ns.name());
-        info!("🧰 base_dir: {:?}", ns.base_dir());
 
         let base_dir = ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);

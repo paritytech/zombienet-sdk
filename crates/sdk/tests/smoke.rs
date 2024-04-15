@@ -103,7 +103,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     "#;
 
     let is_registered = alice
-        .pjs(para_is_registered, vec![json!(2000)])
+        .pjs(para_is_registered, vec![json!(2000)], None)
         .await
         .unwrap()
         .unwrap();
@@ -115,7 +115,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     return parachains.toJSON()
     "#;
 
-    let paras = alice.pjs(query_paras, vec![]).await.unwrap();
+    let paras = alice.pjs(query_paras, vec![], None).await.unwrap();
 
     println!("parachains registered: {:?}", paras);
 

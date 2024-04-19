@@ -174,6 +174,12 @@ impl NetworkNode {
         }
     }
 
+    /// Get the logs of the node
+    /// TODO: do we need the `since` param, maybe we could be handy later for loop filtering
+    pub async fn logs(&self) -> Result<String, anyhow::Error> {
+        Ok(self.inner.logs().await?)
+    }
+
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {
         let response = reqwest::get(&self.prometheus_uri).await?;
         let metrics = prom_metrics_parser::parse(&response.text().await?)?;

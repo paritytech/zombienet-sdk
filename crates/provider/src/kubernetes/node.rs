@@ -435,6 +435,7 @@ where
         PathBuf::from(file)
     }
 
+    // TODO: handle log rotation as we do in v1
     async fn logs(&self) -> Result<String, ProviderError> {
         self.k8s_client
             .pod_logs(&self.namespace_name(), &self.name)

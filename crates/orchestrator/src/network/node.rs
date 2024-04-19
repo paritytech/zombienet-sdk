@@ -78,8 +78,9 @@ impl NetworkNode {
         &self,
         code: impl AsRef<str>,
         args: Vec<serde_json::Value>,
+        user_types: Option<serde_json::Value>,
     ) -> Result<PjsResult, anyhow::Error> {
-        let code = pjs_build_template(self.ws_uri(), code.as_ref(), args);
+        let code = pjs_build_template(self.ws_uri(), code.as_ref(), args, user_types);
         trace!("Code to execute: {code}");
         let value = match pjs_inner(code)? {
             ReturnValue::Deserialized(val) => Ok(val),
@@ -98,9 +99,10 @@ impl NetworkNode {
         &self,
         file: impl AsRef<Path>,
         args: Vec<serde_json::Value>,
+        user_types: Option<serde_json::Value>,
     ) -> Result<PjsResult, anyhow::Error> {
         let content = std::fs::read_to_string(file)?;
-        let code = pjs_build_template(self.ws_uri(), content.as_ref(), args);
+        let code = pjs_build_template(self.ws_uri(), content.as_ref(), args, user_types);
         trace!("Code to execute: {code}");
 
         let value = match pjs_inner(code)? {
@@ -172,6 +174,12 @@ impl NetworkNode {
         }
     }
 
+    /// Get the logs of the node
+    /// TODO: do we need the `since` param, maybe we could be handy later for loop filtering
+    pub async fn logs(&self) -> Result<String, anyhow::Error> {
+        Ok(self.inner.logs().await?)
+    }
+
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {
         let response = reqwest::get(&self.prometheus_uri).await?;
         let metrics = prom_metrics_parser::parse(&response.text().await?)?;
@@ -210,12 +218,32 @@ impl std::fmt::Debug for NetworkNode {
 
 // Helper methods
 
-fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>) -> String {
-    format!(
+fn pjs_build_template(
+    ws_uri: &str,
+    content: &str,
+    args: Vec<serde_json::Value>,
+    user_types: Option<serde_json::Value>,
+) -> String {
+    let types = if let Some(user_types) = user_types {
+        if let Some(types) = user_types.pointer("/types") {
+            // if the user_types includes the `types` key use the inner value
+            types.clone()
+        } else {
+            user_types.clone()
+        }
+    } else {
+        // No custom types, just an emtpy json
+        json!({})
+    };
+
+    let tmpl = format!(
         r#"
     const {{ util, utilCrypto, keyring, types }} = pjs;
     ( async () => {{
-        const api = await pjs.api.ApiPromise.create({{ provider: new pjs.api.WsProvider('{}') }});
+        const api = await pjs.api.ApiPromise.create({{
+            provider: new pjs.api.WsProvider('{}'),
+            types: {}
+         }});
         const _run = async (api, hashing, keyring, types, util, arguments) => {{
             {}
         }};
@@ -223,9 +251,12 @@ fn pjs_build_template(ws_uri: &str, content: &str, args: Vec<serde_json::Value>)
     }})()
     "#,
         ws_uri,
+        types,
         content,
-        json!(args)
-    )
+        json!(args),
+    );
+    trace!(tmpl = tmpl, "code to execute");
+    tmpl
 }
 
 // Since pjs-rs run a custom javascript runtime (using deno_core) we need to

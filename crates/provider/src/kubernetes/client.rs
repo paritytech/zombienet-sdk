@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap, fmt::Debug, os::unix::process::ExitStatusExt, process::ExitStatus,
+    time::Duration,
 };
 
 use anyhow::anyhow;
@@ -18,7 +19,7 @@ use kube::{
 use serde::de::DeserializeOwned;
 use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{constants::LOCALHOST, types::ExecutionResult};
 
@@ -161,7 +162,10 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        await_condition(pods, name, helpers::is_pod_ready())
+        trace!("Pod {name} checking for ready state!");
+        let wait_ready = await_condition(pods, name, helpers::is_pod_ready());
+        // TODO: we may want to allow to set this timeout for pod spawning.
+        let _ = tokio::time::timeout(Duration::from_secs(30), wait_ready)
             .await
             .map_err(|err| {
                 Error::from(anyhow!("error while awaiting pod {name} running: {err}"))

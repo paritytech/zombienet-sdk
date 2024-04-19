@@ -6,6 +6,7 @@ use std::{
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, Future};
+use orchestrator::{AddCollatorOptions, AddNodeOptions};
 use serde_json::json;
 use support::fs::local::LocalFileSystem;
 use zombienet_sdk::{Network, NetworkConfigExt, OrchestratorError, PROVIDERS};
@@ -57,7 +58,6 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let config = small_network();
     let spawn_fn = get_spawn_fn();
 
-    #[allow(unused_mut)]
     let mut network = spawn_fn(config).await.unwrap();
     // Optionally detach the network
     // network.detach().await;
@@ -103,7 +103,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     "#;
 
     let is_registered = alice
-        .pjs(para_is_registered, vec![json!(2000)])
+        .pjs(para_is_registered, vec![json!(2000)], None)
         .await
         .unwrap()
         .unwrap();
@@ -115,7 +115,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     return parachains.toJSON()
     "#;
 
-    let paras = alice.pjs(query_paras, vec![]).await.unwrap();
+    let paras = alice.pjs(query_paras, vec![], None).await.unwrap();
 
     println!("parachains registered: {:?}", paras);
 
@@ -128,6 +128,31 @@ async fn ci_k8s_basic_functionalities_should_works() {
     while let Some(block) = blocks.next().await {
         println!("Block (para) #{}", block.unwrap().header().number);
     }
+
+    // add node
+    let opts = AddNodeOptions {
+        rpc_port: Some(9444),
+        is_validator: true,
+        ..Default::default()
+    };
+
+    network.add_node("new1", opts).await.unwrap();
+
+    // add collator
+    let col_opts = AddCollatorOptions {
+        command: Some("polkadot-parachain".try_into().unwrap()),
+        image: Some(
+            "docker.io/parity/polkadot-parachain:1.7.0"
+                .try_into()
+                .unwrap(),
+        ),
+        ..Default::default()
+    };
+
+    network
+        .add_collator("new-col-1", col_opts, 2000)
+        .await
+        .unwrap();
 
     // tear down (optional if you don't detach the network)
     // network.destroy().await.unwrap();

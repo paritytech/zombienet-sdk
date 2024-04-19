@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     return parachains.toJSON()
     "#;
 
-    let paras = alice.pjs(query_paras, vec![]).await??;
+    let paras = alice.pjs(query_paras, vec![], None).await??;
 
     println!("parachains registered: {:?}", paras);
 
@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .pjs_file(
             format!("{}/{}", manifest_dir, "examples/pjs_transfer.js"),
             vec![json!("//Alice")],
+            None,
         )
         .await?;
 

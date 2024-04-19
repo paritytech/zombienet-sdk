@@ -1,9 +1,6 @@
 use std::time::Duration;
 
-use zombienet_sdk::{
-    AddCollatorOptions, AddNodeOptions, NetworkConfigBuilder, NetworkConfigExt,
-    RegistrationStrategy,
-};
+use zombienet_sdk::{AddCollatorOptions, AddNodeOptions, NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_parachain(|p| {
             p.with_id(100)
                 .cumulus_based(true)
-                .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+                //.with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
                 .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
@@ -37,12 +34,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: add check to ensure if unique
     network.add_node("new1", opts).await?;
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
     // Example of some operations that you can do
     // with `nodes` (e.g pause, resume, restart)
 
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(12)).await;
 
     // Get a ref to the node
     let node = network.get_node("alice")?;
@@ -57,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // node.pause().await?;
     // println!("node new1 paused!");
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // tokio::time::sleep(Duration::from_secs(2)).await;
 
     // node.resume().await?;
     // println!("node new1 resumed!");

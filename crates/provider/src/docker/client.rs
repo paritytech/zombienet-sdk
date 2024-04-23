@@ -1,9 +1,11 @@
-use std::{any, collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::Path};
 
 use anyhow::anyhow;
 use serde::{Deserialize, Deserializer};
+use tokio::process::Command;
+use tracing::trace;
 
-use crate::types::ExecutionResult;
+use crate::types::{ExecutionResult, Port};
 
 #[derive(thiserror::Error, Debug)]
 #[error(transparent)]
@@ -24,6 +26,7 @@ pub struct ContainerRunOptions {
     volume_mounts: Option<HashMap<String, String>>,
     name: Option<String>,
     entrypoint: Option<String>,
+    port_mapping: HashMap<Port, Port>,
     rm: bool,
 }
 
@@ -32,6 +35,8 @@ enum Container {
     Podman(PodmanContainer),
 }
 
+// TODO: we may don't need this
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct DockerContainer {
     #[serde(alias = "Names", deserialize_with = "deserialize_list")]
@@ -42,6 +47,8 @@ struct DockerContainer {
     state: String,
 }
 
+// TODO: we may don't need this
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct PodmanPort {
     host_ip: String,
@@ -51,6 +58,8 @@ struct PodmanPort {
     protocol: String,
 }
 
+// TODO: we may don't need this
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct PodmanContainer {
     #[serde(alias = "Id")]
@@ -104,6 +113,7 @@ impl ContainerRunOptions {
             volume_mounts: None,
             name: None,
             entrypoint: None,
+            port_mapping: HashMap::default(),
             rm: false,
         }
     }
@@ -146,6 +156,11 @@ impl ContainerRunOptions {
         S: Into<String> + std::fmt::Debug + Send + Clone,
     {
         self.entrypoint = Some(entrypoint.into());
+        self
+    }
+
+    pub fn port_mapping(mut self, port_mapping: &HashMap<Port, Port>) -> Self {
+        self.port_mapping = port_mapping.clone();
         self
     }
 
@@ -202,37 +217,40 @@ impl DockerClient {
 
     pub async fn container_run(&self, options: ContainerRunOptions) -> Result<String> {
         let mut cmd = tokio::process::Command::new("docker");
-        cmd.args(["run", "-d"]);
+        cmd.args(["run", "-d", "--platform", "linux/amd64"]);
 
-        if options.rm {
-            cmd.arg("--rm");
+        Self::apply_cmd_options(&mut cmd, &options);
+
+        trace!("cmd: {:?}", cmd);
+
+        let result = cmd.output().await.map_err(|err| {
+            anyhow!(
+                "Failed to run container with image '{image}' and command '{command}': {err}",
+                image = options.image,
+                command = options.command.join(" "),
+            )
+        })?;
+
+        if !result.status.success() {
+            return Err(anyhow!(
+                "Failed to run container with image '{image}' and command '{command}': {err}",
+                image = options.image,
+                command = options.command.join(" "),
+                err = String::from_utf8_lossy(&result.stderr)
+            )
+            .into());
         }
 
-        if let Some(entrypoint) = options.entrypoint {
-            cmd.args(["--entrypoint", &entrypoint]);
-        }
+        Ok(String::from_utf8_lossy(&result.stdout).to_string())
+    }
 
-        if let Some(volume_mounts) = options.volume_mounts {
-            for (source, target) in volume_mounts {
-                cmd.args(["-v", &format!("{source}:{target}")]);
-            }
-        }
+    pub async fn container_create(&self, options: ContainerRunOptions) -> Result<String> {
+        let mut cmd = tokio::process::Command::new("docker");
+        cmd.args(["container", "create"]);
 
-        if let Some(name) = options.name {
-            cmd.args(["--name", &name]);
-        }
+        Self::apply_cmd_options(&mut cmd, &options);
 
-        cmd.arg(&options.image);
-
-        for arg in &options.command {
-            cmd.arg(arg);
-        }
-
-        if let Some(env) = options.env {
-            for env_var in env {
-                cmd.args(["-e", &format!("{}={}", env_var.0, env_var.1)]);
-            }
-        }
+        trace!("cmd: {:?}", cmd);
 
         let result = cmd.output().await.map_err(|err| {
             anyhow!(
@@ -260,6 +278,7 @@ impl DockerClient {
         name: &str,
         command: Vec<S>,
         env: Option<Vec<(S, S)>>,
+        as_user: Option<S>,
     ) -> Result<ExecutionResult>
     where
         S: Into<String> + std::fmt::Debug + Send + Clone,
@@ -273,6 +292,10 @@ impl DockerClient {
             }
         }
 
+        if let Some(user) = as_user {
+            cmd.args(["-u", user.into().as_ref()]);
+        }
+
         cmd.arg(name);
 
         cmd.args(
@@ -281,6 +304,8 @@ impl DockerClient {
                 .into_iter()
                 .map(|s| <S as Into<String>>::into(s)),
         );
+
+        trace!("cmd is : {:?}", cmd);
 
         let result = cmd.output().await.map_err(|err| {
             anyhow!(
@@ -307,8 +332,8 @@ impl DockerClient {
     pub async fn container_cp(
         &self,
         name: &str,
-        local_path: &PathBuf,
-        remote_path: &PathBuf,
+        local_path: &Path,
+        remote_path: &Path,
     ) -> Result<()> {
         let result = tokio::process::Command::new("docker")
             .args([
@@ -389,6 +414,35 @@ impl DockerClient {
         Ok(())
     }
 
+    pub async fn container_ip(&self, container_name: &str) -> Result<String> {
+        let ip = if self.using_podman {
+            "127.0.0.1".into()
+        } else {
+            let mut cmd = tokio::process::Command::new("docker");
+            cmd.args(vec![
+                "inspect",
+                "-f",
+                "{{ .NetworkSettings.IPAddress }}",
+                container_name,
+            ]);
+
+            trace!("CMD: {cmd:?}");
+
+            let res = cmd
+                .output()
+                .await
+                .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?;
+
+            String::from_utf8(res.stdout)
+                .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?
+                .trim()
+                .into()
+        };
+
+        trace!("IP: {ip}");
+        Ok(ip)
+    }
+
     async fn get_containers(&self) -> Result<Vec<Container>> {
         let containers = if self.using_podman {
             self.get_podman_containers()
@@ -408,7 +462,7 @@ impl DockerClient {
     }
 
     async fn get_podman_containers(&self) -> Result<Vec<PodmanContainer>> {
-        let res = tokio::process::Command::new("docker")
+        let res = tokio::process::Command::new("podman")
             .args(vec!["ps", "--all", "--no-trunc", "--format", "json"])
             .output()
             .await
@@ -440,5 +494,42 @@ impl DockerClient {
         }
 
         Ok(containers)
+    }
+
+    fn apply_cmd_options(cmd: &mut Command, options: &ContainerRunOptions) {
+        if options.rm {
+            cmd.arg("--rm");
+        }
+
+        if let Some(entrypoint) = options.entrypoint.as_ref() {
+            cmd.args(["--entrypoint", entrypoint]);
+        }
+
+        if let Some(volume_mounts) = options.volume_mounts.as_ref() {
+            for (source, target) in volume_mounts {
+                cmd.args(["-v", &format!("{source}:{target}")]);
+            }
+        }
+
+        if let Some(env) = options.env.as_ref() {
+            for env_var in env {
+                cmd.args(["-e", &format!("{}={}", env_var.0, env_var.1)]);
+            }
+        }
+
+        // add published ports
+        for (container_port, host_port) in options.port_mapping.iter() {
+            cmd.args(["-p", &format!("{host_port}:{container_port}")]);
+        }
+
+        if let Some(name) = options.name.as_ref() {
+            cmd.args(["--name", name]);
+        }
+
+        cmd.arg(&options.image);
+
+        for arg in &options.command {
+            cmd.arg(arg);
+        }
     }
 }

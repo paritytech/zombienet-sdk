@@ -322,9 +322,14 @@ where
         if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
             if *delete_on_drop {
                 let client = self.k8s_client.clone();
+                let provider = self.provider.upgrade();
                 futures::executor::block_on(async move {
                     trace!("🧟 deleting ns {ns_name} from cluster");
                     let _ = client.delete_namespace(&ns_name).await;
+                    if let Some(provider) = provider {
+                        provider.namespaces.write().await.remove(&ns_name);
+                    }
+
                     trace!("✅ deleted");
                 });
             } else {

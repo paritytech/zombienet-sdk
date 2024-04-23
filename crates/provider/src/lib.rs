@@ -188,7 +188,7 @@ pub trait ProviderNode {
         Ok(LOCALHOST)
     }
 
-    // Noop by default (native provider)
+    // Noop by default (native/docker provider)
     async fn create_port_forward(
         &self,
         _local_port: u16,
@@ -230,8 +230,8 @@ pub trait ProviderNode {
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 
 // re-export
+pub use docker::*;
 pub use kubernetes::*;
 pub use native::*;
-pub use docker::*;
 pub use shared::{constants, types};
 use tracing::warn;

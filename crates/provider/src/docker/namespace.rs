@@ -12,6 +12,11 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace};
 use uuid::Uuid;
 
+use super::{
+    client::{ContainerRunOptions, DockerClient},
+    node::DockerNode,
+    DockerProvider,
+};
 use crate::{
     constants::NAMESPACE_PREFIX,
     docker::node::DockerNodeOptions,
@@ -20,12 +25,6 @@ use crate::{
         SpawnNodeOptions,
     },
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
-};
-
-use super::{
-    client::{ContainerRunOptions, DockerClient},
-    node::DockerNode,
-    DockerProvider,
 };
 
 pub struct DockerNamespace<FS>
@@ -77,13 +76,15 @@ where
     }
 
     async fn initialize(&self) -> Result<(), ProviderError> {
-        self.initialize_zombie_wrapper_volume().await?;
+        // let ns_scripts_shared =  PathBuf::from_iter([&self.base_dir, &PathBuf::from("shared-scripts")]);
+        // self.filesystem.create_dir(&ns_scripts_shared).await?;
+        self.initialize_zombie_scripts_volume().await?;
         self.initialize_helper_binaries_volume().await?;
 
         Ok(())
     }
 
-    async fn initialize_zombie_wrapper_volume(&self) -> Result<(), ProviderError> {
+    async fn initialize_zombie_scripts_volume(&self) -> Result<(), ProviderError> {
         let local_zombie_wrapper_path =
             PathBuf::from_iter([&self.base_dir, &PathBuf::from("zombie-wrapper.sh")]);
 
@@ -94,28 +95,54 @@ where
             )
             .await?;
 
+        let local_helper_binaries_downloader_path = PathBuf::from_iter([
+            &self.base_dir,
+            &PathBuf::from("helper-binaries-downloader.sh"),
+        ]);
+
+        self.filesystem
+            .write(
+                &local_helper_binaries_downloader_path,
+                include_str!("../shared/scripts/helper-binaries-downloader.sh"),
+            )
+            .await?;
+
         let zombie_wrapper_volume_name = format!("{}-zombie-wrapper", self.name);
+        let zombie_wrapper_container_name = format!("{}-scripts", self.name);
 
         self.docker_client
             .create_volume(&zombie_wrapper_volume_name)
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
 
-        // copy script to volume
         self.docker_client
-            .container_run(
-                ContainerRunOptions::new(
-                    "alpine:latest",
-                    vec!["cp", "/zombie-wrapper.sh", "/scripts"],
-                )
-                .volume_mounts(HashMap::from([
-                    (
-                        local_zombie_wrapper_path.to_string_lossy().as_ref(),
-                        "/zombie-wrapper.sh",
-                    ),
-                    (&zombie_wrapper_volume_name, "/scripts"),
-                ]))
-                .rm(),
+            .container_create(
+                ContainerRunOptions::new("alpine:latest", vec!["tail", "-f", "/dev/null"])
+                    .volume_mounts(HashMap::from([(
+                        zombie_wrapper_volume_name.as_str(),
+                        "/scripts",
+                    )]))
+                    .name(&zombie_wrapper_container_name)
+                    .rm(),
+            )
+            .await
+            .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
+
+        // copy the scripts
+        self.docker_client
+            .container_cp(
+                &zombie_wrapper_container_name,
+                &local_zombie_wrapper_path,
+                &PathBuf::from("/scripts/zombie-wrapper.sh"),
+            )
+            .await
+            .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
+
+        self.docker_client
+            .container_cp(
+                &zombie_wrapper_container_name,
+                &local_helper_binaries_downloader_path,
+                &PathBuf::from("/scripts/helper-binaries-downloader.sh"),
             )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
@@ -137,18 +164,6 @@ where
     }
 
     async fn initialize_helper_binaries_volume(&self) -> Result<(), ProviderError> {
-        let local_helper_binaries_downloader_path = PathBuf::from_iter([
-            &self.base_dir,
-            &PathBuf::from("helper-binaries-downloader.sh"),
-        ]);
-
-        self.filesystem
-            .write(
-                &local_helper_binaries_downloader_path,
-                include_str!("../shared/scripts/helper-binaries-downloader.sh"),
-            )
-            .await?;
-
         let helper_binaries_volume_name = format!("{}-helper-binaries", self.name);
 
         self.docker_client
@@ -158,20 +173,15 @@ where
 
         // download binaries to volume
         self.docker_client
-            .container_run(
+            .container_create(
                 ContainerRunOptions::new(
                     "alpine:latest",
-                    vec!["ash", "/helper-binaries-downloader.sh"],
+                    vec!["ash", "/scripts/helper-binaries-downloader.sh"],
                 )
-                .volume_mounts(HashMap::from([
-                    (
-                        local_helper_binaries_downloader_path
-                            .to_string_lossy()
-                            .as_ref(),
-                        "/helper-binaries-downloader.sh",
-                    ),
-                    (&helper_binaries_volume_name, "/helpers"),
-                ]))
+                .volume_mounts(HashMap::from([(
+                    helper_binaries_volume_name.as_str(),
+                    "/helpers",
+                )]))
                 .rm(),
             )
             .await
@@ -254,7 +264,7 @@ where
     }
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
-        trace!("spawn option {:?}", options);
+        debug!("spawn option {:?}", options);
         if self.nodes.read().await.contains_key(&options.name) {
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
@@ -272,6 +282,7 @@ where
             docker_client: &self.docker_client,
             container_name: format!("{}-{}", self.name, options.name),
             filesystem: &self.filesystem,
+            port_mapping: options.port_mapping.as_ref().unwrap_or(&HashMap::default()),
         })
         .await?;
 
@@ -352,5 +363,31 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<FS> Drop for DockerNamespace<FS>
+where
+    FS: FileSystem + Send + Sync + Clone,
+{
+    fn drop(&mut self) {
+        let ns_name = self.name.clone();
+        if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
+            if *delete_on_drop {
+                let client = self.docker_client.clone();
+                let provider = self.provider.upgrade();
+                futures::executor::block_on(async move {
+                    trace!("🧟 deleting ns {ns_name} from cluster");
+                    let _ = client.namespaced_containers_rm(&ns_name).await;
+                    if let Some(provider) = provider {
+                        provider.namespaces.write().await.remove(&ns_name);
+                    }
+
+                    trace!("✅ deleted");
+                });
+            } else {
+                trace!("⚠️ leaking ns {ns_name} in cluster");
+            }
+        };
     }
 }

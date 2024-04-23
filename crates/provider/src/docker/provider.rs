@@ -8,11 +8,10 @@ use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 
+use super::{client::DockerClient, namespace::DockerNamespace};
 use crate::{
     types::ProviderCapabilities, DynNamespace, Provider, ProviderError, ProviderNamespace,
 };
-
-use super::{client::DockerClient, namespace::DockerNamespace};
 
 const PROVIDER_NAME: &str = "docker";
 

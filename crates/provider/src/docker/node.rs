@@ -14,15 +14,14 @@ use support::fs::FileSystem;
 use tokio::{time::sleep, try_join};
 use tracing::debug;
 
-use crate::{
-    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
-    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
-    ProviderError, ProviderNamespace, ProviderNode,
-};
-
 use super::{
     client::{ContainerRunOptions, DockerClient},
     namespace::DockerNamespace,
+};
+use crate::{
+    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions, TransferedFile},
+    ProviderError, ProviderNamespace, ProviderNode,
 };
 
 pub(super) struct DockerNodeOptions<'a, FS>
@@ -41,6 +40,7 @@ where
     pub(super) docker_client: &'a DockerClient,
     pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
+    pub(super) port_mapping: &'a HashMap<Port, Port>,
 }
 
 pub struct DockerNode<FS>
@@ -61,6 +61,8 @@ where
     log_path: PathBuf,
     docker_client: DockerClient,
     container_name: String,
+    port_mapping: HashMap<Port, Port>,
+    #[allow(dead_code)]
     filesystem: FS,
 }
 
@@ -111,6 +113,7 @@ where
             filesystem: filesystem.clone(),
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
+            port_mapping: options.port_mapping.clone(),
         });
 
         node.initialize_docker().await?;
@@ -156,7 +159,20 @@ where
                             "/relay-data".to_string(),
                         ),
                     ]))
-                    .entrypoint("/scripts/zombie-wrapper.sh"),
+                    .entrypoint("/scripts/zombie-wrapper.sh")
+                    .port_mapping(&self.port_mapping),
+            )
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
+
+        // change dirs permission
+        let _ = self
+            .docker_client
+            .container_exec(
+                &self.container_name,
+                ["chmod", "777", "/cfg", "/data", "/relay-data"].into(),
+                None,
+                Some("root"),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -166,7 +182,7 @@ where
 
     async fn initialize_db_snapshot(
         &self,
-        db_snapshot: &AssetLocation,
+        _db_snapshot: &AssetLocation,
     ) -> Result<(), ProviderError> {
         todo!()
         // trace!("snap: {db_snapshot}");
@@ -224,7 +240,8 @@ where
         self.docker_client
             .container_exec(
                 &self.container_name,
-                vec!["sh", "-c", "echo", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo start > /tmp/zombiepipe"],
+                None,
                 None,
             )
             .await
@@ -263,6 +280,7 @@ where
             .container_exec(
                 &self.container_name,
                 vec!["mkdir", "-p", &remote_dir.to_string_lossy()],
+                None,
                 None,
             )
             .await
@@ -335,16 +353,8 @@ where
         todo!()
     }
 
-    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
+    async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
         todo!()
-    }
-
-    async fn create_port_forward(
-        &self,
-        local_port: u16,
-        remote_port: u16,
-    ) -> Result<Option<u16>, ProviderError> {
-        Ok(None)
     }
 
     async fn run_command(
@@ -368,6 +378,7 @@ where
                         .map(|(k, v)| (k.as_ref(), v.as_ref()))
                         .collect(),
                 ),
+                None,
             )
             .await
             .map_err(|err| {
@@ -381,7 +392,7 @@ where
 
     async fn run_script(
         &self,
-        options: RunScriptOptions,
+        _options: RunScriptOptions,
     ) -> Result<ExecutionResult, ProviderError> {
         todo!()
     }
@@ -406,11 +417,7 @@ where
 
         let _ = self
             .docker_client
-            .container_cp(
-                &self.container_name,
-                &local_file_path.to_path_buf(),
-                &remote_file_path.to_path_buf(),
-            )
+            .container_cp(&self.container_name, local_file_path, remote_file_path)
             .await
             .map_err(|err| {
                 ProviderError::SendFile(
@@ -425,6 +432,7 @@ where
             .container_exec(
                 &self.container_name,
                 vec!["chmod", mode, &remote_file_path.to_string_lossy()],
+                None,
                 None,
             )
             .await
@@ -448,7 +456,19 @@ where
     }
 
     async fn ip(&self) -> Result<IpAddr, ProviderError> {
-        Ok(LOCALHOST)
+        let ip = self
+            .docker_client
+            .container_ip(&self.container_name)
+            .await
+            .map_err(|err| {
+                ProviderError::InvalidConfig(format!("Error getting container ip, err: {err}"))
+            })?;
+
+        Ok(ip.parse::<IpAddr>().map_err(|err| {
+            ProviderError::InvalidConfig(format!(
+                "Can not parse the container ip: {ip}, err: {err}"
+            ))
+        })?)
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
@@ -456,6 +476,7 @@ where
             .container_exec(
                 &self.container_name,
                 vec!["echo", "pause", ">", "/tmp/zombiepipe"],
+                None,
                 None,
             )
             .await
@@ -475,6 +496,7 @@ where
             .container_exec(
                 &self.container_name,
                 vec!["echo", "resume", ">", "/tmp/zombiepipe"],
+                None,
                 None,
             )
             .await
@@ -498,6 +520,7 @@ where
             .container_exec(
                 &self.container_name,
                 vec!["echo", "restart", ">", "/tmp/zombiepipe"],
+                None,
                 None,
             )
             .await

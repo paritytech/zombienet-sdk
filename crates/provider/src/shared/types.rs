@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     process::ExitStatus,
 };
@@ -47,6 +48,7 @@ pub struct SpawnNodeOptions {
     /// Database snapshot to be injected (should be a tgz file)
     /// Could be a local or remote asset
     pub db_snapshot: Option<AssetLocation>,
+    pub port_mapping: Option<HashMap<Port, Port>>,
 }
 
 impl SpawnNodeOptions {
@@ -64,6 +66,7 @@ impl SpawnNodeOptions {
             injected_files: vec![],
             created_paths: vec![],
             db_snapshot: None,
+            port_mapping: None,
         }
     }
 
@@ -123,6 +126,11 @@ impl SpawnNodeOptions {
             .into_iter()
             .map(|path| path.as_ref().into())
             .collect();
+        self
+    }
+
+    pub fn port_mapping(mut self, ports: HashMap<Port, Port>) -> Self {
+        self.port_mapping = Some(ports);
         self
     }
 }

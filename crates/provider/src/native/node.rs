@@ -37,6 +37,22 @@ use crate::{
     ProviderError, ProviderNamespace, ProviderNode,
 };
 
+pub(super) struct NativeNodeOptions<'a, FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub(super) namespace: &'a Weak<NativeNamespace<FS>>,
+    pub(super) namespace_base_dir: &'a PathBuf,
+    pub(super) name: &'a str,
+    pub(super) program: &'a str,
+    pub(super) args: &'a [String],
+    pub(super) env: &'a [(String, String)],
+    pub(super) startup_files: &'a [TransferedFile],
+    pub(super) created_paths: &'a [PathBuf],
+    pub(super) db_snapshot: Option<&'a AssetLocation>,
+    pub(super) filesystem: &'a FS,
+}
+
 pub(super) struct NativeNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
@@ -63,22 +79,15 @@ impl<FS> NativeNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn new(
-        namespace: &Weak<NativeNamespace<FS>>,
-        namespace_base_dir: &PathBuf,
-        name: &str,
-        program: &str,
-        args: &[String],
-        env: &[(String, String)],
-        startup_files: &[TransferedFile],
-        created_paths: &[PathBuf],
-        db_snapshot: &Option<&AssetLocation>,
-        filesystem: &FS,
+        options: NativeNodeOptions<'_, FS>,
     ) -> Result<Arc<Self>, ProviderError> {
-        let base_dir = PathBuf::from_iter([namespace_base_dir, &PathBuf::from(name)]);
+        let filesystem = options.filesystem.clone();
+
+        let base_dir =
+            PathBuf::from_iter([options.namespace_base_dir, &PathBuf::from(options.name)]);
         trace!("creating base_dir {:?}", base_dir);
-        filesystem.create_dir_all(&base_dir).await?;
+        options.filesystem.create_dir_all(&base_dir).await?;
         trace!("created base_dir {:?}", base_dir);
 
         let base_dir_raw = base_dir.to_string_lossy();
@@ -86,7 +95,7 @@ where
         let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
         let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
         let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
-        let log_path = base_dir.join(format!("{name}.log"));
+        let log_path = base_dir.join(format!("{}.log", options.name));
 
         trace!("creating dirs {:?}", config_dir);
         try_join!(
@@ -98,11 +107,11 @@ where
         trace!("created!");
 
         let node = Arc::new(NativeNode {
-            namespace: namespace.clone(),
-            name: name.to_string(),
-            program: program.to_string(),
-            args: args.to_vec(),
-            env: env.to_vec(),
+            namespace: options.namespace.clone(),
+            name: options.name.to_string(),
+            program: options.program.to_string(),
+            args: options.args.to_vec(),
+            env: options.env.to_vec(),
             base_dir,
             config_dir,
             data_dir,
@@ -116,10 +125,10 @@ where
             filesystem: filesystem.clone(),
         });
 
-        node.initialize_startup_paths(created_paths).await?;
-        node.initialize_startup_files(startup_files).await?;
+        node.initialize_startup_paths(options.created_paths).await?;
+        node.initialize_startup_files(options.startup_files).await?;
 
-        if let Some(db_snap) = db_snapshot {
+        if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
 
@@ -492,7 +501,13 @@ where
                 .args(vec![mode, &namespaced_remote_file_path.to_string_lossy()]),
         )
         .await?
-        .map_err(|(_, err)| ProviderError::SendFile(self.name.clone(), anyhow!("{err}")))?;
+        .map_err(|(_, err)| {
+            ProviderError::SendFile(
+                self.name.clone(),
+                local_file_path.to_string_lossy().to_string(),
+                anyhow!("{err}"),
+            )
+        })?;
 
         Ok(())
     }

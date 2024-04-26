@@ -1,4 +1,5 @@
 #![allow(clippy::expect_fun_call)]
+mod docker;
 mod kubernetes;
 mod native;
 pub mod shared;
@@ -102,8 +103,8 @@ pub enum ProviderError {
     #[error("Error downloading file: '{0}': {1}")]
     DownloadFile(String, anyhow::Error),
 
-    #[error("Error sending file: '{0}': {1}")]
-    SendFile(String, anyhow::Error),
+    #[error("Error sending file '{0}' to {1}: {2}")]
+    SendFile(String, String, anyhow::Error),
 
     #[error("Error creating port-forward '{0}:{1}': {2}")]
     PortForwardError(u16, u16, anyhow::Error),
@@ -187,7 +188,7 @@ pub trait ProviderNode {
         Ok(LOCALHOST)
     }
 
-    // Noop by default (native provider)
+    // Noop by default (native/docker provider)
     async fn create_port_forward(
         &self,
         _local_port: u16,
@@ -229,6 +230,7 @@ pub trait ProviderNode {
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
 
 // re-export
+pub use docker::*;
 pub use kubernetes::*;
 pub use native::*;
 pub use shared::{constants, types};

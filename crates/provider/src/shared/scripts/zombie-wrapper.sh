@@ -9,6 +9,17 @@ if [ -f /cfg/coreutils ]; then
     KILL="/cfg/coreutils kill"
     SLEEP="/cfg/coreutils sleep"
     ECHO="/cfg/coreutils echo"
+elif [ -f /helpers/coreutils ]; then
+# used for docker/podman to have a single volume sharing helper binaries
+# across nodes independent from the /cfg where some files are stored
+# by the node itself
+    RM="/helpers/coreutils rm"
+    MKFIFO="/helpers/coreutils mkfifo"
+    MKNOD="/helpers/coreutils mknod"
+    LS="/helpers/coreutils ls"
+    KILL="/helpers/coreutils kill"
+    SLEEP="/helpers/coreutils sleep"
+    ECHO="/helpers/coreutils echo"
 else
     RM="rm"
     MKFIFO="mkfifo"
@@ -52,7 +63,8 @@ child_pid=""
 CMD=($@)
 
 # File to store CMD (and update from there)
-ZOMBIE_CMD_FILE=/cfg/zombie.cmd
+ZOMBIE_CMD_FILE=/tmp/zombie.cmd
+ZOMBIE_CMD_PID=/tmp/zombie.pid
 
 # Store the cmd and make it available to later usage
 # NOTE: echo without new line to allow to customize the cmd later
@@ -68,7 +80,7 @@ start() {
 
         $ECHO $(cat $ZOMBIE_CMD_FILE)
         # store pid
-        $ECHO ${child_pid} > /cfg/zombie.pid
+        $ECHO ${child_pid} > $ZOMBIE_CMD_PID
 
         # check if the process is running
         if ! $LS /proc/$child_pid > /dev/null 2>&1 ; then
@@ -78,7 +90,7 @@ start() {
             echo "PID: $child_pid alive";
         fi;
     else
-        echo "PID not stored, since was 'cat'";
+        echo "Process not started, PID not stored, since was 'cat'";
     fi;
 
 }
@@ -111,6 +123,7 @@ resume() {
 
 # keep listening from the pipe
 while read line <$pipe
+echo "read line: ${line}"
 do
     if [[ "$line" == "start" ]]; then
         start

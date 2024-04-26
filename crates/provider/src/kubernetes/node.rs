@@ -21,14 +21,16 @@ use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
 use tracing::trace;
 use url::Url;
 
-use super::{namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder};
+use super::{
+    client::KubernetesClient, namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder,
+};
 use crate::{
     constants::{
         NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
         PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
     },
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
-    KubernetesClient, ProviderError, ProviderNamespace, ProviderNode,
+    ProviderError, ProviderNamespace, ProviderNode,
 };
 
 pub(super) struct KubernetesNodeOptions<'a, FS>
@@ -57,7 +59,11 @@ where
 {
     namespace: Weak<KubernetesNamespace<FS>>,
     name: String,
+    image: String,
+    program: String,
     args: Vec<String>,
+    env: Vec<(String, String)>,
+    resources: Option<Resources>,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
@@ -77,6 +83,10 @@ where
     pub(super) async fn new(
         options: KubernetesNodeOptions<'_, FS>,
     ) -> Result<Arc<Self>, ProviderError> {
+        let image = options.image.ok_or_else(|| {
+            ProviderError::MissingNodeInfo(options.name.to_string(), "missing image".to_string())
+        })?;
+
         let filesystem = options.filesystem.clone();
 
         let base_dir =
@@ -100,7 +110,11 @@ where
         let node = Arc::new(KubernetesNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
+            image: image.to_string(),
+            program: options.program.to_string(),
             args: options.args.to_vec(),
+            env: options.env.to_vec(),
+            resources: options.resources.cloned(),
             base_dir,
             config_dir,
             data_dir,
@@ -113,14 +127,7 @@ where
             port_fwds: Default::default(),
         });
 
-        node.initialize_k8s(
-            options.image,
-            options.program,
-            options.args,
-            options.env,
-            options.resources,
-        )
-        .await?;
+        node.initialize_k8s().await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
@@ -133,14 +140,7 @@ where
         Ok(node)
     }
 
-    async fn initialize_k8s(
-        &self,
-        image: Option<&String>,
-        program: &str,
-        args: &[String],
-        env: &[(String, String)],
-        resources: Option<&Resources>,
-    ) -> Result<(), ProviderError> {
+    async fn initialize_k8s(&self) -> Result<(), ProviderError> {
         let labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
@@ -152,12 +152,15 @@ where
             ),
         ]);
 
-        let image = image.ok_or_else(|| {
-            ProviderError::MissingNodeInfo(self.name.to_string(), "missing image".to_string())
-        })?;
-
         // Create pod
-        let pod_spec = PodSpecBuilder::build(&self.name, image, resources, program, args, env);
+        let pod_spec = PodSpecBuilder::build(
+            &self.name,
+            &self.image,
+            self.resources.as_ref(),
+            &self.program,
+            &self.args,
+            &self.env,
+        );
 
         let manifest = self
             .k8s_client
@@ -330,7 +333,11 @@ where
             .await
             .map_err(|err| {
                 ProviderError::NodeSpawningFailed(
-                    format!("failed to created dirfor pod {}", &self.name),
+                    format!(
+                        "failed to create dir {} for pod {}",
+                        remote_dir.to_string_lossy(),
+                        &self.name
+                    ),
                     err.into(),
                 )
             })?;
@@ -537,7 +544,13 @@ where
         remote_file_path: &Path,
         mode: &str,
     ) -> Result<(), ProviderError> {
-        let data = self.filesystem.read(local_file_path).await.unwrap();
+        let data = self.filesystem.read(local_file_path).await.map_err(|err| {
+            ProviderError::SendFile(
+                self.name.clone(),
+                local_file_path.to_string_lossy().to_string(),
+                err.into(),
+            )
+        })?;
 
         if let Some(remote_parent_dir) = self.get_remote_parent_dir(remote_file_path) {
             self.create_remote_dir(&remote_parent_dir).await?;
@@ -553,7 +566,11 @@ where
             .send()
             .await
             .map_err(|err| {
-                ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
+                ProviderError::SendFile(
+                    self.name.clone(),
+                    local_file_path.to_string_lossy().to_string(),
+                    err.into(),
+                )
             })?;
 
         let _ = self
@@ -570,7 +587,11 @@ where
             )
             .await
             .map_err(|err| {
-                ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
+                ProviderError::SendFile(
+                    self.name.clone(),
+                    local_file_path.to_string_lossy().to_string(),
+                    err.into(),
+                )
             })?;
 
         let _ = self
@@ -582,7 +603,11 @@ where
             )
             .await
             .map_err(|err| {
-                ProviderError::SendFile(local_file_path.to_string_lossy().to_string(), err.into())
+                ProviderError::SendFile(
+                    self.name.clone(),
+                    local_file_path.to_string_lossy().to_string(),
+                    err.into(),
+                )
             })?;
 
         Ok(())

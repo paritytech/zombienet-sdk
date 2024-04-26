@@ -19,7 +19,7 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace};
 use uuid::Uuid;
 
-use super::node::KubernetesNode;
+use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
@@ -28,7 +28,7 @@ use crate::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
     },
-    DynNode, KubernetesClient, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
+    DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
@@ -84,13 +84,13 @@ where
         Ok(namespace)
     }
 
-    pub(super) async fn initialize(&self) -> Result<(), ProviderError> {
+    async fn initialize(&self) -> Result<(), ProviderError> {
         self.initialize_k8s().await?;
         self.initialize_file_server().await?;
 
         self.setup_script_config_map(
             "zombie-wrapper",
-            include_str!("./scripts/zombie-wrapper.sh"),
+            include_str!("../shared/scripts/zombie-wrapper.sh"),
             "zombie_wrapper_config_map_manifest.yaml",
             // TODO: add correct labels
             BTreeMap::new(),
@@ -99,7 +99,7 @@ where
 
         self.setup_script_config_map(
             "helper-binaries-downloader",
-            include_str!("./scripts/helper-binaries-downloader.sh"),
+            include_str!("../shared/scripts/helper-binaries-downloader.sh"),
             "helper_binaries_downloader_config_map_manifest.yaml",
             // TODO: add correct labels
             BTreeMap::new(),
@@ -322,9 +322,14 @@ where
         if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
             if *delete_on_drop {
                 let client = self.k8s_client.clone();
+                let provider = self.provider.upgrade();
                 futures::executor::block_on(async move {
                     trace!("🧟 deleting ns {ns_name} from cluster");
                     let _ = client.delete_namespace(&ns_name).await;
+                    if let Some(provider) = provider {
+                        provider.namespaces.write().await.remove(&ns_name);
+                    }
+
                     trace!("✅ deleted");
                 });
             } else {
@@ -385,11 +390,13 @@ where
                 ProviderError::NodeAvailableArgsError(node_image, command, status)
             })?;
 
+        temp_node.destroy().await?;
+
         Ok(available_args_output)
     }
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
-        trace!("spawn option {:?}", options);
+        trace!("spawn node options {options:?}");
         if self.nodes.read().await.contains_key(&options.name) {
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
@@ -419,7 +426,7 @@ where
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
-        debug!("options {:#?}", options);
+        debug!("generate files options {options:#?}");
 
         let node_name = options
             .temp_name

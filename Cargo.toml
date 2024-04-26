@@ -43,10 +43,10 @@ pest_derive = "2.7"
 rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
-sp-core = "22.0.0"
+sp-core = "31.0.0"
 libp2p = { version = "0.52" }
-subxt = "0.33.0"
-subxt-signer = { version = "0.33.0", features = ["subxt"] }
+subxt = { version = "0.35.3", features = ["substrate-compat"] }
+subxt-signer = { version = "0.35.3", features = ["subxt"] }
 tracing = "0.1.35"
 pjs-rs = "0.1.2"
 kube = "0.87.1"

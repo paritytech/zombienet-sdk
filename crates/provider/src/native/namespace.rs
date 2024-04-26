@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tracing::trace;
 use uuid::Uuid;
 
-use super::node::NativeNode;
+use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
     types::{
@@ -104,6 +104,8 @@ where
                 ProviderError::NodeAvailableArgsError("".to_string(), command, status)
             })?;
 
+        temp_node.destroy().await?;
+
         Ok(available_args_output)
     }
 
@@ -112,18 +114,18 @@ where
             return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
         }
 
-        let node = NativeNode::new(
-            &self.weak,
-            &self.base_dir,
-            &options.name,
-            &options.program,
-            &options.args,
-            &options.env,
-            &options.injected_files,
-            &options.created_paths,
-            &options.db_snapshot.as_ref(),
-            &self.filesystem,
-        )
+        let node = NativeNode::new(NativeNodeOptions {
+            namespace: &self.weak,
+            namespace_base_dir: &self.base_dir,
+            name: &options.name,
+            program: &options.program,
+            args: &options.args,
+            env: &options.env,
+            startup_files: &options.injected_files,
+            created_paths: &options.created_paths,
+            db_snapshot: options.db_snapshot.as_ref(),
+            filesystem: &self.filesystem,
+        })
         .await?;
 
         self.nodes

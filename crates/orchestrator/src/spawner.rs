@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
 use configuration::shared::constants::THIS_IS_A_BUG;
 use provider::{
-    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR},
+    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
     shared::helpers::running_in_ci,
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
@@ -149,6 +149,21 @@ where
         args.join(" ")
     );
 
+    let ports = if ctx.ns.capabilities().use_default_ports_in_cmd {
+        // should use default ports to as internal
+        [
+            (P2P_PORT, node.p2p_port.0),
+            (RPC_PORT, node.rpc_port.0),
+            (PROMETHEUS_PORT, node.prometheus_port.0),
+        ]
+    } else {
+        [
+            (P2P_PORT, P2P_PORT),
+            (RPC_PORT, RPC_PORT),
+            (PROMETHEUS_PORT, PROMETHEUS_PORT),
+        ]
+    };
+
     let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
         .args(args)
         .env(
@@ -158,7 +173,8 @@ where
         )
         .injected_files(files_to_inject)
         .created_paths(created_paths)
-        .db_snapshot(node.db_snapshot.clone());
+        .db_snapshot(node.db_snapshot.clone())
+        .port_mapping(HashMap::from(ports));
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())
@@ -196,7 +212,7 @@ where
             ports[1].unwrap_or(node.prometheus_port.0),
         );
     } else {
-        // running in ci requrire to use ip and default port
+        // running in ci require to use ip and default port
         (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
         ip_to_use = running_node.ip().await?;
     }

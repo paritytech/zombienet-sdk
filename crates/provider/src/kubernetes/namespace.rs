@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::shared::constants::THIS_IS_A_BUG;
+use support::constants::THIS_IS_A_BUG;
 use k8s_openapi::{
     api::core::v1::{
         Container, ContainerPort, HTTPGetAction, PodSpec, Probe, ServicePort, ServiceSpec,
@@ -15,6 +15,7 @@ use k8s_openapi::{
     apimachinery::pkg::util::intstr::IntOrString,
 };
 use support::fs::FileSystem;
+use support::replacer::apply_replacements;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace};
 use uuid::Uuid;
@@ -23,7 +24,7 @@ use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
-    shared::helpers::{self, running_in_ci},
+    shared::helpers::running_in_ci,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -153,7 +154,7 @@ where
     }
 
     async fn initialize_static_resources(&self) -> Result<(), ProviderError> {
-        let np_manifest = helpers::apply_replacements(
+        let np_manifest = apply_replacements(
             include_str!("./static-configs/namespace-network-policy.yaml"),
             &HashMap::from([("namespace", self.name())]),
         );

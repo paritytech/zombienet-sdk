@@ -10,9 +10,10 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::{
-    shared::{constants::THIS_IS_A_BUG, resources::Resources},
+    shared::resources::Resources,
     types::AssetLocation,
 };
+use support::constants::THIS_IS_A_BUG;
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use sha2::Digest;

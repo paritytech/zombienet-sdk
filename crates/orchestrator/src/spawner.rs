@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
-use configuration::shared::constants::THIS_IS_A_BUG;
+use support::constants::THIS_IS_A_BUG;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
     shared::helpers::running_in_ci,

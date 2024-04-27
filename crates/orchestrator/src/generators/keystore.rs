@@ -3,7 +3,7 @@ use std::{
     vec,
 };
 
-use configuration::shared::constants::THIS_IS_A_BUG;
+use support::constants::THIS_IS_A_BUG;
 use hex::encode;
 use support::fs::FileSystem;
 

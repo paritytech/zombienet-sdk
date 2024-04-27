@@ -127,6 +127,10 @@ pub struct ParachainConfig {
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<Command>,
     chain_spec_path: Option<AssetLocation>,
+    // Full _template_ command, will be rendered using [tera]
+    // and executed for generate the chain-spec.
+    // available tokens {{chainName}} / {{disableBootnodes}}
+    chain_spec_command: Option<String>,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -217,6 +221,12 @@ impl ParachainConfig {
         self.chain_spec_path.as_ref()
     }
 
+    /// The full _template_ command to genera the chain-spec
+    pub fn chain_spec_command(&self) -> Option<&str> {
+        self.chain_spec_command.as_deref()
+    }
+
+
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
@@ -282,6 +292,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 genesis_state_generator: None,
                 genesis_overrides: None,
                 chain_spec_path: None,
+                chain_spec_command: None,
                 is_cumulus_based: true,
                 bootnodes_addresses: vec![],
                 collators: vec![],
@@ -645,6 +656,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         Self::transition(
             ParachainConfig {
                 chain_spec_path: Some(location.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the chain-spec command _template_ for the relay chain.
+    pub fn with_chain_spec_command(self, cmd_template: impl Into<String>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                chain_spec_command: Some(cmd_template.into()),
                 ..self.config
             },
             self.validation_context,
@@ -1217,5 +1240,21 @@ mod tests {
             config.registration_strategy(),
             Some(&RegistrationStrategy::UsingExtrinsic)
         );
+    }
+
+    #[test]
+    fn parachain_config_builder_should_works_with_chain_spec_command() {
+        const CMD_TPL: &str = "./bin/chain-spec-generator {% raw %} {{chainName}} {% endraw %}";
+        let relaychain_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("some-chain")
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .with_chain_spec_command(CMD_TPL)
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert_eq!(relaychain_config.chain_spec_command(), Some(CMD_TPL));
     }
 }

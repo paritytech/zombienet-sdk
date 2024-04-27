@@ -7,7 +7,8 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation};
+use configuration::types::AssetLocation;
+use support::constants::THIS_IS_A_BUG;
 use flate2::read::GzDecoder;
 use futures::future::try_join_all;
 use nix::{

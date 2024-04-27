@@ -14,6 +14,7 @@ validator = true
 invulnerable = true
 bootnode = false
 balance = 2000000000000
+args = [""]
 
 [[relaychain.nodes]]
 name = "bob"

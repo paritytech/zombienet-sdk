@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::shared::constants::THIS_IS_A_BUG;
+use support::constants::THIS_IS_A_BUG;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
     ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,

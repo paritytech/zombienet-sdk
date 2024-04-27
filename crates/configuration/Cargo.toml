@@ -21,3 +21,6 @@ serde = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 serde_json = { workspace = true }
 
+# zombienet deps
+support = { workspace = true }
+

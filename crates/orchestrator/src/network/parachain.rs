@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use configuration::shared::constants::THIS_IS_A_BUG;
+use support::constants::THIS_IS_A_BUG;
 use provider::types::TransferedFile;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};

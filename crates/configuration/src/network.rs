@@ -3,12 +3,9 @@ use std::{cell::RefCell, fs, marker::PhantomData, rc::Rc};
 use anyhow::anyhow;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-
 use support::constants::{
-    NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK,
-    VALID_REGEX,
+    NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX,
 };
-
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},

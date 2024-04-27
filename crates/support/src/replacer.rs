@@ -1,16 +1,12 @@
 use std::collections::HashMap;
 
-use crate::constants::{VALID_REGEX, THIS_IS_A_BUG};
 use regex::{Captures, Regex};
 
+use crate::constants::{THIS_IS_A_BUG, VALID_REGEX};
+
 pub fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>) -> String {
-    let re = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#).unwrap_or_else(|_| {
-        panic!(
-            "{} {}",
-            VALID_REGEX,
-            THIS_IS_A_BUG
-        )
-    });
+    let re = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#)
+        .unwrap_or_else(|_| panic!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
 
     let augmented_text = re.replace_all(text, |caps: &Captures| {
         if let Some(replacements_value) = replacements.get(&caps[1]) {
@@ -22,7 +18,6 @@ pub fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>) -> Str
 
     augmented_text.to_string()
 }
-
 
 #[cfg(test)]
 mod tests {

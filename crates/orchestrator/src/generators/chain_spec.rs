@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::anyhow;
-use support::constants::THIS_IS_A_BUG;
 use configuration::{types::AssetLocation, HrmpChannelConfig};
 use provider::{
     constants::NODE_CONFIG_DIR,
@@ -12,7 +11,7 @@ use provider::{
     DynNamespace, ProviderError,
 };
 use serde_json::json;
-use support::{fs::FileSystem, replacer::apply_replacements};
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tracing::{debug, trace, warn};
 
 use super::errors::GeneratorError;
@@ -161,14 +160,17 @@ impl ChainSpec {
                 self.command.as_ref().unwrap().clone()
             };
 
-            let full_cmd = apply_replacements(&sanitized_cmd, &HashMap::from([
-                ("chainName", replacement_value.as_str())
-            ]));
+            let full_cmd = apply_replacements(
+                &sanitized_cmd,
+                &HashMap::from([("chainName", replacement_value.as_str())]),
+            );
             trace!("full_cmd: {:?}", full_cmd);
 
             let parts: Vec<&str> = full_cmd.split_whitespace().collect();
             let Some((cmd, args)) = parts.split_first() else {
-                return Err(GeneratorError::ChainSpecGeneration(format!("Invalid generator command: {full_cmd}")));
+                return Err(GeneratorError::ChainSpecGeneration(format!(
+                    "Invalid generator command: {full_cmd}"
+                )));
             };
             trace!("cmd: {:?} - args: {:?}", cmd, args);
 
@@ -243,19 +245,23 @@ impl ChainSpec {
             chain_spec_path_in_pod.clone()
         };
 
-        let mut full_cmd = apply_replacements(&cmd, &HashMap::from([
-            ("chainName", chain_spec_path_in_args.as_str())
-        ]));
+        let mut full_cmd = apply_replacements(
+            cmd,
+            &HashMap::from([("chainName", chain_spec_path_in_args.as_str())]),
+        );
 
-        if !full_cmd.contains("--raw") { full_cmd = format!("{full_cmd} --raw"); }
+        if !full_cmd.contains("--raw") {
+            full_cmd = format!("{full_cmd} --raw");
+        }
         trace!("full_cmd: {:?}", full_cmd);
 
         let parts: Vec<&str> = full_cmd.split_whitespace().collect();
         let Some((cmd, args)) = parts.split_first() else {
-            return Err(GeneratorError::ChainSpecGeneration(format!("Invalid generator command: {full_cmd}")));
+            return Err(GeneratorError::ChainSpecGeneration(format!(
+                "Invalid generator command: {full_cmd}"
+            )));
         };
         trace!("cmd: {:?} - args: {:?}", cmd, args);
-
 
         let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
         let options = GenerateFilesOptions::with_files(

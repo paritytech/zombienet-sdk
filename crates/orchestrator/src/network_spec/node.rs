@@ -3,10 +3,9 @@ use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
 };
-use support::constants::THIS_IS_A_BUG;
-
 use multiaddr::Multiaddr;
 use provider::types::Port;
+use support::constants::THIS_IS_A_BUG;
 
 use crate::{
     errors::OrchestratorError,

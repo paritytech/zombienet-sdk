@@ -13,10 +13,8 @@ use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
     generators::chain_spec::{ChainSpec, Context},
-    shared::types::ChainDefaultContext,
+    shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
 };
-
-use crate::shared::constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND;
 
 /// A relaychain configuration spec
 #[derive(Debug, Clone)]
@@ -82,7 +80,7 @@ impl RelaychainSpec {
         } else {
             let replacements = HashMap::from([
                 ("disableBootnodes", "--disable-default-bootnode"),
-                ("mainCommand", main_cmd.as_str())
+                ("mainCommand", main_cmd.as_str()),
             ]);
             let tmpl = if let Some(tmpl) = config.chain_spec_command() {
                 apply_replacements(tmpl, &replacements)
@@ -90,9 +88,7 @@ impl RelaychainSpec {
                 apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
             };
 
-            chain_spec
-                .command(tmpl.as_str())
-                .image(main_image.clone())
+            chain_spec.command(tmpl.as_str()).image(main_image.clone())
         };
 
         // build the `node_specs`

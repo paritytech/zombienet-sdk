@@ -226,7 +226,6 @@ impl ParachainConfig {
         self.chain_spec_command.as_deref()
     }
 
-
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based

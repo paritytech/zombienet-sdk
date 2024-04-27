@@ -1,5 +1,5 @@
-use support::constants::THIS_IS_A_BUG;
 use configuration::types::Arg;
+use support::constants::THIS_IS_A_BUG;
 
 use crate::{network_spec::node::NodeSpec, shared::constants::*};
 

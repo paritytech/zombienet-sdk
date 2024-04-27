@@ -16,11 +16,9 @@ use crate::{
         chain_spec::{ChainSpec, Context},
         para_artifact::*,
     },
-    shared::types::ChainDefaultContext,
+    shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
     ScopedFilesystem,
 };
-
-use crate::shared::constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND;
 
 #[derive(Debug, Clone)]
 pub struct ParachainSpec {
@@ -118,7 +116,7 @@ impl ParachainSpec {
 
                 let replacements = HashMap::from([
                     ("disableBootnodes", "--disable-default-bootnode"),
-                    ("mainCommand", main_cmd.as_str())
+                    ("mainCommand", main_cmd.as_str()),
                 ]);
                 let tmpl = if let Some(tmpl) = config.chain_spec_command() {
                     apply_replacements(tmpl, &replacements)

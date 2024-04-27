@@ -3,11 +3,10 @@ use std::{
     str::FromStr,
 };
 
-use support::constants::THIS_IS_A_BUG;
 use provider::types::TransferedFile;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
-use support::fs::FileSystem;
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::info;
 
 // use crate::generators::key::generate_pair;

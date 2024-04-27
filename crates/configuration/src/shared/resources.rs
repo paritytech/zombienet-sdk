@@ -7,12 +7,12 @@ use serde::{
     ser::SerializeStruct,
     Deserialize, Serialize,
 };
+use support::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 use super::{
     errors::{ConversionError, FieldError},
     helpers::merge_errors,
 };
-use support::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 /// A resource quantity used to define limits (k8s/podman only).
 /// It can be constructed from a `&str` or u64, if it fails, it returns a [`ConversionError`].

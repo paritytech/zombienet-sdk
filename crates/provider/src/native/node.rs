@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation};
+use configuration::types::AssetLocation;
 use flate2::read::GzDecoder;
 use futures::future::try_join_all;
 use nix::{
@@ -15,7 +15,7 @@ use nix::{
     unistd::Pid,
 };
 use sha2::Digest;
-use support::fs::FileSystem;
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, BufReader},

@@ -8,10 +8,10 @@ use std::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use support::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
-use crate::shared::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
 
 /// An alias for a duration in seconds.
 pub type Duration = u32;

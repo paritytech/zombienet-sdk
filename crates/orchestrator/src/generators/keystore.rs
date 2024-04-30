@@ -3,9 +3,8 @@ use std::{
     vec,
 };
 
-use configuration::shared::constants::THIS_IS_A_BUG;
 use hex::encode;
-use support::fs::FileSystem;
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 
 use super::errors::GeneratorError;
 use crate::{shared::types::NodeAccounts, ScopedFilesystem};

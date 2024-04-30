@@ -1,10 +1,10 @@
 use std::{cell::RefCell, error::Error, fmt::Debug, marker::PhantomData, rc::Rc};
 
 use serde::{Deserialize, Serialize};
+use support::constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG};
 
 use crate::{
     shared::{
-        constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG},
         errors::{ConfigError, FieldError},
         helpers::{merge_errors, merge_errors_vecs},
         macros::states,
@@ -29,6 +29,10 @@ pub struct RelaychainConfig {
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     chain_spec_path: Option<AssetLocation>,
+    // Full _template_ command, will be rendered using [tera]
+    // and executed for generate the chain-spec.
+    // available tokens {{chainName}} / {{disableBootnodes}}
+    chain_spec_command: Option<String>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -71,6 +75,11 @@ impl RelaychainConfig {
     /// The location of an pre-existing chain specification for the relay chain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
+    }
+
+    /// The full _template_ command to genera the chain-spec
+    pub fn chain_spec_command(&self) -> Option<&str> {
+        self.chain_spec_command.as_deref()
     }
 
     /// The non-default command used for nodes.
@@ -130,6 +139,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_db_snapshot: None,
                 default_args: vec![],
                 chain_spec_path: None,
+                chain_spec_command: None,
                 command: None,
                 random_nominators_count: None,
                 max_nominations: None,
@@ -306,6 +316,18 @@ impl RelaychainConfigBuilder<WithChain> {
         Self::transition(
             RelaychainConfig {
                 chain_spec_path: Some(location.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the chain-spec command _template_ for the relay chain.
+    pub fn with_chain_spec_command(self, cmd_template: impl Into<String>) -> Self {
+        Self::transition(
+            RelaychainConfig {
+                chain_spec_command: Some(cmd_template.into()),
                 ..self.config
             },
             self.validation_context,
@@ -656,5 +678,20 @@ mod tests {
             errors.get(1).unwrap().to_string(),
             "relaychain.nodes['node'].image: 'invalid image' doesn't match regex '^([ip]|[hostname]/)?[tag_name]:[tag_version]?$'"
         );
+    }
+
+    #[test]
+    fn relaychain_config_builder_should_works_with_chain_spec_command() {
+        const CMD_TPL: &str = "./bin/chain-spec-generator {% raw %} {{chainName}} {% endraw %}";
+        let relaychain_config = RelaychainConfigBuilder::new(Default::default())
+            .with_chain("polkadot")
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .with_chain_spec_command(CMD_TPL)
+            .with_node(|node| node.with_name("node1").bootnode(true))
+            .build()
+            .unwrap();
+
+        assert_eq!(relaychain_config.chain_spec_command(), Some(CMD_TPL));
     }
 }

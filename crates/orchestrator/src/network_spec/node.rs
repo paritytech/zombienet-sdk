@@ -1,11 +1,11 @@
 use configuration::shared::{
-    constants::THIS_IS_A_BUG,
     node::{EnvVar, NodeConfig},
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
 };
 use multiaddr::Multiaddr;
 use provider::types::Port;
+use support::constants::THIS_IS_A_BUG;
 
 use crate::{
     errors::OrchestratorError,

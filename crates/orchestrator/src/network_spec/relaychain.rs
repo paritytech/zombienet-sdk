@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use configuration::{
     shared::{
         resources::Resources,
@@ -5,12 +7,13 @@ use configuration::{
     },
     RelaychainConfig,
 };
+use support::replacer::apply_replacements;
 
 use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
     generators::chain_spec::{ChainSpec, Context},
-    shared::types::ChainDefaultContext,
+    shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
 };
 
 /// A relaychain configuration spec
@@ -75,11 +78,17 @@ impl RelaychainSpec {
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
             chain_spec.asset_location(chain_spec_path.clone())
         } else {
-            // TODO: Do we need to add the posibility to set the command to use?
-            // Currently (v1) is possible but when is set is set to the default command.
-            chain_spec
-                .command(main_cmd.as_str())
-                .image(main_image.clone())
+            let replacements = HashMap::from([
+                ("disableBootnodes", "--disable-default-bootnode"),
+                ("mainCommand", main_cmd.as_str()),
+            ]);
+            let tmpl = if let Some(tmpl) = config.chain_spec_command() {
+                apply_replacements(tmpl, &replacements)
+            } else {
+                apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
+            };
+
+            chain_spec.command(tmpl.as_str()).image(main_image.clone())
         };
 
         // build the `node_specs`

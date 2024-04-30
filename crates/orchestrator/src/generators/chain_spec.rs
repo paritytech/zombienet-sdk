@@ -4,14 +4,14 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{shared::constants::THIS_IS_A_BUG, types::AssetLocation, HrmpChannelConfig};
+use configuration::{types::AssetLocation, HrmpChannelConfig};
 use provider::{
     constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace, ProviderError,
 };
 use serde_json::json;
-use support::fs::FileSystem;
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tracing::{debug, trace, warn};
 
 use super::errors::GeneratorError;
@@ -144,19 +144,38 @@ impl ChainSpec {
             }
         } else {
             // we should create the chain-spec using command.
-            // SAFETY: we ensure that command is some with the first check of the fn
-            let cmd = self.command.as_ref().unwrap();
-            let mut args: Vec<String> = vec!["build-spec".into()];
+            let mut replacement_value = String::default();
             if let Some(chain_name) = self.chain_name.as_ref() {
                 if !chain_name.is_empty() {
-                    args.push("--chain".into());
-                    args.push(chain_name.clone());
+                    replacement_value = chain_name.clone();
                 }
-            }
-            args.push("--disable-default-bootnode".into());
+            };
+
+            // SAFETY: we ensure that command is some with the first check of the fn
+            // default as empty
+            let sanitized_cmd = if replacement_value.is_empty() {
+                // we need to remove the `--chain` flag
+                self.command.as_ref().unwrap().replace("--chain", "")
+            } else {
+                self.command.as_ref().unwrap().clone()
+            };
+
+            let full_cmd = apply_replacements(
+                &sanitized_cmd,
+                &HashMap::from([("chainName", replacement_value.as_str())]),
+            );
+            trace!("full_cmd: {:?}", full_cmd);
+
+            let parts: Vec<&str> = full_cmd.split_whitespace().collect();
+            let Some((cmd, args)) = parts.split_first() else {
+                return Err(GeneratorError::ChainSpecGeneration(format!(
+                    "Invalid generator command: {full_cmd}"
+                )));
+            };
+            trace!("cmd: {:?} - args: {:?}", cmd, args);
 
             let generate_command =
-                GenerateFileCommand::new(cmd.as_str(), maybe_plain_spec_path.clone()).args(args);
+                GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
             let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
             ns.generate_files(options).await?;
         }
@@ -226,13 +245,23 @@ impl ChainSpec {
             chain_spec_path_in_pod.clone()
         };
 
-        let args: Vec<String> = vec![
-            "build-spec".into(),
-            "--chain".into(),
-            chain_spec_path_in_args,
-            "--raw".into(),
-            "--disable-default-bootnode".into(),
-        ];
+        let mut full_cmd = apply_replacements(
+            cmd,
+            &HashMap::from([("chainName", chain_spec_path_in_args.as_str())]),
+        );
+
+        if !full_cmd.contains("--raw") {
+            full_cmd = format!("{full_cmd} --raw");
+        }
+        trace!("full_cmd: {:?}", full_cmd);
+
+        let parts: Vec<&str> = full_cmd.split_whitespace().collect();
+        let Some((cmd, args)) = parts.split_first() else {
+            return Err(GeneratorError::ChainSpecGeneration(format!(
+                "Invalid generator command: {full_cmd}"
+            )));
+        };
+        trace!("cmd: {:?} - args: {:?}", cmd, args);
 
         let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
         let options = GenerateFilesOptions::with_files(

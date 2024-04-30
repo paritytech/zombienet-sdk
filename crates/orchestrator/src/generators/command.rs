@@ -1,4 +1,5 @@
-use configuration::{shared::constants::THIS_IS_A_BUG, types::Arg};
+use configuration::types::Arg;
+use support::constants::THIS_IS_A_BUG;
 
 use crate::{network_spec::node::NodeSpec, shared::constants::*};
 

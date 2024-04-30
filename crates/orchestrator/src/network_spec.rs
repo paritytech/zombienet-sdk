@@ -3,11 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use configuration::{
-    shared::constants::THIS_IS_A_BUG, GlobalSettings, HrmpChannelConfig, NetworkConfig,
-};
+use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
 use provider::{ProviderError, ProviderNamespace};
+use support::constants::THIS_IS_A_BUG;
 use tracing::debug;
 
 use crate::errors::OrchestratorError;

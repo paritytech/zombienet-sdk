@@ -4,7 +4,6 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::shared::constants::THIS_IS_A_BUG;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
     ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
@@ -17,6 +16,7 @@ use kube::{
     Api, Resource,
 };
 use serde::de::DeserializeOwned;
+use support::constants::THIS_IS_A_BUG;
 use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, trace};

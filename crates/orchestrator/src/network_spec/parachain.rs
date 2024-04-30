@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use configuration::{
     shared::resources::Resources,
@@ -6,7 +6,7 @@ use configuration::{
     ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
-use support::fs::FileSystem;
+use support::{fs::FileSystem, replacer::apply_replacements};
 use tracing::debug;
 
 use super::node::NodeSpec;
@@ -16,7 +16,7 @@ use crate::{
         chain_spec::{ChainSpec, Context},
         para_artifact::*,
     },
-    shared::types::ChainDefaultContext,
+    shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
     ScopedFilesystem,
 };
 
@@ -113,9 +113,20 @@ impl ParachainSpec {
             } else {
                 // TODO: Do we need to add the posibility to set the command to use?
                 // Currently (v1) is possible but when is set is set to the default command.
+
+                let replacements = HashMap::from([
+                    ("disableBootnodes", "--disable-default-bootnode"),
+                    ("mainCommand", main_cmd.as_str()),
+                ]);
+                let tmpl = if let Some(tmpl) = config.chain_spec_command() {
+                    apply_replacements(tmpl, &replacements)
+                } else {
+                    apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
+                };
+
                 Some(
                     chain_spec_builder
-                        .command(main_cmd.as_str())
+                        .command(tmpl.as_str())
                         .image(main_image.clone()),
                 )
             }

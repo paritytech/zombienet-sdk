@@ -2,11 +2,15 @@ use sp_core::{crypto::SecretStringError, ecdsa, ed25519, sr25519, Pair};
 
 use super::errors::GeneratorError;
 use crate::shared::types::{Accounts, NodeAccount};
-const KEYS: [&str; 4] = ["sr", "sr_stash", "ed", "ec"];
+const KEYS: [&str; 5] = ["sr", "sr_stash", "ed", "ec", "eth"];
 
 pub fn generate_pair<T: Pair>(seed: &str) -> Result<T::Pair, SecretStringError> {
     let pair = T::Pair::from_string(seed, None)?;
     Ok(pair)
+}
+
+pub fn generate_eth(_seed: &str) -> Result<(String, String), GeneratorError> {
+Ok(("".into(), "".into()))
 }
 
 pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
@@ -33,6 +37,9 @@ pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
                     .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
+            "eth" => {
+                generate_eth(seed)?
+            }
             _ => unreachable!(),
         };
         accounts.insert(k.into(), NodeAccount::new(address, public_key));

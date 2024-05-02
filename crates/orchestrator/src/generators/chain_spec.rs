@@ -398,12 +398,19 @@ impl ChainSpec {
                 .filter(|node| node.is_validator)
                 .collect();
 
+            let auth_opt = if self.chain_name().is_some_and(|chain_name| chain_name == "v-local" ) {
+                AuthOptions::ETH
+            } else {
+                AuthOptions::SR
+            };
+
             // check chain key types
             if chain_spec_json
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(&pointer, &mut chain_spec_json, &validators, false);
+
+                add_authorities(&pointer, &mut chain_spec_json, &validators, auth_opt /*false*/);
             } else if chain_spec_json
                 .pointer(&format!("{}/aura", pointer))
                 .is_some()
@@ -421,7 +428,7 @@ impl ChainSpec {
                 .filter(|node| node.is_invulnerable)
                 .collect();
 
-            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
+            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables, auth_opt);
 
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
@@ -503,7 +510,13 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(&pointer, &mut chain_spec_json, &validators, true);
+                let auth_opt = if self.chain_name().is_some_and(|chain_name| chain_name == "v-local" ) {
+                    AuthOptions::ETH
+                } else {
+                    AuthOptions::STASH
+                };
+
+                add_authorities(&pointer, &mut chain_spec_json, &validators, auth_opt/*true*/);
             }
 
             // staking && nominators
@@ -788,12 +801,19 @@ fn add_balances(
         unreachable!("pointer to runtime config should be valid!")
     }
 }
+#[derive(Copy, Clone)]
+pub enum AuthOptions {
+    SR,
+    STASH,
+    ETH,
+}
 
-fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
+fn get_node_keys(node: &NodeSpec, auth_opt: AuthOptions /*use_stash: bool*/) -> GenesisNodeKey {
     let sr_account = node.accounts.accounts.get("sr").unwrap();
     let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
     let ed_account = node.accounts.accounts.get("ed").unwrap();
     let ec_account = node.accounts.accounts.get("ec").unwrap();
+    let eth_account = node.accounts.accounts.get("eth").unwrap();
     let mut keys = HashMap::new();
     for k in [
         "babe",
@@ -812,7 +832,12 @@ fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
     keys.insert("grandpa".to_string(), ed_account.address.clone());
     keys.insert("beefy".to_string(), ec_account.address.clone());
 
-    let account_to_use = if use_stash { sr_stash } else { sr_account };
+    let account_to_use = match auth_opt {
+        AuthOptions::SR => { sr_account},
+        AuthOptions::STASH => {sr_stash},
+        AuthOptions::ETH => {eth_account}
+    };
+
     (
         account_to_use.address.clone(),
         account_to_use.address.clone(),
@@ -823,12 +848,12 @@ fn add_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &[&NodeSpec],
-    use_stash: bool,
+    auth_opt: AuthOptions /*use_stash: bool*/
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<GenesisNodeKey> = nodes
             .iter()
-            .map(|node| get_node_keys(node, use_stash))
+            .map(|node| get_node_keys(node, auth_opt))
             .collect();
         val["session"]["keys"] = json!(keys);
     } else {
@@ -903,16 +928,23 @@ fn add_collator_selection(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &[&NodeSpec],
+    auth_opt: AuthOptions,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
+        let key_type = match auth_opt {
+            AuthOptions::SR | AuthOptions::STASH => "sr",
+            AuthOptions::ETH => "eth",
+        };
+
         let keys: Vec<String> = nodes
             .iter()
             .map(|node| {
                 node.accounts
                     .accounts
-                    .get("sr")
+                    .get(key_type)
+                    //.get("sr")
                     .expect(&format!(
-                        "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
+                        "'{key_type}' account should be set at spec computation {THIS_IS_A_BUG}"
                     ))
                     .address
                     .clone()

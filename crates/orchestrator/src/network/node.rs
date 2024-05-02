@@ -66,7 +66,11 @@ impl NetworkNode {
     pub async fn client<Config: subxt::Config>(
         &self,
     ) -> Result<OnlineClient<Config>, subxt::Error> {
-        OnlineClient::from_url(&self.ws_uri).await
+        if subxt::utils::url_is_secure(&self.ws_uri)? {
+            OnlineClient::from_url(&self.ws_uri).await
+        } else {
+            OnlineClient::from_insecure_url(&self.ws_uri).await
+        }
     }
 
     /// Execute js/ts code inside [pjs_rs] custom runtime.

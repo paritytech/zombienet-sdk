@@ -398,7 +398,7 @@ impl ChainSpec {
                 .filter(|node| node.is_validator)
                 .collect();
 
-            let auth_opt = if self.chain_name().is_some_and(|chain_name| chain_name == "v-local" ) {
+            let auth_opt = if self.chain_name().is_some_and(|chain_name| chain_name == "local-v" ) {
                 AuthOptions::ETH
             } else {
                 AuthOptions::SR
@@ -510,7 +510,7 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                let auth_opt = if self.chain_name().is_some_and(|chain_name| chain_name == "v-local" ) {
+                let auth_opt = if self.chain_name().is_some_and(|chain_name| chain_name == "local-v" ) {
                     AuthOptions::ETH
                 } else {
                     AuthOptions::STASH

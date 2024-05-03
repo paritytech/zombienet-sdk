@@ -1,4 +1,4 @@
-use sp_core::{crypto::SecretStringError, ecdsa, ed25519, sr25519, Pair};
+use sp_core::{crypto::SecretStringError, ecdsa, ed25519, sr25519, ByteArray, Pair};
 
 use super::errors::GeneratorError;
 use crate::shared::types::{Accounts, NodeAccount};
@@ -9,8 +9,11 @@ pub fn generate_pair<T: Pair>(seed: &str) -> Result<T::Pair, SecretStringError> 
     Ok(pair)
 }
 
-pub fn generate_eth(_seed: &str) -> Result<(String, String), GeneratorError> {
-Ok(("".into(), "".into()))
+pub fn generate_eth(seed: &str) -> Result<(String, String), GeneratorError> {
+    let pair = generate_pair::<ecdsa::Pair>(seed)
+    .map_err(|_| GeneratorError::KeyGeneration("eth".into(), seed.into()))?;
+    Ok((format!("0x{}",hex::encode(&pair.public().as_slice()[13..])), hex::encode(pair.public())))
+
 }
 
 pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
@@ -109,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_work() {
+    fn generate_works() {
         let s = "Alice";
         let seed = format!("//{}", s);
 
@@ -133,6 +136,19 @@ mod tests {
         assert_eq!(
             format!("0x{}", ec.public_key),
             "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
+        );
+    }
+
+    #[test]
+    fn generate_eth_works() {
+        let s = "Alice";
+        let seed = format!("//{}", s);
+
+        let pair = generate(&seed).unwrap();
+        let eth = pair.get("eth").unwrap();
+        assert_eq!(
+            eth.address,
+            "0xe04779689068c916b04cb365ec3153755684d9a1"
         );
     }
 }

@@ -147,7 +147,7 @@ impl ChainSpec {
             let mut replacement_value = String::default();
             if let Some(chain_name) = self.chain_name.as_ref() {
                 if !chain_name.is_empty() {
-                    replacement_value = chain_name.clone();
+                    replacement_value.clone_from(chain_name);
                 }
             };
 

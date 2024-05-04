@@ -160,7 +160,7 @@ impl ContainerRunOptions {
     }
 
     pub fn port_mapping(mut self, port_mapping: &HashMap<Port, Port>) -> Self {
-        self.port_mapping = port_mapping.clone();
+        self.port_mapping.clone_from(port_mapping);
         self
     }
 

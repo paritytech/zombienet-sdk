@@ -169,7 +169,9 @@ impl NetworkConfig {
                 }
 
                 if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
-                    collator.db_snapshot.clone_from(&parachain_default_db_snapshot);
+                    collator
+                        .db_snapshot
+                        .clone_from(&parachain_default_db_snapshot);
                 }
 
                 if !default_args.is_empty() && collator.args().is_empty() {

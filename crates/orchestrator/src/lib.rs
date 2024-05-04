@@ -258,7 +258,7 @@ where
 
             // Is used in the register_para_options (We need to get this from the relay and not the collators)
             if node_ws_url.is_empty() {
-                node_ws_url = node.ws_uri.clone()
+                node_ws_url.clone_from(&node.ws_uri)
             }
 
             // Add the node to the `Network` instance

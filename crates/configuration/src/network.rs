@@ -126,16 +126,16 @@ impl NetworkConfig {
             if relaychain_default_command.is_some() {
                 // we modify only nodes which don't already have a command
                 if node.command.is_none() {
-                    node.command = relaychain_default_command.clone();
+                    node.command.clone_from(&relaychain_default_command);
                 }
             }
 
             if relaychain_default_image.is_some() && node.image.is_none() {
-                node.image = relaychain_default_image.clone();
+                node.image.clone_from(&relaychain_default_image);
             }
 
             if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
-                node.db_snapshot = relaychain_default_db_snapshot.clone();
+                node.db_snapshot.clone_from(&relaychain_default_db_snapshot);
             }
 
             if !default_args.is_empty() && node.args().is_empty() {
@@ -160,16 +160,16 @@ impl NetworkConfig {
                 if parachain_default_command.is_some() {
                     // we modify only nodes which don't already have a command
                     if collator.command.is_none() {
-                        collator.command = parachain_default_command.clone();
+                        collator.command.clone_from(&parachain_default_command);
                     }
                 }
 
                 if parachain_default_image.is_some() && collator.image.is_none() {
-                    collator.image = parachain_default_image.clone();
+                    collator.image.clone_from(&parachain_default_image);
                 }
 
                 if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
-                    collator.db_snapshot = parachain_default_db_snapshot.clone();
+                    collator.db_snapshot.clone_from(&parachain_default_db_snapshot);
                 }
 
                 if !default_args.is_empty() && collator.args().is_empty() {

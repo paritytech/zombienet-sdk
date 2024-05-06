@@ -44,3 +44,6 @@ flate2 = "1.0"
 # Zomebienet deps
 support = { workspace = true }
 configuration = { workspace = true }
+
+[dev-dependencies]
+k8s-openapi = { workspace = true, features = ["v1_27"] }

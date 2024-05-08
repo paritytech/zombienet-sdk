@@ -14,7 +14,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
         },
     },
-    utils::default_command_polkadot,
+    utils::{default_command_polkadot, is_false}
 };
 
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
@@ -33,7 +33,7 @@ pub struct RelaychainConfig {
     // and executed for generate the chain-spec.
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,

@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    utils::{default_as_true, default_initial_balance},
+    utils::{default_as_true, default_initial_balance, is_false},
 };
 
 /// The registration strategy that will be used for the parachain.
@@ -132,7 +132,7 @@ pub struct ParachainConfig {
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
     // Does the chain_spec_command needs to be run locally
-    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,

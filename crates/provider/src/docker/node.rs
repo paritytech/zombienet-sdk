@@ -343,6 +343,14 @@ where
         &self.log_path
     }
 
+    fn log_cmd(&self) -> String {
+        format!(
+            "{} logs -f {}",
+            self.docker_client.client_binary(),
+            self.container_name
+        )
+    }
+
     fn path_in_node(&self, file: &Path) -> PathBuf {
         // here is just a noop op since we will receive the path
         // for the file inside the pod

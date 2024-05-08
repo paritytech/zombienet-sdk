@@ -220,20 +220,13 @@ where
     let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
     info!("🚀 {}, should be running now", node.name);
     info!(
-        "🚀 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
+        "💻 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
         node.name
     );
-    info!("🚀 {}: metrics link {prometheus_uri}", node.name);
-    // TODO: the cmd for the logs should live on the node or ns.
-    if ctx.ns.capabilities().requires_image {
-        info!(
-            "📓 logs cmd: kubectl -n {} logs {}",
-            ctx.ns.name(),
-            node.name
-        );
-    } else {
-        info!("📓 logs cmd: tail -f {}/{}.log", base_dir, node.name);
-    }
+    info!("📊 {}: metrics link {prometheus_uri}", node.name);
+
+    info!("📓 logs cmd: {}", running_node.log_cmd());
+
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,

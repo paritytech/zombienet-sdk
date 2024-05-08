@@ -182,7 +182,11 @@ where
             .await?;
 
         // Build raw version
-        network_spec.relaychain.chain_spec.build_raw(&ns).await?;
+        network_spec
+            .relaychain
+            .chain_spec
+            .build_raw(&ns, &scoped_fs)
+            .await?;
 
         // get the bootnodes to spawn first and calculate the bootnode string for use later
         let mut bootnodes = vec![];

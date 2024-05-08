@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    utils::{default_as_true, default_initial_balance},
+    utils::{default_as_true, default_initial_balance, is_false},
 };
 
 /// The registration strategy that will be used for the parachain.
@@ -131,6 +131,9 @@ pub struct ParachainConfig {
     // and executed for generate the chain-spec.
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
+    // Does the chain_spec_command needs to be run locally
+    #[serde(skip_serializing_if = "is_false", default)]
+    chain_spec_command_is_local: bool,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -226,6 +229,11 @@ impl ParachainConfig {
         self.chain_spec_command.as_deref()
     }
 
+    /// Does the chain_spec_command needs to be run locally
+    pub fn chain_spec_command_is_local(&self) -> bool {
+        self.chain_spec_command_is_local
+    }
+
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
@@ -292,6 +300,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 genesis_overrides: None,
                 chain_spec_path: None,
                 chain_spec_command: None,
+                chain_spec_command_is_local: false, // remote by default
                 is_cumulus_based: true,
                 bootnodes_addresses: vec![],
                 collators: vec![],
@@ -667,6 +676,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         Self::transition(
             ParachainConfig {
                 chain_spec_command: Some(cmd_template.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set if the chain-spec command needs to be run locally or not (false by default)
+    pub fn chain_spec_command_is_local(self, choice: bool) -> Self {
+        Self::transition(
+            ParachainConfig {
+                chain_spec_command_is_local: choice,
                 ..self.config
             },
             self.validation_context,
@@ -1244,7 +1265,7 @@ mod tests {
     #[test]
     fn parachain_config_builder_should_works_with_chain_spec_command() {
         const CMD_TPL: &str = "./bin/chain-spec-generator {% raw %} {{chainName}} {% endraw %}";
-        let relaychain_config = ParachainConfigBuilder::new(Default::default())
+        let config = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("some-chain")
             .with_default_image("myrepo:myimage")
@@ -1254,6 +1275,25 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(relaychain_config.chain_spec_command(), Some(CMD_TPL));
+        assert_eq!(config.chain_spec_command(), Some(CMD_TPL));
+        assert!(!config.chain_spec_command_is_local());
+    }
+
+    #[test]
+    fn parachain_config_builder_should_works_with_chain_spec_command_and_local() {
+        const CMD_TPL: &str = "./bin/chain-spec-generator {% raw %} {{chainName}} {% endraw %}";
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("some-chain")
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .with_chain_spec_command(CMD_TPL)
+            .chain_spec_command_is_local(true)
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert_eq!(config.chain_spec_command(), Some(CMD_TPL));
+        assert!(config.chain_spec_command_is_local());
     }
 }

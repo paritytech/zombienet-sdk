@@ -175,6 +175,8 @@ pub trait ProviderNode {
 
     fn log_path(&self) -> &PathBuf;
 
+    fn log_cmd(&self) -> String;
+
     // Return the absolute path to the file in the `node` perspective
     // TODO: purpose?
     fn path_in_node(&self, file: &Path) -> PathBuf;

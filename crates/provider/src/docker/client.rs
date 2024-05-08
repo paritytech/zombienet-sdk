@@ -177,6 +177,14 @@ impl DockerClient {
         Ok(DockerClient { using_podman })
     }
 
+    pub fn client_binary(&self) -> String {
+        String::from(if self.using_podman {
+            "podman"
+        } else {
+            "docker"
+        })
+    }
+
     async fn is_using_podman() -> Result<bool> {
         let result = tokio::process::Command::new("docker")
             .arg("--version")

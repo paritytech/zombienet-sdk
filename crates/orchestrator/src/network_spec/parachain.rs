@@ -126,7 +126,7 @@ impl ParachainSpec {
 
                 Some(
                     chain_spec_builder
-                        .command(tmpl.as_str())
+                        .command(tmpl.as_str(), config.chain_spec_command_is_local())
                         .image(main_image.clone()),
                 )
             }
@@ -236,7 +236,7 @@ impl ParachainSpec {
                 .customize_para(&cloned, relay_chain_id, scoped_fs)
                 .await?;
             debug!("parachain chain-spec customized!");
-            chain_spec.build_raw(ns).await?;
+            chain_spec.build_raw(ns, scoped_fs).await?;
             debug!("parachain chain-spec raw built!");
             let chain_spec_raw_path =
                 chain_spec

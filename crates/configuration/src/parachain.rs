@@ -132,6 +132,7 @@ pub struct ParachainConfig {
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
     // Does the chain_spec_command needs to be run locally
+    #[serde(default)]
     chain_spec_command_is_local: bool,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,

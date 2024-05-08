@@ -33,6 +33,7 @@ pub struct RelaychainConfig {
     // and executed for generate the chain-spec.
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
+    #[serde(default)]
     chain_spec_command_is_local: bool,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,

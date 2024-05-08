@@ -124,10 +124,9 @@ impl ParachainSpec {
                     apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
                 };
 
-                // TODO: add a config way to set local/remote cmd
                 Some(
                     chain_spec_builder
-                        .command(tmpl.as_str(), tmpl.contains("chain-spec-generator"))
+                        .command(tmpl.as_str(), config.chain_spec_command_is_local())
                         .image(main_image.clone()),
                 )
             }

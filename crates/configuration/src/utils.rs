@@ -5,7 +5,7 @@ pub(crate) fn is_true(value: &bool) -> bool {
 }
 
 pub(crate) fn is_false(value: &bool) -> bool {
-    *value == false
+    !(*value)
 }
 
 pub(crate) fn default_as_true() -> bool {

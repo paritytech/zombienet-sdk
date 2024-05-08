@@ -396,6 +396,11 @@ where
         &self.log_path
     }
 
+    fn log_cmd(&self) -> String {
+        let base_dir = format!("{}/{}", self.base_dir().to_string_lossy(), self.name());
+        format!("tail -f {}/{}.log", base_dir, self.name())
+    }
+
     fn path_in_node(&self, file: &Path) -> PathBuf {
         let full_path = format!(
             "{}/{}",

@@ -88,7 +88,9 @@ impl RelaychainSpec {
                 apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
             };
 
-            chain_spec.command(tmpl.as_str()).image(main_image.clone())
+            chain_spec
+                .command(tmpl.as_str(), config.chain_spec_command_is_local())
+                .image(main_image.clone())
         };
 
         // build the `node_specs`

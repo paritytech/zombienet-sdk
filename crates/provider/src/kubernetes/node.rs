@@ -433,6 +433,10 @@ where
         &self.log_path
     }
 
+    fn log_cmd(&self) -> String {
+        format!("kubectl -n {} logs {}", self.namespace_name(), self.name)
+    }
+
     fn path_in_node(&self, file: &Path) -> PathBuf {
         // here is just a noop op since we will receive the path
         // for the file inside the pod

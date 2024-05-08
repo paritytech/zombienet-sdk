@@ -29,10 +29,11 @@ pub struct RelaychainConfig {
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     chain_spec_path: Option<AssetLocation>,
-    // Full _template_ command, will be rendered using [tera]
+    // Full _template_ command, will be rendered (using custom token replacements)
     // and executed for generate the chain-spec.
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
+    chain_spec_command_is_local: bool,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -80,6 +81,11 @@ impl RelaychainConfig {
     /// The full _template_ command to genera the chain-spec
     pub fn chain_spec_command(&self) -> Option<&str> {
         self.chain_spec_command.as_deref()
+    }
+
+    /// Does the chain_spec_command needs to be run locally
+    pub fn chain_spec_command_is_local(&self) -> bool {
+        self.chain_spec_command_is_local
     }
 
     /// The non-default command used for nodes.
@@ -140,6 +146,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_args: vec![],
                 chain_spec_path: None,
                 chain_spec_command: None,
+                chain_spec_command_is_local: false, // remote cmd by default
                 command: None,
                 random_nominators_count: None,
                 max_nominations: None,
@@ -328,6 +335,18 @@ impl RelaychainConfigBuilder<WithChain> {
         Self::transition(
             RelaychainConfig {
                 chain_spec_command: Some(cmd_template.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set if the chain-spec command needs to be run locally or not (false by default)
+    pub fn chain_spec_command_is_local(self, choice: bool) -> Self {
+        Self::transition(
+            RelaychainConfig {
+                chain_spec_command_is_local: choice,
                 ..self.config
             },
             self.validation_context,
@@ -683,7 +702,7 @@ mod tests {
     #[test]
     fn relaychain_config_builder_should_works_with_chain_spec_command() {
         const CMD_TPL: &str = "./bin/chain-spec-generator {% raw %} {{chainName}} {% endraw %}";
-        let relaychain_config = RelaychainConfigBuilder::new(Default::default())
+        let config = RelaychainConfigBuilder::new(Default::default())
             .with_chain("polkadot")
             .with_default_image("myrepo:myimage")
             .with_default_command("default_command")
@@ -692,6 +711,24 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(relaychain_config.chain_spec_command(), Some(CMD_TPL));
+        assert_eq!(config.chain_spec_command(), Some(CMD_TPL));
+        assert!(!config.chain_spec_command_is_local());
+    }
+
+    #[test]
+    fn relaychain_config_builder_should_works_with_chain_spec_command_locally() {
+        const CMD_TPL: &str = "./bin/chain-spec-generator {% raw %} {{chainName}} {% endraw %}";
+        let config = RelaychainConfigBuilder::new(Default::default())
+            .with_chain("polkadot")
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .with_chain_spec_command(CMD_TPL)
+            .chain_spec_command_is_local(true)
+            .with_node(|node| node.with_name("node1").bootnode(true))
+            .build()
+            .unwrap();
+
+        assert_eq!(config.chain_spec_command(), Some(CMD_TPL));
+        assert!(config.chain_spec_command_is_local());
     }
 }

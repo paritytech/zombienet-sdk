@@ -99,7 +99,10 @@ pub fn generate_for_cumulus_node(
             Arg::Option(..) => false,
         }) {
             (collator_args, full_node_args) = args.split_at(index);
-        };
+        } else {
+            // Assume args are those specified for collator only
+            collator_args = args;
+        }
     }
 
     // set our base path

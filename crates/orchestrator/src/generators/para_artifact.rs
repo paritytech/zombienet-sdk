@@ -69,6 +69,7 @@ impl ParaArtifact {
             ParaArtifactBuildOption::Path(path) => {
                 let t = TransferedFile::new(PathBuf::from(path), artifact_path.as_ref().into());
                 scoped_fs.copy_files(vec![&t]).await?;
+                self.artifact_path = Some(artifact_path.as_ref().into());
             },
             ParaArtifactBuildOption::Command(cmd) => {
                 let generate_subcmd = match self.artifact_type {

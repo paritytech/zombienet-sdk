@@ -18,7 +18,7 @@ pub enum OrchestratorError {
     InvariantError(&'static str),
     #[error("Global network spawn timeout: {0} secs")]
     GlobalTimeOut(u32),
-    #[error("Generator error")]
+    #[error("Generator error: {0}")]
     GeneratorError(#[from] generators::errors::GeneratorError),
     #[error("Provider error")]
     ProviderError(#[from] ProviderError),

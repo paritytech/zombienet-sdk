@@ -167,6 +167,18 @@ impl Parachain {
 
         Ok(())
     }
+
+    pub fn para_id(&self) -> u32 {
+        self.para_id
+    }
+
+    pub fn chain_id(&self) -> Option<&str> {
+        self.chain_id.as_deref()
+    }
+
+    pub fn collators(&self) -> Vec<&NetworkNode> {
+        self.collators.iter().collect()
+    }
 }
 
 #[cfg(test)]

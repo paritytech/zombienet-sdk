@@ -1,4 +1,6 @@
 use std::{
+    collections::HashMap,
+    env,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, Weak},
@@ -225,8 +227,14 @@ where
     }
 
     async fn initialize_process(&self) -> Result<(ChildStdout, ChildStderr), ProviderError> {
+        let filtered_env: HashMap<String, String> = env::vars()
+            .filter(|(k, _)| k == "TZ" || k == "LANG" || k == "PATH")
+            .collect();
+
         let mut process = Command::new(&self.program)
             .args(&self.args)
+            .env_clear()
+            .envs(&filtered_env) // minimal environment
             .envs(self.env.to_vec())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -397,8 +405,11 @@ where
     }
 
     fn log_cmd(&self) -> String {
-        let base_dir = format!("{}/{}", self.base_dir().to_string_lossy(), self.name());
-        format!("tail -f {}/{}.log", base_dir, self.name())
+        format!(
+            "tail -f {}/{}.log",
+            self.base_dir().to_string_lossy(),
+            self.name()
+        )
     }
 
     fn path_in_node(&self, file: &Path) -> PathBuf {

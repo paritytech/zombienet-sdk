@@ -186,21 +186,24 @@ impl DockerClient {
     }
 
     async fn is_using_podman() -> Result<bool> {
-        let result = tokio::process::Command::new("docker")
+        if let Ok(output) = tokio::process::Command::new("docker")
+            .arg("version")
+            .output()
+            .await
+        {
+            // detect whether we're actually running podman with docker emulation
+            return Ok(String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("podman"));
+        }
+
+        tokio::process::Command::new("podman")
             .arg("--version")
             .output()
             .await
             .map_err(|err| anyhow!("Failed to detect container engine: {err}"))?;
 
-        if !result.status.success() {
-            return Err(anyhow!(
-                "Failed to detect container engine: {}",
-                String::from_utf8_lossy(&result.stderr)
-            )
-            .into());
-        }
-
-        Ok(String::from_utf8_lossy(&result.stdout).contains("podman"))
+        Ok(true)
     }
 }
 

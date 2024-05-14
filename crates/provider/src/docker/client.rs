@@ -208,8 +208,13 @@ impl DockerClient {
 }
 
 impl DockerClient {
+    fn client_command(&self) -> tokio::process::Command {
+        tokio::process::Command::new(self.client_binary())
+    }
+
     pub async fn create_volume(&self, name: &str) -> Result<()> {
-        let result = tokio::process::Command::new("docker")
+        let result = self
+            .client_command()
             .args(["volume", "create", name])
             .output()
             .await
@@ -227,7 +232,7 @@ impl DockerClient {
     }
 
     pub async fn container_run(&self, options: ContainerRunOptions) -> Result<String> {
-        let mut cmd = tokio::process::Command::new("docker");
+        let mut cmd = self.client_command();
         cmd.args(["run", "-d", "--platform", "linux/amd64"]);
 
         Self::apply_cmd_options(&mut cmd, &options);
@@ -256,7 +261,7 @@ impl DockerClient {
     }
 
     pub async fn container_create(&self, options: ContainerRunOptions) -> Result<String> {
-        let mut cmd = tokio::process::Command::new("docker");
+        let mut cmd = self.client_command();
         cmd.args(["container", "create"]);
 
         Self::apply_cmd_options(&mut cmd, &options);
@@ -294,7 +299,7 @@ impl DockerClient {
     where
         S: Into<String> + std::fmt::Debug + Send + Clone,
     {
-        let mut cmd = tokio::process::Command::new("docker");
+        let mut cmd = self.client_command();
         cmd.arg("exec");
 
         if let Some(env) = env {
@@ -346,7 +351,8 @@ impl DockerClient {
         local_path: &Path,
         remote_path: &Path,
     ) -> Result<()> {
-        let result = tokio::process::Command::new("docker")
+        let result = self
+            .client_command()
             .args([
                 "cp",
                 local_path.to_string_lossy().as_ref(),
@@ -374,7 +380,8 @@ impl DockerClient {
     }
 
     pub async fn container_rm(&self, name: &str) -> Result<()> {
-        let result = tokio::process::Command::new("docker")
+        let result = self
+            .client_command()
             .args(["rm", "--force", "--volumes", name])
             .output()
             .await

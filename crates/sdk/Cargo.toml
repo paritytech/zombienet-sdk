@@ -30,3 +30,6 @@ tracing-subscriber = "0.3"
 kube = { workspace = true, features = ["ws", "runtime"] }
 k8s-openapi = { workspace = true, features = ["v1_27"] }
 serde_json = {workspace = true }
+
+[features]
+pjs = ["orchestrator/pjs"]

@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 pub use configuration::{NetworkConfig, NetworkConfigBuilder, RegistrationStrategy};
+#[cfg(feature = "pjs")]
+pub use orchestrator::pjs_helper::PjsResult;
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{node::NetworkNode, Network},
-    AddCollatorOptions, AddNodeOptions, Orchestrator, PjsResult,
+    AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
 use provider::{DockerProvider, KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;

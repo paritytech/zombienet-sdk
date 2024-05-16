@@ -48,7 +48,6 @@ libp2p = { version = "0.52" }
 subxt = { version = "0.35.3", features = ["substrate-compat"] }
 subxt-signer = { version = "0.35.3", features = ["subxt"] }
 tracing = "0.1.35"
-pjs-rs = "0.1.2"
 kube = "0.87.1"
 k8s-openapi = "0.20.0"
 tar = "0.4"

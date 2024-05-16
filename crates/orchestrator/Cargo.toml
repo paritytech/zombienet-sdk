@@ -28,7 +28,7 @@ subxt = { workspace = true }
 subxt-signer = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
-pjs-rs = { workspace = true }
+pjs-rs = { version = "0.1.2", optional = true }
 uuid = { workspace = true }
 
 # Zombienet deps
@@ -36,3 +36,6 @@ configuration = { workspace = true }
 support = { workspace = true }
 provider = { workspace = true }
 prom-metrics-parser = { workspace = true }
+
+[features]
+pjs = ["dep:pjs-rs"]

@@ -1,15 +1,14 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;
-use pjs_rs::ReturnValue;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
-use serde_json::json;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use tokio::sync::RwLock;
-use tracing::trace;
 
-use crate::{network_spec::node::NodeSpec, shared::types::PjsResult};
+use crate::network_spec::node::NodeSpec;
+#[cfg(feature = "pjs")]
+use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
 
 #[derive(Clone)]
 pub struct NetworkNode {
@@ -81,50 +80,6 @@ impl NetworkNode {
         }
     }
 
-    /// Execute js/ts code inside [pjs_rs] custom runtime.
-    ///
-    /// The code will be run in a wrapper similar to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs(
-        &self,
-        code: impl AsRef<str>,
-        args: Vec<serde_json::Value>,
-        user_types: Option<serde_json::Value>,
-    ) -> Result<PjsResult, anyhow::Error> {
-        let code = pjs_build_template(self.ws_uri(), code.as_ref(), args, user_types);
-        trace!("Code to execute: {code}");
-        let value = match pjs_inner(code)? {
-            ReturnValue::Deserialized(val) => Ok(val),
-            ReturnValue::CantDeserialize(msg) => Err(msg),
-        };
-
-        Ok(value)
-    }
-
-    /// Execute js/ts file  inside [pjs_rs] custom runtime.
-    ///
-    /// The content of the file will be run in a wrapper similar to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs_file(
-        &self,
-        file: impl AsRef<Path>,
-        args: Vec<serde_json::Value>,
-        user_types: Option<serde_json::Value>,
-    ) -> Result<PjsResult, anyhow::Error> {
-        let content = std::fs::read_to_string(file)?;
-        let code = pjs_build_template(self.ws_uri(), content.as_ref(), args, user_types);
-        trace!("Code to execute: {code}");
-
-        let value = match pjs_inner(code)? {
-            ReturnValue::Deserialized(val) => Ok(val),
-            ReturnValue::CantDeserialize(msg) => Err(msg),
-        };
-
-        Ok(value)
-    }
-
     /// Resume the node, this is implemented by resuming the
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
@@ -192,6 +147,52 @@ impl NetworkNode {
         Ok(self.inner.logs().await?)
     }
 
+    #[cfg(feature = "pjs")]
+    /// Execute js/ts code inside [pjs_rs] custom runtime.
+    ///
+    /// The code will be run in a wrapper similar to the `javascript` developer tab
+    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
+    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
+    pub async fn pjs(
+        &self,
+        code: impl AsRef<str>,
+        args: Vec<serde_json::Value>,
+        user_types: Option<serde_json::Value>,
+    ) -> Result<PjsResult, anyhow::Error> {
+        let code = pjs_build_template(self.ws_uri(), code.as_ref(), args, user_types);
+        tracing::trace!("Code to execute: {code}");
+        let value = match pjs_exec(code)? {
+            ReturnValue::Deserialized(val) => Ok(val),
+            ReturnValue::CantDeserialize(msg) => Err(msg),
+        };
+
+        Ok(value)
+    }
+
+    #[cfg(feature = "pjs")]
+    /// Execute js/ts file  inside [pjs_rs] custom runtime.
+    ///
+    /// The content of the file will be run in a wrapper similar to the `javascript` developer tab
+    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
+    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
+    pub async fn pjs_file(
+        &self,
+        file: impl AsRef<std::path::Path>,
+        args: Vec<serde_json::Value>,
+        user_types: Option<serde_json::Value>,
+    ) -> Result<PjsResult, anyhow::Error> {
+        let content = std::fs::read_to_string(file)?;
+        let code = pjs_build_template(self.ws_uri(), content.as_ref(), args, user_types);
+        tracing::trace!("Code to execute: {code}");
+
+        let value = match pjs_exec(code)? {
+            ReturnValue::Deserialized(val) => Ok(val),
+            ReturnValue::CantDeserialize(msg) => Err(msg),
+        };
+
+        Ok(value)
+    }
+
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {
         let response = reqwest::get(&self.prometheus_uri).await?;
         let metrics = prom_metrics_parser::parse(&response.text().await?)?;
@@ -226,65 +227,4 @@ impl std::fmt::Debug for NetworkNode {
             .field("prometheus_uri", &self.prometheus_uri)
             .finish()
     }
-}
-
-// Helper methods
-
-fn pjs_build_template(
-    ws_uri: &str,
-    content: &str,
-    args: Vec<serde_json::Value>,
-    user_types: Option<serde_json::Value>,
-) -> String {
-    let types = if let Some(user_types) = user_types {
-        if let Some(types) = user_types.pointer("/types") {
-            // if the user_types includes the `types` key use the inner value
-            types.clone()
-        } else {
-            user_types.clone()
-        }
-    } else {
-        // No custom types, just an emtpy json
-        json!({})
-    };
-
-    let tmpl = format!(
-        r#"
-    const {{ util, utilCrypto, keyring, types }} = pjs;
-    ( async () => {{
-        const api = await pjs.api.ApiPromise.create({{
-            provider: new pjs.api.WsProvider('{}'),
-            types: {}
-         }});
-        const _run = async (api, hashing, keyring, types, util, arguments) => {{
-            {}
-        }};
-        return await _run(api, utilCrypto, keyring, types, util, {});
-    }})()
-    "#,
-        ws_uri,
-        types,
-        content,
-        json!(args),
-    );
-    trace!(tmpl = tmpl, "code to execute");
-    tmpl
-}
-
-// Since pjs-rs run a custom javascript runtime (using deno_core) we need to
-// execute in an isolated thread.
-fn pjs_inner(code: String) -> Result<ReturnValue, anyhow::Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
-    std::thread::spawn(move || {
-        rt.block_on(async move {
-            let value = pjs_rs::run_ts_code(code, None).await;
-            trace!("ts_code return: {:?}", value);
-            value
-        })
-    })
-    .join()
-    .map_err(|_| anyhow!("[pjs] Thread panicked"))?
 }

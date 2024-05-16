@@ -6,6 +6,8 @@ mod generators;
 pub mod network;
 mod network_helper;
 mod network_spec;
+#[cfg(feature = "pjs")]
+pub mod pjs_helper;
 mod shared;
 mod spawner;
 
@@ -494,7 +496,8 @@ pub enum ZombieRole {
 
 // re-export
 pub use network::{AddCollatorOptions, AddNodeOptions};
-pub use shared::types::PjsResult;
+#[cfg(feature = "pjs")]
+pub use pjs_helper::PjsResult;
 
 #[cfg(test)]
 mod tests {

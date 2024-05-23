@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     env,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Weak},
 };
 
@@ -15,7 +15,7 @@ use k8s_openapi::{
 };
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::sync::{Mutex, RwLock};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 use uuid::Uuid;
 
 use super::{client::KubernetesClient, node::KubernetesNode};
@@ -59,10 +59,21 @@ where
         capabilities: &ProviderCapabilities,
         k8s_client: &KubernetesClient,
         filesystem: &FS,
+        custom_base_dir: Option<&Path>,
     ) -> Result<Arc<Self>, ProviderError> {
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
-        let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
-        filesystem.create_dir(&base_dir).await?;
+        let base_dir = if let Some(custom_base_dir) = custom_base_dir {
+            if !filesystem.exists(custom_base_dir).await {
+                filesystem.create_dir(&custom_base_dir).await?;
+            } else {
+                warn!("⚠️ Using and existing directory {} as base dir", custom_base_dir.to_string_lossy());
+            }
+            PathBuf::from(custom_base_dir)
+        } else {
+            let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
+            filesystem.create_dir(&base_dir).await?;
+            base_dir
+        };
 
         let namespace = Arc::new_cyclic(|weak| KubernetesNamespace {
             weak: weak.clone(),

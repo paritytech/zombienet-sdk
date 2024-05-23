@@ -23,8 +23,6 @@ pub fn small_network_config(
             })
         });
 
-    
-
     if let Some(base_dir) = custom_base_dir {
         builder
             .with_global_settings(|g| g.with_base_dir(base_dir))

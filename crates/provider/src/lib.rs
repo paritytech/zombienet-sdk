@@ -123,7 +123,10 @@ pub trait Provider {
 
     async fn create_namespace(&self) -> Result<DynNamespace, ProviderError>;
 
-    async fn create_namespace_with_base_dir(&self, base_dir: &Path) -> Result<DynNamespace, ProviderError>;
+    async fn create_namespace_with_base_dir(
+        &self,
+        base_dir: &Path,
+    ) -> Result<DynNamespace, ProviderError>;
 }
 
 pub type DynProvider = Arc<dyn Provider + Send + Sync>;

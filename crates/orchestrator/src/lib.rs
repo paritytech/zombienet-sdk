@@ -12,7 +12,8 @@ mod shared;
 mod spawner;
 
 use std::{
-    path::{Path, PathBuf}, time::Duration
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 use configuration::{NetworkConfig, RegistrationStrategy};
@@ -85,7 +86,9 @@ where
 
         // create namespace
         let ns = if let Some(base_dir) = network_spec.global_settings.base_dir() {
-            self.provider.create_namespace_with_base_dir(base_dir).await?
+            self.provider
+                .create_namespace_with_base_dir(base_dir)
+                .await?
         } else {
             self.provider.create_namespace().await?
         };

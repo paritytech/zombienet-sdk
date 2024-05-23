@@ -52,14 +52,17 @@ where
         capabilities: &ProviderCapabilities,
         docker_client: &DockerClient,
         filesystem: &FS,
-        custom_base_dir: Option<&Path>
+        custom_base_dir: Option<&Path>,
     ) -> Result<Arc<Self>, ProviderError> {
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
         let base_dir = if let Some(custom_base_dir) = custom_base_dir {
             if !filesystem.exists(custom_base_dir).await {
                 filesystem.create_dir(&custom_base_dir).await?;
             } else {
-                warn!("⚠️  Using and existing directory {} as base dir", custom_base_dir.to_string_lossy());
+                warn!(
+                    "⚠️  Using and existing directory {} as base dir",
+                    custom_base_dir.to_string_lossy()
+                );
             }
             PathBuf::from(custom_base_dir)
         } else {
@@ -67,8 +70,6 @@ where
             filesystem.create_dir(&base_dir).await?;
             base_dir
         };
-
-
 
         let namespace = Arc::new_cyclic(|weak| DockerNamespace {
             weak: weak.clone(),

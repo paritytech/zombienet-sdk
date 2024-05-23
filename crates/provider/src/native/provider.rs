@@ -83,7 +83,7 @@ where
             &self.tmp_dir,
             &self.capabilities,
             &self.filesystem,
-            None
+            None,
         )
         .await?;
 
@@ -95,13 +95,16 @@ where
         Ok(namespace)
     }
 
-    async fn create_namespace_with_base_dir(&self, base_dir: &Path) -> Result<DynNamespace, ProviderError> {
+    async fn create_namespace_with_base_dir(
+        &self,
+        base_dir: &Path,
+    ) -> Result<DynNamespace, ProviderError> {
         let namespace = NativeNamespace::new(
             &self.weak,
             &self.tmp_dir,
             &self.capabilities,
             &self.filesystem,
-            Some(&base_dir)
+            Some(&base_dir),
         )
         .await?;
 

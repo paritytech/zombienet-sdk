@@ -96,14 +96,17 @@ where
         Ok(namespace)
     }
 
-    async fn create_namespace_with_base_dir(&self, base_dir: &Path) -> Result<DynNamespace, ProviderError> {
+    async fn create_namespace_with_base_dir(
+        &self,
+        base_dir: &Path,
+    ) -> Result<DynNamespace, ProviderError> {
         let namespace = DockerNamespace::new(
             &self.weak,
             &self.tmp_dir,
             &self.capabilities,
             &self.docker_client,
             &self.filesystem,
-            Some(&base_dir)
+            Some(&base_dir),
         )
         .await?;
 

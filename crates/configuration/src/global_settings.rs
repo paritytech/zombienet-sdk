@@ -1,4 +1,10 @@
-use std::{error::Error, fmt::Display, net::IpAddr, path::{Path, PathBuf}, str::FromStr};
+use std::{
+    error::Error,
+    fmt::Display,
+    net::IpAddr,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
@@ -32,7 +38,7 @@ pub struct GlobalSettings {
     /// Directory to use as base dir
     /// Used to reuse the same files (database) from a previous run,
     /// also note that we will override the content of some of those files.
-    base_dir: Option<PathBuf>
+    base_dir: Option<PathBuf>,
 }
 
 impl GlobalSettings {
@@ -221,7 +227,10 @@ mod tests {
                 .as_str(),
             "10.0.0.1"
         );
-        assert_eq!(global_settings_config.base_dir().unwrap(), Path::new("/home/nonroot/mynetwork"));
+        assert_eq!(
+            global_settings_config.base_dir().unwrap(),
+            Path::new("/home/nonroot/mynetwork")
+        );
     }
 
     #[test]

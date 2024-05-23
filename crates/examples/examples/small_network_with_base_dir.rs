@@ -5,7 +5,6 @@ use zombienet_sdk::NetworkConfigExt;
 #[path = "./common/lib.rs"]
 mod common;
 
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -15,5 +14,4 @@ async fn main() {
     // For now let just loop....
     #[allow(clippy::empty_loop)]
     loop {}
-
 }

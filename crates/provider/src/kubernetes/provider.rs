@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Weak},
 };
 
@@ -84,6 +84,29 @@ where
             &self.capabilities,
             &self.k8s_client,
             &self.filesystem,
+            None,
+        )
+        .await?;
+
+        self.namespaces
+            .write()
+            .await
+            .insert(namespace.name().to_string(), namespace.clone());
+
+        Ok(namespace)
+    }
+
+    async fn create_namespace_with_base_dir(
+        &self,
+        base_dir: &Path,
+    ) -> Result<DynNamespace, ProviderError> {
+        let namespace = KubernetesNamespace::new(
+            &self.weak,
+            &self.tmp_dir,
+            &self.capabilities,
+            &self.k8s_client,
+            &self.filesystem,
+            Some(base_dir),
         )
         .await?;
 

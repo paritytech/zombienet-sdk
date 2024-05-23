@@ -1,4 +1,10 @@
-use std::{error::Error, fmt::Display, net::IpAddr, str::FromStr};
+use std::{
+    error::Error,
+    fmt::Display,
+    net::IpAddr,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
@@ -15,14 +21,24 @@ use crate::{
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalSettings {
+    /// Global bootnodes to use (we will then add more)
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
     // TODO: parse both case in zombienet node version to avoid renamed ?
+    /// Glocal spawn timeout
     #[serde(rename = "timeout")]
     network_spawn_timeout: Duration,
+    // TODO: not used yet
+    /// Node spawn timeout
     #[serde(default = "default_node_spawn_timeout")]
     node_spawn_timeout: Duration,
+    // TODO: not used yet
+    /// Local ip to use for construct the direct links
     local_ip: Option<IpAddr>,
+    /// Directory to use as base dir
+    /// Used to reuse the same files (database) from a previous run,
+    /// also note that we will override the content of some of those files.
+    base_dir: Option<PathBuf>,
 }
 
 impl GlobalSettings {
@@ -45,6 +61,12 @@ impl GlobalSettings {
     pub fn local_ip(&self) -> Option<&IpAddr> {
         self.local_ip.as_ref()
     }
+
+    /// Base directory to use (instead a random tmp one)
+    /// All the artifacts will be created in this directory.
+    pub fn base_dir(&self) -> Option<&Path> {
+        self.base_dir.as_deref()
+    }
 }
 
 /// A global settings builder, used to build [`GlobalSettings`] declaratively with fields validation.
@@ -61,6 +83,7 @@ impl Default for GlobalSettingsBuilder {
                 network_spawn_timeout: 1000,
                 node_spawn_timeout: 300,
                 local_ip: None,
+                base_dir: None,
             },
             errors: vec![],
         }
@@ -143,6 +166,17 @@ impl GlobalSettingsBuilder {
         }
     }
 
+    /// Set the directory to use as base (instead of a random tmp one).
+    pub fn with_base_dir(self, base_dir: impl Into<PathBuf>) -> Self {
+        Self::transition(
+            GlobalSettings {
+                base_dir: Some(base_dir.into()),
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
     /// Seals the builder and returns a [`GlobalSettings`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<GlobalSettings, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
@@ -171,6 +205,7 @@ mod tests {
             .with_network_spawn_timeout(600)
             .with_node_spawn_timeout(120)
             .with_local_ip("10.0.0.1")
+            .with_base_dir("/home/nonroot/mynetwork")
             .build()
             .unwrap();
 
@@ -191,6 +226,10 @@ mod tests {
                 .to_string()
                 .as_str(),
             "10.0.0.1"
+        );
+        assert_eq!(
+            global_settings_config.base_dir().unwrap(),
+            Path::new("/home/nonroot/mynetwork")
         );
     }
 

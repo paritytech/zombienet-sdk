@@ -85,7 +85,14 @@ where
             })?;
 
         // create namespace
-        let ns = self.provider.create_namespace().await?;
+        let ns = if let Some(base_dir) = network_spec.global_settings.base_dir() {
+            self.provider
+                .create_namespace_with_base_dir(base_dir)
+                .await?
+        } else {
+            self.provider.create_namespace().await?
+        };
+
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());
 
@@ -118,7 +125,12 @@ where
             debug!("parachain chain-spec built!");
 
             // TODO: this need to be abstracted in a single call to generate_files.
-            scoped_fs.create_dir(para.id.to_string()).await?;
+            if network_spec.global_settings.base_dir().is_some() {
+                scoped_fs.create_dir_all(para.id.to_string()).await?;
+            } else {
+                scoped_fs.create_dir(para.id.to_string()).await?;
+            };
+
             // create wasm/state
             para.genesis_state
                 .build(

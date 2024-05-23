@@ -91,10 +91,10 @@ where
         let log_path = base_dir.join("node.log");
 
         try_join!(
-            filesystem.create_dir(&config_dir),
-            filesystem.create_dir(&data_dir),
-            filesystem.create_dir(&relay_data_dir),
-            filesystem.create_dir(&scripts_dir),
+            filesystem.create_dir_all(&config_dir),
+            filesystem.create_dir_all(&data_dir),
+            filesystem.create_dir_all(&relay_data_dir),
+            filesystem.create_dir_all(&scripts_dir),
         )?;
 
         let node = Arc::new(DockerNode {

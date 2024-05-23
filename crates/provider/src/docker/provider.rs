@@ -106,7 +106,7 @@ where
             &self.capabilities,
             &self.docker_client,
             &self.filesystem,
-            Some(&base_dir),
+            Some(base_dir),
         )
         .await?;
 

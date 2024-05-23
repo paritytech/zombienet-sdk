@@ -106,7 +106,7 @@ where
             &self.capabilities,
             &self.k8s_client,
             &self.filesystem,
-            Some(&base_dir),
+            Some(base_dir),
         )
         .await?;
 

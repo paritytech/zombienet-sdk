@@ -64,7 +64,7 @@ where
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
         let base_dir = if let Some(custom_base_dir) = custom_base_dir {
             if !filesystem.exists(custom_base_dir).await {
-                filesystem.create_dir(&custom_base_dir).await?;
+                filesystem.create_dir(custom_base_dir).await?;
             } else {
                 warn!(
                     "⚠️ Using and existing directory {} as base dir",

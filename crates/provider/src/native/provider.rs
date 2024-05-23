@@ -104,7 +104,7 @@ where
             &self.tmp_dir,
             &self.capabilities,
             &self.filesystem,
-            Some(&base_dir),
+            Some(base_dir),
         )
         .await?;
 

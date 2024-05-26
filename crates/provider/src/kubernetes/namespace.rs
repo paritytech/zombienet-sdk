@@ -321,8 +321,17 @@ where
         Ok(())
     }
 
-    pub async fn delete_on_drop(&self, delete_on_drop: bool) {
+    pub async fn set_delete_on_drop(&self, delete_on_drop: bool) {
         *self.delete_on_drop.lock().await = delete_on_drop;
+    }
+
+    pub async fn delete_on_drop(&self) -> bool {
+        if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
+            *delete_on_drop
+        } else {
+            // if we can't lock just remove the ns
+            true
+        }
     }
 }
 
@@ -370,7 +379,11 @@ where
     }
 
     async fn detach(&self) {
-        self.delete_on_drop(false).await;
+        self.set_delete_on_drop(false).await;
+    }
+
+    async fn is_detached(&self) -> bool {
+        self.delete_on_drop().await
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {

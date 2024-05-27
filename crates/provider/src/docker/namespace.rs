@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Weak},
+    thread,
 };
 
 use anyhow::anyhow;
@@ -178,6 +179,7 @@ where
 
     async fn initialize_helper_binaries_volume(&self) -> Result<(), ProviderError> {
         let helper_binaries_volume_name = format!("{}-helper-binaries", self.name);
+        let zombie_wrapper_volume_name = format!("{}-zombie-wrapper", self.name);
 
         self.docker_client
             .create_volume(&helper_binaries_volume_name)
@@ -186,15 +188,23 @@ where
 
         // download binaries to volume
         self.docker_client
-            .container_create(
+            .container_run(
                 ContainerRunOptions::new(
                     "alpine:latest",
                     vec!["ash", "/scripts/helper-binaries-downloader.sh"],
                 )
-                .volume_mounts(HashMap::from([(
-                    helper_binaries_volume_name.as_str(),
-                    "/helpers",
-                )]))
+                .volume_mounts(HashMap::from([
+                    (
+                        helper_binaries_volume_name.as_str(),
+                        "/helpers",
+                    ),
+                    (
+                        zombie_wrapper_volume_name.as_ref(),
+                        "/scripts",
+                    )
+                ]))
+                // wait until complete
+                .detach(false)
                 .rm(),
             )
             .await
@@ -216,8 +226,17 @@ where
         Ok(())
     }
 
-    pub async fn delete_on_drop(&self, delete_on_drop: bool) {
+    pub async fn set_delete_on_drop(&self, delete_on_drop: bool) {
         *self.delete_on_drop.lock().await = delete_on_drop;
+    }
+
+    pub async fn delete_on_drop(&self) -> bool {
+        if let Ok(delete_on_drop) = self.delete_on_drop.try_lock() {
+            *delete_on_drop
+        } else {
+            // if we can't lock just remove the ns
+            true
+        }
     }
 }
 
@@ -239,7 +258,11 @@ where
     }
 
     async fn detach(&self) {
-        self.delete_on_drop(false).await;
+        self.set_delete_on_drop(false).await;
+    }
+
+    async fn is_detached(&self) -> bool {
+        self.delete_on_drop().await
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {
@@ -389,15 +412,28 @@ where
             if *delete_on_drop {
                 let client = self.docker_client.clone();
                 let provider = self.provider.upgrade();
-                futures::executor::block_on(async move {
-                    trace!("🧟 deleting ns {ns_name} from cluster");
-                    let _ = client.namespaced_containers_rm(&ns_name).await;
-                    if let Some(provider) = provider {
-                        provider.namespaces.write().await.remove(&ns_name);
-                    }
 
-                    trace!("✅ deleted");
+                let handler = thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async move {
+                        trace!("🧟 deleting ns {ns_name} from cluster");
+                        let _ = client.namespaced_containers_rm(&ns_name).await;
+                        trace!("✅ deleted");
+                    });
                 });
+
+                if handler.join().is_ok() {
+                    if let Some(provider) = provider {
+                        if let Ok(mut p) = provider.namespaces.try_write() {
+                            p.remove(&self.name);
+                        } else {
+                            warn!(
+                                "⚠️  Can not acquire write lock to the provider, ns {} not removed",
+                                self.name
+                            );
+                        }
+                    }
+                }
             } else {
                 trace!("⚠️ leaking ns {ns_name} in cluster");
             }

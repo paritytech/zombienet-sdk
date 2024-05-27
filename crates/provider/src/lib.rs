@@ -144,6 +144,11 @@ pub trait ProviderNamespace {
         warn!("Detach is not implemented for {}", self.name());
     }
 
+    async fn is_detached(&self) -> bool {
+        // false by default
+        false
+    }
+
     async fn nodes(&self) -> HashMap<String, DynNode>;
 
     async fn get_node_available_args(

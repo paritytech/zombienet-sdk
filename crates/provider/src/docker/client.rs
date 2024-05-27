@@ -1,9 +1,10 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::anyhow;
+use futures::future::try_join_all;
 use serde::{Deserialize, Deserializer};
 use tokio::process::Command;
-use tracing::trace;
+use tracing::{info, trace};
 
 use crate::types::{ExecutionResult, Port};
 
@@ -28,6 +29,7 @@ pub struct ContainerRunOptions {
     entrypoint: Option<String>,
     port_mapping: HashMap<Port, Port>,
     rm: bool,
+    detach: bool,
 }
 
 enum Container {
@@ -115,6 +117,7 @@ impl ContainerRunOptions {
             entrypoint: None,
             port_mapping: HashMap::default(),
             rm: false,
+            detach: true, // add -d flag by default
         }
     }
 
@@ -166,6 +169,11 @@ impl ContainerRunOptions {
 
     pub fn rm(mut self) -> Self {
         self.rm = true;
+        self
+    }
+
+    pub fn detach(mut self, choice: bool) -> Self {
+        self.detach = choice;
         self
     }
 }
@@ -233,7 +241,11 @@ impl DockerClient {
 
     pub async fn container_run(&self, options: ContainerRunOptions) -> Result<String> {
         let mut cmd = self.client_command();
-        cmd.args(["run", "-d", "--platform", "linux/amd64"]);
+        cmd.args(["run", "--platform", "linux/amd64"]);
+
+        if options.detach {
+            cmd.arg("-d");
+        }
 
         Self::apply_cmd_options(&mut cmd, &options);
 
@@ -425,9 +437,12 @@ impl DockerClient {
             })
             .collect();
 
-        for name in container_names {
-            self.container_rm(&name).await?;
-        }
+        info!("{:?}", container_names);
+        let futures = container_names
+            .iter()
+            .map(|name| self.container_rm(name))
+            .collect::<Vec<_>>();
+        try_join_all(futures).await?;
 
         Ok(())
     }

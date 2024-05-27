@@ -29,12 +29,12 @@ where
 
 impl<FS> DockerProvider<FS>
 where
-    FS: FileSystem + Send + Sync + Clone,
+    FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub async fn new(filesystem: FS) -> Arc<Self> {
         let docker_client = DockerClient::new().await.unwrap();
 
-        Arc::new_cyclic(|weak| DockerProvider {
+        let provider = Arc::new_cyclic(|weak| DockerProvider {
             weak: weak.clone(),
             capabilities: ProviderCapabilities {
                 requires_image: true,
@@ -46,7 +46,23 @@ where
             docker_client,
             filesystem,
             namespaces: RwLock::new(HashMap::new()),
-        })
+        });
+
+        let cloned_provider = provider.clone();
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.unwrap();
+            for (_, ns) in cloned_provider.namespaces().await {
+                if ns.is_detached().await {
+                    // best effort
+                    let _ = ns.destroy().await;
+                }
+            }
+
+            // exit the process (130, SIGINT)
+            std::process::exit(130)
+        });
+
+        provider
     }
 
     pub fn tmp_dir(mut self, tmp_dir: impl Into<PathBuf>) -> Self {

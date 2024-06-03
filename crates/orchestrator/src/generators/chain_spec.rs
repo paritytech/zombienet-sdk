@@ -473,8 +473,7 @@ impl ChainSpec {
             })?;
             self.write_spec(scoped_fs, content).await?;
         } else {
-            // TODO: add a warning here
-            todo!();
+            warn!("⚠️ chain-spec for para_id: {} is in raw mode", para.id);
         }
         Ok(())
     }

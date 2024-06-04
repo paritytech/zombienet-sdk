@@ -363,7 +363,11 @@ where
             });
 
             // join all the running nodes
-            running_nodes.extend_from_slice(futures::future::try_join_all(spawning_tasks).await?.as_slice());
+            running_nodes.extend_from_slice(
+                futures::future::try_join_all(spawning_tasks)
+                    .await?
+                    .as_slice(),
+            );
 
             let running_para_id = parachain.para_id;
             network.add_para(parachain);

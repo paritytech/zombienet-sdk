@@ -73,24 +73,26 @@ impl RelaychainSpec {
             .or(config.nodes().first().and_then(|node| node.image()))
             .map(|image| image.as_str().to_string());
 
+        let replacements = HashMap::from([
+            ("disableBootnodes", "--disable-default-bootnode"),
+            ("mainCommand", main_cmd.as_str()),
+        ]);
+        let tmpl = if let Some(tmpl) = config.chain_spec_command() {
+            apply_replacements(tmpl, &replacements)
+        } else {
+            apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
+        };
+
         let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay)
-            .set_chain_name(config.chain().as_str());
+            .set_chain_name(config.chain().as_str())
+            .command(tmpl.as_str(), config.chain_spec_command_is_local())
+            .image(main_image.clone());
+
+        // Add asset location if present
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
             chain_spec.asset_location(chain_spec_path.clone())
         } else {
-            let replacements = HashMap::from([
-                ("disableBootnodes", "--disable-default-bootnode"),
-                ("mainCommand", main_cmd.as_str()),
-            ]);
-            let tmpl = if let Some(tmpl) = config.chain_spec_command() {
-                apply_replacements(tmpl, &replacements)
-            } else {
-                apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
-            };
-
             chain_spec
-                .command(tmpl.as_str(), config.chain_spec_command_is_local())
-                .image(main_image.clone())
         };
 
         // build the `node_specs`

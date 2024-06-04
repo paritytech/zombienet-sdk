@@ -243,6 +243,7 @@ impl ChainSpec {
             rand::random::<u8>()
         );
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
+        println!("{:?}", self);
         let cmd = self
             .command
             .as_ref()

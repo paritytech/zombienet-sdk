@@ -108,27 +108,24 @@ impl ParachainSpec {
             };
             let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
 
-            if let Some(chain_spec_path) = config.chain_spec_path() {
-                Some(chain_spec_builder.asset_location(chain_spec_path.clone()))
+            let replacements = HashMap::from([
+                ("disableBootnodes", "--disable-default-bootnode"),
+                ("mainCommand", main_cmd.as_str()),
+            ]);
+            let tmpl = if let Some(tmpl) = config.chain_spec_command() {
+                apply_replacements(tmpl, &replacements)
             } else {
-                // TODO: Do we need to add the posibility to set the command to use?
-                // Currently (v1) is possible but when is set is set to the default command.
+                apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
+            };
 
-                let replacements = HashMap::from([
-                    ("disableBootnodes", "--disable-default-bootnode"),
-                    ("mainCommand", main_cmd.as_str()),
-                ]);
-                let tmpl = if let Some(tmpl) = config.chain_spec_command() {
-                    apply_replacements(tmpl, &replacements)
-                } else {
-                    apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
-                };
+            let chain_spec = chain_spec_builder
+                    .command(tmpl.as_str(), config.chain_spec_command_is_local())
+                    .image(main_image.clone());
 
-                Some(
-                    chain_spec_builder
-                        .command(tmpl.as_str(), config.chain_spec_command_is_local())
-                        .image(main_image.clone()),
-                )
+            if let Some(chain_spec_path) = config.chain_spec_path() {
+                Some(chain_spec.asset_location(chain_spec_path.clone()))
+            } else {
+                Some(chain_spec)
             }
         } else {
             None

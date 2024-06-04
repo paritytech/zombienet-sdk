@@ -323,6 +323,7 @@ where
 
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];
+            let mut running_nodes: Vec<NetworkNode> = vec![];
             for node in futures::future::try_join_all(spawning_tasks).await? {
                 let ip = node.inner.ip().await?;
                 let port = if ctx.ns.capabilities().use_default_ports_in_cmd {
@@ -344,6 +345,8 @@ where
                         PathBuf::from(format!("/cfg/{}.json", para.id)),
                     ));
                 }
+
+                running_nodes.push(node);
             }
 
             if let Some(para_chain_spec) = para.chain_spec.as_ref() {
@@ -359,7 +362,9 @@ where
                 spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
             });
 
-            let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
+            // join all the running nodes
+            running_nodes.extend_from_slice(futures::future::try_join_all(spawning_tasks).await?.as_slice());
+
             let running_para_id = parachain.para_id;
             network.add_para(parachain);
             for node in running_nodes {

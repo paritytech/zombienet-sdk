@@ -90,7 +90,7 @@ impl RelaychainSpec {
 
         // Add asset location if present
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
-                chain_spec.asset_location(chain_spec_path.clone())
+            chain_spec.asset_location(chain_spec_path.clone())
         } else {
             chain_spec
         };

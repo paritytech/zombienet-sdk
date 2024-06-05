@@ -305,21 +305,9 @@ where
                 ..ctx.clone()
             };
 
-            let mut para_files_to_inject = global_files_to_inject.clone();
-            if para.is_cumulus_based {
-                para_files_to_inject.push(TransferedFile::new(
-                    PathBuf::from(format!(
-                        "{}/{}.json",
-                        ns.base_dir().to_string_lossy(),
-                        para.id
-                    )),
-                    PathBuf::from(format!("/cfg/{}.json", para.id)),
-                ));
-            }
-
-            let spawning_tasks = bootnodes
-                .iter()
-                .map(|node| spawner::spawn_node(node, para_files_to_inject.clone(), &ctx_para));
+            let spawning_tasks = bootnodes.iter().map(|node| {
+                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+            });
 
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];
@@ -333,18 +321,6 @@ where
                 };
                 let bootnode_multiaddr = generate_bootnode_addr(&node, &ip, port)?;
                 bootnodes_addr.push(bootnode_multiaddr);
-
-                let mut para_files_to_inject = global_files_to_inject.clone();
-                if para.is_cumulus_based {
-                    para_files_to_inject.push(TransferedFile::new(
-                        PathBuf::from(format!(
-                            "{}/{}.json",
-                            ns.base_dir().to_string_lossy(),
-                            para.id
-                        )),
-                        PathBuf::from(format!("/cfg/{}.json", para.id)),
-                    ));
-                }
 
                 running_nodes.push(node);
             }

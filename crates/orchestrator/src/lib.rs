@@ -305,9 +305,9 @@ where
                 ..ctx.clone()
             };
 
-            let spawning_tasks = bootnodes
-                .iter()
-                .map(|node| spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para));
+            let spawning_tasks = bootnodes.iter().map(|node| {
+                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+            });
 
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];

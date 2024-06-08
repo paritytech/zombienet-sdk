@@ -53,6 +53,7 @@ fn get_spawn_fn() -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResul
 #[tokio::test(flavor = "multi_thread")]
 async fn ci_k8s_basic_functionalities_should_works() {
     tracing_subscriber::fmt::init();
+    const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
     let now = Instant::now();
 
     let config = small_network();
@@ -65,11 +66,30 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let elapsed = now.elapsed();
     println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);
 
-    // give some time to node bootstrap
-    tokio::time::sleep(Duration::from_secs(3)).await;
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
 
+    // check best block through metrics without timeout
+    assert!(alice
+        .wait_metric(BEST_BLOCK_METRIC, |x| x > 5_f64)
+        .await
+        .unwrap());
+
+    // check best block through metrics with timeout
+    assert!(alice
+        .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 10_f64, 45_u32)
+        .await
+        .unwrap());
+
+    // ensure timeout error
+    let best_block = alice.reports(BEST_BLOCK_METRIC).await.unwrap();
+    let res = alice
+        .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > (best_block * 2_f64), 10_u32)
+        .await;
+
+    assert!(res.is_err());
+
+    // get single metric
     let role = alice.reports("node_roles").await.unwrap();
     println!("Role is {role}");
     assert_eq!(role, 4.0);

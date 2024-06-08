@@ -1,8 +1,4 @@
-use std::{
-    env,
-    pin::Pin,
-    time::Instant,
-};
+use std::{env, pin::Pin, time::Instant};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, Future};

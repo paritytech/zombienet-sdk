@@ -4,11 +4,20 @@ use anyhow::anyhow;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
+use support::constants::THIS_IS_A_BUG;
+use thiserror::Error;
 use tokio::sync::RwLock;
+use tracing::{debug, warn};
 
 use crate::network_spec::node::NodeSpec;
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
+
+#[derive(Error, Debug)]
+pub enum NetworkNodeError {
+    #[error("metric '{0}' not found!")]
+    MetricNotFound(String),
+}
 
 #[derive(Clone)]
 pub struct NetworkNode {
@@ -57,12 +66,13 @@ impl NetworkNode {
         &self.ws_uri
     }
 
-    /// Pause the node, this is implemented by pausing the
-    /// actual process (e.g polkadot) with sending `SIGSTOP` signal
-    pub async fn pause(&self) -> Result<(), anyhow::Error> {
-        self.inner.pause().await?;
-        Ok(())
+    /// Get the logs of the node
+    /// TODO: do we need the `since` param, maybe we could be handy later for loop filtering
+    pub async fn logs(&self) -> Result<String, anyhow::Error> {
+        Ok(self.inner.logs().await?)
     }
+
+    // Subxt
 
     /// Get the rpc client for the node
     pub async fn rpc(&self) -> Result<RpcClient, subxt::Error> {
@@ -80,6 +90,15 @@ impl NetworkNode {
         }
     }
 
+    // Commands
+
+    /// Pause the node, this is implemented by pausing the
+    /// actual process (e.g polkadot) with sending `SIGSTOP` signal
+    pub async fn pause(&self) -> Result<(), anyhow::Error> {
+        self.inner.pause().await?;
+        Ok(())
+    }
+
     /// Resume the node, this is implemented by resuming the
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
@@ -92,6 +111,8 @@ impl NetworkNode {
         self.inner.restart(after).await?;
         Ok(())
     }
+
+    // Assertions
 
     /// Get metric value 'by name' from prometheus (exposed by the node)
     /// metric name can be:
@@ -123,7 +144,7 @@ impl NetworkNode {
     }
 
     /// Assert on a metric value using a given predicate.
-    /// See [`assert`] description for details.
+    /// See [`reports`] description for details on metric name.
     pub async fn assert_with(
         &self,
         metric_name: impl Into<String>,
@@ -137,15 +158,96 @@ impl NetworkNode {
             // reload metrics
             self.fetch_metrics().await?;
             let val = self.metric(&metric_name).await?;
+            debug!("🔎 Current value passed to the predicated: {val}");
             Ok(predicate(val))
         }
     }
 
-    /// Get the logs of the node
-    /// TODO: do we need the `since` param, maybe we could be handy later for loop filtering
-    pub async fn logs(&self) -> Result<String, anyhow::Error> {
-        Ok(self.inner.logs().await?)
+    // Wait methods
+    pub async fn wait_metric(
+        &self,
+        metric_name: impl Into<String>,
+        predicate: impl Fn(f64) -> bool,
+    ) -> Result<bool, anyhow::Error> {
+        let metric_name = metric_name.into();
+        debug!("waiting until metric {metric_name} pass the predicate");
+        loop {
+            let res = self.assert_with(&metric_name, &predicate).await;
+            match res {
+                Ok(res) => {
+                    if res {
+                        return Ok(true);
+                    }
+                },
+                Err(e) => {
+                    match e.downcast::<reqwest::Error>() {
+                        Ok(io) => {
+                            // if the error is connecting could be the case that the node
+                            // is not listening yet, so we keep waiting
+                            // Skipped err is: 'tcp connect error: Connection refused (os error 61)'
+                            if !io.is_connect() {
+                                return Err(io.into());
+                            }
+                        },
+                        Err(other) => {
+                            match other.downcast::<NetworkNodeError>() {
+                                Ok(node_err) => {
+                                    if !matches!(node_err, NetworkNodeError::MetricNotFound(_)) {
+                                        return Err(node_err.into());
+                                    }
+                                },
+                                Err(other) => return Err(other),
+                            };
+                        },
+                    }
+                },
+            }
+
+            // sleep to not spam prometheus
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
     }
+
+    pub async fn wait_metric_with_timeout(
+        &self,
+        metric_name: impl Into<String>,
+        predicate: impl Fn(f64) -> bool,
+        timeout_secs: impl Into<u64>,
+    ) -> Result<bool, anyhow::Error> {
+        let metric_name = metric_name.into();
+        let secs = timeout_secs.into();
+        debug!("waiting until metric {metric_name} pass the predicate");
+        let res = tokio::time::timeout(
+            Duration::from_secs(secs),
+            self.wait_metric(&metric_name, predicate),
+        )
+        .await;
+
+        if let Ok(inner_res) = res {
+            match inner_res {
+                Ok(true) => Ok(true),
+                Ok(false) => {
+                    // should not happens
+                    warn!("wait_metric return false");
+                    Err(anyhow!("wait_metric return false, {THIS_IS_A_BUG}"))
+                },
+                Err(e) => Err(anyhow!("Error waiting for metric: {}", e)),
+            }
+        } else {
+            // timeout
+            Err(anyhow!(
+                "Timeout ({secs}), waiting for metric {metric_name} pass the predicate"
+            ))
+        }
+    }
+
+    // TODO: impl
+    // wait_log_line_count
+    // wait_log_line_count_with_timeout
+    // wait_subxt_client
+    // wait_subxt_client_with_timeout
+    // wait_event_count
+    // wait_event_count_with_timeout
 
     #[cfg(feature = "pjs")]
     /// Execute js/ts code inside [pjs_rs] custom runtime.
@@ -201,7 +303,12 @@ impl NetworkNode {
         Ok(())
     }
 
-    async fn metric(&self, metric_name: &str) -> Result<f64, anyhow::Error> {
+    async fn metric(
+        &self,
+        metric_name: &str, // treat_not_found_as_zero: bool
+    ) -> Result<f64, anyhow::Error> {
+        // TODO: allow to pass as arg
+        let treat_not_found_as_zero = true;
         let mut metrics_map = self.metrics_cache.read().await;
         if metrics_map.is_empty() {
             // reload metrics
@@ -210,10 +317,13 @@ impl NetworkNode {
             metrics_map = self.metrics_cache.read().await;
         }
 
-        let val = metrics_map
-            .get(metric_name)
-            .ok_or(anyhow!("metric '{}'not found!", &metric_name))?;
-        Ok(*val)
+        if let Some(val) = metrics_map.get(metric_name) {
+            Ok(*val)
+        } else if treat_not_found_as_zero {
+            Ok(0_f64)
+        } else {
+            Err(NetworkNodeError::MetricNotFound(metric_name.into()).into())
+        }
     }
 }
 
@@ -228,3 +338,5 @@ impl std::fmt::Debug for NetworkNode {
             .finish()
     }
 }
+
+// TODO: mock and impl unit tests

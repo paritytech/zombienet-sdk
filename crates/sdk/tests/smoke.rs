@@ -1,7 +1,7 @@
 use std::{
     env,
     pin::Pin,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};

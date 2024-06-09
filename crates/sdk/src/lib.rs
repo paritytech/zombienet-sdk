@@ -10,7 +10,8 @@ pub use orchestrator::{
 use provider::{DockerProvider, KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;
 
-pub const PROVIDERS: [&str; 2] = ["k8s", "native"];
+pub mod environment;
+pub const PROVIDERS: [&str; 3] = ["k8s", "native", "docker"];
 
 #[async_trait]
 pub trait NetworkConfigExt {

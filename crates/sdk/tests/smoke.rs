@@ -1,11 +1,10 @@
-use std::{env, pin::Pin, time::Instant};
+use std::time::Instant;
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
-use futures::{stream::StreamExt, Future};
+use futures::stream::StreamExt;
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
 use serde_json::json;
-use support::fs::local::LocalFileSystem;
-use zombienet_sdk::{Network, NetworkConfigExt, OrchestratorError, PROVIDERS};
+use zombienet_sdk::environment::get_spawn_fn;
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
@@ -25,25 +24,6 @@ fn small_network() -> NetworkConfig {
         })
         .build()
         .unwrap()
-}
-
-type SpawnResult = Result<Network<LocalFileSystem>, OrchestratorError>;
-fn get_spawn_fn() -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResult> + Send>> {
-    const PROVIDER_KEY: &str = "ZOMBIE_PROVIDER";
-    let provider = env::var(PROVIDER_KEY).unwrap_or(String::from("k8s"));
-    assert!(
-        PROVIDERS.contains(&provider.as_str()),
-        "\n❌ Invalid provider, available options {}\n",
-        PROVIDERS.join(", ")
-    );
-
-    // TODO: revisit this
-
-    if provider == "k8s" {
-        zombienet_sdk::NetworkConfig::spawn_k8s
-    } else {
-        zombienet_sdk::NetworkConfig::spawn_native
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

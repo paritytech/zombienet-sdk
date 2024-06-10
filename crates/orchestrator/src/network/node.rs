@@ -4,10 +4,10 @@ use anyhow::anyhow;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
-use support::constants::THIS_IS_A_BUG;
+use support::{constants::THIS_IS_A_BUG, net::wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::network_spec::node::NodeSpec;
 #[cfg(feature = "pjs")]
@@ -79,7 +79,7 @@ impl NetworkNode {
         RpcClient::from_url(&self.ws_uri).await
     }
 
-    /// Get the online client for the node
+    /// Get the [online client](subxt::client::OnlineClient) for the node
     pub async fn client<Config: subxt::Config>(
         &self,
     ) -> Result<OnlineClient<Config>, subxt::Error> {
@@ -88,6 +88,32 @@ impl NetworkNode {
         } else {
             OnlineClient::from_insecure_url(&self.ws_uri).await
         }
+    }
+
+    /// Wait until get the [online client](subxt::client::OnlineClient) for the node
+    pub async fn wait_client<Config: subxt::Config>(
+        &self,
+    ) -> Result<OnlineClient<Config>, anyhow::Error> {
+        wait_ws_ready(self.ws_uri())
+            .await
+            .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {}", e))?;
+
+        self.client()
+            .await
+            .map_err(|e| anyhow!("Can't create a subxt client, err: {}", e))
+    }
+
+    /// Wait until get the [online client](subxt::client::OnlineClient) for the node with a defined timeout
+    pub async fn wait_client_with_timeout<Config: subxt::Config>(
+        &self,
+        timeout_secs: impl Into<u64>,
+    ) -> Result<OnlineClient<Config>, anyhow::Error> {
+        debug!("waiting until subxt client is ready");
+        tokio::time::timeout(
+            Duration::from_secs(timeout_secs.into()),
+            self.wait_client::<Config>(),
+        )
+        .await?
     }
 
     // Commands
@@ -158,7 +184,7 @@ impl NetworkNode {
             // reload metrics
             self.fetch_metrics().await?;
             let val = self.metric(&metric_name).await?;
-            debug!("🔎 Current value passed to the predicated: {val}");
+            trace!("🔎 Current value passed to the predicated: {val}");
             Ok(predicate(val))
         }
     }

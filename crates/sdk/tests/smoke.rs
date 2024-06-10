@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
-use futures::stream::StreamExt;
+use futures::{stream::StreamExt, try_join};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
 use serde_json::json;
 use zombienet_sdk::environment::get_spawn_fn;
@@ -45,11 +45,20 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
 
+    // timeout connecting ws
+    let bob = network.get_node("alice").unwrap();
+    let r = bob
+        .wait_client_with_timeout::<subxt::PolkadotConfig>(1_u32)
+        .await;
+    assert!(r.is_err());
+
+    let (best_block_pass, client) = try_join!(
+        alice.wait_metric(BEST_BLOCK_METRIC, |x| x > 5_f64),
+        alice.wait_client::<subxt::PolkadotConfig>()
+    )
+    .unwrap();
     // check best block through metrics without timeout
-    assert!(alice
-        .wait_metric(BEST_BLOCK_METRIC, |x| x > 5_f64)
-        .await
-        .unwrap());
+    assert!(best_block_pass);
 
     // check best block through metrics with timeout
     assert!(alice
@@ -71,8 +80,6 @@ async fn ci_k8s_basic_functionalities_should_works() {
     assert_eq!(role, 4.0);
 
     // subxt
-    let client = alice.client::<subxt::PolkadotConfig>().await.unwrap();
-
     // wait 3 blocks
     let mut blocks = client.blocks().subscribe_finalized().await.unwrap().take(3);
     while let Some(block) = blocks.next().await {

@@ -46,8 +46,8 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let alice = network.get_node("alice").unwrap();
 
     // timeout connecting ws
-    let bob = network.get_node("alice").unwrap();
-    let r = bob
+    let c = network.get_node("collator").unwrap();
+    let r = c
         .wait_client_with_timeout::<subxt::PolkadotConfig>(1_u32)
         .await;
     assert!(r.is_err());

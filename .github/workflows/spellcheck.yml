@@ -3,10 +3,10 @@ name: Spellcheck
 on:
   push:
     branches:
-      - main
+      - tw-spellcheck-action
   pull_request:
     branches:
-      - main
+      - tw-spellcheck-action
 
 jobs:
   spellcheck:

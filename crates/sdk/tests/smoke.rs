@@ -52,13 +52,11 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .await;
     assert!(r.is_err());
 
-    let (best_block_pass, client) = try_join!(
+    let (_best_block_pass, client) = try_join!(
         alice.wait_metric(BEST_BLOCK_METRIC, |x| x > 5_f64),
         alice.wait_client::<subxt::PolkadotConfig>()
     )
     .unwrap();
-    // check best block through metrics without timeout
-    assert_eq!(best_block_pass, ());
 
     alice
         .wait_log_line_count("*rted #1*", true, 10)

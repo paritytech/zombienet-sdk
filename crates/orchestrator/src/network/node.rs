@@ -1,15 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;
+use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
+use regex::Regex;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::wait_ws_ready;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
-use regex::Regex;
-use glob_match::glob_match;
 
 use crate::network_spec::node::NodeSpec;
 #[cfg(feature = "pjs")]
@@ -280,14 +280,11 @@ impl NetworkNode {
         let pattern: String = pattern.into();
         debug!("waiting until we find pattern {pattern} {count} times");
         let match_fn: Box<dyn Fn(&str) -> bool> = if is_glob {
-            Box::new(|line: &str| -> bool {
-                glob_match(&pattern, line)
-             })
+            Box::new(|line: &str| -> bool { glob_match(&pattern, line) })
         } else {
-            let re  = Regex::new(&pattern)?;
+            let re = Regex::new(&pattern)?;
             Box::new(move |line: &str| -> bool { re.is_match(line) })
         };
-
 
         loop {
             let mut q = 0_usize;
@@ -298,7 +295,7 @@ impl NetworkNode {
                     println!("pattern {pattern} match in line {line}");
                     q += 1;
                     if q >= count {
-                        return Ok(())
+                        return Ok(());
                     }
                 }
             }

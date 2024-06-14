@@ -60,9 +60,10 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // check best block through metrics without timeout
     assert_eq!(best_block_pass, ());
 
-
-
-    alice.wait_log_line_count("*rted #1*", true, 10).await.unwrap();
+    alice
+        .wait_log_line_count("*rted #1*", true, 10)
+        .await
+        .unwrap();
 
     // check best block through metrics with timeout
     assert!(alice

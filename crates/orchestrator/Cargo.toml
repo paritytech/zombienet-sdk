@@ -30,6 +30,8 @@ reqwest = { workspace = true }
 tracing = { workspace = true }
 pjs-rs = { version = "0.1.2", optional = true }
 uuid = { workspace = true }
+regex = { workspace = true }
+glob-match = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }

@@ -58,13 +58,17 @@ async fn ci_k8s_basic_functionalities_should_works() {
     )
     .unwrap();
     // check best block through metrics without timeout
-    assert!(best_block_pass);
+    assert_eq!(best_block_pass, ());
+
+
+
+    alice.wait_log_line_count("*rted #1*", true, 10).await.unwrap();
 
     // check best block through metrics with timeout
     assert!(alice
         .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 10_f64, 45_u32)
         .await
-        .unwrap());
+        .is_ok());
 
     // ensure timeout error
     let best_block = alice.reports(BEST_BLOCK_METRIC).await.unwrap();

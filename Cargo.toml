@@ -56,6 +56,7 @@ axum-extra = { version = "0.9" }
 tower = { version = "0.4" }
 tower-http = { version = "0.5" }
 tracing-subscriber = { version = "0.3" }
+glob-match = "0.2.1"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.2.4", path = "crates/support" }

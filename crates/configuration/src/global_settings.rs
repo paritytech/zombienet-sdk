@@ -25,7 +25,7 @@ pub struct GlobalSettings {
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
     // TODO: parse both case in zombienet node version to avoid renamed ?
-    /// Glocal spawn timeout
+    /// Global spawn timeout
     #[serde(rename = "timeout")]
     network_spawn_timeout: Duration,
     // TODO: not used yet

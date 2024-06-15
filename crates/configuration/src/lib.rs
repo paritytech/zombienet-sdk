@@ -2,7 +2,7 @@
 //!
 //!
 //! The main entry point of this crate is the [`NetworkConfigBuilder`] which is used to build a full network configuration
-//! but all inners builders are also exposed to allow more granular control over the configuration.
+//! but all inner builders are also exposed to allow more granular control over the configuration.
 //!
 //! **Note**: Not all options can be checked at compile time and some will be checked at runtime when spawning a
 //! network (e.g.: supported args for a specific node version).

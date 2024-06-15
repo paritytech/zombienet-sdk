@@ -27,19 +27,19 @@ pub struct ParachainSpec {
     /// Parachain id
     pub(crate) id: u32,
 
-    /// Default command to run the node. Can be overriden on each node.
+    /// Default command to run the node. Can be overridden on each node.
     pub(crate) default_command: Option<Command>,
 
-    /// Default image to use (only podman/k8s). Can be overriden on each node.
+    /// Default image to use (only podman/k8s). Can be overridden on each node.
     pub(crate) default_image: Option<Image>,
 
-    /// Default resources. Can be overriden on each node.
+    /// Default resources. Can be overridden on each node.
     pub(crate) default_resources: Option<Resources>,
 
-    /// Default database snapshot. Can be overriden on each node.
+    /// Default database snapshot. Can be overridden on each node.
     pub(crate) default_db_snapshot: Option<AssetLocation>,
 
-    /// Default arguments to use in nodes. Can be overriden on each node.
+    /// Default arguments to use in nodes. Can be overridden on each node.
     pub(crate) default_args: Vec<Arg>,
 
     /// Chain-spec, only needed by cumulus based paras
@@ -48,7 +48,7 @@ pub struct ParachainSpec {
     /// Registration strategy to use
     pub(crate) registration_strategy: RegistrationStrategy,
 
-    /// Oboard as parachain or parathread
+    /// Onboard as parachain or parathread
     pub(crate) onboard_as_parachain: bool,
 
     /// Is the parachain cumulus-based
@@ -60,7 +60,7 @@ pub struct ParachainSpec {
     /// Genesis state (head) to register the parachain
     pub(crate) genesis_state: ParaArtifact,
 
-    /// Genesis wasm to register the parachain
+    /// Genesis WASM to register the parachain
     pub(crate) genesis_wasm: ParaArtifact,
 
     /// Genesis overrides as JSON value.
@@ -246,7 +246,7 @@ impl ParachainSpec {
 
     /// Build parachain chain-spec
     ///
-    /// This fn customize the chain-spec (if is possible) and build the raw version
+    /// This function customize the chain-spec (if is possible) and build the raw version
     /// of the chain-spec.
     pub(crate) async fn build_chain_spec<'a, T>(
         &mut self,

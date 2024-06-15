@@ -36,7 +36,7 @@ pub struct SpawnNodeOptions {
     pub program: String,
     /// Arguments to pass to the main command
     pub args: Vec<String>,
-    /// Environment to set when runnning the `program`
+    /// Environment to set when running the `program`
     pub env: Vec<(String, String)>,
     // TODO: rename startup_files
     /// Files to inject at startup

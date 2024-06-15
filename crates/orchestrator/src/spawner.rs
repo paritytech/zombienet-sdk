@@ -34,10 +34,10 @@ pub struct SpawnNodeCtx<'a, T: FileSystem> {
     pub(crate) scoped_fs: &'a ScopedFilesystem<'a, T>,
     /// Ref to a parachain (used to spawn collators)
     pub(crate) parachain: Option<&'a ParachainSpec>,
-    /// The string represenation of the bootnode addres to pass to nodes
+    /// The string representation of the bootnode address to pass to nodes
     pub(crate) bootnodes_addr: &'a Vec<String>,
     /// Flag to wait node is ready or not
-    /// Ready state means we can query prometheus internal server
+    /// Ready state means we can query Prometheus internal server
     pub(crate) wait_ready: bool,
 }
 

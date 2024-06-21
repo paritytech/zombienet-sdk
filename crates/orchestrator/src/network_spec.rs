@@ -151,9 +151,7 @@ impl NetworkSpec {
         base_dir_exists: bool,
     ) -> Result<(), anyhow::Error> {
         for para in self.parachains.iter_mut() {
-            let chain_spec_raw_path = para
-                .build_chain_spec(relaychain_id, &ns, scoped_fs)
-                .await?;
+            let chain_spec_raw_path = para.build_chain_spec(relaychain_id, &ns, scoped_fs).await?;
             debug!("parachain chain-spec built!");
 
             if base_dir_exists {

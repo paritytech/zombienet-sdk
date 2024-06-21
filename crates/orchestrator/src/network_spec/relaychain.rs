@@ -135,4 +135,12 @@ impl RelaychainSpec {
             nodes,
         })
     }
+
+    pub fn chain_spec(&self) -> &ChainSpec {
+        &self.chain_spec
+    }
+
+    pub fn chain_spec_mut(&mut self) -> &mut ChainSpec {
+        &mut self.chain_spec
+    }
 }

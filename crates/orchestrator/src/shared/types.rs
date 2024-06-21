@@ -49,7 +49,7 @@ impl ParkedPort {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChainDefaultContext<'a> {
     pub default_command: Option<&'a Command>,
     pub default_image: Option<&'a Image>,

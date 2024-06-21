@@ -5,7 +5,7 @@ use tracing::trace;
 
 use crate::network::node::NetworkNode;
 
-pub async fn verify_nodes(nodes: &[&NetworkNode]) -> Result<(), anyhow::Error> {
+pub(crate) async fn verify_nodes(nodes: &[&NetworkNode]) -> Result<(), anyhow::Error> {
     timeout(Duration::from_secs(90), check_nodes(nodes))
         .await
         .map_err(|_| anyhow::anyhow!("one or more nodes are not ready!"))

@@ -101,10 +101,10 @@ where
 
         trace!("creating dirs {:?}", config_dir);
         try_join!(
-            filesystem.create_dir(&config_dir),
-            filesystem.create_dir(&data_dir),
-            filesystem.create_dir(&relay_data_dir),
-            filesystem.create_dir(&scripts_dir),
+            filesystem.create_dir_all(&config_dir),
+            filesystem.create_dir_all(&data_dir),
+            filesystem.create_dir_all(&relay_data_dir),
+            filesystem.create_dir_all(&scripts_dir),
         )?;
         trace!("created!");
 

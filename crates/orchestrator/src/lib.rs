@@ -4,7 +4,7 @@
 pub mod errors;
 mod generators;
 pub mod network;
-mod network_helper;
+pub mod network_helper;
 mod network_spec;
 #[cfg(feature = "pjs")]
 pub mod pjs_helper;
@@ -21,7 +21,9 @@ use configuration::{NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use generators::errors::GeneratorError;
 use network::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain, Network};
-use network_spec::{node::NodeSpec, parachain::ParachainSpec, NetworkSpec};
+// re-exported
+pub use network_spec::NetworkSpec;
+use network_spec::{node::NodeSpec, parachain::ParachainSpec};
 use provider::{
     types::{ProviderCapabilities, TransferedFile},
     DynProvider,
@@ -31,7 +33,6 @@ use tokio::time::timeout;
 use tracing::{debug, info, trace};
 
 use crate::{
-    generators::chain_spec::ParaGenesisConfig,
     shared::{constants::P2P_PORT, types::RegisterParachainOptions},
     spawner::SpawnNodeCtx,
 };
@@ -63,6 +64,20 @@ where
 
         let res = timeout(
             Duration::from_secs(global_timeout.into()),
+            self.spawn_inner(network_spec),
+        )
+        .await
+        .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout));
+        res?
+    }
+
+    pub async fn spawn_from_spec(
+        &self,
+        network_spec: NetworkSpec,
+    ) -> Result<Network<T>, OrchestratorError> {
+        let global_timeout = network_spec.global_settings.network_spawn_timeout();
+        let res = timeout(
+            Duration::from_secs(global_timeout as u64),
             self.spawn_inner(network_spec),
         )
         .await
@@ -118,41 +133,12 @@ where
             .chain_spec
             .read_chain_id(&scoped_fs)
             .await?;
-        let relay_chain_name = network_spec.relaychain.chain.as_str();
-        // TODO: if we don't need to register this para we can skip it
-        for para in network_spec.parachains.iter_mut() {
-            let chain_spec_raw_path = para
-                .build_chain_spec(&relay_chain_id, &ns, &scoped_fs)
-                .await?;
-            debug!("parachain chain-spec built!");
 
-            // TODO: this need to be abstracted in a single call to generate_files.
-            if network_spec.global_settings.base_dir().is_some() {
-                scoped_fs.create_dir_all(para.id.to_string()).await?;
-            } else {
-                scoped_fs.create_dir(para.id.to_string()).await?;
-            };
-
-            // create wasm/state
-            para.genesis_state
-                .build(
-                    chain_spec_raw_path.clone(),
-                    format!("{}/genesis-state", para.id),
-                    &ns,
-                    &scoped_fs,
-                )
-                .await?;
-            debug!("parachain genesis state built!");
-            para.genesis_wasm
-                .build(
-                    chain_spec_raw_path,
-                    format!("{}/genesis-wasm", para.id),
-                    &ns,
-                    &scoped_fs,
-                )
-                .await?;
-            debug!("parachain genesis wasm built!");
-        }
+        let relay_chain_name = network_spec.relaychain.chain.as_str().to_owned();
+        let base_dir_exists = network_spec.global_settings.base_dir().is_some();
+        network_spec
+            .build_parachain_artifacts(ns.clone(), &scoped_fs, &relay_chain_id, base_dir_exists)
+            .await?;
 
         // Gather the parachains to register in genesis and the ones to register with extrinsic
         let (para_to_register_in_genesis, para_to_register_with_extrinsic): (
@@ -168,20 +154,7 @@ where
 
         let mut para_artifacts = vec![];
         for para in para_to_register_in_genesis {
-            let genesis_config = ParaGenesisConfig {
-                state_path: para.genesis_state.artifact_path().ok_or(
-                    OrchestratorError::InvariantError(
-                        "artifact path for state must be set at this point",
-                    ),
-                )?,
-                wasm_path: para.genesis_wasm.artifact_path().ok_or(
-                    OrchestratorError::InvariantError(
-                        "artifact path for wasm must be set at this point",
-                    ),
-                )?,
-                id: para.id,
-                as_parachain: para.onboard_as_parachain,
-            };
+            let genesis_config = para.get_genesis_config()?;
             para_artifacts.push(genesis_config)
         }
 
@@ -210,7 +183,7 @@ where
         let mut ctx = SpawnNodeCtx {
             chain_id: &relay_chain_id,
             parachain_id: None,
-            chain: relay_chain_name,
+            chain: relay_chain_name.as_str(),
             role: ZombieRole::Node,
             ns: &ns,
             scoped_fs: &scoped_fs,
@@ -477,7 +450,7 @@ pub struct ScopedFilesystem<'a, FS: FileSystem> {
 }
 
 impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
-    fn new(fs: &'a FS, base_dir: &'a str) -> Self {
+    pub fn new(fs: &'a FS, base_dir: &'a str) -> Self {
         Self { fs, base_dir }
     }
 
@@ -497,11 +470,13 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
     }
 
     async fn read_to_string(&self, file: impl AsRef<Path>) -> Result<String, FileSystemError> {
-        let full_path = PathBuf::from(format!(
-            "{}/{}",
-            self.base_dir,
-            file.as_ref().to_string_lossy()
-        ));
+        let file = file.as_ref();
+
+        let full_path = if file.is_absolute() {
+            file.to_owned()
+        } else {
+            PathBuf::from(format!("{}/{}", self.base_dir, file.to_string_lossy()))
+        };
         let content = self.fs.read_to_string(full_path).await?;
         Ok(content)
     }
@@ -529,12 +504,15 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
         path: impl AsRef<Path>,
         contents: impl AsRef<[u8]> + Send,
     ) -> Result<(), FileSystemError> {
-        let path = PathBuf::from(format!(
-            "{}/{}",
-            self.base_dir,
-            path.as_ref().to_string_lossy()
-        ));
-        self.fs.write(path, contents).await.map_err(Into::into)
+        let path = path.as_ref();
+
+        let full_path = if path.is_absolute() {
+            path.to_owned()
+        } else {
+            PathBuf::from(format!("{}/{}", self.base_dir, path.to_string_lossy()))
+        };
+
+        self.fs.write(full_path, contents).await.map_err(Into::into)
     }
 }
 
@@ -548,8 +526,9 @@ pub enum ZombieRole {
     Companion,
 }
 
-// re-export
+// re-exports
 pub use network::{AddCollatorOptions, AddNodeOptions};
+pub use network_helper::metrics;
 #[cfg(feature = "pjs")]
 pub use pjs_helper::PjsResult;
 

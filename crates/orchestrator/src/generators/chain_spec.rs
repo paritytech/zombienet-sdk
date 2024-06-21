@@ -326,6 +326,10 @@ impl ChainSpec {
         self.raw_path.as_deref()
     }
 
+    pub fn set_asset_location(&mut self, location: AssetLocation) {
+        self.asset_location = Some(location)
+    }
+
     pub async fn read_chain_id<'a, T>(
         &self,
         scoped_fs: &ScopedFilesystem<'a, T>,

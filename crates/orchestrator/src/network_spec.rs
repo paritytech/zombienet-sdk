@@ -5,11 +5,11 @@ use std::{
 
 use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
-use provider::{ProviderError, ProviderNamespace};
-use support::constants::THIS_IS_A_BUG;
+use provider::{DynNamespace, ProviderError, ProviderNamespace};
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::debug;
 
-use crate::errors::OrchestratorError;
+use crate::{errors::OrchestratorError, ScopedFilesystem};
 
 pub mod node;
 pub mod parachain;
@@ -121,6 +121,67 @@ impl NetworkSpec {
         };
 
         Ok(output)
+    }
+
+    pub fn relaychain(&self) -> &RelaychainSpec {
+        &self.relaychain
+    }
+
+    pub fn relaychain_mut(&mut self) -> &mut RelaychainSpec {
+        &mut self.relaychain
+    }
+
+    pub fn parachains_iter(&self) -> impl Iterator<Item = &ParachainSpec> {
+        self.parachains.iter()
+    }
+
+    pub fn parachains_iter_mut(&mut self) -> impl Iterator<Item = &mut ParachainSpec> {
+        self.parachains.iter_mut()
+    }
+
+    pub fn set_global_settings(&mut self, global_settings: GlobalSettings) {
+        self.global_settings = global_settings;
+    }
+
+    pub async fn build_parachain_artifacts<'a, T: FileSystem>(
+        &mut self,
+        ns: DynNamespace,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        relaychain_id: &str,
+        base_dir_exists: bool,
+    ) -> Result<(), anyhow::Error> {
+        for para in self.parachains.iter_mut() {
+            let chain_spec_raw_path = para.build_chain_spec(relaychain_id, &ns, scoped_fs).await?;
+            debug!("parachain chain-spec built!");
+
+            if base_dir_exists {
+                scoped_fs.create_dir_all(para.id.to_string()).await?;
+            } else {
+                scoped_fs.create_dir(para.id.to_string()).await?;
+            };
+
+            // create wasm/state
+            para.genesis_state
+                .build(
+                    chain_spec_raw_path.clone(),
+                    format!("{}/genesis-state", para.id),
+                    &ns,
+                    scoped_fs,
+                )
+                .await?;
+            debug!("parachain genesis state built!");
+            para.genesis_wasm
+                .build(
+                    chain_spec_raw_path,
+                    format!("{}/genesis-wasm", para.id),
+                    &ns,
+                    scoped_fs,
+                )
+                .await?;
+            debug!("parachain genesis wasm built!");
+        }
+
+        Ok(())
     }
 
     // collect mutable references to all nodes from relaychain and parachains

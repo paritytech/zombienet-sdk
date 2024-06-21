@@ -13,7 +13,7 @@ use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
     generators::{
-        chain_spec::{ChainSpec, Context},
+        chain_spec::{ChainSpec, Context, ParaGenesisConfig},
         para_artifact::*,
     },
     shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
@@ -208,6 +208,40 @@ impl ParachainSpec {
         };
 
         Ok(para_spec)
+    }
+
+    pub fn registration_strategy(&self) -> &RegistrationStrategy {
+        &self.registration_strategy
+    }
+
+    pub fn get_genesis_config(&self) -> Result<ParaGenesisConfig<&PathBuf>, OrchestratorError> {
+        let genesis_config = ParaGenesisConfig {
+            state_path: self.genesis_state.artifact_path().ok_or(
+                OrchestratorError::InvariantError(
+                    "artifact path for state must be set at this point",
+                ),
+            )?,
+            wasm_path: self.genesis_wasm.artifact_path().ok_or(
+                OrchestratorError::InvariantError(
+                    "artifact path for wasm must be set at this point",
+                ),
+            )?,
+            id: self.id,
+            as_parachain: self.onboard_as_parachain,
+        };
+        Ok(genesis_config)
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    pub fn chain_spec(&self) -> Option<&ChainSpec> {
+        self.chain_spec.as_ref()
+    }
+
+    pub fn chain_spec_mut(&mut self) -> Option<&mut ChainSpec> {
+        self.chain_spec.as_mut()
     }
 
     /// Build parachain chain-spec

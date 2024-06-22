@@ -98,7 +98,7 @@ impl Parachain {
         // get the seed
         let sudo: Keypair;
         if let Some(possible_seed) = options.seed {
-            sudo = Keypair::from_seed(possible_seed)
+            sudo = Keypair::from_secret_key(possible_seed)
                 .expect(&format!("seed should return a Keypair {THIS_IS_A_BUG}"));
         } else {
             let uri = SecretUri::from_str("//Alice")?;
@@ -153,8 +153,8 @@ impl Parachain {
         while let Some(status) = tx.next().await {
             match status? {
                 TxStatus::InBestBlock(tx_in_block) | TxStatus::InFinalizedBlock(tx_in_block) => {
-                    let result = tx_in_block.wait_for_success().await?;
-                    info!("In block: {:#?}", result.block_hash());
+                    let _result = tx_in_block.wait_for_success().await?;
+                    info!("In block: {:#?}", tx_in_block.block_hash());
                 },
                 TxStatus::Error { message }
                 | TxStatus::Invalid { message }

@@ -290,9 +290,9 @@ impl NetworkNode {
             let mut q = 0_usize;
             let logs = self.logs().await?;
             for line in logs.lines() {
-                println!("line is {line}");
+                trace!("line is {line}");
                 if match_fn(line) {
-                    println!("pattern {pattern} match in line {line}");
+                    trace!("pattern {pattern} match in line {line}");
                     q += 1;
                     if q >= count {
                         return Ok(());

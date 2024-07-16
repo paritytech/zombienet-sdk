@@ -24,6 +24,8 @@ pub enum OrchestratorError {
     ProviderError(#[from] ProviderError),
     #[error("FileSystem error")]
     FileSystemError(#[from] FileSystemError),
+    #[error("Serialization error")]
+    SerializationError(#[from] serde_json::Error),
     #[error(transparent)]
     SpawnerError(#[from] anyhow::Error),
 }

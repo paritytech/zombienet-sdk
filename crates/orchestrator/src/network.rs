@@ -11,6 +11,7 @@ use configuration::{
     ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
+use serde::Serialize;
 use support::fs::FileSystem;
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
@@ -25,12 +26,16 @@ use crate::{
     ScopedFilesystem, ZombieRole,
 };
 
+#[derive(Serialize)]
 pub struct Network<T: FileSystem> {
+    #[serde(skip)]
     ns: DynNamespace,
+    #[serde(skip)]
     filesystem: T,
     relay: Relaychain,
     initial_spec: NetworkSpec,
     parachains: HashMap<u32, Parachain>,
+    #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
 }
 

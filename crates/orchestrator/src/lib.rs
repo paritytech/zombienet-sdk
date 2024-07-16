@@ -359,8 +359,13 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
-        // - write zombie.json state file (we should defined in a way we can load later)
+        // - write zombie.json state file
+        let mut zombie_json = serde_json::to_value(&network)?;
+        zombie_json["local_base_dir"] = serde_json::value::Value::String(base_dir.to_string());
 
+        scoped_fs
+            .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)
+            .await?;
         Ok(network)
     }
 }

@@ -33,6 +33,7 @@ uuid = { workspace = true }
 regex = { workspace = true }
 glob-match = { workspace = true }
 async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 # Zombienet deps
 configuration = { workspace = true }

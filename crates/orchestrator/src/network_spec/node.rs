@@ -5,6 +5,7 @@ use configuration::shared::{
 };
 use multiaddr::Multiaddr;
 use provider::types::Port;
+use serde::{Deserialize, Serialize};
 use support::constants::THIS_IS_A_BUG;
 
 use crate::{
@@ -44,7 +45,7 @@ impl_from_for_add_node_opts!(AddNodeOptions);
 impl_from_for_add_node_opts!(AddCollatorOptions);
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NodeSpec {
     // Node name (should be unique or an index will be appended).
     pub(crate) name: String,

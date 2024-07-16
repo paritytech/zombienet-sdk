@@ -5,6 +5,7 @@ use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
 use regex::Regex;
+use serde::Serialize;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::wait_ws_ready;
 use thiserror::Error;
@@ -21,8 +22,9 @@ pub enum NetworkNodeError {
     MetricNotFound(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct NetworkNode {
+    #[serde(skip)]
     pub(crate) inner: DynNode,
     // TODO: do we need the full spec here?
     // Maybe a reduce set of values.
@@ -30,6 +32,7 @@ pub struct NetworkNode {
     pub(crate) name: String,
     pub(crate) ws_uri: String,
     pub(crate) prometheus_uri: String,
+    #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
 

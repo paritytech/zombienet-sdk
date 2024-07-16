@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 use support::constants::THIS_IS_A_BUG;
 use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 use crate::{constants::LOCALHOST, types::ExecutionResult};
 

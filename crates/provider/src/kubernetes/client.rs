@@ -393,10 +393,13 @@ impl KubernetesClient {
             tokio::spawn(async move {
                 loop {
                     let (mut client_conn, _) = bind.accept().await.unwrap();
+                    let peer = client_conn.peer_addr().unwrap();
+                    trace!("new connection on local_port: {local_port}, peer: {peer}");
                     let (name, pods) = (name.clone(), pods.clone());
 
                     tokio::spawn(async move {
                         let mut forwarder = pods.portforward(&name, &[remote_port]).await.unwrap();
+                        trace!("forwarder created for local_port: {local_port}, peer: {peer}");
                         let mut upstream_conn = forwarder.take_stream(remote_port).unwrap();
 
                         tokio::io::copy_bidirectional(&mut client_conn, &mut upstream_conn)
@@ -406,6 +409,9 @@ impl KubernetesClient {
                         drop(upstream_conn);
 
                         forwarder.join().await.unwrap();
+                        trace!(
+                            "finished forwarder process for local port: {local_port}, peer: {peer}"
+                        );
                     });
                 }
             }),

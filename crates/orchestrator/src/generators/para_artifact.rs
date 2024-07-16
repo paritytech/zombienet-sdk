@@ -5,26 +5,27 @@ use provider::{
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace,
 };
+use serde::Serialize;
 use support::fs::FileSystem;
 use uuid::Uuid;
 
 use super::errors::GeneratorError;
 use crate::ScopedFilesystem;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) enum ParaArtifactType {
     Wasm,
     State,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) enum ParaArtifactBuildOption {
     Path(String),
     Command(String),
 }
 
 /// Parachain artifact (could be either the genesis state or genesis wasm)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ParaArtifact {
     artifact_type: ParaArtifactType,
     build_option: ParaArtifactBuildOption,

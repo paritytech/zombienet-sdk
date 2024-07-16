@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use super::node::NetworkNode;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Relaychain {
     pub(crate) chain: String,
     pub(crate) chain_id: String,

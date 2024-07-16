@@ -10,6 +10,7 @@ use provider::{
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace, ProviderError,
 };
+use serde::Serialize;
 use serde_json::json;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::process::Command;
@@ -22,7 +23,7 @@ use crate::{
 };
 
 // TODO: (javier) move to state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Context {
     Relay,
     Para,
@@ -39,7 +40,7 @@ enum KeyType {
     Grandpa,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum CommandInContext {
     Local(String),
     Remote(String),
@@ -61,7 +62,7 @@ pub struct ParaGenesisConfig<T: AsRef<Path>> {
     pub(crate) as_parachain: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ChainSpec {
     // Name of the spec file, most of the times could be the same as the chain_name. (e.g rococo-local)
     chain_spec_name: String,
@@ -774,10 +775,13 @@ fn get_runtime_config_pointer(chain_spec_json: &serde_json::Value) -> Result<Str
 
 // Merge `patch_section` with `overrides`.
 fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
+    trace!("patch: {:?}", patch_section);
+    trace!("overrides: {:?}", overrides);
     if let (Some(genesis_obj), Some(overrides_obj)) =
         (patch_section.as_object_mut(), overrides.as_object())
     {
         for overrides_key in overrides_obj.keys() {
+            trace!("overrides_key: {:?}", overrides_key);
             // we only want to override keys present in the genesis object
             if let Some(genesis_value) = genesis_obj.get_mut(overrides_key) {
                 match (&genesis_value, overrides_obj.get(overrides_key)) {
@@ -789,9 +793,12 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
                     },
                     // override if genesis value not an object
                     (_, Some(overrides_value)) => {
+                        trace!("overriding: {:?} / {:?}", genesis_value, overrides_value);
                         *genesis_value = overrides_value.clone();
                     },
-                    _ => {},
+                    _ => {
+                        trace!("not match!");
+                    },
                 }
             }
         }

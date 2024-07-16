@@ -9,10 +9,11 @@ use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
 };
+use serde::{Deserialize, Serialize};
 
 pub type Accounts = HashMap<String, NodeAccount>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeAccount {
     pub address: String,
     pub public_key: String,
@@ -27,14 +28,17 @@ impl NodeAccount {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NodeAccounts {
     pub(crate) seed: String,
     pub(crate) accounts: Accounts,
 }
 
-#[derive(Clone, Default, Debug)]
-pub struct ParkedPort(pub(crate) Port, pub(crate) Arc<RwLock<Option<TcpListener>>>);
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct ParkedPort(
+    pub(crate) Port,
+    #[serde(skip)] pub(crate) Arc<RwLock<Option<TcpListener>>>,
+);
 
 impl ParkedPort {
     pub(crate) fn new(port: u16, listener: TcpListener) -> ParkedPort {

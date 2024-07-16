@@ -7,6 +7,7 @@ use configuration::{
     },
     RelaychainConfig,
 };
+use serde::Serialize;
 use support::replacer::apply_replacements;
 
 use super::node::NodeSpec;
@@ -17,7 +18,7 @@ use crate::{
 };
 
 /// A relaychain configuration spec
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RelaychainSpec {
     /// Chain to use (e.g. rococo-local).
     pub(crate) chain: Chain,

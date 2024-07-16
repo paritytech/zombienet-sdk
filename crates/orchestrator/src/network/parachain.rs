@@ -4,6 +4,7 @@ use std::{
 };
 
 use provider::types::TransferedFile;
+use serde::Serialize;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
@@ -17,7 +18,7 @@ use crate::{
     ScopedFilesystem,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,

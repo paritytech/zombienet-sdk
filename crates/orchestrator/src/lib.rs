@@ -2,13 +2,13 @@
 #![allow(dead_code, clippy::expect_fun_call)]
 
 pub mod errors;
-mod generators;
+pub mod generators;
 pub mod network;
 pub mod network_helper;
 mod network_spec;
 #[cfg(feature = "pjs")]
 pub mod pjs_helper;
-mod shared;
+pub mod shared;
 mod spawner;
 
 use std::{

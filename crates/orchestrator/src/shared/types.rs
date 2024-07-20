@@ -30,8 +30,8 @@ impl NodeAccount {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NodeAccounts {
-    pub(crate) seed: String,
-    pub(crate) accounts: Accounts,
+    pub seed: String,
+    pub accounts: Accounts,
 }
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]

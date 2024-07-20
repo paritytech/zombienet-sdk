@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ZombieRole"],"mod":["errors","generators","network","network_helper","pjs_helper","shared"],"struct":["NetworkSpec","Orchestrator","ScopedFilesystem"]};

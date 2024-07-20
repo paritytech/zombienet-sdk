@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ChainDefaultContext","NodeAccount","NodeAccounts","ParachainGenesisArgs","ParkedPort","RegisterParachainOptions"],"type":["Accounts"]};

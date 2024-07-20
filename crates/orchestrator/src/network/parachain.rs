@@ -3,7 +3,6 @@ use std::{
     str::FromStr,
 };
 
-
 use provider::types::TransferedFile;
 use serde::Serialize;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};

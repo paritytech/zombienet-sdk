@@ -23,7 +23,10 @@ jobs:
           override: true
 
       - name: Install cargo-spellcheck
-        run: cargo install cargo-spellcheck
+        run: |
+          apt-get install libclang-dev
+          export LIBCLANG_PATH=/usr/lib/llvm-14/lib/
+          cargo install cargo-spellcheck
 
       - name: Run cargo-spellcheck
         run: cargo spellcheck

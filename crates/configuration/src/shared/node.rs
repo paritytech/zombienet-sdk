@@ -430,7 +430,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the arguments that will be used when launching the node. OVerride the default.
+    /// Set the arguments that will be used when launching the node. Override the default.
     pub fn with_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             NodeConfig {
@@ -592,7 +592,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the prometheus port that will be exposed for metrics. Uniqueness across config will be checked.
+    /// Set the Prometheus port that will be exposed for metrics. Uniqueness across config will be checked.
     pub fn with_prometheus_port(self, prometheus_port: Port) -> Self {
         match ensure_port_unique(prometheus_port, self.validation_context.clone()) {
             Ok(_) => Self::transition(

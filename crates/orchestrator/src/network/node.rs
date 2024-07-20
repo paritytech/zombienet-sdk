@@ -139,7 +139,7 @@ impl NetworkNode {
 
     // Metrics assertions
 
-    /// Get metric value 'by name' from prometheus (exposed by the node)
+    /// Get metric value 'by name' from Prometheus (exposed by the node)
     /// metric name can be:
     /// with prefix (e.g: 'polkadot_')
     /// with chain attribute (e.g: 'chain=rococo-local')
@@ -151,7 +151,7 @@ impl NetworkNode {
         self.metric(&metric_name).await
     }
 
-    /// Assert on a metric value 'by name' from prometheus (exposed by the node)
+    /// Assert on a metric value 'by name' from Prometheus (exposed by the node)
     /// metric name can be:
     /// with prefix (e.g: 'polkadot_')
     /// with chain attribute (e.g: 'chain=rococo-local')

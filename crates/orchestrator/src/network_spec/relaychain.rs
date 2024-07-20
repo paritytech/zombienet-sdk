@@ -23,19 +23,19 @@ pub struct RelaychainSpec {
     /// Chain to use (e.g. rococo-local).
     pub(crate) chain: Chain,
 
-    /// Default command to run the node. Can be overriden on each node.
+    /// Default command to run the node. Can be overridden on each node.
     pub(crate) default_command: Option<Command>,
 
-    /// Default image to use (only podman/k8s). Can be overriden on each node.
+    /// Default image to use (only podman/k8s). Can be overridden on each node.
     pub(crate) default_image: Option<Image>,
 
-    /// Default resources. Can be overriden on each node.
+    /// Default resources. Can be overridden on each node.
     pub(crate) default_resources: Option<Resources>,
 
-    /// Default database snapshot. Can be overriden on each node.
+    /// Default database snapshot. Can be overridden on each node.
     pub(crate) default_db_snapshot: Option<AssetLocation>,
 
-    /// Default arguments to use in nodes. Can be overriden on each node.
+    /// Default arguments to use in nodes. Can be overridden on each node.
     pub(crate) default_args: Vec<Arg>,
 
     // chain_spec_path: Option<AssetLocation>,

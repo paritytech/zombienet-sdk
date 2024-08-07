@@ -934,6 +934,11 @@ fn add_hrmp_channels(
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         if let Some(preopen_hrmp_channels) = val.pointer_mut("/hrmp/preopenHrmpChannels") {
+            let hrmp_channels = hrmp_channels
+                .iter()
+                .map(|c| {
+                    (c.sender(), c.recipient(), c.max_capacity(), c.max_message_size())
+                }).collect::<Vec<_>>();
             *preopen_hrmp_channels = json!(hrmp_channels);
         } else {
             warn!("⚠️  'hrmp/preopenHrmpChannels' key not present in runtime config.");

@@ -61,8 +61,9 @@ where
         } else {
             node.name.clone()
         };
+        let asset_hub_polkadot = ctx.parachain_id.map(|id| id.starts_with("asset-hub-polkadot")).unwrap_or_default();
         let key_filenames =
-            generators::generate_node_keystore(&node.accounts, &node_files_path, ctx.scoped_fs)
+            generators::generate_node_keystore(&node.accounts, &node_files_path, ctx.scoped_fs, asset_hub_polkadot)
                 .await
                 .unwrap();
 

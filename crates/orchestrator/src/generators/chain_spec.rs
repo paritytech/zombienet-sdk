@@ -881,7 +881,7 @@ fn add_balances(
     }
 }
 
-fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
+fn get_node_keys(node: &NodeSpec, use_stash: bool, asset_hub_polkadot: bool) -> GenesisNodeKey {
     let sr_account = node.accounts.accounts.get("sr").unwrap();
     let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
     let ed_account = node.accounts.accounts.get("ed").unwrap();
@@ -898,6 +898,10 @@ fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
         "nimbus",
         "vrf",
     ] {
+        if k == "aura" && asset_hub_polkadot {
+            keys.insert(k.to_string(), ed_account.address.clone());
+            continue;
+        }
         keys.insert(k.to_string(), sr_account.address.clone());
     }
 
@@ -917,10 +921,13 @@ fn add_authorities(
     nodes: &[&NodeSpec],
     use_stash: bool,
 ) {
+    let asset_hub_polkadot = chain_spec_json.get("id")
+        .and_then(|v| v.as_str())
+        .map(|id| id.starts_with("asset-hub-polkadot")).unwrap_or_default();
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<GenesisNodeKey> = nodes
             .iter()
-            .map(|node| get_node_keys(node, use_stash))
+            .map(|node| get_node_keys(node, use_stash, asset_hub_polkadot))
             .collect();
         val["session"]["keys"] = json!(keys);
     } else {

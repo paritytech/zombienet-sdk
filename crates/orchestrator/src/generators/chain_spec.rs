@@ -921,9 +921,11 @@ fn add_authorities(
     nodes: &[&NodeSpec],
     use_stash: bool,
 ) {
-    let asset_hub_polkadot = chain_spec_json.get("id")
+    let asset_hub_polkadot = chain_spec_json
+        .get("id")
         .and_then(|v| v.as_str())
-        .map(|id| id.starts_with("asset-hub-polkadot")).unwrap_or_default();
+        .map(|id| id.starts_with("asset-hub-polkadot"))
+        .unwrap_or_default();
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<GenesisNodeKey> = nodes
             .iter()
@@ -944,8 +946,14 @@ fn add_hrmp_channels(
             let hrmp_channels = hrmp_channels
                 .iter()
                 .map(|c| {
-                    (c.sender(), c.recipient(), c.max_capacity(), c.max_message_size())
-                }).collect::<Vec<_>>();
+                    (
+                        c.sender(),
+                        c.recipient(),
+                        c.max_capacity(),
+                        c.max_message_size(),
+                    )
+                })
+                .collect::<Vec<_>>();
             *preopen_hrmp_channels = json!(hrmp_channels);
         } else {
             warn!("⚠️  'hrmp/preopenHrmpChannels' key not present in runtime config.");
@@ -1243,9 +1251,13 @@ mod tests {
             ("aura".into(), sr.address.clone()),
             ("nimbus".into(), sr.address.clone()),
             ("vrf".into(), sr.address.clone()),
-            ("grandpa".into(), node.accounts.accounts["ed"].address.clone()),
+            (
+                "grandpa".into(),
+                node.accounts.accounts["ed"].address.clone(),
+            ),
             ("beefy".into(), node.accounts.accounts["ec"].address.clone()),
-        ].into();
+        ]
+        .into();
 
         // Stash
         let sr_stash = &node.accounts.accounts["sr_stash"];

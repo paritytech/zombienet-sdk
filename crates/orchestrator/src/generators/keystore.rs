@@ -20,7 +20,7 @@ pub async fn generate<'a, T>(
     acc: &NodeAccounts,
     node_files_path: impl AsRef<Path>,
     scoped_fs: &ScopedFilesystem<'a, T>,
-    asset_hub_polkadot: bool
+    asset_hub_polkadot: bool,
 ) -> Result<Vec<PathBuf>, GeneratorError>
 where
     T: FileSystem,

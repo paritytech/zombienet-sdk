@@ -1217,4 +1217,67 @@ mod tests {
         // assert 'preopenHrmpChannels' is not created
         assert_eq!(new_hrmp_channels, None);
     }
+
+    #[test]
+    fn get_node_keys_works() {
+        let mut name = String::from("luca");
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            ..Default::default()
+        };
+
+        let sr = &node.accounts.accounts["sr"];
+        let keys = [
+            ("babe".into(), sr.address.clone()),
+            ("im_online".into(), sr.address.clone()),
+            ("parachain_validator".into(), sr.address.clone()),
+            ("authority_discovery".into(), sr.address.clone()),
+            ("para_validator".into(), sr.address.clone()),
+            ("para_assignment".into(), sr.address.clone()),
+            ("aura".into(), sr.address.clone()),
+            ("nimbus".into(), sr.address.clone()),
+            ("vrf".into(), sr.address.clone()),
+            ("grandpa".into(), node.accounts.accounts["ed"].address.clone()),
+            ("beefy".into(), node.accounts.accounts["ec"].address.clone()),
+        ].into();
+
+        // Stash
+        let sr_stash = &node.accounts.accounts["sr_stash"];
+        let node_key = get_node_keys(&node, true, false);
+        assert_eq!(node_key.0, sr_stash.address);
+        assert_eq!(node_key.1, sr_stash.address);
+        assert_eq!(node_key.2, keys);
+        // Non-stash
+        let node_key = get_node_keys(&node, false, false);
+        assert_eq!(node_key.0, sr.address);
+        assert_eq!(node_key.1, sr.address);
+        assert_eq!(node_key.2, keys);
+    }
+
+    #[test]
+    fn get_node_keys_supports_asset_hub_polkadot() {
+        let mut name = String::from("luca");
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            ..Default::default()
+        };
+
+        let node_key = get_node_keys(&node, false, false);
+        assert_eq!(node_key.2["aura"], node.accounts.accounts["sr"].address);
+
+        let node_key = get_node_keys(&node, false, true);
+        assert_eq!(node_key.2["aura"], node.accounts.accounts["ed"].address);
+    }
 }

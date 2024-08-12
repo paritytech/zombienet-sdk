@@ -1186,8 +1186,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(new_hrmp_channels.len(), 2);
-        assert_eq!(new_hrmp_channels.first().unwrap()["sender"], 100);
-        assert_eq!(new_hrmp_channels.first().unwrap()["recipient"], 101);
+        assert_eq!(new_hrmp_channels.first().unwrap()[0], 100);
+        assert_eq!(new_hrmp_channels.first().unwrap()[1], 101);
+        assert_eq!(new_hrmp_channels.last().unwrap()[0], 101);
+        assert_eq!(new_hrmp_channels.last().unwrap()[1], 100);
     }
 
     #[test]

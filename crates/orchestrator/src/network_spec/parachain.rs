@@ -77,14 +77,15 @@ impl ParachainSpec {
             cmd
         } else if let Some(first_node) = config.collators().first() {
             let Some(cmd) = first_node.command() else {
-                return Err(OrchestratorError::InvalidConfig("Parachain, either default_command or command in the first node needs to be set.".to_string()));
+                return Err(OrchestratorError::InvalidConfig(format!("Parachain {}, either default_command or command in the first node needs to be set.", config.id())));
             };
 
             cmd
         } else {
-            return Err(OrchestratorError::InvalidConfig(
-                "Parachain without nodes and default_command isn't set.".to_string(),
-            ));
+            return Err(OrchestratorError::InvalidConfig(format!(
+                "Parachain {}, without nodes and default_command isn't set.",
+                config.id()
+            )));
         };
 
         // TODO: internally we use image as String

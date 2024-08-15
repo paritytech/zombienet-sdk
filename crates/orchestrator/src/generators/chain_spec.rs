@@ -175,7 +175,6 @@ impl ChainSpec {
             let sanitized_cmd = if replacement_value.is_empty() {
                 // we need to remove the `--chain` flag
                 self.command.as_ref().unwrap().cmd().replace("--chain", "")
-                //.as_ref().unwrap().replace("--chain", "")
             } else {
                 self.command.as_ref().unwrap().cmd().to_owned()
             };

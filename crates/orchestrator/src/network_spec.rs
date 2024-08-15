@@ -49,16 +49,25 @@ impl NetworkSpec {
             }
         }
 
-        Ok(NetworkSpec {
-            relaychain,
-            parachains,
-            hrmp_channels: network_config
-                .hrmp_channels()
+        if errs.is_empty() {
+            Ok(NetworkSpec {
+                relaychain,
+                parachains,
+                hrmp_channels: network_config
+                    .hrmp_channels()
+                    .into_iter()
+                    .cloned()
+                    .collect(),
+                global_settings: network_config.global_settings().clone(),
+            })
+        } else {
+            let errs_str = errs
                 .into_iter()
-                .cloned()
-                .collect(),
-            global_settings: network_config.global_settings().clone(),
-        })
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>()
+                .join("\n");
+            Err(OrchestratorError::InvalidConfig(errs_str))
+        }
     }
 
     pub async fn populate_nodes_available_args(

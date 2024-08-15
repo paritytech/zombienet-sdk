@@ -34,7 +34,7 @@ pub enum ProviderError {
     #[error("Failed to spawn node '{0}': {1}")]
     NodeSpawningFailed(String, anyhow::Error),
 
-    #[error("Error running command '{0}' in pod {1}: {2}")]
+    #[error("Error running command '{0}' {1}: {2}")]
     RunCommandError(String, String, anyhow::Error),
 
     #[error("Error running script'{0}': {1}")]

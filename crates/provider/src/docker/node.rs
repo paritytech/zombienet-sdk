@@ -392,7 +392,7 @@ where
             .map_err(|err| {
                 ProviderError::RunCommandError(
                     format!("sh -c {}", &command.join(" ")),
-                    self.name.to_string(),
+                    format!("in pod {}", self.name),
                     err.into(),
                 )
             })

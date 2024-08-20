@@ -462,16 +462,19 @@ fn validate_spec_with_provider_capabilities(
 
         // now check the binaries
         let path = std::env::var("PATH").unwrap_or_default(); // path should always be set
-        println!("PATH es: {path}");
+        trace!("current PATH: {path}");
         let parts: Vec<_> = path.split(":").collect();
         for cmd in cmds {
             let missing = if cmd.contains('/') {
+                trace!("checking {cmd}");
                 std::fs::metadata(cmd).is_err()
             } else {
                 // should be in the PATH
-                !parts
-                    .iter()
-                    .any(|part| std::fs::metadata(format!("{}/{}", part, cmd)).is_ok())
+                !parts.iter().any(|part| {
+                    let path_to = format!("{}/{}", part, cmd);
+                    trace!("checking {path_to}");
+                    std::fs::metadata(path_to).is_ok()
+                })
             };
 
             if missing {
@@ -494,7 +497,10 @@ fn help_msg(cmd: &str) -> String {
             format!("Missing binary {cmd}, compile by running: \n\tcargo build --package {cmd} --release")
         },
         "polkadot" => {
-            format!("Missing binary {cmd}, compile by running: \n\t cargo build --locked --release --features fast-runtime --bin {cmd} --bin polkadot-prepare-worker --bin polkadot-execute-worker")
+            format!("Missing binary {cmd}, compile by running (in the polkadot-sdk repo): \n\t cargo build --locked --release --features fast-runtime --bin {cmd} --bin polkadot-prepare-worker --bin polkadot-execute-worker")
+        },
+        "polkadot-parachain" => {
+            format!("Missing binary {cmd}, compile by running (in the polkadot-sdk repo): \n\t cargo build --release --locked -p {cmd}-bin --bin {cmd}")
         },
         _ => {
             format!("Missing binary {cmd}, please compile it.")

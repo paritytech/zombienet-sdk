@@ -7,7 +7,7 @@ use provider::DynNode;
 use regex::Regex;
 use serde::Serialize;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
-use support::net::wait_ws_ready;
+use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
@@ -206,27 +206,22 @@ impl NetworkNode {
                         return Ok(());
                     }
                 },
-                Err(e) => {
-                    match e.downcast::<reqwest::Error>() {
-                        Ok(io) => {
-                            // if the error is connecting could be the case that the node
-                            // is not listening yet, so we keep waiting
-                            // Skipped err is: 'tcp connect error: Connection refused (os error 61)'
-                            if !io.is_connect() {
-                                return Err(io.into());
-                            }
-                        },
-                        Err(other) => {
-                            match other.downcast::<NetworkNodeError>() {
-                                Ok(node_err) => {
-                                    if !matches!(node_err, NetworkNodeError::MetricNotFound(_)) {
-                                        return Err(node_err.into());
-                                    }
-                                },
-                                Err(other) => return Err(other),
-                            };
-                        },
-                    }
+                Err(e) => match e.downcast::<reqwest::Error>() {
+                    Ok(io_err) => {
+                        if !skip_err_while_waiting(&io_err) {
+                            return Err(io_err.into());
+                        }
+                    },
+                    Err(other) => {
+                        match other.downcast::<NetworkNodeError>() {
+                            Ok(node_err) => {
+                                if !matches!(node_err, NetworkNodeError::MetricNotFound(_)) {
+                                    return Err(node_err.into());
+                                }
+                            },
+                            Err(other) => return Err(other),
+                        };
+                    },
                 },
             }
 

@@ -12,6 +12,7 @@ pub mod shared;
 mod spawner;
 
 use std::{
+    collections::HashSet,
     net::IpAddr,
     path::{Path, PathBuf},
     time::Duration,
@@ -411,36 +412,102 @@ fn validate_spec_with_provider_capabilities(
     network_spec: &NetworkSpec,
     capabilities: &ProviderCapabilities,
 ) -> Result<(), anyhow::Error> {
-    if !capabilities.requires_image {
-        return Ok(());
-    }
+    let mut errs: Vec<String> = vec![];
 
-    // Relaychain
-    if network_spec.relaychain.default_image.is_none() {
-        // we should check if each node have an image
-        let nodes = &network_spec.relaychain.nodes;
-        if nodes.iter().any(|node| node.image.is_none()) {
-            return Err(anyhow::anyhow!(
-                "missing image for node, and not default is set at relaychain"
-            ));
-        }
-    };
-
-    // Paras
-    for para in &network_spec.parachains {
-        if para.default_image.is_none() {
-            let nodes = &para.collators;
+    if capabilities.requires_image {
+        // Relaychain
+        if network_spec.relaychain.default_image.is_none() {
+            // we should check if each node have an image
+            let nodes = &network_spec.relaychain.nodes;
             if nodes.iter().any(|node| node.image.is_none()) {
-                return Err(anyhow::anyhow!(
-                    "missing image for node, and not default is set at parachain {}",
-                    para.id
+                errs.push(String::from(
+                    "Missing image for node, and not default is set at relaychain",
                 ));
+            }
+        };
+
+        // Paras
+        for para in &network_spec.parachains {
+            if para.default_image.is_none() {
+                let nodes = &para.collators;
+                if nodes.iter().any(|node| node.image.is_none()) {
+                    errs.push(format!(
+                        "Missing image for node, and not default is set at parachain {}",
+                        para.id
+                    ));
+                }
+            }
+        }
+    } else {
+        // native
+        // We need to get all the `cmds` and verify if are part of the path
+        let mut cmds: HashSet<&str> = Default::default();
+        if let Some(cmd) = network_spec.relaychain.default_command.as_ref() {
+            cmds.insert(cmd.as_str());
+        }
+        for node in network_spec.relaychain().nodes.iter() {
+            cmds.insert(node.command());
+        }
+
+        // Paras
+        for para in &network_spec.parachains {
+            if let Some(cmd) = para.default_command.as_ref() {
+                cmds.insert(cmd.as_str());
+            }
+
+            for node in para.collators.iter() {
+                cmds.insert(node.command());
+            }
+        }
+
+        // now check the binaries
+        let path = std::env::var("PATH").unwrap_or_default(); // path should always be set
+        trace!("current PATH: {path}");
+        let parts: Vec<_> = path.split(":").collect();
+        for cmd in cmds {
+            let missing = if cmd.contains('/') {
+                trace!("checking {cmd}");
+                std::fs::metadata(cmd).is_err()
+            } else {
+                // should be in the PATH
+                !parts.iter().any(|part| {
+                    let path_to = format!("{}/{}", part, cmd);
+                    trace!("checking {path_to}");
+                    std::fs::metadata(path_to).is_ok()
+                })
+            };
+
+            if missing {
+                errs.push(help_msg(cmd));
             }
         }
     }
 
+    if !errs.is_empty() {
+        let msg = errs.join("\n");
+        return Err(anyhow::anyhow!(format!("Invalid configuration: \n {msg}")));
+    }
+
     Ok(())
 }
+
+fn help_msg(cmd: &str) -> String {
+    match cmd {
+        "parachain-template-node" | "solochain-template-node" | "minimal-template-node" => {
+            format!("Missing binary {cmd}, compile by running: \n\tcargo build --package {cmd} --release")
+        },
+        "polkadot" => {
+            format!("Missing binary {cmd}, compile by running (in the polkadot-sdk repo): \n\t cargo build --locked --release --features fast-runtime --bin {cmd} --bin polkadot-prepare-worker --bin polkadot-execute-worker")
+        },
+        "polkadot-parachain" => {
+            format!("Missing binary {cmd}, compile by running (in the polkadot-sdk repo): \n\t cargo build --release --locked -p {cmd}-bin --bin {cmd}")
+        },
+        _ => {
+            format!("Missing binary {cmd}, please compile it.")
+        },
+    }
+}
+
 // TODO: get the fs from `DynNamespace` will make this not needed
 // but the FileSystem trait isn't object-safe so we can't pass around
 // as `dyn FileSystem`. We can refactor or using some `erase` techniques
@@ -543,12 +610,15 @@ mod tests {
 
     use super::*;
 
-    fn generate(with_image: bool) -> Result<NetworkConfig, Vec<anyhow::Error>> {
+    fn generate(
+        with_image: bool,
+        with_cmd: Option<&'static str>,
+    ) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         NetworkConfigBuilder::new()
             .with_relaychain(|r| {
                 let mut relay = r
                     .with_chain("rococo-local")
-                    .with_default_command("polkadot");
+                    .with_default_command(with_cmd.unwrap_or("polkadot"));
                 if with_image {
                     relay = relay.with_default_image("docker.io/parity/polkadot")
                 }
@@ -559,7 +629,9 @@ mod tests {
             })
             .with_parachain(|p| {
                 p.with_id(2000).cumulus_based(true).with_collator(|n| {
-                    let node = n.with_name("collator").with_command("polkadot-parachain");
+                    let node = n
+                        .with_name("collator")
+                        .with_command(with_cmd.unwrap_or("polkadot-parachain"));
                     if with_image {
                         node.with_image("docker.io/paritypr/test-parachain")
                     } else {
@@ -572,7 +644,7 @@ mod tests {
 
     #[tokio::test]
     async fn valid_config_with_image() {
-        let network_config = generate(true).unwrap();
+        let network_config = generate(true, None).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let caps = ProviderCapabilities {
             requires_image: true,
@@ -586,8 +658,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_config() {
-        let network_config = generate(false).unwrap();
+    async fn invalid_config_without_image() {
+        let network_config = generate(false, None).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let caps = ProviderCapabilities {
             requires_image: true,
@@ -598,5 +670,36 @@ mod tests {
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
         assert!(valid.is_err())
+    }
+
+    #[tokio::test]
+    async fn invalid_config_missing_cmd() {
+        let network_config = generate(false, Some("other")).unwrap();
+        let spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let caps = ProviderCapabilities {
+            requires_image: false,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: false,
+        };
+
+        let valid = validate_spec_with_provider_capabilities(&spec, &caps);
+        assert!(valid.is_err())
+    }
+
+    #[tokio::test]
+    async fn valid_config_present_cmd() {
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let caps = ProviderCapabilities {
+            requires_image: false,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: false,
+        };
+
+        let valid = validate_spec_with_provider_capabilities(&spec, &caps);
+        println!("{:?}", valid);
+        assert!(valid.is_ok())
     }
 }

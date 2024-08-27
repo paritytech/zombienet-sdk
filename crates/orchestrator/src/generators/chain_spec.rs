@@ -175,7 +175,6 @@ impl ChainSpec {
             let sanitized_cmd = if replacement_value.is_empty() {
                 // we need to remove the `--chain` flag
                 self.command.as_ref().unwrap().cmd().replace("--chain", "")
-                //.as_ref().unwrap().replace("--chain", "")
             } else {
                 self.command.as_ref().unwrap().cmd().to_owned()
             };
@@ -881,7 +880,7 @@ fn add_balances(
     }
 }
 
-fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
+fn get_node_keys(node: &NodeSpec, use_stash: bool, asset_hub_polkadot: bool) -> GenesisNodeKey {
     let sr_account = node.accounts.accounts.get("sr").unwrap();
     let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
     let ed_account = node.accounts.accounts.get("ed").unwrap();
@@ -898,6 +897,10 @@ fn get_node_keys(node: &NodeSpec, use_stash: bool) -> GenesisNodeKey {
         "nimbus",
         "vrf",
     ] {
+        if k == "aura" && asset_hub_polkadot {
+            keys.insert(k.to_string(), ed_account.address.clone());
+            continue;
+        }
         keys.insert(k.to_string(), sr_account.address.clone());
     }
 
@@ -917,10 +920,15 @@ fn add_authorities(
     nodes: &[&NodeSpec],
     use_stash: bool,
 ) {
+    let asset_hub_polkadot = chain_spec_json
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|id| id.starts_with("asset-hub-polkadot"))
+        .unwrap_or_default();
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<GenesisNodeKey> = nodes
             .iter()
-            .map(|node| get_node_keys(node, use_stash))
+            .map(|node| get_node_keys(node, use_stash, asset_hub_polkadot))
             .collect();
         val["session"]["keys"] = json!(keys);
     } else {
@@ -934,6 +942,17 @@ fn add_hrmp_channels(
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         if let Some(preopen_hrmp_channels) = val.pointer_mut("/hrmp/preopenHrmpChannels") {
+            let hrmp_channels = hrmp_channels
+                .iter()
+                .map(|c| {
+                    (
+                        c.sender(),
+                        c.recipient(),
+                        c.max_capacity(),
+                        c.max_message_size(),
+                    )
+                })
+                .collect::<Vec<_>>();
             *preopen_hrmp_channels = json!(hrmp_channels);
         } else {
             warn!("⚠️  'hrmp/preopenHrmpChannels' key not present in runtime config.");
@@ -1174,8 +1193,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(new_hrmp_channels.len(), 2);
-        assert_eq!(new_hrmp_channels.first().unwrap()["sender"], 100);
-        assert_eq!(new_hrmp_channels.first().unwrap()["recipient"], 101);
+        assert_eq!(new_hrmp_channels.first().unwrap()[0], 100);
+        assert_eq!(new_hrmp_channels.first().unwrap()[1], 101);
+        assert_eq!(new_hrmp_channels.last().unwrap()[0], 101);
+        assert_eq!(new_hrmp_channels.last().unwrap()[1], 100);
     }
 
     #[test]
@@ -1202,5 +1223,72 @@ mod tests {
 
         // assert 'preopenHrmpChannels' is not created
         assert_eq!(new_hrmp_channels, None);
+    }
+
+    #[test]
+    fn get_node_keys_works() {
+        let mut name = String::from("luca");
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            ..Default::default()
+        };
+
+        let sr = &node.accounts.accounts["sr"];
+        let keys = [
+            ("babe".into(), sr.address.clone()),
+            ("im_online".into(), sr.address.clone()),
+            ("parachain_validator".into(), sr.address.clone()),
+            ("authority_discovery".into(), sr.address.clone()),
+            ("para_validator".into(), sr.address.clone()),
+            ("para_assignment".into(), sr.address.clone()),
+            ("aura".into(), sr.address.clone()),
+            ("nimbus".into(), sr.address.clone()),
+            ("vrf".into(), sr.address.clone()),
+            (
+                "grandpa".into(),
+                node.accounts.accounts["ed"].address.clone(),
+            ),
+            ("beefy".into(), node.accounts.accounts["ec"].address.clone()),
+        ]
+        .into();
+
+        // Stash
+        let sr_stash = &node.accounts.accounts["sr_stash"];
+        let node_key = get_node_keys(&node, true, false);
+        assert_eq!(node_key.0, sr_stash.address);
+        assert_eq!(node_key.1, sr_stash.address);
+        assert_eq!(node_key.2, keys);
+        // Non-stash
+        let node_key = get_node_keys(&node, false, false);
+        assert_eq!(node_key.0, sr.address);
+        assert_eq!(node_key.1, sr.address);
+        assert_eq!(node_key.2, keys);
+    }
+
+    #[test]
+    fn get_node_keys_supports_asset_hub_polkadot() {
+        let mut name = String::from("luca");
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            ..Default::default()
+        };
+
+        let node_key = get_node_keys(&node, false, false);
+        assert_eq!(node_key.2["aura"], node.accounts.accounts["sr"].address);
+
+        let node_key = get_node_keys(&node, false, true);
+        assert_eq!(node_key.2["aura"], node.accounts.accounts["ed"].address);
     }
 }

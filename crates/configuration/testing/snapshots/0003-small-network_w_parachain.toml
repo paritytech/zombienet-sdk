@@ -32,7 +32,7 @@ default_db_snapshot = "https://storage.com/path/to/db_snapshot.tgz"
 chain_spec_path = "/path/to/my/chain/spec.json"
 cumulus_based = true
 
-[[parachains.collators]]
+[parachains.collator]
 name = "john"
 validator = true
 invulnerable = true

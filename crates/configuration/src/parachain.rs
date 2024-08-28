@@ -141,6 +141,13 @@ pub struct ParachainConfig {
     genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     pub(crate) collators: Vec<NodeConfig>,
+    // Single collator config, added for backward compatibility
+    // with `toml` networks definitions from v1.
+    // This field can only be set loading an old `toml` definition
+    // with `[parachain.collator]` key.
+    // NOTE: if the file also contains multiple collators defined in
+    // `[[parachain.collators]], the single configuration will be added to the bottom.
+    collator: Option<NodeConfig>,
 }
 
 impl ParachainConfig {
@@ -246,7 +253,11 @@ impl ParachainConfig {
 
     /// The collators of the parachain.
     pub fn collators(&self) -> Vec<&NodeConfig> {
-        self.collators.iter().collect::<Vec<_>>()
+        let mut cols = self.collators.iter().collect::<Vec<_>>();
+        if let Some(col) = self.collator.as_ref() {
+            cols.push(col);
+        }
+        cols
     }
 }
 
@@ -304,6 +315,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 is_cumulus_based: true,
                 bootnodes_addresses: vec![],
                 collators: vec![],
+                collator: None,
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -1233,6 +1245,7 @@ mod tests {
         let parachain = load_from_toml_small.parachains()[0];
 
         assert_eq!(parachain.registration_strategy(), None);
+        assert_eq!(parachain.collators().len(), 1);
     }
 
     #[test]

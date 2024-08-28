@@ -359,15 +359,7 @@ impl NetworkNode {
         user_types: Option<serde_json::Value>,
     ) -> Result<PjsResult, anyhow::Error> {
         let content = std::fs::read_to_string(file)?;
-        let code = pjs_build_template(self.ws_uri(), content.as_ref(), args, user_types);
-        tracing::trace!("Code to execute: {code}");
-
-        let value = match pjs_exec(code)? {
-            ReturnValue::Deserialized(val) => Ok(val),
-            ReturnValue::CantDeserialize(msg) => Err(msg),
-        };
-
-        Ok(value)
+        self.pjs(content, args, user_types).await
     }
 
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {

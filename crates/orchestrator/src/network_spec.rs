@@ -285,7 +285,6 @@ impl NetworkSpec {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn small_network_config_get_spec() {

@@ -12,6 +12,10 @@ pub(crate) fn default_as_true() -> bool {
     true
 }
 
+pub(crate) fn default_as_false() -> bool {
+    false
+}
+
 pub(crate) fn default_initial_balance() -> crate::types::U128 {
     2_000_000_000_000.into()
 }

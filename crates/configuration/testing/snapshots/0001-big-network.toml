@@ -67,6 +67,7 @@ add_to_genesis = true
 balance = 2000000000000
 chain_spec_path = "/path/to/my/other/chain/spec.json"
 cumulus_based = true
+evm_based = false
 
 [[parachains.collators]]
 name = "mike"

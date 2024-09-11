@@ -1053,7 +1053,7 @@ fn add_collator_selection(
     session_key: SessionKeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let key_type = if let sesssion_ky = SessionKeyType::Evm {
+        let key_type = if let sesssion_key = SessionKeyType::Evm {
             "eth"
         } else {
             "sr"

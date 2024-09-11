@@ -449,6 +449,12 @@ impl ChainSpec {
 
             clear_authorities(&pointer, &mut chain_spec_json);
 
+            let key_type_to_use =  if para.is_evm_based {
+                SessionKeyType::Evm
+            } else {
+                SessionKeyType::Default
+            };
+
             // Get validators to add as authorities
             let validators: Vec<&NodeSpec> = para
                 .collators
@@ -465,11 +471,7 @@ impl ChainSpec {
                     &pointer,
                     &mut chain_spec_json,
                     &validators,
-                    if para.is_evm_based {
-                        SessionKeyType::Evm
-                    } else {
-                        SessionKeyType::Default
-                    },
+                    key_type_to_use,
                 );
             } else if chain_spec_json
                 .pointer(&format!("{}/aura", pointer))
@@ -488,7 +490,7 @@ impl ChainSpec {
                 .filter(|node| node.is_invulnerable)
                 .collect();
 
-            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables);
+            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables, key_type_to_use);
 
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
@@ -1048,14 +1050,20 @@ fn add_collator_selection(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &[&NodeSpec],
+    session_key: SessionKeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
+        let key_type = if let sesssion_ky = SessionKeyType::Evm {
+            "eth"
+        } else {
+            "sr"
+        };
         let keys: Vec<String> = nodes
             .iter()
             .map(|node| {
                 node.accounts
                     .accounts
-                    .get("sr")
+                    .get(key_type)
                     .expect(&format!(
                         "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
                     ))

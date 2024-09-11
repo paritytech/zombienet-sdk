@@ -449,7 +449,7 @@ impl ChainSpec {
 
             clear_authorities(&pointer, &mut chain_spec_json);
 
-            let key_type_to_use =  if para.is_evm_based {
+            let key_type_to_use = if para.is_evm_based {
                 SessionKeyType::Evm
             } else {
                 SessionKeyType::Default
@@ -467,12 +467,7 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &validators,
-                    key_type_to_use,
-                );
+                add_authorities(&pointer, &mut chain_spec_json, &validators, key_type_to_use);
             } else if chain_spec_json
                 .pointer(&format!("{}/aura", pointer))
                 .is_some()
@@ -490,7 +485,12 @@ impl ChainSpec {
                 .filter(|node| node.is_invulnerable)
                 .collect();
 
-            add_collator_selection(&pointer, &mut chain_spec_json, &invulnerables, key_type_to_use);
+            add_collator_selection(
+                &pointer,
+                &mut chain_spec_json,
+                &invulnerables,
+                key_type_to_use,
+            );
 
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
@@ -1053,7 +1053,7 @@ fn add_collator_selection(
     session_key: SessionKeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let key_type = if let SessionKeyType::Evm = session_key  {
+        let key_type = if let SessionKeyType::Evm = session_key {
             "eth"
         } else {
             "sr"

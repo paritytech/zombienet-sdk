@@ -1268,9 +1268,9 @@ mod tests {
         let parachain_evm = load_from_toml_small.parachains()[1];
 
         assert_eq!(parachain.registration_strategy(), None);
-        assert_eq!(parachain.is_evm_based(), false);
+        assert!(!parachain.is_evm_based());
         assert_eq!(parachain.collators().len(), 1);
-        assert_eq!(parachain_evm.is_evm_based(), true);
+        assert!(parachain_evm.is_evm_based());
     }
 
     #[test]

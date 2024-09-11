@@ -55,6 +55,9 @@ pub struct ParachainSpec {
     /// Is the parachain cumulus-based
     pub(crate) is_cumulus_based: bool,
 
+    /// Is the parachain evm-based
+    pub(crate) is_evm_based: bool,
+
     /// Initial balance
     pub(crate) initial_balance: u128,
 
@@ -202,6 +205,7 @@ impl ParachainSpec {
                 .clone(),
             onboard_as_parachain: config.onboard_as_parachain(),
             is_cumulus_based: config.is_cumulus_based(),
+            is_evm_based: config.is_evm_based(),
             initial_balance: config.initial_balance(),
             genesis_state,
             genesis_wasm,

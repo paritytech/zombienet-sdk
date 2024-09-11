@@ -40,6 +40,19 @@ enum KeyType {
     Grandpa,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum SessionKeyType {
+    Default,
+    Stash,
+    Evm,
+}
+
+impl Default for SessionKeyType {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub enum CommandInContext {
     Local(String),
@@ -448,7 +461,16 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(&pointer, &mut chain_spec_json, &validators, false);
+                add_authorities(
+                    &pointer,
+                    &mut chain_spec_json,
+                    &validators,
+                    if para.is_evm_based {
+                        SessionKeyType::Evm
+                    } else {
+                        SessionKeyType::Default
+                    },
+                );
             } else if chain_spec_json
                 .pointer(&format!("{}/aura", pointer))
                 .is_some()
@@ -547,7 +569,12 @@ impl ChainSpec {
                 .pointer(&format!("{}/session", pointer))
                 .is_some()
             {
-                add_authorities(&pointer, &mut chain_spec_json, &validators, true);
+                add_authorities(
+                    &pointer,
+                    &mut chain_spec_json,
+                    &validators,
+                    SessionKeyType::Stash,
+                );
             }
 
             // staking && nominators
@@ -880,11 +907,16 @@ fn add_balances(
     }
 }
 
-fn get_node_keys(node: &NodeSpec, use_stash: bool, asset_hub_polkadot: bool) -> GenesisNodeKey {
+fn get_node_keys(
+    node: &NodeSpec,
+    session_key: SessionKeyType,
+    asset_hub_polkadot: bool,
+) -> GenesisNodeKey {
     let sr_account = node.accounts.accounts.get("sr").unwrap();
     let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
     let ed_account = node.accounts.accounts.get("ed").unwrap();
     let ec_account = node.accounts.accounts.get("ec").unwrap();
+    let eth_account = node.accounts.accounts.get("eth").unwrap();
     let mut keys = HashMap::new();
     for k in [
         "babe",
@@ -906,19 +938,21 @@ fn get_node_keys(node: &NodeSpec, use_stash: bool, asset_hub_polkadot: bool) -> 
 
     keys.insert("grandpa".to_string(), ed_account.address.clone());
     keys.insert("beefy".to_string(), ec_account.address.clone());
+    keys.insert("eth".to_string(), eth_account.public_key.clone());
 
-    let account_to_use = if use_stash { sr_stash } else { sr_account };
-    (
-        account_to_use.address.clone(),
-        account_to_use.address.clone(),
-        keys,
-    )
+    let account_to_use = match session_key {
+        SessionKeyType::Default => sr_account.address.clone(),
+        SessionKeyType::Stash => sr_stash.address.clone(),
+        SessionKeyType::Evm => format!("0x{}", eth_account.public_key),
+    };
+
+    (account_to_use.clone(), account_to_use, keys)
 }
 fn add_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     nodes: &[&NodeSpec],
-    use_stash: bool,
+    session_key: SessionKeyType,
 ) {
     let asset_hub_polkadot = chain_spec_json
         .get("id")
@@ -928,7 +962,7 @@ fn add_authorities(
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let keys: Vec<GenesisNodeKey> = nodes
             .iter()
-            .map(|node| get_node_keys(node, use_stash, asset_hub_polkadot))
+            .map(|node| get_node_keys(node, session_key, asset_hub_polkadot))
             .collect();
         val["session"]["keys"] = json!(keys);
     } else {
@@ -1255,17 +1289,18 @@ mod tests {
                 node.accounts.accounts["ed"].address.clone(),
             ),
             ("beefy".into(), node.accounts.accounts["ec"].address.clone()),
+            ("eth".into(), node.accounts.accounts["eth"].address.clone()),
         ]
         .into();
 
         // Stash
         let sr_stash = &node.accounts.accounts["sr_stash"];
-        let node_key = get_node_keys(&node, true, false);
+        let node_key = get_node_keys(&node, SessionKeyType::Stash, false);
         assert_eq!(node_key.0, sr_stash.address);
         assert_eq!(node_key.1, sr_stash.address);
         assert_eq!(node_key.2, keys);
         // Non-stash
-        let node_key = get_node_keys(&node, false, false);
+        let node_key = get_node_keys(&node, SessionKeyType::Default, false);
         assert_eq!(node_key.0, sr.address);
         assert_eq!(node_key.1, sr.address);
         assert_eq!(node_key.2, keys);
@@ -1285,10 +1320,10 @@ mod tests {
             ..Default::default()
         };
 
-        let node_key = get_node_keys(&node, false, false);
+        let node_key = get_node_keys(&node, SessionKeyType::default(), false);
         assert_eq!(node_key.2["aura"], node.accounts.accounts["sr"].address);
 
-        let node_key = get_node_keys(&node, false, true);
+        let node_key = get_node_keys(&node, SessionKeyType::default(), true);
         assert_eq!(node_key.2["aura"], node.accounts.accounts["ed"].address);
     }
 }

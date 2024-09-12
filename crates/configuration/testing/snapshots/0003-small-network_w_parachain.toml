@@ -38,3 +38,20 @@ validator = true
 invulnerable = true
 bootnode = true
 balance = 5000000000
+
+[[parachains]]
+id = 1000
+chain = "myparachain"
+onboard_as_parachain = false
+balance = 2000000000000
+default_db_snapshot = "https://storage.com/path/to/db_snapshot.tgz"
+chain_spec_path = "/path/to/my/chain/spec.json"
+cumulus_based = true
+evm_based = true
+
+[[parachains.collators]]
+name = "john"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 5000000000

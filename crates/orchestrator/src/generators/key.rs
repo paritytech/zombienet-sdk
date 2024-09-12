@@ -1,8 +1,8 @@
-use sp_core::{crypto::SecretStringError, ecdsa, ed25519, sr25519, Pair};
+use sp_core::{crypto::SecretStringError, ecdsa, ed25519, keccak_256, sr25519, Pair, H160, H256};
 
 use super::errors::GeneratorError;
 use crate::shared::types::{Accounts, NodeAccount};
-const KEYS: [&str; 4] = ["sr", "sr_stash", "ed", "ec"];
+const KEYS: [&str; 5] = ["sr", "sr_stash", "ed", "ec", "eth"];
 
 pub fn generate_pair<T: Pair>(seed: &str) -> Result<T::Pair, SecretStringError> {
     let pair = T::Pair::from_string(seed, None)?;
@@ -19,7 +19,7 @@ pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             "sr_stash" => {
-                let pair = generate_pair::<sr25519::Pair>(&format!("{}/stash", seed))
+                let pair = generate_pair::<sr25519::Pair>(&format!("{}//stash", seed))
                     .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
@@ -32,6 +32,19 @@ pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
                 let pair = generate_pair::<ecdsa::Pair>(seed)
                     .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
+            },
+            "eth" => {
+                let pair = generate_pair::<ecdsa::Pair>(seed)
+                    .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
+
+                let decompressed = libsecp256k1::PublicKey::parse_compressed(&pair.public().0)
+                    .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?
+                    .serialize();
+                let mut m = [0u8; 64];
+                m.copy_from_slice(&decompressed[1..65]);
+                let account = H160::from(H256::from(keccak_256(&m)));
+
+                (hex::encode(account), hex::encode(account))
             },
             _ => unreachable!(),
         };
@@ -111,13 +124,15 @@ mod tests {
         let sr_stash = pair.get("sr_stash").unwrap();
         let ed = pair.get("ed").unwrap();
         let ec = pair.get("ec").unwrap();
+        let eth = pair.get("eth").unwrap();
+
         assert_eq!(
             sr.address,
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
         );
         assert_eq!(
             sr_stash.address,
-            "5DZnGRAr28KP4GvbuxW2cBNo9Aodcm4QKUMj3Zqj67YjYStr"
+            "5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY"
         );
         assert_eq!(
             ed.address,
@@ -127,5 +142,10 @@ mod tests {
             format!("0x{}", ec.public_key),
             "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
         );
+
+        assert_eq!(
+            format!("0x{}", eth.public_key),
+            "0xe04cc55ebee1cbce552f250e85c57b70b2e2625b"
+        )
     }
 }

@@ -3,7 +3,8 @@ pub struct ZombieCollator {
     // other fields
 }
 
-impl ZombieNode {
+impl ZombieCollator {
+    // takes the name of the collator as the parameter
     pub fn new(name: String) -> Self {
         // name can't be empty!
 

@@ -4,6 +4,7 @@ pub struct ZombieNode {
 }
 
 impl ZombieNode {
+    // takes the name of the node as the parameter
     pub fn new(name: String) -> Self {
         // name can't be empty!
 

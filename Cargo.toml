@@ -9,7 +9,8 @@ members = [
   "crates/provider",
   #"crates/test-runner",
   "crates/prom-metrics-parser",
-  "crates/file-server"
+  "crates/file-server",
+  "crates/wrapper",
 ]
 
 [workspace.package]

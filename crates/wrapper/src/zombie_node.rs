@@ -13,7 +13,13 @@ impl ZombieNode {
         }
     }
 
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
     // consume and return a new object with the modifications
     // to allow user to chain operations
-    pub fn otherMethod(mut self) -> Self {}
+    pub fn otherMethod(mut self) -> Self {
+        self
+    }
 }

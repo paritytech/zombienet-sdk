@@ -73,6 +73,24 @@ pub struct RegisterParachainOptions {
     pub finalization: bool,
 }
 
+pub struct RuntimeUpgradeOptions {
+    /// Location of the wasm file (could be either a local file or an url)
+    pub wasm: AssetLocation,
+    /// Name of the node to use as rpc endpoint
+    pub node_name: Option<String>,
+    /// Seed to use to sign and submit (default to //Alice)
+    pub seed: Option<[u8; 32]>,
+}
+
+impl RuntimeUpgradeOptions {
+    pub fn new(wasm: AssetLocation) -> Self {
+        Self {
+            wasm,
+            node_name: None,
+            seed: None,
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct ParachainGenesisArgs {
     pub genesis_head: String,

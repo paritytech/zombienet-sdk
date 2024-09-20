@@ -36,6 +36,18 @@ pub struct NetworkNode {
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
 
+// #[derive(Clone, Debug)]
+// pub struct QueryMetricOptions {
+//     use_cache: bool,
+//     treat_not_found_as_zero: bool,
+// }
+
+// impl Default for QueryMetricOptions {
+//     fn default() -> Self {
+//         Self { use_cache: false, treat_not_found_as_zero: true }
+//     }
+// }
+
 impl NetworkNode {
     /// Create a new NetworkNode
     pub(crate) fn new<T: Into<String>>(
@@ -148,7 +160,8 @@ impl NetworkNode {
         let metric_name = metric_name.into();
         // force cache reload
         self.fetch_metrics().await?;
-        self.metric(&metric_name).await
+        // by default we treat not found as 0 (same in v1)
+        self.metric(&metric_name, true).await
     }
 
     /// Assert on a metric value 'by name' from Prometheus (exposed by the node)
@@ -176,13 +189,13 @@ impl NetworkNode {
         predicate: impl Fn(f64) -> bool,
     ) -> Result<bool, anyhow::Error> {
         let metric_name = metric_name.into();
-        let val = self.metric(&metric_name).await?;
+        let val = self.metric(&metric_name, true).await?;
         if predicate(val) {
             Ok(true)
         } else {
             // reload metrics
             self.fetch_metrics().await?;
-            let val = self.metric(&metric_name).await?;
+            let val = self.metric(&metric_name, true).await?;
             trace!("🔎 Current value passed to the predicated: {val}");
             Ok(predicate(val))
         }
@@ -370,12 +383,12 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// Query individual metric by name
     async fn metric(
         &self,
-        metric_name: &str, // treat_not_found_as_zero: bool
+        metric_name: &str,
+        treat_not_found_as_zero: bool,
     ) -> Result<f64, anyhow::Error> {
-        // TODO: allow to pass as arg
-        let treat_not_found_as_zero = true;
         let mut metrics_map = self.metrics_cache.read().await;
         if metrics_map.is_empty() {
             // reload metrics

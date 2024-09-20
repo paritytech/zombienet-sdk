@@ -20,6 +20,8 @@ anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["fs"] }
 
 # zombienet deps
 support = { workspace = true }

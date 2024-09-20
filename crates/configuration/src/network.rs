@@ -324,6 +324,27 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
+    /// uses the default options for both the relay chain and the nodes
+    /// the only required fields are the name of the nodes,
+    /// and the name of the relay chain ("rococo-local", "polkadot", etc.)
+    pub fn new_with_defaults(
+        node_names: Vec<String>,
+        relay_name: &str,
+    ) -> NetworkConfigBuilder<WithRelaychain> {
+        // TODO: check node_names is not empty
+        NetworkConfigBuilder::new().with_relaychain(|relaychain| {
+            let mut relaychain_with_node = relaychain
+                .with_chain(relay_name)
+                .with_node(|node| node.with_name(node_names.first().unwrap()));
+
+            for node_name in node_names.iter().skip(1) {
+                relaychain_with_node = relaychain_with_node
+                    .with_node(|node_builder| node_builder.with_name(node_name));
+            }
+            relaychain_with_node
+        })
+    }
+
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
     pub fn with_relaychain(
         self,
@@ -397,6 +418,32 @@ impl NetworkConfigBuilder<WithRelaychain> {
                 merge_errors_vecs(self.errors, errors),
             ),
         }
+    }
+
+    /// uses default settings for setting for:
+    /// - the parachain,
+    /// - the global settings
+    /// - the hrmp channels
+    /// the only required parameters are the names of the collators,
+    /// and the id of the parachain
+    pub fn with_parachain_defaults(self, collators: Vec<String>, id: u32) -> Self {
+        // TODO: check collators is not empty -> add it into validation_context errors
+        self.with_parachain(|parachain| {
+            let mut parachain_config = parachain.with_id(id).with_collator(|collator| {
+                collator
+                    .with_name(collators.first().unwrap())
+                    .validator(true)
+            });
+
+            for collator_name in collators.iter().skip(1) {
+                parachain_config = parachain_config
+                    .with_collator(|collator| collator.with_name(collator_name).validator(true));
+            }
+            parachain_config
+        })
+
+        // TODO: if need to set global settings and hrmp channels
+        // we can also do in here
     }
 
     /// Add an HRMP channel using a nested [`HrmpChannelConfigBuilder`].

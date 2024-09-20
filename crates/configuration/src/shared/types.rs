@@ -262,8 +262,8 @@ impl From<&str> for AssetLocation {
 impl Display for AssetLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssetLocation::Url(value) => write!(f, "url: {}", value.as_str()),
-            AssetLocation::FilePath(value) => write!(f, "file_path: {}", value.display()),
+            AssetLocation::Url(value) => write!(f, "{}", value.as_str()),
+            AssetLocation::FilePath(value) => write!(f, "{}", value.display()),
         }
     }
 }

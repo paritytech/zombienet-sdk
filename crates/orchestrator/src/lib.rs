@@ -5,6 +5,8 @@ pub mod errors;
 pub mod generators;
 pub mod network;
 pub mod network_helper;
+pub mod tx_helper;
+
 mod network_spec;
 #[cfg(feature = "pjs")]
 pub mod pjs_helper;

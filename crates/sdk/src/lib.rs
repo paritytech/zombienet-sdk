@@ -7,6 +7,12 @@ pub use orchestrator::{
     network::{node::NetworkNode, Network},
     AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
+
+// Helpers used for interact with the network
+pub mod tx_helper {
+    pub use orchestrator::shared::types::RuntimeUpgradeOptions;
+}
+
 use provider::{DockerProvider, KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;
 

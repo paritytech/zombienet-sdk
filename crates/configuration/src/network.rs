@@ -13,7 +13,8 @@ use crate::{
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
-        helpers::merge_errors_vecs,
+        errors::ConfigError,
+        helpers::{merge_errors, merge_errors_vecs},
         macros::states,
         node::NodeConfig,
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
@@ -331,18 +332,33 @@ impl NetworkConfigBuilder<Initial> {
         node_names: Vec<String>,
         relay_name: &str,
     ) -> NetworkConfigBuilder<WithRelaychain> {
-        // TODO: check node_names is not empty
-        NetworkConfigBuilder::new().with_relaychain(|relaychain| {
+        let mut errors: Vec<anyhow::Error> = vec![];
+
+        if node_names.is_empty() {
+            errors.push(ConfigError::Relaychain(anyhow!("node names list can't be empty")).into())
+        }
+
+        if relay_name.is_empty() {
+            errors.push(ConfigError::Relaychain(anyhow!("relaychain name can't be empty")).into());
+        }
+
+        let network_config = NetworkConfigBuilder::new().with_relaychain(|relaychain| {
             let mut relaychain_with_node = relaychain
                 .with_chain(relay_name)
-                .with_node(|node| node.with_name(node_names.first().unwrap()));
+                .with_node(|node| node.with_name(node_names.first().unwrap_or(&"".to_string())));
 
             for node_name in node_names.iter().skip(1) {
                 relaychain_with_node = relaychain_with_node
                     .with_node(|node_builder| node_builder.with_name(node_name));
             }
             relaychain_with_node
-        })
+        });
+
+        Self::transition(
+            network_config.config,
+            network_config.validation_context,
+            errors,
+        )
     }
 
     /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
@@ -424,10 +440,21 @@ impl NetworkConfigBuilder<WithRelaychain> {
     /// - the parachain,
     /// - the global settings
     /// - the hrmp channels
-    /// the only required parameters are the names of the collators,
+    /// the only required parameters are the names of the collators as a vector,
     /// and the id of the parachain
-    pub fn with_parachain_defaults(self, collators: Vec<String>, id: u32) -> Self {
-        // TODO: check collators is not empty -> add it into validation_context errors
+    pub fn quick_setup(self, collators: Vec<String>, id: u32) -> Self {
+        if collators.is_empty() {
+            return Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(
+                    self.errors,
+                    ConfigError::Parachain(id, anyhow!("collator names list can't be empty"))
+                        .into(),
+                ),
+            );
+        }
+
         self.with_parachain(|parachain| {
             let mut parachain_config = parachain.with_id(id).with_collator(|collator| {
                 collator
@@ -1483,5 +1510,97 @@ mod tests {
                         );
                     });
             });
+    }
+
+    #[test]
+    fn new_with_defaults_works() {
+        let network_config = NetworkConfigBuilder::new_with_defaults(
+            vec!["alice".to_string(), "bob".to_string()],
+            "rococo-local",
+        )
+        .build()
+        .unwrap();
+
+        // relaychain
+        assert_eq!(network_config.relaychain().chain().as_str(), "rococo-local");
+        assert_eq!(network_config.relaychain().nodes().len(), 2);
+        let mut node_names = network_config.relaychain().nodes().into_iter();
+        let node1 = node_names.next().unwrap().name();
+        assert_eq!(node1, "alice");
+        let node2 = node_names.next().unwrap().name();
+        assert_eq!(node2, "bob");
+
+        // parachains
+        assert_eq!(network_config.parachains().len(), 0);
+    }
+
+    #[test]
+    fn new_with_defaults_should_fail_with_empty_node_list() {
+        let errors = NetworkConfigBuilder::new_with_defaults(vec![], "rococo-local")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "relaychain.node names list can't be empty"
+        );
+    }
+
+    #[test]
+    fn new_with_defaults_should_fail_with_empty_relay_name() {
+        let errors = NetworkConfigBuilder::new_with_defaults(vec!["alice".to_string()], "")
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "relaychain.relaychain name can't be empty"
+        );
+    }
+
+    #[test]
+    fn quick_setup_works() {
+        let network_config = NetworkConfigBuilder::new_with_defaults(
+            vec!["alice".to_string(), "bob".to_string()],
+            "rococo-local",
+        )
+        .quick_setup(vec!["collator1".to_string(), "collator2".to_string()], 100)
+        .build()
+        .unwrap();
+
+        // relaychain
+        assert_eq!(network_config.relaychain().chain().as_str(), "rococo-local");
+        assert_eq!(network_config.relaychain().nodes().len(), 2);
+        let mut node_names = network_config.relaychain().nodes().into_iter();
+        let node1 = node_names.next().unwrap().name();
+        assert_eq!(node1, "alice");
+        let node2 = node_names.next().unwrap().name();
+        assert_eq!(node2, "bob");
+
+        // parachains
+        assert_eq!(network_config.parachains().len(), 1);
+        let &parachain1 = network_config.parachains().first().unwrap();
+        assert_eq!(parachain1.id(), 100);
+        assert_eq!(parachain1.collators().len(), 2);
+        let mut collator_names = parachain1.collators().into_iter();
+        let collator1 = collator_names.next().unwrap().name();
+        assert_eq!(collator1, "collator1");
+        let collator2 = collator_names.next().unwrap().name();
+        assert_eq!(collator2, "collator2");
+
+        assert_eq!(parachain1.initial_balance(), 2_000_000_000_000);
+    }
+
+    #[test]
+    fn quick_setup_should_fail_with_empty_collator_list() {
+        let errors = NetworkConfigBuilder::new_with_defaults(vec!["alice".to_string()], "polkadot")
+            .quick_setup(vec![], 1)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "parachain[1].collator names list can't be empty"
+        );
     }
 }

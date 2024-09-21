@@ -440,6 +440,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     /// - the parachain,
     /// - the global settings
     /// - the hrmp channels
+    ///
     /// the only required parameters are the names of the collators as a vector,
     /// and the id of the parachain
     pub fn quick_setup(self, collators: Vec<String>, id: u32) -> Self {

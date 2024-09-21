@@ -87,16 +87,11 @@ pub mod shared;
 mod utils;
 
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
-pub use hrmp_channel::{
-    HrmpChannelConfig, HrmpChannelConfigBuilder, Initial as HrmpInitialState, WithRecipient,
-};
-pub use network::{NetworkConfig, NetworkConfigBuilder, WithRelaychain};
+pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
+pub use network::{NetworkConfig, NetworkConfigBuilder};
 pub use parachain::{
     states as para_states, ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
-pub use relaychain::{
-    Initial as RelaychainInitialState, RelaychainConfig, RelaychainConfigBuilder,
-    WithAtLeastOneNode,
-};
+pub use relaychain::{RelaychainConfig, RelaychainConfigBuilder};
 // re-export shared
 pub use shared::{node::NodeConfig, types};

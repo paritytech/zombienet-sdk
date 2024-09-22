@@ -2,15 +2,18 @@ use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::sr25519::Keypair;
 use tracing::{debug, info};
 
+use crate::network::node::NetworkNode;
+
 pub async fn upgrade(
-    // options: RuntimeUpgradeOptions,
-    ws_url: &str,
+    node: &NetworkNode,
     wasm_data: &[u8],
     sudo: &Keypair,
-    // scoped_fs: &ScopedFilesystem<'_, impl FileSystem>,
 ) -> Result<(), anyhow::Error> {
-    debug!("Upgrading runtime, using {} as endpoint ", ws_url);
-    let api = OnlineClient::<SubstrateConfig>::from_url(ws_url).await?;
+    debug!(
+        "Upgrading runtime, using node: {} with endpoting {}",
+        node.name, node.ws_uri
+    );
+    let api: OnlineClient<SubstrateConfig> = node.client().await?;
 
     let upgrade = subxt::dynamic::tx(
         "System",

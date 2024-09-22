@@ -43,20 +43,20 @@ impl Relaychain {
         options: RuntimeUpgradeOptions,
     ) -> Result<(), anyhow::Error> {
         // check if the node is valid first
-        let ws_url = if let Some(node_name) = options.node_name {
+        let node = if let Some(node_name) = options.node_name {
             if let Some(node) = self
                 .nodes()
                 .into_iter()
                 .find(|node| node.name() == node_name)
             {
-                node.ws_uri()
+                node
             } else {
                 return Err(anyhow!("Node: {} is not part of the relaychain", node_name));
             }
         } else {
             // take the first node
             if let Some(node) = self.nodes().first() {
-                node.ws_uri()
+                node
             } else {
                 return Err(anyhow!("Relaychain doesn't have any node!"));
             }
@@ -72,7 +72,7 @@ impl Relaychain {
 
         let wasm_data = options.wasm.get_asset().await?;
 
-        tx_helper::runtime_upgrade::upgrade(ws_url, &wasm_data, &sudo).await?;
+        tx_helper::runtime_upgrade::upgrade(node, &wasm_data, &sudo).await?;
 
         Ok(())
     }

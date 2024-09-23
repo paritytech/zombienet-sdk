@@ -328,7 +328,7 @@ impl NetworkConfigBuilder<Initial> {
     /// uses the default options for both the relay chain and the nodes
     /// the only required fields are the name of the nodes,
     /// and the name of the relay chain ("rococo-local", "polkadot", etc.)
-    pub fn new_with_defaults(
+    pub fn with_nodes_and_chain(
         node_names: Vec<String>,
         relay_name: &str,
     ) -> NetworkConfigBuilder<WithRelaychain> {
@@ -443,7 +443,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     ///
     /// the only required parameters are the names of the collators as a vector,
     /// and the id of the parachain
-    pub fn quick_setup(self, collators: Vec<String>, id: u32) -> Self {
+    pub fn with_collators_and_parachain_id(self, collators: Vec<String>, id: u32) -> Self {
         if collators.is_empty() {
             return Self::transition(
                 self.config,
@@ -1514,8 +1514,8 @@ mod tests {
     }
 
     #[test]
-    fn new_with_defaults_works() {
-        let network_config = NetworkConfigBuilder::new_with_defaults(
+    fn with_nodes_and_chain_works() {
+        let network_config = NetworkConfigBuilder::with_nodes_and_chain(
             vec!["alice".to_string(), "bob".to_string()],
             "rococo-local",
         )
@@ -1536,8 +1536,8 @@ mod tests {
     }
 
     #[test]
-    fn new_with_defaults_should_fail_with_empty_node_list() {
-        let errors = NetworkConfigBuilder::new_with_defaults(vec![], "rococo-local")
+    fn with_nodes_and_chain_should_fail_with_empty_node_list() {
+        let errors = NetworkConfigBuilder::with_nodes_and_chain(vec![], "rococo-local")
             .build()
             .unwrap_err();
 
@@ -1548,8 +1548,8 @@ mod tests {
     }
 
     #[test]
-    fn new_with_defaults_should_fail_with_empty_relay_name() {
-        let errors = NetworkConfigBuilder::new_with_defaults(vec!["alice".to_string()], "")
+    fn with_nodes_and_chain_should_fail_with_empty_relay_name() {
+        let errors = NetworkConfigBuilder::with_nodes_and_chain(vec!["alice".to_string()], "")
             .build()
             .unwrap_err();
 
@@ -1560,12 +1560,15 @@ mod tests {
     }
 
     #[test]
-    fn quick_setup_works() {
-        let network_config = NetworkConfigBuilder::new_with_defaults(
+    fn with_collators_and_parachain_id_works() {
+        let network_config = NetworkConfigBuilder::with_nodes_and_chain(
             vec!["alice".to_string(), "bob".to_string()],
             "rococo-local",
         )
-        .quick_setup(vec!["collator1".to_string(), "collator2".to_string()], 100)
+        .with_collators_and_parachain_id(
+            vec!["collator1".to_string(), "collator2".to_string()],
+            100,
+        )
         .build()
         .unwrap();
 
@@ -1593,11 +1596,12 @@ mod tests {
     }
 
     #[test]
-    fn quick_setup_should_fail_with_empty_collator_list() {
-        let errors = NetworkConfigBuilder::new_with_defaults(vec!["alice".to_string()], "polkadot")
-            .quick_setup(vec![], 1)
-            .build()
-            .unwrap_err();
+    fn with_collators_and_parachain_id_should_fail_with_empty_collator_list() {
+        let errors =
+            NetworkConfigBuilder::with_nodes_and_chain(vec!["alice".to_string()], "polkadot")
+                .with_collators_and_parachain_id(vec![], 1)
+                .build()
+                .unwrap_err();
 
         assert_eq!(
             errors.first().unwrap().to_string(),

@@ -54,7 +54,7 @@ native-integration-test:
     - ls /tmp
     - export PATH=/tmp:$PATH
     - echo $PATH
-    - RUST_LOG=zombienet_orchestrator=debug,zombienet_provider=debug cargo test --test smoke-native -- --nocapture
+    - RUST_LOG=zombienet_orchestrator=trace,zombienet_provider=debug cargo test --test smoke-native -- --nocapture
   variables:
     CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
     RUN_IN_CI: "1"

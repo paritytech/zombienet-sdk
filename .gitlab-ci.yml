@@ -49,9 +49,9 @@ native-integration-test:
       for bin in polakdot polkadot-execute-worker polkadot-prepare-worker; do
         echo "downloading $bin";
         curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2407-2/$bin;
-        chmod +x /tmp/$bin;
+        chmod 755 /tmp/$bin;
       done
-    - ls /tmp
+    - ls -ltr /tmp
     - export PATH=/tmp:$PATH
     - echo $PATH
     - RUST_LOG=zombienet_orchestrator=trace,zombienet_provider=debug cargo test --test smoke-native -- --nocapture

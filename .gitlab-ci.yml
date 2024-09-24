@@ -48,7 +48,7 @@ native-integration-test:
     - >
       for bin in polakdot polkadot-execute-worker polkadot-prepare-worker; do
         echo "downloading $bin";
-        curl -L https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2407-2/$bin;
+        curl -L -o $bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2407-2/$bin;
         chmod +x $bin;
         mv $bin /usr/local/bin/$bin;
       done

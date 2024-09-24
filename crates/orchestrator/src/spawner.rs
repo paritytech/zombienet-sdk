@@ -206,8 +206,13 @@ where
 
     let (rpc_port_external, prometheus_port_external);
 
-    // Create port-forward iff we are not in CI
-    if !running_in_ci() {
+    // Create port-forward iff we are  in CI and with k8s provider
+    if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
+        // running kubernets in ci require to use ip and default port
+        (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
+        ip_to_use = running_node.ip().await?;
+    } else {
+        // Create port-forward iff we are not in CI or provider doesn't use the default ports (native)
         let ports = futures::future::try_join_all(vec![
             running_node.create_port_forward(node.rpc_port.0, RPC_PORT),
             running_node.create_port_forward(node.prometheus_port.0, PROMETHEUS_PORT),
@@ -218,10 +223,6 @@ where
             ports[0].unwrap_or(node.rpc_port.0),
             ports[1].unwrap_or(node.prometheus_port.0),
         );
-    } else {
-        // running in ci require to use ip and default port
-        (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
-        ip_to_use = running_node.ip().await?;
     }
 
     let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);

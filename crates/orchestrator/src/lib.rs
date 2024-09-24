@@ -475,7 +475,9 @@ fn validate_spec_with_provider_capabilities(
                 !parts.iter().any(|part| {
                     let path_to = format!("{}/{}", part, cmd);
                     trace!("checking {path_to}");
-                    std::fs::metadata(path_to).is_ok()
+                    let check_result = std::fs::metadata(path_to);
+                    trace!("result {:?}", check_result);
+                    check_result.is_ok()
                 })
             };
 

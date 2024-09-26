@@ -328,9 +328,9 @@ impl NetworkConfigBuilder<Initial> {
     /// uses the default options for both the relay chain and the nodes
     /// the only required fields are the name of the nodes,
     /// and the name of the relay chain ("rococo-local", "polkadot", etc.)
-    pub fn with_nodes_and_chain(
-        node_names: Vec<String>,
+    pub fn with_chain_and_nodes(
         relay_name: &str,
+        node_names: Vec<String>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
         let mut errors: Vec<anyhow::Error> = vec![];
 
@@ -338,14 +338,20 @@ impl NetworkConfigBuilder<Initial> {
             errors.push(ConfigError::Relaychain(anyhow!("node names list can't be empty")).into())
         }
 
+        for name in node_names.iter() {
+            if name.is_empty() {
+                errors.push(ConfigError::Relaychain(anyhow!("node name can't be empty")).into());
+            }
+        }
+
         if relay_name.is_empty() {
             errors.push(ConfigError::Relaychain(anyhow!("relaychain name can't be empty")).into());
         }
 
         let network_config = NetworkConfigBuilder::new().with_relaychain(|relaychain| {
-            let mut relaychain_with_node = relaychain
-                .with_chain(relay_name)
-                .with_node(|node| node.with_name(node_names.first().unwrap_or(&"".to_string())));
+            let mut relaychain_with_node = relaychain.with_chain(relay_name).with_node(|node| {
+                node.with_name(node_names.first().unwrap_or(&"node1".to_string()))
+            }); // TODO: in order to not panic this, we provide a dummy value. However, returning a Result may be a better choice for this constructor
 
             for node_name in node_names.iter().skip(1) {
                 relaychain_with_node = relaychain_with_node
@@ -443,8 +449,8 @@ impl NetworkConfigBuilder<WithRelaychain> {
     ///
     /// the only required parameters are the names of the collators as a vector,
     /// and the id of the parachain
-    pub fn with_collators_and_parachain_id(self, collators: Vec<String>, id: u32) -> Self {
-        if collators.is_empty() {
+    pub fn with_parachain_id_and_collators(self, id: u32, collator_names: Vec<String>) -> Self {
+        if collator_names.is_empty() {
             return Self::transition(
                 self.config,
                 self.validation_context,
@@ -456,14 +462,31 @@ impl NetworkConfigBuilder<WithRelaychain> {
             );
         }
 
+        for name in collator_names.iter() {
+            if name.is_empty() {
+                return Self::transition(
+                    self.config,
+                    self.validation_context,
+                    merge_errors(
+                        self.errors,
+                        ConfigError::Parachain(id, anyhow!("collator name can't be empty")).into(),
+                    ),
+                );
+            }
+        }
+
         self.with_parachain(|parachain| {
             let mut parachain_config = parachain.with_id(id).with_collator(|collator| {
                 collator
-                    .with_name(collators.first().unwrap())
+                    .with_name(
+                        collator_names
+                            .first()
+                            .expect("collator names list is not empty"),
+                    )
                     .validator(true)
             });
 
-            for collator_name in collators.iter().skip(1) {
+            for collator_name in collator_names.iter().skip(1) {
                 parachain_config = parachain_config
                     .with_collator(|collator| collator.with_name(collator_name).validator(true));
             }
@@ -1514,10 +1537,10 @@ mod tests {
     }
 
     #[test]
-    fn with_nodes_and_chain_works() {
-        let network_config = NetworkConfigBuilder::with_nodes_and_chain(
-            vec!["alice".to_string(), "bob".to_string()],
+    fn with_chain_and_nodes_works() {
+        let network_config = NetworkConfigBuilder::with_chain_and_nodes(
             "rococo-local",
+            vec!["alice".to_string(), "bob".to_string()],
         )
         .build()
         .unwrap();
@@ -1536,20 +1559,8 @@ mod tests {
     }
 
     #[test]
-    fn with_nodes_and_chain_should_fail_with_empty_node_list() {
-        let errors = NetworkConfigBuilder::with_nodes_and_chain(vec![], "rococo-local")
-            .build()
-            .unwrap_err();
-
-        assert_eq!(
-            errors.first().unwrap().to_string(),
-            "relaychain.node names list can't be empty"
-        );
-    }
-
-    #[test]
-    fn with_nodes_and_chain_should_fail_with_empty_relay_name() {
-        let errors = NetworkConfigBuilder::with_nodes_and_chain(vec!["alice".to_string()], "")
+    fn with_chain_and_nodes_should_fail_with_empty_relay_name() {
+        let errors = NetworkConfigBuilder::with_chain_and_nodes("", vec!["alice".to_string()])
             .build()
             .unwrap_err();
 
@@ -1560,14 +1571,41 @@ mod tests {
     }
 
     #[test]
-    fn with_collators_and_parachain_id_works() {
-        let network_config = NetworkConfigBuilder::with_nodes_and_chain(
-            vec!["alice".to_string(), "bob".to_string()],
+    fn with_chain_and_nodes_should_fail_with_empty_node_list() {
+        let errors = NetworkConfigBuilder::with_chain_and_nodes("rococo-local", vec![])
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "relaychain.node names list can't be empty"
+        );
+    }
+
+    #[test]
+    fn with_chain_and_nodes_should_fail_with_empty_node_name() {
+        let errors = NetworkConfigBuilder::with_chain_and_nodes(
             "rococo-local",
+            vec!["alice".to_string(), "".to_string()],
         )
-        .with_collators_and_parachain_id(
-            vec!["collator1".to_string(), "collator2".to_string()],
+        .build()
+        .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "relaychain.node name can't be empty"
+        );
+    }
+
+    #[test]
+    fn with_parachain_id_and_collators_works() {
+        let network_config = NetworkConfigBuilder::with_chain_and_nodes(
+            "rococo-local",
+            vec!["alice".to_string(), "bob".to_string()],
+        )
+        .with_parachain_id_and_collators(
             100,
+            vec!["collator1".to_string(), "collator2".to_string()],
         )
         .build()
         .unwrap();
@@ -1596,16 +1634,30 @@ mod tests {
     }
 
     #[test]
-    fn with_collators_and_parachain_id_should_fail_with_empty_collator_list() {
+    fn with_parachain_id_and_collators_should_fail_with_empty_collator_list() {
         let errors =
-            NetworkConfigBuilder::with_nodes_and_chain(vec!["alice".to_string()], "polkadot")
-                .with_collators_and_parachain_id(vec![], 1)
+            NetworkConfigBuilder::with_chain_and_nodes("polkadot", vec!["alice".to_string()])
+                .with_parachain_id_and_collators(1, vec![])
                 .build()
                 .unwrap_err();
 
         assert_eq!(
             errors.first().unwrap().to_string(),
             "parachain[1].collator names list can't be empty"
+        );
+    }
+
+    #[test]
+    fn with_parachain_id_and_collators_should_fail_with_empty_collator_name() {
+        let errors =
+            NetworkConfigBuilder::with_chain_and_nodes("polkadot", vec!["alice".to_string()])
+                .with_parachain_id_and_collators(1, vec!["collator1".to_string(), "".to_string()])
+                .build()
+                .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "parachain[1].collator name can't be empty"
         );
     }
 }

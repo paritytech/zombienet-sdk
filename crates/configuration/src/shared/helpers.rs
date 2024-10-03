@@ -44,9 +44,7 @@ pub fn ensure_node_name_unique(
     Err(ValidationError::NodeNameAlreadyUsed(node_name).into())
 }
 
-pub fn ensure_value_is_not_empty(
-    value: &str,
-) -> Result<(), anyhow::Error> {
+pub fn ensure_value_is_not_empty(value: &str) -> Result<(), anyhow::Error> {
     if value.is_empty() {
         Err(ValidationError::CantBeEmpty().into())
     } else {

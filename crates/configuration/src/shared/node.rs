@@ -5,7 +5,10 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::FieldError,
-    helpers::{ensure_node_name_unique, ensure_port_unique, ensure_value_is_not_empty, merge_errors, merge_errors_vecs},
+    helpers::{
+        ensure_node_name_unique, ensure_port_unique, ensure_value_is_not_empty, merge_errors,
+        merge_errors_vecs,
+    },
     macros::states,
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext, U128},
@@ -340,10 +343,13 @@ impl NodeConfigBuilder<Initial> {
     pub fn with_name<T: Into<String> + Copy>(self, name: T) -> NodeConfigBuilder<Buildable> {
         let name: String = name.into();
 
-        match (ensure_value_is_not_empty(&name), ensure_node_name_unique(&name, self.validation_context.clone())) {
-            (Ok(_),Ok(_)) => Self::transition(
+        match (
+            ensure_value_is_not_empty(&name),
+            ensure_node_name_unique(&name, self.validation_context.clone()),
+        ) {
+            (Ok(_), Ok(_)) => Self::transition(
                 NodeConfig {
-                    name: name,
+                    name,
                     ..self.config
                 },
                 self.validation_context,
@@ -352,7 +358,7 @@ impl NodeConfigBuilder<Initial> {
             (Err(e), _) => Self::transition(
                 NodeConfig {
                     // we still set the name in error case to display error path
-                    name: name,
+                    name,
                     ..self.config
                 },
                 self.validation_context,
@@ -361,7 +367,7 @@ impl NodeConfigBuilder<Initial> {
             (_, Err(e)) => Self::transition(
                 NodeConfig {
                     // we still set the name in error case to display error path
-                    name: name,
+                    name,
                     ..self.config
                 },
                 self.validation_context,
@@ -1016,8 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn node_config_builder_should_fails_if_node_name_is_empty(
-    ) {
+    fn node_config_builder_should_fails_if_node_name_is_empty() {
         let validation_context = Rc::new(RefCell::new(ValidationContext {
             ..Default::default()
         }));
@@ -1029,9 +1034,6 @@ mod tests {
                 .unwrap_err();
 
         assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.first().unwrap().to_string(),
-            "name: can't be empty"
-        );
+        assert_eq!(errors.first().unwrap().to_string(), "name: can't be empty");
     }
 }

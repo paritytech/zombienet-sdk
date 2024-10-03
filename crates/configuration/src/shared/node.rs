@@ -1014,4 +1014,24 @@ mod tests {
             "p2p_port: '45093' is already used across config"
         );
     }
+
+    #[test]
+    fn node_config_builder_should_fails_if_node_name_is_empty(
+    ) {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            ..Default::default()
+        }));
+
+        let (_, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("")
+                .build()
+                .unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "name: can't be empty"
+        );
+    }
 }

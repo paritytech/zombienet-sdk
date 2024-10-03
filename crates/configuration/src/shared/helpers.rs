@@ -28,19 +28,28 @@ pub fn merge_errors_vecs(
 }
 
 pub fn ensure_node_name_unique(
-    node_name: String,
+    node_name: impl Into<String>,
     validation_context: Rc<RefCell<ValidationContext>>,
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
         .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
 
+    let node_name = node_name.into();
     if !context.used_nodes_names.contains(&node_name) {
         context.used_nodes_names.push(node_name);
         return Ok(());
     }
 
     Err(ValidationError::NodeNameAlreadyUsed(node_name).into())
+}
+
+pub fn ensure_value_is_not_empty(value: &str) -> Result<(), anyhow::Error> {
+    if value.is_empty() {
+        Err(ValidationError::CantBeEmpty().into())
+    } else {
+        Ok(())
+    }
 }
 
 pub fn ensure_port_unique(

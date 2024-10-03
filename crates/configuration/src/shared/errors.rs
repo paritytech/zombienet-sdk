@@ -107,4 +107,7 @@ pub enum ValidationError {
 
     #[error("'{0}' is already used across config")]
     NodeNameAlreadyUsed(String),
+
+    #[error("can't be empty")]
+    CantBeEmpty(),
 }

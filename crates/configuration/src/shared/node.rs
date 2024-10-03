@@ -5,7 +5,10 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use super::{
     errors::FieldError,
-    helpers::{ensure_node_name_unique, ensure_port_unique, merge_errors, merge_errors_vecs},
+    helpers::{
+        ensure_node_name_unique, ensure_port_unique, ensure_value_is_not_empty, merge_errors,
+        merge_errors_vecs,
+    },
     macros::states,
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext, U128},
@@ -338,23 +341,37 @@ impl NodeConfigBuilder<Initial> {
 
     /// Set the name of the node.
     pub fn with_name<T: Into<String> + Copy>(self, name: T) -> NodeConfigBuilder<Buildable> {
-        match ensure_node_name_unique(name.into(), self.validation_context.clone()) {
-            Ok(_) => Self::transition(
+        let name: String = name.into();
+
+        match (
+            ensure_value_is_not_empty(&name),
+            ensure_node_name_unique(&name, self.validation_context.clone()),
+        ) {
+            (Ok(_), Ok(_)) => Self::transition(
                 NodeConfig {
-                    name: name.into(),
+                    name,
                     ..self.config
                 },
                 self.validation_context,
                 self.errors,
             ),
-            Err(error) => Self::transition(
+            (Err(e), _) => Self::transition(
                 NodeConfig {
                     // we still set the name in error case to display error path
-                    name: name.into(),
+                    name,
                     ..self.config
                 },
                 self.validation_context,
-                merge_errors(self.errors, FieldError::Name(error).into()),
+                merge_errors(self.errors, FieldError::Name(e).into()),
+            ),
+            (_, Err(e)) => Self::transition(
+                NodeConfig {
+                    // we still set the name in error case to display error path
+                    name,
+                    ..self.config
+                },
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Name(e).into()),
             ),
         }
     }
@@ -1002,5 +1019,21 @@ mod tests {
             errors.first().unwrap().to_string(),
             "p2p_port: '45093' is already used across config"
         );
+    }
+
+    #[test]
+    fn node_config_builder_should_fails_if_node_name_is_empty() {
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            ..Default::default()
+        }));
+
+        let (_, errors) =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("")
+                .build()
+                .unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors.first().unwrap().to_string(), "name: can't be empty");
     }
 }

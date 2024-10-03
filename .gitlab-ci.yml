@@ -36,3 +36,26 @@ k8s-integration-test-smoke:
     CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
     RUN_IN_CI: "1"
     ZOMBIE_PROVIDER: "k8s"
+
+native-integration-test:
+  stage: integration-test
+  <<: *common-refs
+  image: "${CI_IMAGE}"
+  tags:
+    - zombienet-polkadot-integration-test
+  script:
+    # download latest stable `polkadot-stable2407-2` // TODO: impl zombie-cli
+    - >
+      for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
+        echo "downloading $bin";
+        curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2407-2/$bin;
+        chmod 755 /tmp/$bin;
+      done
+    - ls -ltr /tmp
+    - export PATH=/tmp:$PATH
+    - echo $PATH
+    - RUST_LOG=zombienet_orchestrator=debug,zombienet_provider=debug cargo test --test smoke-native -- --nocapture
+  variables:
+    CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
+    RUN_IN_CI: "1"
+    ZOMBIE_PROVIDER: "native"

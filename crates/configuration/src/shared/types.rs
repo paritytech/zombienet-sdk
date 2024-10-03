@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::anyhow;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -264,6 +265,35 @@ impl Display for AssetLocation {
             AssetLocation::Url(value) => write!(f, "{}", value.as_str()),
             AssetLocation::FilePath(value) => write!(f, "{}", value.display()),
         }
+    }
+}
+
+impl AssetLocation {
+    pub async fn get_asset(&self) -> Result<Vec<u8>, anyhow::Error> {
+        let contents = match self {
+            AssetLocation::Url(location) => {
+                let res = reqwest::get(location.as_ref()).await.map_err(|err| {
+                    anyhow!(
+                        "Error dowinloding asset from url {} - {}",
+                        location,
+                        err.to_string()
+                    )
+                })?;
+
+                res.bytes().await.unwrap().into()
+            },
+            AssetLocation::FilePath(filepath) => {
+                tokio::fs::read(filepath).await.map_err(|err| {
+                    anyhow!(
+                        "Error reading asset from path {} - {}",
+                        filepath.to_string_lossy(),
+                        err.to_string()
+                    )
+                })?
+            },
+        };
+
+        Ok(contents)
     }
 }
 

@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    utils::{default_as_true, default_initial_balance, is_false},
+    utils::{default_as_false, default_as_true, default_initial_balance, is_false},
 };
 
 /// The registration strategy that will be used for the parachain.
@@ -136,11 +136,20 @@ pub struct ParachainConfig {
     chain_spec_command_is_local: bool,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
+    #[serde(rename = "evm_based", default = "default_as_false")]
+    is_evm_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
     genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     pub(crate) collators: Vec<NodeConfig>,
+    // Single collator config, added for backward compatibility
+    // with `toml` networks definitions from v1.
+    // This field can only be set loading an old `toml` definition
+    // with `[parachain.collator]` key.
+    // NOTE: if the file also contains multiple collators defined in
+    // `[[parachain.collators]], the single configuration will be added to the bottom.
+    collator: Option<NodeConfig>,
 }
 
 impl ParachainConfig {
@@ -239,6 +248,11 @@ impl ParachainConfig {
         self.is_cumulus_based
     }
 
+    /// Whether the parachain is evm based (e.g frontier).
+    pub fn is_evm_based(&self) -> bool {
+        self.is_evm_based
+    }
+
     /// The bootnodes addresses the collators will connect to.
     pub fn bootnodes_addresses(&self) -> Vec<&Multiaddr> {
         self.bootnodes_addresses.iter().collect::<Vec<_>>()
@@ -246,7 +260,11 @@ impl ParachainConfig {
 
     /// The collators of the parachain.
     pub fn collators(&self) -> Vec<&NodeConfig> {
-        self.collators.iter().collect::<Vec<_>>()
+        let mut cols = self.collators.iter().collect::<Vec<_>>();
+        if let Some(col) = self.collator.as_ref() {
+            cols.push(col);
+        }
+        cols
     }
 }
 
@@ -302,8 +320,10 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 chain_spec_command: None,
                 chain_spec_command_is_local: false, // remote by default
                 is_cumulus_based: true,
+                is_evm_based: false,
                 bootnodes_addresses: vec![],
                 collators: vec![],
+                collator: None,
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -707,6 +727,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Set whether the parachain is evm based (e.g frontier /evm template)
+    pub fn evm_based(self, choice: bool) -> Self {
+        Self::transition(
+            ParachainConfig {
+                is_evm_based: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the bootnodes addresses the collators will connect to.
     pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
@@ -846,6 +878,7 @@ mod tests {
             .with_genesis_state_generator("generator_state")
             .with_chain_spec_path("./path/to/chain/spec.json")
             .cumulus_based(false)
+            .evm_based(false)
             .with_bootnodes_addresses(vec![
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
@@ -937,6 +970,7 @@ mod tests {
             parachain_config.bootnodes_addresses(),
             bootnodes_addresses.iter().collect::<Vec<_>>()
         );
+        assert!(!parachain_config.is_evm_based());
     }
 
     #[test]
@@ -1231,8 +1265,12 @@ mod tests {
         .unwrap();
 
         let parachain = load_from_toml_small.parachains()[0];
+        let parachain_evm = load_from_toml_small.parachains()[1];
 
         assert_eq!(parachain.registration_strategy(), None);
+        assert!(!parachain.is_evm_based());
+        assert_eq!(parachain.collators().len(), 1);
+        assert!(parachain_evm.is_evm_based());
     }
 
     #[test]
@@ -1245,6 +1283,31 @@ mod tests {
             .unwrap();
 
         assert!(config.onboard_as_parachain());
+    }
+
+    #[test]
+    fn evm_based_default_to_false() {
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert!(!config.is_evm_based());
+    }
+
+    #[test]
+    fn evm_based() {
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .evm_based(true)
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+
+        assert!(config.is_evm_based());
     }
 
     #[test]

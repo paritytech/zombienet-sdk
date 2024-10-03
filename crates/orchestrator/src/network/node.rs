@@ -7,7 +7,7 @@ use provider::DynNode;
 use regex::Regex;
 use serde::Serialize;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
-use support::net::wait_ws_ready;
+use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
@@ -35,6 +35,18 @@ pub struct NetworkNode {
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
+
+// #[derive(Clone, Debug)]
+// pub struct QueryMetricOptions {
+//     use_cache: bool,
+//     treat_not_found_as_zero: bool,
+// }
+
+// impl Default for QueryMetricOptions {
+//     fn default() -> Self {
+//         Self { use_cache: false, treat_not_found_as_zero: true }
+//     }
+// }
 
 impl NetworkNode {
     /// Create a new NetworkNode
@@ -148,7 +160,8 @@ impl NetworkNode {
         let metric_name = metric_name.into();
         // force cache reload
         self.fetch_metrics().await?;
-        self.metric(&metric_name).await
+        // by default we treat not found as 0 (same in v1)
+        self.metric(&metric_name, true).await
     }
 
     /// Assert on a metric value 'by name' from Prometheus (exposed by the node)
@@ -176,13 +189,13 @@ impl NetworkNode {
         predicate: impl Fn(f64) -> bool,
     ) -> Result<bool, anyhow::Error> {
         let metric_name = metric_name.into();
-        let val = self.metric(&metric_name).await?;
+        let val = self.metric(&metric_name, true).await?;
         if predicate(val) {
             Ok(true)
         } else {
             // reload metrics
             self.fetch_metrics().await?;
-            let val = self.metric(&metric_name).await?;
+            let val = self.metric(&metric_name, true).await?;
             trace!("🔎 Current value passed to the predicated: {val}");
             Ok(predicate(val))
         }
@@ -206,27 +219,22 @@ impl NetworkNode {
                         return Ok(());
                     }
                 },
-                Err(e) => {
-                    match e.downcast::<reqwest::Error>() {
-                        Ok(io) => {
-                            // if the error is connecting could be the case that the node
-                            // is not listening yet, so we keep waiting
-                            // Skipped err is: 'tcp connect error: Connection refused (os error 61)'
-                            if !io.is_connect() {
-                                return Err(io.into());
-                            }
-                        },
-                        Err(other) => {
-                            match other.downcast::<NetworkNodeError>() {
-                                Ok(node_err) => {
-                                    if !matches!(node_err, NetworkNodeError::MetricNotFound(_)) {
-                                        return Err(node_err.into());
-                                    }
-                                },
-                                Err(other) => return Err(other),
-                            };
-                        },
-                    }
+                Err(e) => match e.downcast::<reqwest::Error>() {
+                    Ok(io_err) => {
+                        if !skip_err_while_waiting(&io_err) {
+                            return Err(io_err.into());
+                        }
+                    },
+                    Err(other) => {
+                        match other.downcast::<NetworkNodeError>() {
+                            Ok(node_err) => {
+                                if !matches!(node_err, NetworkNodeError::MetricNotFound(_)) {
+                                    return Err(node_err.into());
+                                }
+                            },
+                            Err(other) => return Err(other),
+                        };
+                    },
                 },
             }
 
@@ -364,15 +372,7 @@ impl NetworkNode {
         user_types: Option<serde_json::Value>,
     ) -> Result<PjsResult, anyhow::Error> {
         let content = std::fs::read_to_string(file)?;
-        let code = pjs_build_template(self.ws_uri(), content.as_ref(), args, user_types);
-        tracing::trace!("Code to execute: {code}");
-
-        let value = match pjs_exec(code)? {
-            ReturnValue::Deserialized(val) => Ok(val),
-            ReturnValue::CantDeserialize(msg) => Err(msg),
-        };
-
-        Ok(value)
+        self.pjs(content, args, user_types).await
     }
 
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {
@@ -383,12 +383,12 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// Query individual metric by name
     async fn metric(
         &self,
-        metric_name: &str, // treat_not_found_as_zero: bool
+        metric_name: &str,
+        treat_not_found_as_zero: bool,
     ) -> Result<f64, anyhow::Error> {
-        // TODO: allow to pass as arg
-        let treat_not_found_as_zero = true;
         let mut metrics_map = self.metrics_cache.read().await;
         if metrics_map.is_empty() {
             // reload metrics

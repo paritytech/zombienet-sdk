@@ -55,6 +55,9 @@ pub struct ParachainSpec {
     /// Is the parachain cumulus-based
     pub(crate) is_cumulus_based: bool,
 
+    /// Is the parachain evm-based
+    pub(crate) is_evm_based: bool,
+
     /// Initial balance
     pub(crate) initial_balance: u128,
 
@@ -77,14 +80,15 @@ impl ParachainSpec {
             cmd
         } else if let Some(first_node) = config.collators().first() {
             let Some(cmd) = first_node.command() else {
-                return Err(OrchestratorError::InvalidConfig("Parachain, either default_command or command in the first node needs to be set.".to_string()));
+                return Err(OrchestratorError::InvalidConfig(format!("Parachain {}, either default_command or command in the first node needs to be set.", config.id())));
             };
 
             cmd
         } else {
-            return Err(OrchestratorError::InvalidConfig(
-                "Parachain without nodes and default_command isn't set.".to_string(),
-            ));
+            return Err(OrchestratorError::InvalidConfig(format!(
+                "Parachain {}, without nodes and default_command isn't set.",
+                config.id()
+            )));
         };
 
         // TODO: internally we use image as String
@@ -201,6 +205,7 @@ impl ParachainSpec {
                 .clone(),
             onboard_as_parachain: config.onboard_as_parachain(),
             is_cumulus_based: config.is_cumulus_based(),
+            is_evm_based: config.is_evm_based(),
             initial_balance: config.initial_balance(),
             genesis_state,
             genesis_wasm,

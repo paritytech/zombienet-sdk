@@ -442,7 +442,7 @@ where
             .map_err(|err| {
                 ProviderError::RunCommandError(
                     format!("{} {}", &options.program, &options.args.join(" ")),
-                    options.program,
+                    "locally".to_string(),
                     err.into(),
                 )
             })?;

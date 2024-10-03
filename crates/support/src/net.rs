@@ -35,13 +35,7 @@ pub async fn wait_ws_ready(url: &str) -> Result<()> {
                 trace!("http_client status: {}, continuing...", res.status());
             },
             Err(e) => {
-                // if the error is connecting/request could be the case that the node
-                // is not listening yet, so we keep waiting
-                // Skipped errs like:
-                // 'tcp connect error: Connection refused (os error 61)'
-                // 'operation was canceled: connection closed before message completed'
-                // 'connection error: Connection reset by peer (os error 54)'
-                if !(e.is_connect() || e.is_request()) {
+                if !skip_err_while_waiting(&e) {
                     return Err(e.into());
                 }
 
@@ -53,4 +47,14 @@ pub async fn wait_ws_ready(url: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn skip_err_while_waiting(e: &reqwest::Error) -> bool {
+    // if the error is connecting/request could be the case that the node
+    // is not listening yet, so we keep waiting
+    // Skipped errs like:
+    // 'tcp connect error: Connection refused (os error 61)'
+    // 'operation was canceled: connection closed before message completed'
+    // 'connection error: Connection reset by peer (os error 54)'
+    e.is_connect() || e.is_request()
 }

@@ -20,6 +20,7 @@ pub async fn generate<'a, T>(
     acc: &NodeAccounts,
     node_files_path: impl AsRef<Path>,
     scoped_fs: &ScopedFilesystem<'a, T>,
+    asset_hub_polkadot: bool,
 ) -> Result<Vec<PathBuf>, GeneratorError>
 where
     T: FileSystem,
@@ -32,10 +33,15 @@ where
         // let filename = encode(k);
 
         let filename = match k {
-            // TODO: add logic for isAssetHubPolkadot
-            // "aura" => {
-            //     ""
-            // },
+            "aura" if asset_hub_polkadot => {
+                let pk = acc
+                    .accounts
+                    .get("ed")
+                    .expect(&format!("Key 'ed' should be set for node {THIS_IS_A_BUG}"))
+                    .public_key
+                    .as_str();
+                format!("{}{}", encode(k), pk)
+            },
             "babe" | "imon" | "audi" | "asgn" | "para" | "nmbs" | "rand" | "aura" => {
                 let pk = acc
                     .accounts

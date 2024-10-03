@@ -13,7 +13,7 @@ use crate::{
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
-        errors::ConfigError,
+        errors::{ConfigError, ValidationError},
         helpers::{merge_errors, merge_errors_vecs},
         macros::states,
         node::NodeConfig,
@@ -332,26 +332,10 @@ impl NetworkConfigBuilder<Initial> {
         relay_name: &str,
         node_names: Vec<String>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
-        let mut errors: Vec<anyhow::Error> = vec![];
-
-        if node_names.is_empty() {
-            errors.push(ConfigError::Relaychain(anyhow!("node names list can't be empty")).into())
-        }
-
-        for name in node_names.iter() {
-            if name.is_empty() {
-                errors.push(ConfigError::Relaychain(anyhow!("node name can't be empty")).into());
-            }
-        }
-
-        if relay_name.is_empty() {
-            errors.push(ConfigError::Relaychain(anyhow!("relaychain name can't be empty")).into());
-        }
-
         let network_config = NetworkConfigBuilder::new().with_relaychain(|relaychain| {
-            let mut relaychain_with_node = relaychain.with_chain(relay_name).with_node(|node| {
-                node.with_name(node_names.first().unwrap_or(&"node1".to_string()))
-            }); // TODO: in order to not panic this, we provide a dummy value. However, returning a Result may be a better choice for this constructor
+            let mut relaychain_with_node = relaychain
+                .with_chain(relay_name)
+                .with_node(|node| node.with_name(node_names.first().unwrap_or(&"".to_string())));
 
             for node_name in node_names.iter().skip(1) {
                 relaychain_with_node = relaychain_with_node
@@ -363,7 +347,7 @@ impl NetworkConfigBuilder<Initial> {
         Self::transition(
             network_config.config,
             network_config.validation_context,
-            errors,
+            network_config.errors,
         )
     }
 
@@ -456,33 +440,15 @@ impl NetworkConfigBuilder<WithRelaychain> {
                 self.validation_context,
                 merge_errors(
                     self.errors,
-                    ConfigError::Parachain(id, anyhow!("collator names list can't be empty"))
-                        .into(),
+                    ConfigError::Parachain(id, ValidationError::CantBeEmpty().into()).into(),
                 ),
             );
-        }
-
-        for name in collator_names.iter() {
-            if name.is_empty() {
-                return Self::transition(
-                    self.config,
-                    self.validation_context,
-                    merge_errors(
-                        self.errors,
-                        ConfigError::Parachain(id, anyhow!("collator name can't be empty")).into(),
-                    ),
-                );
-            }
         }
 
         self.with_parachain(|parachain| {
             let mut parachain_config = parachain.with_id(id).with_collator(|collator| {
                 collator
-                    .with_name(
-                        collator_names
-                            .first()
-                            .expect("collator names list is not empty"),
-                    )
+                    .with_name(collator_names.first().unwrap_or(&"".to_string()))
                     .validator(true)
             });
 
@@ -1566,7 +1532,7 @@ mod tests {
 
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "relaychain.relaychain name can't be empty"
+            "relaychain.chain: can't be empty"
         );
     }
 
@@ -1578,7 +1544,7 @@ mod tests {
 
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "relaychain.node names list can't be empty"
+            "relaychain.nodes[''].name: can't be empty"
         );
     }
 
@@ -1593,7 +1559,7 @@ mod tests {
 
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "relaychain.node name can't be empty"
+            "relaychain.nodes[''].name: can't be empty"
         );
     }
 
@@ -1643,7 +1609,7 @@ mod tests {
 
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "parachain[1].collator names list can't be empty"
+            "parachain[1].can't be empty"
         );
     }
 
@@ -1657,7 +1623,7 @@ mod tests {
 
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "parachain[1].collator name can't be empty"
+            "parachain[1].collators[''].name: can't be empty"
         );
     }
 }

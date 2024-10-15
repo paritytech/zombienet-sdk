@@ -1036,15 +1036,17 @@ fn add_grandpa_authorities(
         let keys: Vec<(String, usize)> = nodes
             .iter()
             .map(|node| {
-                (node.accounts
-                    .accounts
-                    .get("ed")
-                    .expect(&format!(
-                        "'ed' account should be set at spec computation {THIS_IS_A_BUG}"
-                    ))
-                    .address
-                    .clone()
-                , 1)
+                (
+                    node.accounts
+                        .accounts
+                        .get("ed")
+                        .expect(&format!(
+                            "'ed' account should be set at spec computation {THIS_IS_A_BUG}"
+                        ))
+                        .address
+                        .clone(),
+                    1,
+                )
             })
             .collect();
         val["grandpa"]["authorities"] = json!(keys);
@@ -1052,7 +1054,6 @@ fn add_grandpa_authorities(
         unreachable!("pointer to runtime config should be valid!")
     }
 }
-
 
 // TODO: (team)
 

@@ -473,7 +473,6 @@ impl ChainSpec {
                 .is_some()
             {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
-                // await addParaCustom(chainSpecFullPathPlain, node);
             } else {
                 warn!("Can't customize keys, not `session` or `aura` find in the chain-spec file");
             };
@@ -577,6 +576,9 @@ impl ChainSpec {
                     &validators,
                     SessionKeyType::Stash,
                 );
+            } else {
+                add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
+                add_grandpa_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
             }
 
             // staking && nominators
@@ -1023,6 +1025,36 @@ fn add_aura_authorities(
         unreachable!("pointer to runtime config should be valid!")
     }
 }
+
+fn add_grandpa_authorities(
+    runtime_config_ptr: &str,
+    chain_spec_json: &mut serde_json::Value,
+    nodes: &[&NodeSpec],
+    _key_type: KeyType,
+) {
+    if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
+        let keys: Vec<(String, usize)> = nodes
+            .iter()
+            .map(|node| {
+                (
+                    node.accounts
+                        .accounts
+                        .get("ed")
+                        .expect(&format!(
+                            "'ed' account should be set at spec computation {THIS_IS_A_BUG}"
+                        ))
+                        .address
+                        .clone(),
+                    1,
+                )
+            })
+            .collect();
+        val["grandpa"]["authorities"] = json!(keys);
+    } else {
+        unreachable!("pointer to runtime config should be valid!")
+    }
+}
+
 // TODO: (team)
 
 // fn add_staking() {}

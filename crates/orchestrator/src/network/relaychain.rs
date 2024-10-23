@@ -37,5 +37,4 @@ impl Relaychain {
     pub fn chain(&self) -> &str {
         &self.chain
     }
-
 }

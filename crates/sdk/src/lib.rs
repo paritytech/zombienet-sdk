@@ -10,8 +10,9 @@ pub use orchestrator::{
 
 // Helpers used for interact with the network
 pub mod tx_helper {
-    pub use orchestrator::shared::types::RuntimeUpgradeOptions;
-    pub use orchestrator::network::chain_upgrade::ChainUpgrade;
+    pub use orchestrator::{
+        network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions,
+    };
 }
 
 use provider::{DockerProvider, KubernetesProvider, NativeProvider};

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use async_trait::async_trait;
 use anyhow::anyhow;
+use async_trait::async_trait;
 use subxt_signer::{sr25519::Keypair, SecretUri};
 
 use super::node::NetworkNode;
@@ -16,10 +16,7 @@ pub trait ChainUpgrade {
     ///
     /// This call 'System.set_code_without_checks' wrapped in
     /// 'Sudo.sudo_unchecked_weight'
-    async fn runtime_upgrade(
-        &self,
-        options: RuntimeUpgradeOptions,
-    ) -> Result<(), anyhow::Error> {
+    async fn runtime_upgrade(&self, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error> {
         // check if the node is valid first
         let node = if let Some(node_name) = options.node_name {
             if let Some(node) = self
@@ -29,7 +26,10 @@ pub trait ChainUpgrade {
             {
                 node
             } else {
-                return Err(anyhow!("Node: {} is not part of the set of nodes", node_name));
+                return Err(anyhow!(
+                    "Node: {} is not part of the set of nodes",
+                    node_name
+                ));
             }
         } else {
             // take the first node

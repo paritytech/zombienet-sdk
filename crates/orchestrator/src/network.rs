@@ -564,11 +564,11 @@ impl<T: FileSystem> Network<T> {
         self.parachains.insert(para.para_id, para);
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         self.ns.name()
     }
 
-    pub(crate) fn parachain(&self, para_id: u32) -> Option<&Parachain> {
+    pub fn parachain(&self, para_id: u32) -> Option<&Parachain> {
         self.parachains.get(&para_id)
     }
 

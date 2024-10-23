@@ -1,6 +1,7 @@
 pub mod node;
 pub mod parachain;
 pub mod relaychain;
+pub mod chain_upgrade;
 
 use std::{collections::HashMap, path::PathBuf};
 

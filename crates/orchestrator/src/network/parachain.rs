@@ -3,16 +3,17 @@ use std::{
     str::FromStr,
 };
 
-use provider::types::TransferedFile;
+use async_trait::async_trait;
+
 use serde::Serialize;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, net::wait_ws_ready};
 use tracing::info;
 
-// use crate::generators::key::generate_pair;
-// use sp_core::{sr25519, Pair};
-use super::node::NetworkNode;
+use provider::types::TransferedFile;
+
+use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
 use crate::{
     network_spec::parachain::ParachainSpec, shared::types::RegisterParachainOptions,
     ScopedFilesystem,
@@ -26,6 +27,13 @@ pub struct Parachain {
     pub(crate) chain_spec_path: Option<PathBuf>,
     pub(crate) collators: Vec<NetworkNode>,
     pub(crate) files_to_inject: Vec<TransferedFile>,
+}
+
+#[async_trait]
+impl ChainUpgrade for Parachain {
+    fn nodes(&self) -> Vec<&NetworkNode> {
+        self.collators.iter().collect()
+    }
 }
 
 impl Parachain {

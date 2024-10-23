@@ -46,7 +46,7 @@ async fn main() -> Result<(), anyhow::Error> {
 	let spawn_fn = zombienet_sdk::environment::get_spawn_fn();
 	let network = spawn_fn(config).await?;
 
-	// wait 10 blocks
+	// wait 2 blocks
 	let alice = network.get_node("alice")?;
 	assert!(alice.wait_metric(BEST_BLOCK_METRIC, |b| b > 2_f64).await.is_ok());
 
@@ -56,7 +56,6 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("current_runtime spec version: {:?}", current_runtime.spec_version);
 
 	// get current best
-	alice.wait_metric(BEST_BLOCK_METRIC, |x| x > 2_f64).await?;
 	let best_block = alice.reports(BEST_BLOCK_METRIC).await?;
 
 	// upgrade runtime
@@ -76,9 +75,9 @@ async fn main() -> Result<(), anyhow::Error> {
 		.runtime_upgrade(RuntimeUpgradeOptions::new(wasm.as_str().into()))
 		.await?;
 
-	// wait 10 more blocks
+	// wait 2 more blocks
 	alice
-		.wait_metric(BEST_BLOCK_METRIC, |x| x > best_block + 10_f64)
+		.wait_metric(BEST_BLOCK_METRIC, |x| x > best_block + 2_f64)
 		.await?;
 
 	let incremented_runtime = client.backend().current_runtime_version().await?;

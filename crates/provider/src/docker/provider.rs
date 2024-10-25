@@ -65,6 +65,7 @@ where
         provider
     }
 
+    /// Set tmp_dir to use as base for the provider
     pub fn tmp_dir(mut self, tmp_dir: impl Into<PathBuf>) -> Self {
         self.tmp_dir = tmp_dir.into();
         self

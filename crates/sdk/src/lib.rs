@@ -35,8 +35,10 @@ pub mod tx_helper {
 pub mod shared {
     pub mod configuration {
         // Allow to construct config types
-        pub use configuration::shared::types::{Arg, AssetLocation};
-        pub use configuration::RegistrationStrategy; // TODO: move to shared
+        pub use configuration::{
+            shared::types::{Arg, AssetLocation},
+            RegistrationStrategy,
+        }; // TODO: move to shared
     }
 
     pub mod provider {

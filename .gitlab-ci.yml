@@ -27,7 +27,7 @@ include:
 k8s-integration-test-smoke:
   stage: integration-test
   <<: *common-refs
-  image: "docker.io/paritytech/ci-unified:bullseye-1.81.0-2024-09-11-v202409111035"
+  image: "docker.io/paritytech/ci-unified:bullseye-1.81.0-2024-09-11-v202409111034"
   tags:
     - zombienet-polkadot-integration-test
   script:
@@ -40,7 +40,7 @@ k8s-integration-test-smoke:
 native-integration-test:
   stage: integration-test
   <<: *common-refs
-  image: "docker.io/paritytech/ci-unified:bullseye-1.81.0-2024-09-11-v202409111035"
+  image: "docker.io/paritytech/ci-unified:bullseye-1.81.0-2024-09-11-v202409111034"
   tags:
     - zombienet-polkadot-integration-test
   script:

@@ -45,8 +45,8 @@ sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
 sp-core = "31.0.0"
 libp2p = { version = "0.52" }
-subxt = { version = "0.37", features = ["substrate-compat"] }
-subxt-signer = { version = "0.37", features = ["subxt"] }
+subxt = { version = "0.38", features = ["substrate-compat"] }
+subxt-signer = { version = "0.38", features = ["subxt"] }
 tracing = "0.1.35"
 kube = "0.87.1"
 k8s-openapi = "0.20.0"

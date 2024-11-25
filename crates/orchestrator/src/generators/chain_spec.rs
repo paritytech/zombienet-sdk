@@ -964,11 +964,15 @@ fn add_authorities(
         .map(|id| id.starts_with("asset-hub-polkadot"))
         .unwrap_or_default();
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let keys: Vec<GenesisNodeKey> = nodes
-            .iter()
-            .map(|node| get_node_keys(node, session_key, asset_hub_polkadot))
-            .collect();
-        val["session"]["keys"] = json!(keys);
+        if let Some(session_keys) = val.pointer_mut("/session/keys") {
+            let keys: Vec<GenesisNodeKey> = nodes
+                .iter()
+                .map(|node| get_node_keys(node, session_key, asset_hub_polkadot))
+                .collect();
+            *session_keys = json!(keys);
+        } else {
+            warn!("⚠️  'session/keys' key not present in runtime config.");
+        }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }
@@ -1007,20 +1011,24 @@ fn add_aura_authorities(
     _key_type: KeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let keys: Vec<String> = nodes
-            .iter()
-            .map(|node| {
-                node.accounts
-                    .accounts
-                    .get("sr")
-                    .expect(&format!(
-                        "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
-                    ))
-                    .address
-                    .clone()
-            })
-            .collect();
-        val["aura"]["authorities"] = json!(keys);
+        if let Some(aura_authorities) = val.pointer_mut("/aura/authorities") {
+            let keys: Vec<String> = nodes
+                .iter()
+                .map(|node| {
+                    node.accounts
+                        .accounts
+                        .get("sr")
+                        .expect(&format!(
+                            "'sr' account should be set at spec computation {THIS_IS_A_BUG}"
+                        ))
+                        .address
+                        .clone()
+                })
+                .collect();
+            *aura_authorities = json!(keys);
+        } else {
+            warn!("⚠️  'aura/authorities' key not present in runtime config.");
+        }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }
@@ -1033,23 +1041,27 @@ fn add_grandpa_authorities(
     _key_type: KeyType,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let keys: Vec<(String, usize)> = nodes
-            .iter()
-            .map(|node| {
-                (
-                    node.accounts
-                        .accounts
-                        .get("ed")
-                        .expect(&format!(
-                            "'ed' account should be set at spec computation {THIS_IS_A_BUG}"
-                        ))
-                        .address
-                        .clone(),
-                    1,
-                )
-            })
-            .collect();
-        val["grandpa"]["authorities"] = json!(keys);
+        if let Some(grandpa_authorities) = val.pointer_mut("/grandpa/authorities") {
+            let keys: Vec<(String, usize)> = nodes
+                .iter()
+                .map(|node| {
+                    (
+                        node.accounts
+                            .accounts
+                            .get("ed")
+                            .expect(&format!(
+                                "'ed' account should be set at spec computation {THIS_IS_A_BUG}"
+                            ))
+                            .address
+                            .clone(),
+                        1,
+                    )
+                })
+                .collect();
+            *grandpa_authorities = json!(keys);
+        } else {
+            warn!("⚠️  'grandpa/authorities' key not present in runtime config.");
+        }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }

@@ -45,7 +45,8 @@ async fn main() {
         .await
         .expect(&format!("failed to listen on {address}"));
     tracing::info!("file server started on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap()
+
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn upload(

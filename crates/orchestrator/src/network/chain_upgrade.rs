@@ -9,37 +9,18 @@ use crate::{shared::types::RuntimeUpgradeOptions, tx_helper};
 
 #[async_trait]
 pub trait ChainUpgrade {
-    /// Get a vec of [`NetworkNode`]
-    fn nodes(&self) -> Vec<&NetworkNode>;
-
     /// Perform a runtime upgrade (with sudo)
     ///
     /// This call 'System.set_code_without_checks' wrapped in
     /// 'Sudo.sudo_unchecked_weight'
-    async fn runtime_upgrade(&self, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error> {
-        // check if the node is valid first
-        let node = if let Some(node_name) = options.node_name {
-            if let Some(node) = self
-                .nodes()
-                .into_iter()
-                .find(|node| node.name() == node_name)
-            {
-                node
-            } else {
-                return Err(anyhow!(
-                    "Node: {} is not part of the set of nodes",
-                    node_name
-                ));
-            }
-        } else {
-            // take the first node
-            if let Some(node) = self.nodes().first() {
-                node
-            } else {
-                return Err(anyhow!("chain doesn't have any node!"));
-            }
-        };
 
+    async fn runtime_upgrade(&self, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error>;
+
+    /// Perform a runtime upgrade (with sudo), inner call with the node pass as arg.
+    ///
+    /// This call 'System.set_code_without_checks' wrapped in
+    /// 'Sudo.sudo_unchecked_weight'
+    async fn perform_runtime_upgrade(&self, node: &NetworkNode, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error> {
         let sudo = if let Some(possible_seed) = options.seed {
             Keypair::from_secret_key(possible_seed)
                 .map_err(|_| anyhow!("seed should return a Keypair"))?

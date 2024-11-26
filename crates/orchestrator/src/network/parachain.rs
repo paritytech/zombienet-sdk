@@ -4,6 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use anyhow::anyhow;
 use provider::types::TransferedFile;
 use serde::Serialize;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
@@ -13,7 +14,7 @@ use tracing::info;
 
 use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
 use crate::{
-    network_spec::parachain::ParachainSpec, shared::types::RegisterParachainOptions,
+    network_spec::parachain::ParachainSpec, shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
     ScopedFilesystem,
 };
 
@@ -29,8 +30,31 @@ pub struct Parachain {
 
 #[async_trait]
 impl ChainUpgrade for Parachain {
-    fn nodes(&self) -> Vec<&NetworkNode> {
-        self.collators.iter().collect()
+    async fn runtime_upgrade(&self, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error> {
+        // check if the node is valid first
+        let node = if let Some(node_name) = &options.node_name {
+            if let Some(node) = self
+                .collators()
+                .into_iter()
+                .find(|node| node.name() == node_name)
+            {
+                node
+            } else {
+                return Err(anyhow!(
+                    "Node: {} is not part of the set of nodes",
+                    node_name
+                ));
+            }
+        } else {
+            // take the first node
+            if let Some(node) = self.collators().first() {
+                node
+            } else {
+                return Err(anyhow!("chain doesn't have any node!"));
+            }
+        };
+
+        self.perform_runtime_upgrade(node, options).await
     }
 }
 

@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use serde::Serialize;
 
 use super::node::NetworkNode;
-use crate::network::chain_upgrade::ChainUpgrade;
+use crate::{network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions};
 
 #[derive(Debug, Serialize)]
 pub struct Relaychain {
@@ -16,8 +17,31 @@ pub struct Relaychain {
 
 #[async_trait]
 impl ChainUpgrade for Relaychain {
-    fn nodes(&self) -> Vec<&NetworkNode> {
-        self.nodes.iter().collect()
+    async fn runtime_upgrade(&self, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error> {
+        // check if the node is valid first
+        let node = if let Some(node_name) = &options.node_name {
+            if let Some(node) = self
+                .nodes()
+                .into_iter()
+                .find(|node| node.name() == node_name)
+            {
+                node
+            } else {
+                return Err(anyhow!(
+                    "Node: {} is not part of the set of nodes",
+                    node_name
+                ));
+            }
+        } else {
+            // take the first node
+            if let Some(node) = self.nodes().first() {
+                node
+            } else {
+                return Err(anyhow!("chain doesn't have any node!"));
+            }
+        };
+
+        self.perform_runtime_upgrade(node, options).await
     }
 }
 
@@ -32,6 +56,9 @@ impl Relaychain {
     }
 
     // Public API
+    pub fn nodes(&self) -> Vec<&NetworkNode> {
+        self.nodes.iter().collect()
+    }
 
     /// Get chain name
     pub fn chain(&self) -> &str {

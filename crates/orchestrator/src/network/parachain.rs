@@ -3,8 +3,8 @@ use std::{
     str::FromStr,
 };
 
-use async_trait::async_trait;
 use anyhow::anyhow;
+use async_trait::async_trait;
 use provider::types::TransferedFile;
 use serde::Serialize;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
@@ -14,7 +14,8 @@ use tracing::info;
 
 use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
 use crate::{
-    network_spec::parachain::ParachainSpec, shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
+    network_spec::parachain::ParachainSpec,
+    shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
     ScopedFilesystem,
 };
 

@@ -20,7 +20,11 @@ pub trait ChainUpgrade {
     ///
     /// This call 'System.set_code_without_checks' wrapped in
     /// 'Sudo.sudo_unchecked_weight'
-    async fn perform_runtime_upgrade(&self, node: &NetworkNode, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error> {
+    async fn perform_runtime_upgrade(
+        &self,
+        node: &NetworkNode,
+        options: RuntimeUpgradeOptions,
+    ) -> Result<(), anyhow::Error> {
         let sudo = if let Some(possible_seed) = options.seed {
             Keypair::from_secret_key(possible_seed)
                 .map_err(|_| anyhow!("seed should return a Keypair"))?

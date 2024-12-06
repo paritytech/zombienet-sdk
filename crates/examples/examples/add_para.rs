@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use futures::stream::StreamExt;
-use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
-use zombienet_sdk::subxt;
+use zombienet_sdk::{subxt, NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

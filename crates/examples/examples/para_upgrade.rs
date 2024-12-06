@@ -5,9 +5,9 @@ use std::env;
 
 use anyhow::anyhow;
 use zombienet_sdk::{
+    subxt,
     tx_helper::{ChainUpgrade, RuntimeUpgradeOptions},
     NetworkConfigBuilder,
-    subxt,
 };
 
 const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";

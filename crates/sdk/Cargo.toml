@@ -16,8 +16,9 @@ keywords = ["zombienet", "sdk"]
 async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
-subxt = { workspace = true }
 lazy_static = { workspace = true }
+subxt = { workspace = true, features = ["substrate-compat"] }
+subxt-signer = { workspace = true, features = ["subxt"] }
 
 # Zombienet deps
 configuration = { workspace = true }

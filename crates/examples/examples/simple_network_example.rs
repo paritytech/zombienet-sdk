@@ -1,5 +1,5 @@
 use futures::stream::StreamExt;
-use zombienet_sdk::{NetworkConfig, NetworkConfigExt};
+use zombienet_sdk::{NetworkConfig, NetworkConfigExt, subxt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

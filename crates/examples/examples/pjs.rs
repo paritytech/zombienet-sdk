@@ -1,6 +1,6 @@
 use futures::stream::StreamExt;
 use serde_json::json;
-use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
+use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt, subxt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

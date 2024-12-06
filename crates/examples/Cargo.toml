@@ -9,7 +9,6 @@ edition = "2021"
 zombienet-sdk = {workspace = true, features = ["pjs"]}
 tokio = { workspace = true }
 futures = { workspace = true }
-subxt = { workspace = true }
 tracing-subscriber = "0.3"
 serde_json = { workspace = true }
 anyhow = { workspace = true }

@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use zombienet_sdk::{
     tx_helper::{ChainUpgrade, RuntimeUpgradeOptions},
     NetworkConfigBuilder,
+    subxt,
 };
 
 const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
@@ -75,6 +76,11 @@ async fn main() -> Result<(), anyhow::Error> {
     } else {
         panic!("You need to provide the PATH to the wasm file to use to upgrade, through first argument or 'ZOMBIE_WASM_INCREMENTED_PATH' env var");
     };
+
+    // wait 2 more blocks
+    alice
+        .wait_metric(BEST_BLOCK_METRIC, |x| x > best_block + 50_f64)
+        .await?;
 
     println!("Perfoming upgrade from path {wasm}");
 

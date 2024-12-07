@@ -13,7 +13,7 @@ pub struct GenCmdOptions<'a> {
     pub use_default_ports_in_cmd: bool,
 }
 
-impl<'a> Default for GenCmdOptions<'a> {
+impl Default for GenCmdOptions<'_> {
     fn default() -> Self {
         Self {
             relay_chain_name: "rococo-local",

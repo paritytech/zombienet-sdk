@@ -13,7 +13,6 @@ pub trait ChainUpgrade {
     ///
     /// This call 'System.set_code_without_checks' wrapped in
     /// 'Sudo.sudo_unchecked_weight'
-
     async fn runtime_upgrade(&self, options: RuntimeUpgradeOptions) -> Result<(), anyhow::Error>;
 
     /// Perform a runtime upgrade (with sudo), inner call with the node pass as arg.

@@ -21,6 +21,10 @@ pub use support::fs::local::LocalFileSystem;
 pub mod environment;
 pub const PROVIDERS: [&str; 3] = ["k8s", "native", "docker"];
 
+// re-export subxt
+pub use subxt;
+pub use subxt_signer;
+
 #[async_trait]
 pub trait NetworkConfigExt {
     /// Spawns a network using the native or k8s provider.

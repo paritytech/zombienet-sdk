@@ -55,7 +55,7 @@ impl Serialize for U128 {
 
 struct U128Visitor;
 
-impl<'de> de::Visitor<'de> for U128Visitor {
+impl de::Visitor<'_> for U128Visitor {
     type Value = U128;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -308,7 +308,7 @@ impl Serialize for AssetLocation {
 
 struct AssetLocationVisitor;
 
-impl<'de> de::Visitor<'de> for AssetLocationVisitor {
+impl de::Visitor<'_> for AssetLocationVisitor {
     type Value = AssetLocation;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -379,7 +379,7 @@ impl Serialize for Arg {
 
 struct ArgVisitor;
 
-impl<'de> de::Visitor<'de> for ArgVisitor {
+impl de::Visitor<'_> for ArgVisitor {
     type Value = Arg;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

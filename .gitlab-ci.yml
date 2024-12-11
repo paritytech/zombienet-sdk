@@ -1,0 +1,61 @@
+stages:
+  - integration-test
+
+cache:
+  - key:
+      files:
+      - Cargo.lock
+  - paths:
+    - target
+    - ${CARGO_HOME}
+
+include:
+  # ci image
+  - project: parity/infrastructure/ci_cd/shared
+    ref: main
+    file: /common/ci-unified.yml
+
+# run jobs always
+.common-refs: &common-refs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_REF_NAME == "main"
+    - if: $CI_COMMIT_REF_NAME =~ /^[0-9]+$/ # PRs
+    - if: $CI_COMMIT_REF_NAME =~ /^v[0-9]+\.[0-9]+.*$/ # i.e. v1.0, v2.1rc1
+
+k8s-integration-test-smoke:
+  stage: integration-test
+  <<: *common-refs
+  image: "docker.io/paritytech/ci-unified:bullseye-1.81.0-2024-09-11-v202409111034"
+  tags:
+    - zombienet-polkadot-integration-test
+  script:
+    - RUST_LOG=zombienet_orchestrator=debug,zombienet_provider=debug cargo test --test smoke -- --nocapture
+  variables:
+    CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
+    RUN_IN_CI: "1"
+    ZOMBIE_PROVIDER: "k8s"
+
+native-integration-test:
+  stage: integration-test
+  <<: *common-refs
+  image: "docker.io/paritytech/ci-unified:bullseye-1.81.0-2024-09-11-v202409111034"
+  tags:
+    - zombienet-polkadot-integration-test
+  script:
+    # download latest stable `polkadot-stable2407-2` // TODO: impl zombie-cli
+    - >
+      for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
+        echo "downloading $bin";
+        curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2407-2/$bin;
+        chmod 755 /tmp/$bin;
+      done
+    - ls -ltr /tmp
+    - export PATH=/tmp:$PATH
+    - echo $PATH
+    - RUST_LOG=zombienet_orchestrator=debug,zombienet_provider=debug cargo test --test smoke-native -- --nocapture
+  variables:
+    CI_IMAGE: !reference [.ci-unified, variables, CI_IMAGE]
+    RUN_IN_CI: "1"
+    ZOMBIE_PROVIDER: "native"

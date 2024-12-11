@@ -647,11 +647,11 @@ where
         let _ = url.set_port(Some(80));
 
         let res = self
-            .download_file(&url.to_string(), &remote_file_path, Some(&hash))
+            .download_file(url.as_ref(), remote_file_path, Some(&hash))
             .await;
         if res.is_err() {
             // re-try one time
-            self.download_file(&url.to_string(), &remote_file_path, Some(&hash))
+            self.download_file(url.as_ref(), remote_file_path, Some(&hash))
                 .await?;
         }
 

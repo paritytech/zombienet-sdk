@@ -404,7 +404,12 @@ where
         )))
     }
 
-    async fn download_file(&self, url: &str, remote_file_path: &Path, hash: Option<&str>) -> Result<(), ProviderError> {
+    async fn download_file(
+        &self,
+        url: &str,
+        remote_file_path: &Path,
+        hash: Option<&str>,
+    ) -> Result<(), ProviderError> {
         let r = self
             .k8s_client
             .pod_exec(
@@ -425,12 +430,12 @@ where
                 )
             })?;
 
-        trace!("download url {} result: {:?}",url, r);
+        trace!("download url {} result: {:?}", url, r);
 
         if r.is_err() {
             return Err(ProviderError::DownloadFile(
                 remote_file_path.to_string_lossy().to_string(),
-                anyhow!(format!("node: {}, err downloading file", self.name()))
+                anyhow!(format!("node: {}, err downloading file", self.name())),
             ));
         }
 
@@ -438,25 +443,38 @@ where
             // check if the hash of the file is correct
             let res = self
                 .k8s_client
-                .pod_exec(&self.namespace_name(), &self.name, vec!["/cfg/coreutils", "sha256sum", &remote_file_path.to_string_lossy()]).await
-            .map_err(|err| {
-                ProviderError::DownloadFile(
-                    remote_file_path.to_string_lossy().to_string(),
-                    anyhow!(format!("node: {}, err: {}", self.name(), err)),
+                .pod_exec(
+                    &self.namespace_name(),
+                    &self.name,
+                    vec![
+                        "/cfg/coreutils",
+                        "sha256sum",
+                        &remote_file_path.to_string_lossy(),
+                    ],
                 )
-            })?;
+                .await
+                .map_err(|err| {
+                    ProviderError::DownloadFile(
+                        remote_file_path.to_string_lossy().to_string(),
+                        anyhow!(format!("node: {}, err: {}", self.name(), err)),
+                    )
+                })?;
 
             if let Ok(output) = res {
-                if ! output.contains(hash) {
+                if !output.contains(hash) {
                     return Err(ProviderError::DownloadFile(
                         remote_file_path.to_string_lossy().to_string(),
-                        anyhow!(format!("node: {}, invalid sha256sum for file", self.name()))
+                        anyhow!(format!("node: {}, invalid sha256sum for file", self.name())),
                     ));
                 }
             } else {
                 return Err(ProviderError::DownloadFile(
                     remote_file_path.to_string_lossy().to_string(),
-                    anyhow!(format!("node: {}, err calculating sha256sum for file {:?}", self.name(),res))
+                    anyhow!(format!(
+                        "node: {}, err calculating sha256sum for file {:?}",
+                        self.name(),
+                        res
+                    )),
                 ));
             }
         }
@@ -628,10 +646,13 @@ where
         let _ = url.set_host(Some("fileserver"));
         let _ = url.set_port(Some(80));
 
-        let res = self.download_file(&url.to_string(),&remote_file_path, Some(&hash)).await;
+        let res = self
+            .download_file(&url.to_string(), &remote_file_path, Some(&hash))
+            .await;
         if res.is_err() {
             // re-try one time
-            self.download_file(&url.to_string(),&remote_file_path, Some(&hash)).await?;
+            self.download_file(&url.to_string(), &remote_file_path, Some(&hash))
+                .await?;
         }
 
         let _ = self

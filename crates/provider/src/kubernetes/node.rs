@@ -15,7 +15,7 @@ use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
-use tracing::trace;
+use tracing::{debug, trace, warn};
 use url::Url;
 
 use super::{
@@ -464,7 +464,7 @@ where
                 if !output.contains(hash) {
                     return Err(ProviderError::DownloadFile(
                         remote_file_path.to_string_lossy().to_string(),
-                        anyhow!(format!("node: {}, invalid sha256sum for file", self.name())),
+                        anyhow!(format!("node: {}, invalid sha256sum hash: {hash} for file, output was {output}", self.name())),
                     ));
                 }
             } else {
@@ -636,7 +636,7 @@ where
             self.create_remote_dir(&remote_parent_dir).await?;
         }
 
-        trace!(
+        debug!(
             "Uploading file: {} IFF not present in the fileserver",
             local_file_path.to_string_lossy()
         );
@@ -646,13 +646,30 @@ where
         let _ = url.set_host(Some("fileserver"));
         let _ = url.set_port(Some(80));
 
-        let res = self
-            .download_file(url.as_ref(), remote_file_path, Some(&hash))
-            .await;
-        if res.is_err() {
-            // re-try one time
-            self.download_file(url.as_ref(), remote_file_path, Some(&hash))
-                .await?;
+        // Sometimes downloading the file fails (the file is corrupted)
+        // Add at most 5 retries
+        let mut last_err = None;
+        for i in 0..5 {
+            if i > 0 {
+                warn!("retrying number {i} download file {:?}", remote_file_path);
+                tokio::time::sleep(Duration::from_secs(i)).await;
+            }
+
+            let res = self
+                .download_file(url.as_ref(), remote_file_path, Some(&hash))
+                .await;
+
+            last_err = res.err();
+
+            if last_err.is_none() {
+                // ready to continue
+                break;
+            }
+        }
+
+        if last_err.is_some() {
+            // SECURITY: should be some.
+            return Err(last_err.unwrap());
         }
 
         let _ = self

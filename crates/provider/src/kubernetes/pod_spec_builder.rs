@@ -74,7 +74,7 @@ impl PodSpecBuilder {
         Container {
             name: "helper-binaries-setup".to_string(),
             image: Some("docker.io/alpine:latest".to_string()),
-            image_pull_policy: Some("Always".to_string()),
+            image_pull_policy: Some("IfNotPresent".to_string()),
             volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
                 name: "helper-binaries-downloader-volume".to_string(),
                 mount_path: "/helper-binaries-downloader.sh".to_string(),

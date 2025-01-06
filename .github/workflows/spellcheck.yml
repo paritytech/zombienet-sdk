@@ -25,7 +25,7 @@ jobs:
       - name: Install cargo-spellcheck
         run: |
           sudo apt-get install libclang-dev
-          export LIBCLANG_PATH=/usr/lib/llvm-14/lib/
+          export LIBCLANG_PATH=/usr/lib/llvm-18/lib/
           cargo install cargo-spellcheck
 
       - name: Run cargo-spellcheck

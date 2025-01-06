@@ -164,8 +164,8 @@ impl KubernetesClient {
 
         trace!("Pod {name} checking for ready state!");
         let wait_ready = await_condition(pods, name, helpers::is_pod_ready());
-        // TODO: we may want to allow to set this timeout for pod spawning.
-        let _ = tokio::time::timeout(Duration::from_secs(30), wait_ready)
+        // TODO: we may want to allow to set this timeout for pod spawning (and maybe a vm).
+        let _ = tokio::time::timeout(Duration::from_secs(300), wait_ready)
             .await
             .map_err(|err| {
                 Error::from(anyhow!("error while awaiting pod {name} running: {err}"))

@@ -43,9 +43,9 @@ pest_derive = "2.7"
 rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
-sp-core = "34.0.0"
+sp-core = "35.0.0"
 libp2p = { version = "0.54.1" }
-subxt = { version = "0.38", features = ["substrate-compat"] }
+subxt = { version = "0.38" }
 subxt-signer = { version = "0.38", features = ["subxt"] }
 tracing = "0.1.35"
 kube = "0.87.1"

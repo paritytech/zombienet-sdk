@@ -35,7 +35,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let alice = network.get_node("alice")?;
     tokio::time::sleep(Duration::from_secs(10)).await;
     println!("{:#?}", alice);
-    let client = alice.client::<subxt::PolkadotConfig>().await?;
+    let client = alice.wait_client::<subxt::PolkadotConfig>().await?;
 
     // wait 3 blocks
     let mut blocks = client.blocks().subscribe_finalized().await?.take(3);

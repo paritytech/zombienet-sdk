@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀🚀🚀🚀 network deployed");
 
     let alice = network.get_node("alice")?;
-    let client = alice.client::<subxt::PolkadotConfig>().await?;
+    let client = alice.wait_client::<subxt::PolkadotConfig>().await?;
 
     // wait 2 blocks
     let mut blocks = client.blocks().subscribe_finalized().await?.take(2);

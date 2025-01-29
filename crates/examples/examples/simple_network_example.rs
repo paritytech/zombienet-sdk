@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = network
         .get_node("collator01")?
-        .client::<subxt::PolkadotConfig>()
+        .wait_client::<subxt::PolkadotConfig>()
         .await?;
     let mut blocks = client.blocks().subscribe_finalized().await?.take(3);
 

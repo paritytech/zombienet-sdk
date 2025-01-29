@@ -57,7 +57,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // get current runtime spec
     let client = network
         .get_node("collator")?
-        .client::<subxt::PolkadotConfig>()
+        .wait_client::<subxt::PolkadotConfig>()
         .await?;
     let current_runtime = client.backend().current_runtime_version().await?;
     println!(

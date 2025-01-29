@@ -205,13 +205,14 @@ impl NetworkNode {
     ) -> Result<bool, anyhow::Error> {
         let metric_name = metric_name.into();
         let val = self.metric(&metric_name, true).await?;
+        trace!("🔎 Current value {val} passed to the predicated? (from cache)");
         if predicate(val) {
             Ok(true)
         } else {
             // reload metrics
             self.fetch_metrics().await?;
             let val = self.metric(&metric_name, true).await?;
-            trace!("🔎 Current value passed to the predicated: {val}");
+            trace!("🔎 Current value {val} passed to the predicated?");
             Ok(predicate(val))
         }
     }
@@ -297,7 +298,7 @@ impl NetworkNode {
     }
 
     /// Wait until a the number of matching log lines is reach
-    pub async fn wait_log_line_count<'a>(
+    pub async fn wait_log_line_count(
         &self,
         pattern: impl Into<String>,
         is_glob: bool,

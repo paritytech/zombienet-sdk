@@ -442,8 +442,10 @@ impl ChainSpec {
 
             // make genesis overrides first.
             if let Some(overrides) = &para.genesis_overrides {
+                let percolated_overrides = percolate_overrides(&pointer, overrides)
+                    .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
                 if let Some(genesis) = chain_spec_json.pointer_mut(&pointer) {
-                    merge(genesis, overrides);
+                    merge(genesis, percolated_overrides);
                 }
             }
 
@@ -541,8 +543,10 @@ impl ChainSpec {
 
             // make genesis overrides first.
             if let Some(overrides) = &relaychain.runtime_genesis_patch {
+                let percolated_overrides = percolate_overrides(&pointer, overrides)
+                    .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
                 if let Some(patch_section) = chain_spec_json.pointer_mut(&pointer) {
-                    merge(patch_section, overrides);
+                    merge(patch_section, percolated_overrides);
                 }
             }
 
@@ -803,6 +807,77 @@ fn get_runtime_config_pointer(chain_spec_json: &serde_json::Value) -> Result<Str
     Err("Can not find the runtime pointer".into())
 }
 
+fn percolate_overrides<'a>(
+    pointer: &str,
+    overrides: &'a serde_json::Value,
+) -> Result<&'a serde_json::Value, anyhow::Error> {
+    let pointer_parts = pointer.split('/').collect::<Vec<&str>>();
+    trace!("pointer_parts: {pointer_parts:?}");
+
+    let top_level = overrides
+        .as_object()
+        .ok_or_else(|| anyhow!("Overrides must be an object"))?;
+    let top_level_key = top_level
+        .keys()
+        .next()
+        .ok_or_else(|| anyhow!("Invalid override value: {:?}", overrides))?;
+    trace!("top_level_key: {top_level_key}");
+    let index = pointer_parts.iter().position(|x| *x == top_level_key);
+    let Some(i) = index else {
+        return Err(anyhow!(
+            "Top level key {top_level_key} should be in the pointer: {pointer}"
+        ));
+    };
+
+    let p = if i == pointer_parts.len() - 1 {
+        // top level key is at end of the pointer
+        let p = format!("/{}", pointer_parts[i]);
+        trace!("overrides pointer {p}");
+        p
+    } else {
+        // example: pointer is `/genesis/runtimeGenesis/patch` and the overrides start at  `runtimeGenesis`
+        let p = format!("/{}", pointer_parts[i..].join("/"));
+        trace!("overrides pointer {p}");
+        p
+    };
+    let overrides_to_use = overrides
+        .pointer(&p)
+        .ok_or_else(|| anyhow!("Invalid override value: {:?}", overrides))?;
+    Ok(overrides_to_use)
+}
+
+#[allow(dead_code)]
+fn construct_runtime_pointer_from_overrides(
+    overrides: &serde_json::Value,
+) -> Result<String, anyhow::Error> {
+    if overrides.get("genesis").is_some() {
+        // overrides already start with /genesis
+        return Ok("/genesis".into());
+    } else {
+        // check if we are one level inner
+        if let Some(top_level) = overrides.as_object() {
+            let k = top_level
+                .keys()
+                .next()
+                .ok_or_else(|| anyhow!("Invalid override value: {:?}", overrides))?;
+            match k.as_str() {
+                "runtimeGenesisConfigPatch" | "runtime" | "runtimeGenesis" => {
+                    return Ok(("/genesis").into())
+                },
+                "config" | "path" => {
+                    return Ok(("/genesis/runtimeGenesis").into());
+                },
+                "runtime_genesis_config" => {
+                    return Ok(("/genesis/runtime").into());
+                },
+                _ => {},
+            }
+        }
+    }
+
+    Err(anyhow!("Can not find the runtime pointer"))
+}
+
 // Merge `patch_section` with `overrides`.
 fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     trace!("patch: {:?}", patch_section);
@@ -830,6 +905,16 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
                         trace!("not match!");
                     },
                 }
+            } else {
+                // Allow to add keys, see (https://github.com/paritytech/zombienet/issues/1614)
+                warn!(
+                    "key: {overrides_key} not present in genesis_obj: {:?} (adding key)",
+                    genesis_obj
+                );
+                let overrides_value = overrides_obj.get(overrides_key).expect(&format!(
+                    "overrides_key {overrides_key} should be present in the overrides obj. qed"
+                ));
+                genesis_obj.insert(overrides_key.clone(), overrides_value.clone());
             }
         }
     }
@@ -1156,6 +1241,42 @@ mod tests {
     fn chain_spec_test(file: &str) -> serde_json::Value {
         let content = fs::read_to_string(file).unwrap();
         serde_json::from_str(&content).unwrap()
+    }
+
+    #[test]
+    fn overrides_from_toml_works() {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Serialize, Deserialize)]
+        struct MockConfig {
+            #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
+            genesis_overrides: Option<serde_json::Value>,
+        }
+
+        let mut chain_spec_json = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+        // Could also be  something like [genesis.runtimeGenesis.patch.balances]
+        const TOML: &str = "[genesis.runtime.balances]
+            devAccounts = [
+            20000,
+            1000000000000000000,
+            \"//Sender//{}\"
+        ]";
+        let override_toml: MockConfig = toml::from_str(TOML).unwrap();
+        let overrides = override_toml.genesis_overrides.unwrap();
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+
+        let percolated_overrides = percolate_overrides(&pointer, &overrides)
+            .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))
+            .unwrap();
+        println!("percolated_overrides: {:#?}", percolated_overrides);
+        if let Some(genesis) = chain_spec_json.pointer_mut(&pointer) {
+            merge(genesis, percolated_overrides);
+        }
+
+        println!("chain spec: {chain_spec_json:#?}");
+        assert!(chain_spec_json
+            .pointer("/genesis/runtime/balances/devAccounts")
+            .is_some());
     }
 
     #[test]

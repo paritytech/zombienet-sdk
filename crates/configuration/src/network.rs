@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use support::constants::{
     NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX,
 };
+use tracing::trace;
 
 use crate::{
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
@@ -72,10 +73,10 @@ impl NetworkConfig {
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
 
-        let mut network_config: NetworkConfig = toml::from_str(
-            re.replace_all(&file_str, "$field_name = \"$u128_value\"")
-                .as_ref(),
-        )?;
+        let toml_text = re.replace_all(&file_str, "$field_name = \"$u128_value\"");
+        trace!("toml text to parse: {}", toml_text);
+        let mut network_config: NetworkConfig = toml::from_str(&toml_text)?;
+        trace!("parsed config {network_config:#?}");
 
         // All unwraps below are safe, because we ensure that the relaychain is not None at this point
         if network_config.relaychain.is_none() {

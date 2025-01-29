@@ -44,7 +44,8 @@ jobs:
           shared-key: "zombie-cache"
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features
+        # disable needless_lifetimes until we align the version with polakdot-sdk
+        run: cargo clippy --all-targets --all-features -- -A clippy::needless_lifetimes
 
       - name: Build
         run: cargo build

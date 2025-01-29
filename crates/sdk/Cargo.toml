@@ -17,7 +17,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 lazy_static = { workspace = true }
-subxt = { workspace = true, features = ["substrate-compat"] }
+subxt = { workspace = true }
 subxt-signer = { workspace = true, features = ["subxt"] }
 
 # Zombienet deps

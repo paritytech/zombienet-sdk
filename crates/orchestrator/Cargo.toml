@@ -42,5 +42,8 @@ support = { workspace = true }
 provider = { workspace = true }
 prom-metrics-parser = { workspace = true }
 
+[dev-dependencies]
+toml = { workspace = true }
+
 [features]
 pjs = ["dep:pjs-rs"]

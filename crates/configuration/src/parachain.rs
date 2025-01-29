@@ -140,6 +140,7 @@ pub struct ParachainConfig {
     is_evm_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
+    #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     pub(crate) collators: Vec<NodeConfig>,

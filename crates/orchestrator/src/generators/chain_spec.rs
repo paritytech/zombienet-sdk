@@ -830,7 +830,7 @@ fn percolate_overrides<'a>(
     };
 
     let p = if i == pointer_parts.len() - 1 {
-        // top level key is at last part of the pointer
+        // top level key is at end of the pointer
         let p = format!("/{}", pointer_parts[i]);
         trace!("overrides pointer {p}");
         p

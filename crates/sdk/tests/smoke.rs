@@ -127,7 +127,10 @@ async fn ci_k8s_basic_functionalities_should_works() {
 
     // collator
     let collator = network.get_node("collator").unwrap();
-    let client = collator.client::<subxt::PolkadotConfig>().await.unwrap();
+    let client = collator
+        .wait_client::<subxt::PolkadotConfig>()
+        .await
+        .unwrap();
 
     // wait 3 blocks
     let mut blocks = client.blocks().subscribe_finalized().await.unwrap().take(3);

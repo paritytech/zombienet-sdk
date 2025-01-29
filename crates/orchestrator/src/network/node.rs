@@ -91,7 +91,22 @@ impl NetworkNode {
     }
 
     /// Get the [online client](subxt::client::OnlineClient) for the node
+    #[deprecated = "Use `wait_client` instead."]
     pub async fn client<Config: subxt::Config>(
+        &self,
+    ) -> Result<OnlineClient<Config>, subxt::Error> {
+        self.try_client().await
+    }
+
+    /// Try to connect to the node.
+    ///
+    /// Most of the time you only want to use [`NetworkNode::wait_client`] that waits for
+    /// the node to appear before it connects to it. This function directly tries
+    /// to connect to the node and returns an error if the node is not yet available
+    /// at that point in time.
+    ///
+    /// Returns a [`OnlineClient`] on success.
+    pub async fn try_client<Config: subxt::Config>(
         &self,
     ) -> Result<OnlineClient<Config>, subxt::Error> {
         if subxt::utils::url_is_secure(&self.ws_uri)? {
@@ -109,7 +124,7 @@ impl NetworkNode {
             .await
             .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {}", e))?;
 
-        self.client()
+        self.try_client()
             .await
             .map_err(|e| anyhow!("Can't create a subxt client, err: {}", e))
     }
@@ -182,7 +197,7 @@ impl NetworkNode {
     }
 
     /// Assert on a metric value using a given predicate.
-    /// See [`reports`] description for details on metric name.
+    /// See [`NetworkNode::reports`] description for details on metric name.
     pub async fn assert_with(
         &self,
         metric_name: impl Into<String>,

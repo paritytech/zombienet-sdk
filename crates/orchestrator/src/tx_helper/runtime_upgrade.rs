@@ -13,7 +13,7 @@ pub async fn upgrade(
         "Upgrading runtime, using node: {} with endpoting {}",
         node.name, node.ws_uri
     );
-    let api: OnlineClient<SubstrateConfig> = node.client().await?;
+    let api: OnlineClient<SubstrateConfig> = node.wait_client().await?;
 
     let upgrade = subxt::dynamic::tx(
         "System",

@@ -100,7 +100,7 @@ impl NetworkNode {
 
     /// Try to connect to the node.
     ///
-    /// Most of the time you only want to use [`wait_client`] that waits for
+    /// Most of the time you only want to use [`NetworkNode::wait_client`] that waits for
     /// the node to appear before it connects to it. This function directly tries
     /// to connect to the node and returns an error if the node is not yet available
     /// at that point in time.
@@ -197,7 +197,7 @@ impl NetworkNode {
     }
 
     /// Assert on a metric value using a given predicate.
-    /// See [`reports`] description for details on metric name.
+    /// See [`NetworkNode::reports`] description for details on metric name.
     pub async fn assert_with(
         &self,
         metric_name: impl Into<String>,

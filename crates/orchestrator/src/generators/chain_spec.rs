@@ -502,7 +502,7 @@ impl ChainSpec {
             })?;
             self.write_spec(scoped_fs, content).await?;
         } else {
-            warn!("⚠️ chain-spec for para_id: {} is in raw mode", para.id);
+            warn!("⚠️ Chain spec for para_id: {} is in raw mode", para.id);
         }
         Ok(())
     }
@@ -604,10 +604,8 @@ impl ChainSpec {
             }
 
             // TODO:
-            // - manage session/aura for keys ( Javier think is done!)
             // - staking
             // - nominators
-            // - hrmp_channels
 
             // write spec
             let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
@@ -615,7 +613,7 @@ impl ChainSpec {
             })?;
             self.write_spec(scoped_fs, content).await?;
         } else {
-            // TODO: add a warning here
+            warn!("⚠️ Chain Spec for chain {} is in raw mode, can't customize.", self.chain_spec_name);
         }
         Ok(())
     }
@@ -950,6 +948,7 @@ fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json:
         unreachable!("pointer to runtime config should be valid!")
     }
 }
+
 fn add_balances(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
@@ -1268,12 +1267,12 @@ mod tests {
         let percolated_overrides = percolate_overrides(&pointer, &overrides)
             .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))
             .unwrap();
-        println!("percolated_overrides: {:#?}", percolated_overrides);
+        trace!("percolated_overrides: {:#?}", percolated_overrides);
         if let Some(genesis) = chain_spec_json.pointer_mut(&pointer) {
             merge(genesis, percolated_overrides);
         }
 
-        println!("chain spec: {chain_spec_json:#?}");
+        trace!("chain spec: {chain_spec_json:#?}");
         assert!(chain_spec_json
             .pointer("/genesis/runtime/balances/devAccounts")
             .is_some());

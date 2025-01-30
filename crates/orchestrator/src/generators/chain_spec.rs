@@ -550,6 +550,9 @@ impl ChainSpec {
                 }
             }
 
+            // get min stake (to store if neede later)
+            let staking_min = get_staking_min(&pointer, &mut chain_spec_json);
+
             // Clear authorities
             clear_authorities(&pointer, &mut chain_spec_json);
 
@@ -559,7 +562,15 @@ impl ChainSpec {
                 &mut chain_spec_json,
                 &relaychain.nodes,
                 token_decimals,
-                0,
+                staking_min,
+            );
+
+            // add staking
+            add_staking(
+                &pointer,
+                &mut chain_spec_json,
+                &relaychain.nodes,
+                staking_min,
             );
 
             // Get validators to add as authorities
@@ -952,6 +963,18 @@ fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json:
     }
 }
 
+fn get_staking_min(runtime_config_ptr: &str, chain_spec_json: &mut serde_json::Value) -> u128 {
+    // get min staking
+    let staking_ptr = format!("{runtime_config_ptr}/staking/stakers");
+    if let Some(stakers) = chain_spec_json.pointer(&staking_ptr) {
+        // stakers should be an array
+        let min = stakers[0][2].clone();
+        min.as_u64().unwrap_or(0).into()
+    } else {
+        0
+    }
+}
+
 fn add_balances(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
@@ -974,7 +997,8 @@ fn add_balances(
             };
 
             // TODO: handle error here and check the `accounts.accounts` design
-            let balance = std::cmp::max(node.initial_balance, staking_min);
+            // Double down the minimal stake defined
+            let balance = std::cmp::max(node.initial_balance, staking_min * 2);
             for k in ["sr", "sr_stash"] {
                 let account = node.accounts.accounts.get(k).unwrap();
                 balances_map.insert(account.address.clone(), balance);
@@ -1154,9 +1178,49 @@ fn add_grandpa_authorities(
     }
 }
 
-// TODO: (team)
+fn add_staking(
+    runtime_config_ptr: &str,
+    chain_spec_json: &mut serde_json::Value,
+    nodes: &Vec<NodeSpec>,
+    staking_min: u128,
+) {
+    if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
+        let Some(_) = val.pointer("/staking") else {
+            // should be a info log
+            warn!("NO 'staking' key in runtime config, skipping...");
+            return;
+        };
 
-// fn add_staking() {}
+        let mut stakers = vec![];
+        let mut invulnerables = vec![];
+        for node in nodes {
+            let sr_stash_addr = &node
+                .accounts
+                .accounts
+                .get("sr_stash")
+                .expect("'sr_stash account should be defined for the node. qed")
+                .address;
+            stakers.push(json!([
+                sr_stash_addr,
+                sr_stash_addr,
+                staking_min,
+                "Validator"
+            ]));
+
+            if node.is_invulnerable {
+                invulnerables.push(sr_stash_addr);
+            }
+        }
+
+        val["staking"]["validatorCount"] = json!(stakers.len());
+        val["staking"]["stakers"] = json!(stakers);
+        val["staking"]["invulnerables"] = json!(invulnerables);
+    } else {
+        unreachable!("pointer to runtime config should be valid!")
+    }
+}
+
+// TODO: (team)
 // fn add_nominators() {}
 
 // // TODO: (team) we should think a better way to use the decorators from
@@ -1245,6 +1309,48 @@ mod tests {
         serde_json::from_str(&content).unwrap()
     }
 
+    fn chain_spec_with_stake() -> serde_json::Value {
+        json!({"genesis": {
+            "runtimeGenesis" : {
+                "patch": {
+                    "staking": {
+                        "forceEra": "NotForcing",
+                        "invulnerables": [
+                          "5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY",
+                          "5HpG9w8EBLe5XCrbczpwq5TSXvedjrBGCwqxK1iQ7qUsSWFc"
+                        ],
+                        "minimumValidatorCount": 1,
+                        "slashRewardFraction": 100000000,
+                        "stakers": [
+                          [
+                            "5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY",
+                            "5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY",
+                            100000000000001_u128,
+                            "Validator"
+                          ],
+                          [
+                            "5HpG9w8EBLe5XCrbczpwq5TSXvedjrBGCwqxK1iQ7qUsSWFc",
+                            "5HpG9w8EBLe5XCrbczpwq5TSXvedjrBGCwqxK1iQ7qUsSWFc",
+                            100000000000000_u128,
+                            "Validator"
+                          ]
+                        ],
+                        "validatorCount": 2
+                    },
+                }
+            }
+        }})
+    }
+
+    #[test]
+    fn get_min_stake_works() {
+        let mut chain_spec_json = chain_spec_with_stake();
+
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+        let min = get_staking_min(&pointer, &mut chain_spec_json);
+
+        assert_eq!(100000000000001, min);
+    }
     #[test]
     fn overrides_from_toml_works() {
         use serde::{Deserialize, Serialize};
@@ -1370,6 +1476,42 @@ mod tests {
 
         // assert 'balances' is not created
         assert_eq!(new_balances, None);
+    }
+
+    #[test]
+    fn add_staking_works() {
+        let mut chain_spec_json = chain_spec_with_stake();
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+        let min = get_staking_min(&pointer, &mut chain_spec_json);
+
+        let nodes = vec![node];
+        add_staking(&pointer, &mut chain_spec_json, &nodes, min);
+
+        let new_staking = chain_spec_json
+            .pointer("/genesis/runtimeGenesis/patch/staking")
+            .unwrap();
+
+        // stakers should be one (with the luca sr_stash accounts)
+        let sr_stash = nodes[0].accounts.accounts.get("sr_stash").unwrap();
+        assert_eq!(new_staking["stakers"][0][0], json!(sr_stash.address));
+        // with the calculated minimal bound
+        assert_eq!(new_staking["stakers"][0][2], json!(min));
+        // and only one
+        assert_eq!(new_staking["stakers"].as_array().unwrap().len(), 1);
     }
 
     #[test]

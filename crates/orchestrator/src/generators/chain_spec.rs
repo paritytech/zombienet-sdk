@@ -613,7 +613,10 @@ impl ChainSpec {
             })?;
             self.write_spec(scoped_fs, content).await?;
         } else {
-            warn!("⚠️ Chain Spec for chain {} is in raw mode, can't customize.", self.chain_spec_name);
+            warn!(
+                "⚠️ Chain Spec for chain {} is in raw mode, can't customize.",
+                self.chain_spec_name
+            );
         }
         Ok(())
     }

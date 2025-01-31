@@ -1,5 +1,5 @@
 [settings]
-timeout = 1000
+timeout = 3600
 node_spawn_timeout = 300
 
 [relaychain]

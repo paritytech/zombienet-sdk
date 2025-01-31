@@ -8,7 +8,10 @@ use std::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{
+    de::{self, IntoDeserializer},
+    Deserialize, Deserializer, Serialize,
+};
 use support::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
 use url::Url;
 
@@ -235,10 +238,17 @@ impl TryFrom<&str> for CommandWithCustomArgs {
         }
 
         let mut parts = value.split_whitespace().collect::<Vec<&str>>();
-        Ok(Self(
-            parts.remove(0).try_into().unwrap(),
-            parts.into_iter().map(|x| x.into()).collect(),
-        ))
+        let cmd = parts.remove(0).try_into().unwrap();
+        let args = parts
+            .iter()
+            .map(|x| {
+                Arg::deserialize(x.into_deserializer()).map_err(|_: serde_json::Error| {
+                    ConversionError::DeserializeError(String::from(*x))
+                })
+            })
+            .collect::<Result<Vec<Arg>, _>>()?;
+
+        Ok(Self(cmd, args))
     }
 }
 impl Default for CommandWithCustomArgs {

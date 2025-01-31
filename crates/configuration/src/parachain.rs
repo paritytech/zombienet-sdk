@@ -980,6 +980,50 @@ mod tests {
     }
 
     #[test]
+    fn parachain_config_builder_should_works_when_genesis_state_generator_contains_args() {
+        let parachain_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_chain("myparachain")
+            .with_genesis_state_generator("generator_state --simple-flag --flag=value")
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            parachain_config
+                .genesis_state_generator()
+                .unwrap()
+                .cmd()
+                .as_str(),
+            "generator_state"
+        );
+
+        assert_eq!(
+            parachain_config
+                .genesis_state_generator()
+                .unwrap()
+                .args()
+                .len(),
+            2
+        );
+
+        let args = parachain_config.genesis_state_generator().unwrap().args();
+
+        assert_eq!(
+            args,
+            &vec![
+                Arg::Flag("--simple-flag".into()),
+                Arg::Option("--flag".into(), "value".into())
+            ]
+        );
+    }
+
+    #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_chain_is_invalid() {
         let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)
@@ -1091,29 +1135,6 @@ mod tests {
         assert_eq!(
             errors.first().unwrap().to_string(),
             "parachain[2000].genesis_wasm_generator: 'invalid command' shouldn't contains whitespace"
-        );
-    }
-
-    #[test]
-    fn parachain_config_builder_should_fails_and_returns_an_error_if_genesis_state_generator_is_invalid(
-    ) {
-        let errors = ParachainConfigBuilder::new(Default::default())
-            .with_id(1000)
-            .with_chain("myparachain")
-            .with_genesis_state_generator("invalid command")
-            .with_collator(|collator| {
-                collator
-                    .with_name("collator")
-                    .with_command("command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.first().unwrap().to_string(),
-            "parachain[1000].genesis_state_generator: 'invalid command' shouldn't contains whitespace"
         );
     }
 

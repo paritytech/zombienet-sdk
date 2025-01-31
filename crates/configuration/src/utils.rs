@@ -20,8 +20,14 @@ pub(crate) fn default_initial_balance() -> crate::types::U128 {
     2_000_000_000_000.into()
 }
 
+/// Default timeout for spawning a node (5mins)
 pub(crate) fn default_node_spawn_timeout() -> Duration {
     300
+}
+
+/// Default timeout for spawning the whole network (1hr)
+pub(crate) fn default_timeout() -> Duration {
+    3600
 }
 
 pub(crate) fn default_command_polkadot() -> Option<Command> {

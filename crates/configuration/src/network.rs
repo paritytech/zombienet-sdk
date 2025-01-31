@@ -25,7 +25,7 @@ use crate::{
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkConfig {
-    #[serde(rename = "settings")]
+    #[serde(rename = "settings", default = "GlobalSettings::default")]
     global_settings: GlobalSettings,
     relaychain: Option<RelaychainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -1139,6 +1139,30 @@ mod tests {
                     loaded_node.initial_balance()
                 );
             });
+    }
+
+    #[test]
+    fn the_toml_config_without_settings_should_be_imported_and_match_a_network() {
+        let load_from_toml = NetworkConfig::load_from_toml(
+            "./testing/snapshots/0004-small-network-without-settings.toml",
+        )
+        .unwrap();
+
+        let expected = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_node(|node| node.with_name("alice"))
+                    .with_node(|node| node.with_name("bob"))
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            load_from_toml.global_settings().network_spawn_timeout(),
+            expected.global_settings().network_spawn_timeout()
+        )
     }
 
     #[test]

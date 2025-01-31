@@ -249,11 +249,6 @@ impl Default for CommandWithCustomArgs {
 
 impl CommandWithCustomArgs {
     pub fn cmd(&self) -> &Command {
-        // let args = self.1.iter().map(|x| x.into()).collect::<Vec<String>>();
-        // (&self.0.as_str(), &self.1)
-        // let a = &self.1[0];
-        // let b: &str = a
-        // (&self.0,&self.1)
         &self.0
     }
 

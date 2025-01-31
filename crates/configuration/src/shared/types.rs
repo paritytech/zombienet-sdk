@@ -8,7 +8,10 @@ use std::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{
+    de::{self, IntoDeserializer},
+    Deserialize, Deserializer, Serialize,
+};
 use support::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
 use url::Url;
 
@@ -207,6 +210,60 @@ impl Default for Command {
 impl Command {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+/// A command with optional custom arguments, the command will be executed natively (native provider) or in a container (podman/k8s).
+/// It can be constructed from an `&str`, if it fails, it will returns a [`ConversionError`].
+///
+/// # Examples:
+/// ```
+/// use zombienet_configuration::shared::types::CommandWithCustomArgs;
+///
+/// let command1: CommandWithCustomArgs = "mycommand --demo=2 --other-flag".try_into().unwrap();
+/// let command2: CommandWithCustomArgs = "my_other_cmd_without_args".try_into().unwrap();
+///
+/// assert_eq!(command1.cmd().as_str(), "mycommand");
+/// assert_eq!(command2.cmd().as_str(), "my_other_cmd_without_args");
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommandWithCustomArgs(Command, Vec<Arg>);
+
+impl TryFrom<&str> for CommandWithCustomArgs {
+    type Error = ConversionError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(ConversionError::CantBeEmpty);
+        }
+
+        let mut parts = value.split_whitespace().collect::<Vec<&str>>();
+        let cmd = parts.remove(0).try_into().unwrap();
+        let args = parts
+            .iter()
+            .map(|x| {
+                Arg::deserialize(x.into_deserializer()).map_err(|_: serde_json::Error| {
+                    ConversionError::DeserializeError(String::from(*x))
+                })
+            })
+            .collect::<Result<Vec<Arg>, _>>()?;
+
+        Ok(Self(cmd, args))
+    }
+}
+impl Default for CommandWithCustomArgs {
+    fn default() -> Self {
+        Self("polkadot".try_into().unwrap(), vec![])
+    }
+}
+
+impl CommandWithCustomArgs {
+    pub fn cmd(&self) -> &Command {
+        &self.0
+    }
+
+    pub fn args(&self) -> &Vec<Arg> {
+        &self.1
     }
 }
 

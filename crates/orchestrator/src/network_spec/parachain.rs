@@ -162,7 +162,7 @@ impl ParachainSpec {
             )
         } else {
             let cmd = if let Some(cmd) = config.genesis_state_generator() {
-                cmd
+                cmd.cmd()
             } else {
                 main_cmd
             };
@@ -180,13 +180,13 @@ impl ParachainSpec {
             )
         } else {
             let cmd = if let Some(cmd) = config.genesis_wasm_generator() {
-                cmd
+                cmd.as_str()
             } else {
-                main_cmd
+                main_cmd.as_str()
             };
             ParaArtifact::new(
                 ParaArtifactType::Wasm,
-                ParaArtifactBuildOption::Command(cmd.as_str().into()),
+                ParaArtifactBuildOption::Command(cmd.into()),
             )
             .image(main_image.clone())
         };

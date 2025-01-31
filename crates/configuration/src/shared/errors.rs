@@ -97,6 +97,9 @@ pub enum ConversionError {
 
     #[error("can't be empty")]
     CantBeEmpty,
+
+    #[error("deserialize error")]
+    DeserializeError(String),
 }
 
 /// A validation error for shared types across fields.

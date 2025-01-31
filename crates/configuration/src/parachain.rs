@@ -18,6 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
+    types::CommandWithCustomArgs,
     utils::{default_as_false, default_as_true, default_initial_balance, is_false},
 };
 
@@ -125,7 +126,7 @@ pub struct ParachainConfig {
     genesis_wasm_path: Option<AssetLocation>,
     genesis_wasm_generator: Option<Command>,
     genesis_state_path: Option<AssetLocation>,
-    genesis_state_generator: Option<Command>,
+    genesis_state_generator: Option<CommandWithCustomArgs>,
     chain_spec_path: Option<AssetLocation>,
     // Full _template_ command, will be rendered using [tera]
     // and executed for generate the chain-spec.
@@ -220,7 +221,7 @@ impl ParachainConfig {
     }
 
     /// The generator command used to create the genesis state of the parachain.
-    pub fn genesis_state_generator(&self) -> Option<&Command> {
+    pub fn genesis_state_generator(&self) -> Option<&CommandWithCustomArgs> {
         self.genesis_state_generator.as_ref()
     }
 
@@ -645,7 +646,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     /// Set the generator command used to create the genesis state of the parachain.
     pub fn with_genesis_state_generator<T>(self, command: T) -> Self
     where
-        T: TryInto<Command>,
+        T: TryInto<CommandWithCustomArgs>,
         T::Error: Error + Send + Sync + 'static,
     {
         match command.try_into() {
@@ -955,7 +956,11 @@ mod tests {
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/genesis/state"
         ));
         assert_eq!(
-            parachain_config.genesis_state_generator().unwrap().as_str(),
+            parachain_config
+                .genesis_state_generator()
+                .unwrap()
+                .cmd()
+                .as_str(),
             "generator_state"
         );
         assert!(matches!(
@@ -972,6 +977,50 @@ mod tests {
             bootnodes_addresses.iter().collect::<Vec<_>>()
         );
         assert!(!parachain_config.is_evm_based());
+    }
+
+    #[test]
+    fn parachain_config_builder_should_works_when_genesis_state_generator_contains_args() {
+        let parachain_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_chain("myparachain")
+            .with_genesis_state_generator("generator_state --simple-flag --flag=value")
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator")
+                    .with_command("command")
+                    .validator(true)
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            parachain_config
+                .genesis_state_generator()
+                .unwrap()
+                .cmd()
+                .as_str(),
+            "generator_state"
+        );
+
+        assert_eq!(
+            parachain_config
+                .genesis_state_generator()
+                .unwrap()
+                .args()
+                .len(),
+            2
+        );
+
+        let args = parachain_config.genesis_state_generator().unwrap().args();
+
+        assert_eq!(
+            args,
+            &vec![
+                Arg::Flag("--simple-flag".into()),
+                Arg::Option("--flag".into(), "value".into())
+            ]
+        );
     }
 
     #[test]
@@ -1086,29 +1135,6 @@ mod tests {
         assert_eq!(
             errors.first().unwrap().to_string(),
             "parachain[2000].genesis_wasm_generator: 'invalid command' shouldn't contains whitespace"
-        );
-    }
-
-    #[test]
-    fn parachain_config_builder_should_fails_and_returns_an_error_if_genesis_state_generator_is_invalid(
-    ) {
-        let errors = ParachainConfigBuilder::new(Default::default())
-            .with_id(1000)
-            .with_chain("myparachain")
-            .with_genesis_state_generator("invalid command")
-            .with_collator(|collator| {
-                collator
-                    .with_name("collator")
-                    .with_command("command")
-                    .validator(true)
-            })
-            .build()
-            .unwrap_err();
-
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.first().unwrap().to_string(),
-            "parachain[1000].genesis_state_generator: 'invalid command' shouldn't contains whitespace"
         );
     }
 

@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="This crate is used to create type safe configuration for Zombienet SDK using nested builders."><title>zombienet_configuration - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="zombienet_configuration" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.1 (e71f9a9a9 2025-01-27)" data-channel="1.84.1" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../static.files/storage-59e33391.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../zombienet_configuration/index.html">zombienet_<wbr>configuration</a><span class="version">0.2.22</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#example" title="Example">Example</a></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>zombienet_configuration</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/zombienet_configuration/lib.rs.html#1-97">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>This crate is used to create type safe configuration for Zombienet SDK using nested builders.</p>
+<p>The main entry point of this crate is the <a href="struct.NetworkConfigBuilder.html" title="struct zombienet_configuration::NetworkConfigBuilder"><code>NetworkConfigBuilder</code></a> which is used to build a full network configuration
+but all inner builders are also exposed to allow more granular control over the configuration.</p>
+<p><strong>Note</strong>: Not all options can be checked at compile time and some will be checked at runtime when spawning a
+network (e.g.: supported args for a specific node version).</p>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>zombienet_configuration::NetworkConfigBuilder;
+
+<span class="kw">let </span>simple_configuration = NetworkConfigBuilder::new()
+    .with_relaychain(|relaychain| {
+        relaychain
+            .with_chain(<span class="string">"polkadot"</span>)
+            .with_random_nominators_count(<span class="number">10</span>)
+            .with_default_resources(|resources| {
+                resources
+                    .with_limit_cpu(<span class="string">"1000m"</span>)
+                    .with_request_memory(<span class="string">"1Gi"</span>)
+                    .with_request_cpu(<span class="number">100_000</span>)
+            })
+            .with_node(|node| {
+                node.with_name(<span class="string">"node"</span>)
+                    .with_command(<span class="string">"command"</span>)
+                    .validator(<span class="bool-val">true</span>)
+            })
+    })
+    .with_parachain(|parachain| {
+        parachain
+            .with_id(<span class="number">1000</span>)
+            .with_chain(<span class="string">"myparachain1"</span>)
+            .with_initial_balance(<span class="number">100_000</span>)
+            .with_default_image(<span class="string">"myimage:version"</span>)
+            .with_collator(|collator| {
+                collator
+                    .with_name(<span class="string">"collator1"</span>)
+                    .with_command(<span class="string">"command1"</span>)
+                    .validator(<span class="bool-val">true</span>)
+            })
+    })
+    .with_parachain(|parachain| {
+        parachain
+            .with_id(<span class="number">2000</span>)
+            .with_chain(<span class="string">"myparachain2"</span>)
+            .with_initial_balance(<span class="number">50_0000</span>)
+            .with_collator(|collator| {
+                collator
+                    .with_name(<span class="string">"collator2"</span>)
+                    .with_command(<span class="string">"command2"</span>)
+                    .validator(<span class="bool-val">true</span>)
+            })
+    })
+    .with_hrmp_channel(|hrmp_channel1| {
+        hrmp_channel1
+            .with_sender(<span class="number">1</span>)
+            .with_recipient(<span class="number">2</span>)
+            .with_max_capacity(<span class="number">200</span>)
+            .with_max_message_size(<span class="number">500</span>)
+    })
+    .with_hrmp_channel(|hrmp_channel2| {
+        hrmp_channel2
+            .with_sender(<span class="number">2</span>)
+            .with_recipient(<span class="number">1</span>)
+            .with_max_capacity(<span class="number">100</span>)
+            .with_max_message_size(<span class="number">250</span>)
+    })
+    .with_global_settings(|global_settings| {
+        global_settings
+            .with_network_spawn_timeout(<span class="number">1200</span>)
+            .with_node_spawn_timeout(<span class="number">240</span>)
+    })
+    .build();
+
+<span class="macro">assert!</span>(simple_configuration.is_ok())</code></pre></div>
+</div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name" id="reexport.NodeConfig"><code>pub use shared::node::<a class="struct" href="shared/node/struct.NodeConfig.html" title="struct zombienet_configuration::shared::node::NodeConfig">NodeConfig</a>;</code></div></li><li><div class="item-name" id="reexport.types"><code>pub use shared::<a class="mod" href="shared/types/index.html" title="mod zombienet_configuration::shared::types">types</a>;</code></div></li></ul><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="para_states/index.html" title="mod zombienet_configuration::para_states">para_<wbr>states</a></div></li><li><div class="item-name"><a class="mod" href="shared/index.html" title="mod zombienet_configuration::shared">shared</a></div></li></ul><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.GlobalSettings.html" title="struct zombienet_configuration::GlobalSettings">Global<wbr>Settings</a></div><div class="desc docblock-short">Global settings applied to an entire network.</div></li><li><div class="item-name"><a class="struct" href="struct.GlobalSettingsBuilder.html" title="struct zombienet_configuration::GlobalSettingsBuilder">Global<wbr>Settings<wbr>Builder</a></div><div class="desc docblock-short">A global settings builder, used to build <a href="struct.GlobalSettings.html" title="struct zombienet_configuration::GlobalSettings"><code>GlobalSettings</code></a> declaratively with fields validation.</div></li><li><div class="item-name"><a class="struct" href="struct.HrmpChannelConfig.html" title="struct zombienet_configuration::HrmpChannelConfig">Hrmp<wbr>Channel<wbr>Config</a></div><div class="desc docblock-short">HRMP channel configuration, with fine-grained configuration options.</div></li><li><div class="item-name"><a class="struct" href="struct.HrmpChannelConfigBuilder.html" title="struct zombienet_configuration::HrmpChannelConfigBuilder">Hrmp<wbr>Channel<wbr>Config<wbr>Builder</a></div><div class="desc docblock-short">HRMP channel configuration builder, used to build an <a href="struct.HrmpChannelConfig.html" title="struct zombienet_configuration::HrmpChannelConfig"><code>HrmpChannelConfig</code></a> declaratively with fields validation.</div></li><li><div class="item-name"><a class="struct" href="struct.NetworkConfig.html" title="struct zombienet_configuration::NetworkConfig">Network<wbr>Config</a></div><div class="desc docblock-short">A network configuration, composed of a relaychain, parachains and HRMP channels.</div></li><li><div class="item-name"><a class="struct" href="struct.NetworkConfigBuilder.html" title="struct zombienet_configuration::NetworkConfigBuilder">Network<wbr>Config<wbr>Builder</a></div><div class="desc docblock-short">A network configuration builder, used to build a <a href="struct.NetworkConfig.html" title="struct zombienet_configuration::NetworkConfig"><code>NetworkConfig</code></a> declaratively with fields validation.</div></li><li><div class="item-name"><a class="struct" href="struct.ParachainConfig.html" title="struct zombienet_configuration::ParachainConfig">Parachain<wbr>Config</a></div><div class="desc docblock-short">A parachain configuration, composed of collators and fine-grained configuration options.</div></li><li><div class="item-name"><a class="struct" href="struct.ParachainConfigBuilder.html" title="struct zombienet_configuration::ParachainConfigBuilder">Parachain<wbr>Config<wbr>Builder</a></div><div class="desc docblock-short">A parachain configuration builder, used to build a <a href="struct.ParachainConfig.html" title="struct zombienet_configuration::ParachainConfig"><code>ParachainConfig</code></a> declaratively with fields validation.</div></li><li><div class="item-name"><a class="struct" href="struct.RelaychainConfig.html" title="struct zombienet_configuration::RelaychainConfig">Relaychain<wbr>Config</a></div><div class="desc docblock-short">A relay chain configuration, composed of nodes and fine-grained configuration options.</div></li><li><div class="item-name"><a class="struct" href="struct.RelaychainConfigBuilder.html" title="struct zombienet_configuration::RelaychainConfigBuilder">Relaychain<wbr>Config<wbr>Builder</a></div><div class="desc docblock-short">A relay chain configuration builder, used to build a <a href="struct.RelaychainConfig.html" title="struct zombienet_configuration::RelaychainConfig"><code>RelaychainConfig</code></a> declaratively with fields validation.</div></li></ul><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="enum" href="enum.RegistrationStrategy.html" title="enum zombienet_configuration::RegistrationStrategy">Registration<wbr>Strategy</a></div><div class="desc docblock-short">The registration strategy that will be used for the parachain.</div></li></ul></section></div></main></body></html>

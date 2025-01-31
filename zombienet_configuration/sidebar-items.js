@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RegistrationStrategy"],"mod":["para_states","shared"],"struct":["GlobalSettings","GlobalSettingsBuilder","HrmpChannelConfig","HrmpChannelConfigBuilder","NetworkConfig","NetworkConfigBuilder","ParachainConfig","ParachainConfigBuilder","RelaychainConfig","RelaychainConfigBuilder"]};

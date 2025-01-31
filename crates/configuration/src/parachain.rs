@@ -18,6 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
+    types::CommandWithCustomArgs,
     utils::{default_as_false, default_as_true, default_initial_balance, is_false},
 };
 
@@ -125,7 +126,7 @@ pub struct ParachainConfig {
     genesis_wasm_path: Option<AssetLocation>,
     genesis_wasm_generator: Option<Command>,
     genesis_state_path: Option<AssetLocation>,
-    genesis_state_generator: Option<Command>,
+    genesis_state_generator: Option<CommandWithCustomArgs>,
     chain_spec_path: Option<AssetLocation>,
     // Full _template_ command, will be rendered using [tera]
     // and executed for generate the chain-spec.
@@ -220,7 +221,7 @@ impl ParachainConfig {
     }
 
     /// The generator command used to create the genesis state of the parachain.
-    pub fn genesis_state_generator(&self) -> Option<&Command> {
+    pub fn genesis_state_generator(&self) -> Option<&CommandWithCustomArgs> {
         self.genesis_state_generator.as_ref()
     }
 
@@ -645,7 +646,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     /// Set the generator command used to create the genesis state of the parachain.
     pub fn with_genesis_state_generator<T>(self, command: T) -> Self
     where
-        T: TryInto<Command>,
+        T: TryInto<CommandWithCustomArgs>,
         T::Error: Error + Send + Sync + 'static,
     {
         match command.try_into() {
@@ -955,7 +956,11 @@ mod tests {
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/genesis/state"
         ));
         assert_eq!(
-            parachain_config.genesis_state_generator().unwrap().as_str(),
+            parachain_config
+                .genesis_state_generator()
+                .unwrap()
+                .cmd()
+                .as_str(),
             "generator_state"
         );
         assert!(matches!(

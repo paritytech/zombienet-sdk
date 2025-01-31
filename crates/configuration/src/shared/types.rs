@@ -210,6 +210,58 @@ impl Command {
     }
 }
 
+/// A command with optional custom arguments, the command will be executed natively (native provider) or in a container (podman/k8s).
+/// It can be constructed from an `&str`, if it fails, it will returns a [`ConversionError`].
+///
+/// # Examples:
+/// ```
+/// use zombienet_configuration::shared::types::CommandWithCustomArgs;
+///
+/// let command1: CommandWithCustomArgs = "mycommand --demo=2 --other-flag".try_into().unwrap();
+/// let command2: CommandWithCustomArgs = "my_other_cmd_without_args".try_into().unwrap();
+///
+/// assert_eq!(command1.cmd().as_str(), "mycommand");
+/// assert_eq!(command2.cmd().as_str(), "my_other_cmd_without_args");
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommandWithCustomArgs(Command, Vec<Arg>);
+
+impl TryFrom<&str> for CommandWithCustomArgs {
+    type Error = ConversionError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(ConversionError::CantBeEmpty);
+        }
+
+        let mut parts = value.split_whitespace().collect::<Vec<&str>>();
+        Ok(Self(
+            parts.remove(0).try_into().unwrap(),
+            parts.into_iter().map(|x| x.into()).collect(),
+        ))
+    }
+}
+impl Default for CommandWithCustomArgs {
+    fn default() -> Self {
+        Self("polkadot".try_into().unwrap(), vec![])
+    }
+}
+
+impl CommandWithCustomArgs {
+    pub fn cmd(&self) -> &Command {
+        // let args = self.1.iter().map(|x| x.into()).collect::<Vec<String>>();
+        // (&self.0.as_str(), &self.1)
+        // let a = &self.1[0];
+        // let b: &str = a
+        // (&self.0,&self.1)
+        &self.0
+    }
+
+    pub fn args(&self) -> &Vec<Arg> {
+        &self.1
+    }
+}
+
 /// A location for a locally or remotely stored asset.
 /// It can be constructed from an [`url::Url`], a [`std::path::PathBuf`] or an `&str`.
 ///

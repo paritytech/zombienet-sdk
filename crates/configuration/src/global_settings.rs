@@ -15,7 +15,7 @@ use crate::{
         helpers::{merge_errors, merge_errors_vecs},
         types::Duration,
     },
-    utils::default_node_spawn_timeout,
+    utils::{default_node_spawn_timeout, default_timeout},
 };
 
 /// Global settings applied to an entire network.
@@ -26,7 +26,7 @@ pub struct GlobalSettings {
     bootnodes_addresses: Vec<Multiaddr>,
     // TODO: parse both case in zombienet node version to avoid renamed ?
     /// Global spawn timeout
-    #[serde(rename = "timeout")]
+    #[serde(rename = "timeout", default = "default_timeout")]
     network_spawn_timeout: Duration,
     // TODO: not used yet
     /// Node spawn timeout
@@ -69,6 +69,18 @@ impl GlobalSettings {
     }
 }
 
+impl Default for GlobalSettings {
+    fn default() -> Self {
+        Self {
+            bootnodes_addresses: Default::default(),
+            network_spawn_timeout: default_timeout(),
+            node_spawn_timeout: default_node_spawn_timeout(),
+            local_ip: Default::default(),
+            base_dir: Default::default(),
+        }
+    }
+}
+
 /// A global settings builder, used to build [`GlobalSettings`] declaratively with fields validation.
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
@@ -80,8 +92,8 @@ impl Default for GlobalSettingsBuilder {
         Self {
             config: GlobalSettings {
                 bootnodes_addresses: vec![],
-                network_spawn_timeout: 1000,
-                node_spawn_timeout: 300,
+                network_spawn_timeout: default_timeout(),
+                node_spawn_timeout: default_node_spawn_timeout(),
                 local_ip: None,
                 base_dir: None,
             },

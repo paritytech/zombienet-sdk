@@ -836,9 +836,8 @@ fn percolate_overrides<'a>(
     trace!("top_level_key: {top_level_key}");
     let index = pointer_parts.iter().position(|x| *x == top_level_key);
     let Some(i) = index else {
-        return Err(anyhow!(
-            "Top level key {top_level_key} should be in the pointer: {pointer}"
-        ));
+        warn!("Top level key '{top_level_key}' isn't part of the pointer ({pointer}), returning without percolating");
+        return Ok(overrides);
     };
 
     let p = if i == pointer_parts.len() - 1 {

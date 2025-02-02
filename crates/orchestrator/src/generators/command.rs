@@ -49,6 +49,7 @@ pub fn generate_for_cumulus_node(
     options: GenCmdOptions,
     para_id: u32,
     full_p2p_port: u16,
+    full_prometheus_port: u16,
 ) -> (String, Vec<String>) {
     let NodeSpec {
         key,
@@ -120,7 +121,8 @@ pub fn generate_for_cumulus_node(
         tmp_args.push(full_bootnodes.join(" "));
     }
 
-    let mut full_node_p2p_needs_to_be_injected = false;
+    let mut full_node_p2p_needs_to_be_injected = true;
+    let mut full_node_prometheus_needs_to_be_injected = true;
     let mut full_node_args_filtered = full_node_args
         .iter()
         .filter_map(|arg| match arg {
@@ -134,9 +136,24 @@ pub fn generate_for_cumulus_node(
             Arg::Option(k, v) => {
                 if OPS_ADDED_BY_US.contains(&k.as_str()) {
                     None
-                } else if k.eq(&"port") && v.eq(&"30333") {
-                    full_node_p2p_needs_to_be_injected = true;
-                    None
+                } else if k.eq(&"port") {
+                    if v.eq(&"30333") {
+                        full_node_p2p_needs_to_be_injected = true;
+                        None
+                    } else {
+                        // non default
+                        full_node_p2p_needs_to_be_injected = false;
+                        Some(vec![k.to_owned(), v.to_owned()])
+                    }
+                } else if  k.eq(&"--prometheus-port") {
+                    if v.eq(&"9616") {
+                        full_node_prometheus_needs_to_be_injected = true;
+                        None
+                    } else {
+                        // non default
+                        full_node_prometheus_needs_to_be_injected = false;
+                        Some(vec![k.to_owned(), v.to_owned()])
+                    }
                 } else {
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
@@ -145,9 +162,17 @@ pub fn generate_for_cumulus_node(
         .flatten()
         .collect::<Vec<String>>();
 
-    // change p2p port if is the default
-    full_node_args_filtered.push("--port".into());
-    full_node_args_filtered.push(full_p2p_port.to_string());
+    // full_node: change p2p port if is the default
+    if full_node_p2p_needs_to_be_injected {
+        full_node_args_filtered.push("--port".into());
+        full_node_args_filtered.push(full_p2p_port.to_string());
+    }
+
+    // full_node: change prometheus port if is the default
+    if full_node_prometheus_needs_to_be_injected {
+        full_node_args_filtered.push("--prometheus-port".into());
+        full_node_args_filtered.push(full_prometheus_port.to_string());
+    }
 
     let mut args_filtered = collator_args
         .iter()
@@ -365,4 +390,47 @@ fn resolve_ports(node: &NodeSpec, use_default_ports_in_cmd: bool) -> (u16, u16, 
     } else {
         (node.prometheus_port.0, node.rpc_port.0, node.p2p_port.0)
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::{generators, shared::types::NodeAccounts};
+
+    use super::*;
+
+    #[test]
+    fn generate_for_cumulus_node_works() {
+        let mut name = String::from("luca");
+        let initial_balance = 1_000_000_000_000_u128;
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            initial_balance,
+            ..Default::default()
+        };
+
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_cumulus_node(&node, opts,1000, 60001, 60002);
+        assert_eq!(program.as_str(), "polkadot");
+
+        let divider_flag = args.iter().position(|x| x == "--").unwrap();
+
+        // ensure full node ports
+        let i = args[divider_flag..].iter().position(|x| x == "60001").unwrap();
+        assert_eq!(&args[divider_flag + i -1], "--port");
+
+        let i = args[divider_flag..].iter().position(|x| x == "60002").unwrap();
+        assert_eq!(&args[divider_flag + i -1], "--prometheus-port");
+    }
+
 }

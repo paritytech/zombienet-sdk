@@ -142,7 +142,8 @@ where
                 "parachain must be part of the context {THIS_IS_A_BUG}"
             ));
             let full_p2p = generators::generate_node_port(None)?;
-            generators::generate_node_command_cumulus(node, gen_opts, para.id, full_p2p.0)
+            let full_prometheus = generators::generate_node_port(None)?;
+            generators::generate_node_command_cumulus(node, gen_opts, para.id, full_p2p.0, full_prometheus.0)
         },
         _ => unreachable!(), /* TODO: do we need those?
                               * ZombieRole::Bootnode => todo!(),

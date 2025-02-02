@@ -145,7 +145,7 @@ pub fn generate_for_cumulus_node(
                         full_node_p2p_needs_to_be_injected = false;
                         Some(vec![k.to_owned(), v.to_owned()])
                     }
-                } else if  k.eq(&"--prometheus-port") {
+                } else if k.eq(&"--prometheus-port") {
                     if v.eq(&"9616") {
                         full_node_prometheus_needs_to_be_injected = true;
                         None
@@ -392,12 +392,10 @@ fn resolve_ports(node: &NodeSpec, use_default_ports_in_cmd: bool) -> (u16, u16, 
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::{generators, shared::types::NodeAccounts};
-
     use super::*;
+    use crate::{generators, shared::types::NodeAccounts};
 
     #[test]
     fn generate_for_cumulus_node_works() {
@@ -420,17 +418,22 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_cumulus_node(&node, opts,1000, 60001, 60002);
+        let (program, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
         assert_eq!(program.as_str(), "polkadot");
 
         let divider_flag = args.iter().position(|x| x == "--").unwrap();
 
         // ensure full node ports
-        let i = args[divider_flag..].iter().position(|x| x == "60001").unwrap();
-        assert_eq!(&args[divider_flag + i -1], "--port");
+        let i = args[divider_flag..]
+            .iter()
+            .position(|x| x == "60001")
+            .unwrap();
+        assert_eq!(&args[divider_flag + i - 1], "--port");
 
-        let i = args[divider_flag..].iter().position(|x| x == "60002").unwrap();
-        assert_eq!(&args[divider_flag + i -1], "--prometheus-port");
+        let i = args[divider_flag..]
+            .iter()
+            .position(|x| x == "60002")
+            .unwrap();
+        assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
     }
-
 }

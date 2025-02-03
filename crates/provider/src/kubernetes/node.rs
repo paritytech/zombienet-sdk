@@ -15,7 +15,7 @@ use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 use url::Url;
 
 use super::{
@@ -727,7 +727,7 @@ where
             .pod_exec(
                 &self.namespace_name(),
                 &self.name,
-                vec!["echo", "pause", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo pause > /tmp/zombiepipe"],
             )
             .await
             .map_err(|err| ProviderError::PauseNodeFailed(self.name.to_string(), err.into()))?
@@ -746,7 +746,7 @@ where
             .pod_exec(
                 &self.namespace_name(),
                 &self.name,
-                vec!["echo", "resume", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo resume > /tmp/zombiepipe"],
             )
             .await
             .map_err(|err| ProviderError::ResumeNodeFailed(self.name.to_string(), err.into()))?
@@ -769,7 +769,7 @@ where
             .pod_exec(
                 &self.namespace_name(),
                 &self.name,
-                vec!["echo", "restart", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo restart > /tmp/zombiepipe"],
             )
             .await
             .map_err(|err| ProviderError::RestartNodeFailed(self.name.to_string(), err.into()))?

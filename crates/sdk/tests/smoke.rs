@@ -164,11 +164,11 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .unwrap();
 
     // pause / resume
-    alice.pause().await.unwrap();
+    let alice = network.get_node("alice").unwrap();
     let res_err = alice
         .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await;
-    assert!(r.is_err());
+    assert!(res_err.is_err());
 
     alice.resume().await.unwrap();
     alice

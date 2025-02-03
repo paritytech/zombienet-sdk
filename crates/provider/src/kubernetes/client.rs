@@ -237,6 +237,7 @@ impl KubernetesClient {
     where
         S: Into<String> + std::fmt::Debug + Send,
     {
+        trace!("running command: {command:?} on pod {name} for ns {namespace}");
         let mut process = Api::<Pod>::namespaced(self.inner.clone(), namespace)
             .exec(
                 name,

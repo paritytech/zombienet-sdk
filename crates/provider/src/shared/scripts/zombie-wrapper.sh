@@ -82,6 +82,9 @@ start() {
         # store pid
         $ECHO ${child_pid} > $ZOMBIE_CMD_PID
 
+        # sleep a few secs to detect errors bootstraping the node
+        sleep 3
+
         # check if the process is running
         if ! $LS /proc/$child_pid > /dev/null 2>&1 ; then
             echo "child process doesn't exist, quiting...";
@@ -110,13 +113,17 @@ restart() {
 
 pause() {
     if [ ! -z "${child_pid}" ]; then
+        echo "send -STOP to process $child_pid"
         $KILL -STOP "$child_pid"
+        echo "result $?"
     fi
 }
 
 resume() {
     if [ ! -z "${child_pid}" ]; then
+        echo "send -CONT to process $child_pid"
         $KILL -CONT "$child_pid"
+        echo "result $?"
     fi
 }
 

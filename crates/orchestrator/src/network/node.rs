@@ -204,17 +204,11 @@ impl NetworkNode {
         predicate: impl Fn(f64) -> bool,
     ) -> Result<bool, anyhow::Error> {
         let metric_name = metric_name.into();
+        // reload metrics
+        self.fetch_metrics().await?;
         let val = self.metric(&metric_name, true).await?;
-        trace!("🔎 Current value {val} passed to the predicated? (from cache)");
-        if predicate(val) {
-            Ok(true)
-        } else {
-            // reload metrics
-            self.fetch_metrics().await?;
-            let val = self.metric(&metric_name, true).await?;
-            trace!("🔎 Current value {val} passed to the predicated?");
-            Ok(predicate(val))
-        }
+        trace!("🔎 Current value {val} passed to the predicated?");
+        Ok(predicate(val))
     }
 
     // Wait methods for metrics

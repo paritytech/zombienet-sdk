@@ -168,6 +168,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let res_err = alice
         .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await;
+    println!("{:?}", res_err);
     assert!(res_err.is_err());
 
     alice.resume().await.unwrap();

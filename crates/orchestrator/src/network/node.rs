@@ -227,6 +227,8 @@ impl NetworkNode {
     ) -> Result<(), anyhow::Error> {
         let metric_name = metric_name.into();
         debug!("waiting until metric {metric_name} pass the predicate");
+        // reload metrics first just in case we read old info
+        self.fetch_metrics().await?;
         loop {
             let res = self.assert_with(&metric_name, &predicate).await;
             match res {

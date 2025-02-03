@@ -15,7 +15,7 @@ use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 use url::Url;
 
 use super::{

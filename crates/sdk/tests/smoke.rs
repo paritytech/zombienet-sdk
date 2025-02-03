@@ -166,13 +166,13 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // pause / resume
     alice.pause().await.unwrap();
     let res_err = alice
-        .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5)
+        .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await;
     assert!(r.is_err());
 
     alice.resume().await.unwrap();
     alice
-        .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5)
+        .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await
         .unwrap();
 

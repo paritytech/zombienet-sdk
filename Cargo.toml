@@ -31,7 +31,7 @@ serde_yaml = "0.9"
 toml = "0.8.19"
 tokio = "1.28"
 tokio-util = "0.7"
-reqwest = "0.11"
+reqwest = "0.12.9"
 regex = "1.8"
 lazy_static = "1.4"
 multiaddr = "0.18"
@@ -58,6 +58,7 @@ tower-http = { version = "0.5" }
 tracing-subscriber = { version = "0.3" }
 glob-match = "0.2.1"
 libsecp256k1 = { version = "0.7.1", default-features = false }
+pjs-rs = { version = "0.1.4" }
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.2.24", path = "crates/support" }

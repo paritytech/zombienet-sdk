@@ -39,7 +39,7 @@ tracing = { workspace = true }
 reqwest = { workspace = true }
 regex = { workspace = true }
 url = { workspace = true }
-flate2 = "1.0"
+flate2 = { workspace = true }
 
 # Zomebienet deps
 support = { workspace = true }

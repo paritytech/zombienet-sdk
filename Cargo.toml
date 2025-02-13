@@ -31,7 +31,7 @@ serde_yaml = "0.9"
 toml = "0.8.19"
 tokio = "1.28"
 tokio-util = "0.7"
-reqwest = "0.11"
+reqwest = "0.12.9"
 regex = "1.8"
 lazy_static = "1.4"
 multiaddr = "0.18"
@@ -44,20 +44,22 @@ rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
 sp-core = "35.0.0"
-libp2p = { version = "0.54.1" }
-subxt = { version = "0.38" }
+libp2p = "0.54.1"
+subxt = "0.38"
 subxt-signer = { version = "0.38", features = ["subxt"] }
 tracing = "0.1.35"
 kube = "0.87.1"
 k8s-openapi = "0.20.0"
 tar = "0.4"
-axum = { version = "0.7" }
-axum-extra = { version = "0.9" }
-tower = { version = "0.4" }
-tower-http = { version = "0.5" }
-tracing-subscriber = { version = "0.3" }
+axum = "0.7"
+axum-extra = "0.9"
+tower = "0.4"
+tower-http = "0.5"
+tracing-subscriber = "0.3"
 glob-match = "0.2.1"
 libsecp256k1 = { version = "0.7.1", default-features = false }
+pjs-rs = "0.1.4"
+flate2 = "1.0"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.2.24", path = "crates/support" }

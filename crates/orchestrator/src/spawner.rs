@@ -240,7 +240,7 @@ where
         node.name
     );
     info!(
-        "💻 {}: direct link (papi) https://dev.papi.how/explorer#networkId=custom&endpoint={wsUri}",
+        "💻 {}: direct link (papi) https://dev.papi.how/explorer#networkId=custom&endpoint={ws_uri}",
         node.name
     );
 

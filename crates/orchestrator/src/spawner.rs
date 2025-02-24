@@ -236,9 +236,14 @@ where
     let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
     info!("🚀 {}, should be running now", node.name);
     info!(
-        "💻 {}: direct link https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
+        "💻 {}: direct link (pjs) https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",
         node.name
     );
+    info!(
+        "💻 {}: direct link (papi) https://dev.papi.how/explorer#networkId=custom&endpoint={wsUri}",
+        node.name
+    );
+
     info!("📊 {}: metrics link {prometheus_uri}", node.name);
 
     info!("📓 logs cmd: {}", running_node.log_cmd());

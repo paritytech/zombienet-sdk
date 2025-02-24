@@ -563,7 +563,8 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
             self.base_dir,
             path.as_ref().to_string_lossy()
         ));
-        self.fs.create_dir(path).await}
+        self.fs.create_dir(path).await
+    }
 
     async fn create_dir_all(&self, path: impl AsRef<Path>) -> Result<(), FileSystemError> {
         let path = PathBuf::from(format!(
@@ -571,7 +572,8 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
             self.base_dir,
             path.as_ref().to_string_lossy()
         ));
-        self.fs.create_dir_all(path).await}
+        self.fs.create_dir_all(path).await
+    }
 
     async fn write(
         &self,
@@ -586,7 +588,8 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
             PathBuf::from(format!("{}/{}", self.base_dir, path.to_string_lossy()))
         };
 
-        self.fs.write(full_path, contents).await}
+        self.fs.write(full_path, contents).await
+    }
 }
 
 #[derive(Clone, Debug)]

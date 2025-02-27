@@ -857,7 +857,6 @@ mod tests {
                     .with_default_command("polkadot")
                     .with_default_image("docker.io/parity/polkadot:latest")
                     .with_default_args(vec![("-lparachain", "debug").into()])
-                    .with_wasm_override("/some/path/runtime.wasm")
                     .with_node(|node| node.with_name("alice").validator(true))
                     .with_node(|node| {
                         node.with_name("bob")

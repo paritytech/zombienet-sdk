@@ -50,6 +50,9 @@ pub struct RelaychainSpec {
     /// Genesis overrides as JSON value.
     pub(crate) runtime_genesis_patch: Option<serde_json::Value>,
 
+    /// Wasm override path/url to use.
+    pub(crate) wasm_override: Option<AssetLocation>,
+
     /// Nodes to run.
     pub(crate) nodes: Vec<NodeSpec>,
 }
@@ -128,6 +131,7 @@ impl RelaychainSpec {
             default_image: config.default_image().cloned(),
             default_resources: config.default_resources().cloned(),
             default_db_snapshot: config.default_db_snapshot().cloned(),
+            wasm_override: config.wasm_override().cloned(),
             default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec,
             random_nominators_count: config.random_nominators_count().unwrap_or(0),

@@ -41,6 +41,8 @@ pub struct RelaychainConfig {
     nodes: Vec<NodeConfig>,
     #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     runtime_genesis_patch: Option<serde_json::Value>,
+    // Path or url to override the runtime (:code) in the chain-spec
+    wasm_override: Option<AssetLocation>,
     command: Option<Command>,
 }
 
@@ -78,6 +80,11 @@ impl RelaychainConfig {
     /// The location of an pre-existing chain specification for the relay chain.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
+    }
+
+    /// The location of a wasm runtime to override in the chain-spec.
+    pub fn wasm_override(&self) -> Option<&AssetLocation> {
+        self.wasm_override.as_ref()
     }
 
     /// The full _template_ command to genera the chain-spec
@@ -148,6 +155,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_args: vec![],
                 chain_spec_path: None,
                 chain_spec_command: None,
+                wasm_override: None,
                 chain_spec_command_is_local: false, // remote cmd by default
                 command: None,
                 random_nominators_count: None,
@@ -332,6 +340,18 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the location of a wasm to override the chain-spec.
+    pub fn with_wasm_override(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            RelaychainConfig {
+                wasm_override: Some(location.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the chain-spec command _template_ for the relay chain.
     pub fn with_chain_spec_command(self, cmd_template: impl Into<String>) -> Self {
         Self::transition(
@@ -492,6 +512,7 @@ mod tests {
             })
             .with_default_db_snapshot("https://www.urltomysnapshot.com/file.tgz")
             .with_chain_spec_path("./path/to/chain/spec.json")
+            .with_wasm_override("./path/to/override/runtime.wasm")
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
@@ -533,6 +554,10 @@ mod tests {
         assert!(matches!(
             relaychain_config.chain_spec_path().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"
+        ));
+        assert!(matches!(
+            relaychain_config.wasm_override().unwrap(),
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/runtime.wasm"
         ));
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(

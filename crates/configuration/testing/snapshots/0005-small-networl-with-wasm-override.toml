@@ -1,0 +1,17 @@
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+wasm_override = "/some/path/runtime.wasm"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 1000
+wasm_override = "https://some.com/runtime.wasm"
+
+[parachains.collator]
+name = "john"

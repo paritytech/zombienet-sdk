@@ -70,6 +70,9 @@ pub struct ParachainSpec {
     /// Genesis overrides as JSON value.
     pub(crate) genesis_overrides: Option<serde_json::Value>,
 
+    /// Wasm override path/url to use.
+    pub(crate) wasm_override: Option<AssetLocation>,
+
     /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
 }
@@ -197,6 +200,7 @@ impl ParachainSpec {
             default_image: config.default_image().cloned(),
             default_resources: config.default_resources().cloned(),
             default_db_snapshot: config.default_db_snapshot().cloned(),
+            wasm_override: config.wasm_override().cloned(),
             default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec,
             registration_strategy: config
@@ -275,12 +279,19 @@ impl ParachainSpec {
             debug!("parachain chain-spec customized!");
             chain_spec.build_raw(ns, scoped_fs).await?;
             debug!("parachain chain-spec raw built!");
+
+            // override wasm if needed
+            if let Some(ref wasm_override) = self.wasm_override {
+                chain_spec.override_code(scoped_fs, wasm_override).await?;
+            }
+
             let chain_spec_raw_path =
                 chain_spec
                     .raw_path()
                     .ok_or(OrchestratorError::InvariantError(
                         "chain-spec raw path should be set now",
                     ))?;
+
             Some(chain_spec_raw_path.to_path_buf())
         } else {
             None

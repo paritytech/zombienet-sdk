@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::json;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::process::Command;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::errors::GeneratorError;
 use crate::{
@@ -331,6 +331,58 @@ impl ChainSpec {
         }
 
         self.raw_path = Some(raw_spec_path);
+
+        Ok(())
+    }
+
+    /// Override the :code in chain-spec raw version
+    pub async fn override_code<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        wasm_override: &AssetLocation,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // first ensure we have the raw version of the chain-spec
+        let Some(_) = self.raw_path else {
+            return Err(GeneratorError::OverridingWasm(String::from(
+                "Raw path should be set at this point.",
+            )));
+        };
+        let (content, _) = self.read_spec(scoped_fs).await?;
+        // read override wasm
+        let override_content = wasm_override.get_asset().await.map_err(|_| {
+            GeneratorError::OverridingWasm(format!(
+                "Can not get asset to override wasm, asset: {}",
+                wasm_override
+            ))
+        })?;
+
+        // read spec  to json value
+        let mut chain_spec_json: serde_json::Value =
+            serde_json::from_str(&content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+
+        // override :code
+        let Some(code) = chain_spec_json.pointer_mut("/genesis/raw/top/0x3a636f6465") else {
+            return Err(GeneratorError::OverridingWasm(String::from(
+                "Pointer '/genesis/raw/top/0x3a636f6465' should be valid in the raw spec.",
+            )));
+        };
+
+        info!(
+            "🖋  Overriding ':code' (0x3a636f6465) in raw chain-spec with content of {}",
+            wasm_override
+        );
+        *code = json!(format!("0x{}", hex::encode(override_content)));
+
+        let overrided_content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
+        })?;
+        // save it
+        self.write_spec(scoped_fs, overrided_content).await?;
 
         Ok(())
     }

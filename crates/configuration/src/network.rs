@@ -1671,8 +1671,8 @@ mod tests {
             })
             .with_parachain(|p| {
                 p.with_id(1000)
-                .with_wasm_override("https://some.com/runtime.wasm")
-                .with_collator(|c| c.with_name("john"))
+                    .with_wasm_override("https://some.com/runtime.wasm")
+                    .with_collator(|c| c.with_name("john"))
             })
             .build()
             .unwrap();

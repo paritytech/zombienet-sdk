@@ -17,4 +17,6 @@ pub enum GeneratorError {
     IdentityGeneration(String),
     #[error("Generating bootnode address, err {0}")]
     BootnodeAddrGeneration(String),
+    #[error("Error overriding wasm on raw chain-spec, err {0}")]
+    OverridingWasm(String),
 }

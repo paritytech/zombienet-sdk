@@ -180,6 +180,15 @@ where
             .build_raw(&ns, &scoped_fs)
             .await?;
 
+        // override wasm if needed
+        if let Some(ref wasm_override) = network_spec.relaychain.wasm_override {
+            network_spec
+                .relaychain
+                .chain_spec
+                .override_code(&scoped_fs, wasm_override)
+                .await?;
+        }
+
         let (bootnodes, relaynodes) = split_nodes_by_bootnodes(&network_spec.relaychain.nodes);
 
         // TODO: we want to still supporting spawn a dedicated bootnode??

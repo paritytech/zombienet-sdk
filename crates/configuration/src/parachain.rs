@@ -128,6 +128,8 @@ pub struct ParachainConfig {
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<CommandWithCustomArgs>,
     chain_spec_path: Option<AssetLocation>,
+    // Path or url to override the runtime (:code) in the chain-spec
+    wasm_override: Option<AssetLocation>,
     // Full _template_ command, will be rendered using [tera]
     // and executed for generate the chain-spec.
     // available tokens {{chainName}} / {{disableBootnodes}}
@@ -268,6 +270,11 @@ impl ParachainConfig {
         }
         cols
     }
+
+    /// The location of a wasm runtime to override in the chain-spec.
+    pub fn wasm_override(&self) -> Option<&AssetLocation> {
+        self.wasm_override.as_ref()
+    }
 }
 
 pub mod states {
@@ -320,6 +327,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 genesis_overrides: None,
                 chain_spec_path: None,
                 chain_spec_command: None,
+                wasm_override: None,
                 chain_spec_command_is_local: false, // remote by default
                 is_cumulus_based: true,
                 is_evm_based: false,
@@ -705,6 +713,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Set the location of a wasm to override the chain-spec.
+    pub fn with_wasm_override(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                wasm_override: Some(location.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set if the chain-spec command needs to be run locally or not (false by default)
     pub fn chain_spec_command_is_local(self, choice: bool) -> Self {
         Self::transition(
@@ -879,6 +899,7 @@ mod tests {
             .with_genesis_state_path("./path/to/genesis/state")
             .with_genesis_state_generator("generator_state")
             .with_chain_spec_path("./path/to/chain/spec.json")
+            .with_wasm_override("./path/to/override/runtime.wasm")
             .cumulus_based(false)
             .evm_based(false)
             .with_bootnodes_addresses(vec![
@@ -937,6 +958,10 @@ mod tests {
         assert!(matches!(
             parachain_config.chain_spec_path().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"
+        ));
+        assert!(matches!(
+            parachain_config.wasm_override().unwrap(),
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/runtime.wasm"
         ));
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(

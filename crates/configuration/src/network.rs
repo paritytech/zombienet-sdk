@@ -68,6 +68,16 @@ impl NetworkConfig {
     }
 
     /// A helper function to load a network configuration from a TOML file.
+    pub fn load_from_toml_with_settings(
+        path: &str,
+        settings: &GlobalSettings,
+    ) -> Result<NetworkConfig, anyhow::Error> {
+        let mut network_config = NetworkConfig::load_from_toml(path)?;
+        network_config.global_settings = settings.clone();
+        Ok(network_config)
+    }
+
+    /// A helper function to load a network configuration from a TOML file.
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
         let file_str = fs::read_to_string(path).expect(&format!("{} {}", RW_FAILED, THIS_IS_A_BUG));
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
@@ -495,6 +505,8 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::parachain::RegistrationStrategy;
 
@@ -1064,6 +1076,25 @@ mod tests {
         let expected =
             fs::read_to_string("./testing/snapshots/0002-overridden-defaults.toml").unwrap();
         assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn the_toml_config_with_custom_settings() {
+        let settings = GlobalSettingsBuilder::new()
+            .with_base_dir("/tmp/test-demo")
+            .build()
+            .unwrap();
+
+        let load_from_toml = NetworkConfig::load_from_toml_with_settings(
+            "./testing/snapshots/0000-small-network.toml",
+            &settings,
+        )
+        .unwrap();
+
+        assert_eq!(
+            Some(PathBuf::from("/tmp/test-demo").as_path()),
+            load_from_toml.global_settings.base_dir()
+        );
     }
 
     #[test]

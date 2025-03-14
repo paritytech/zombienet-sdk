@@ -73,7 +73,7 @@ impl PodSpecBuilder {
     fn build_helper_binaries_setup_container() -> Container {
         Container {
             name: "helper-binaries-setup".to_string(),
-            image: Some("docker.io/alpine:latest".to_string()),
+            image: Some("europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/alpine:latest".to_string()),
             image_pull_policy: Some("IfNotPresent".to_string()),
             volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
                 name: "helper-binaries-downloader-volume".to_string(),

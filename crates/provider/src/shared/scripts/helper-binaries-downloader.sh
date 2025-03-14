@@ -9,14 +9,26 @@ log() {
 # where some node files are stored
 OUTDIR=$([ -d /helpers ] && echo "/helpers" || echo "/cfg")
 
-wget github.com/moparisthebest/static-curl/releases/download/v7.83.1/curl-amd64 -O "$OUTDIR/curl"
-log "curl downloaded"
+# Allow to use our image and just cp'd the binaries.
+
+if [ -f /tmp/curl ]; then
+    cp /tmp/curl $OUTDIR/curl
+    log "curl copied"
+else
+    wget github.com/moparisthebest/static-curl/releases/download/v7.83.1/curl-amd64 -O "$OUTDIR/curl"
+    log "curl downloaded"
+fi;
 
 chmod +x "$OUTDIR/curl"
 log "curl chmoded"
 
-wget -qO- github.com/uutils/coreutils/releases/download/0.0.17/coreutils-0.0.17-x86_64-unknown-linux-musl.tar.gz | tar -xz -C $OUTDIR --strip-components=1 coreutils-0.0.17-x86_64-unknown-linux-musl/coreutils
-log "coreutils downloaded"
+if [ -f /tmp/coreutils ]; then
+    cp /tmp/coreutils $OUTDIR/coreutils
+    log "coreutils copied"
+else
+    wget -qO- github.com/uutils/coreutils/releases/download/0.0.17/coreutils-0.0.17-x86_64-unknown-linux-musl.tar.gz | tar -xz -C $OUTDIR --strip-components=1 coreutils-0.0.17-x86_64-unknown-linux-musl/coreutils
+    log "coreutils downloaded"
+fi;
 
 chmod +x "$OUTDIR/coreutils"
 log "coreutils chmoded"

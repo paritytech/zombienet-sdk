@@ -478,15 +478,25 @@ fn validate_spec_with_provider_capabilities(
         for cmd in cmds {
             let missing = if cmd.contains('/') {
                 trace!("checking {cmd}");
-                std::fs::metadata(cmd).is_err()
+                if std::fs::metadata(cmd).is_err() {
+                    true
+                } else {
+                    info!("🔎  We will use the full path {cmd} to spawn nodes.");
+                    false
+                }
             } else {
                 // should be in the PATH
                 !parts.iter().any(|part| {
                     let path_to = format!("{}/{}", part, cmd);
                     trace!("checking {path_to}");
-                    let check_result = std::fs::metadata(path_to);
+                    let check_result = std::fs::metadata(&path_to);
                     trace!("result {:?}", check_result);
-                    check_result.is_ok()
+                    if check_result.is_ok() {
+                        info!("🔎  We will use the cmd: '{cmd}' at path {path_to} to spawn nodes.");
+                        true
+                    } else {
+                        false
+                    }
                 })
             };
 

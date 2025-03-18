@@ -3,8 +3,11 @@ use std::{cell::RefCell, fs, marker::PhantomData, rc::Rc};
 use anyhow::anyhow;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use support::constants::{
-    NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX,
+use support::{
+    constants::{
+        NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX,
+    },
+    replacer::apply_env_replacements,
 };
 use tracing::trace;
 
@@ -85,6 +88,9 @@ impl NetworkConfig {
 
         let toml_text = re.replace_all(&file_str, "$field_name = \"$u128_value\"");
         trace!("toml text to parse: {}", toml_text);
+        // apply replacements from env in toml
+        let toml_text = apply_env_replacements(&toml_text);
+        trace!("toml text after replacements: {}", toml_text);
         let mut network_config: NetworkConfig = toml::from_str(&toml_text)?;
         trace!("parsed config {network_config:#?}");
 

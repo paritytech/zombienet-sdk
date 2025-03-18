@@ -10,6 +10,7 @@ members = [
   #"crates/test-runner",
   "crates/prom-metrics-parser",
   "crates/file-server",
+  "crates/cli",
 ]
 
 [workspace.package]

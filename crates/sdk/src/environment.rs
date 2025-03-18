@@ -18,6 +18,16 @@ pub enum Provider {
     Docker,
 }
 
+impl Provider {
+    pub fn get_spawn_fn(&self) -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResult> + Send>> {
+        match self {
+            Provider::Native => NetworkConfigExt::spawn_native,
+            Provider::K8s => NetworkConfigExt::spawn_k8s,
+            Provider::Docker => NetworkConfigExt::spawn_docker,
+        }
+    }
+}
+
 // Use `docker` as default provider
 impl From<String> for Provider {
     fn from(value: String) -> Self {

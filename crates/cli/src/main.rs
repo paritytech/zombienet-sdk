@@ -1,4 +1,4 @@
-use std::{env, time::Duration};
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use zombienet_sdk::{environment::Provider, NetworkConfig};

@@ -19,6 +19,21 @@ pub fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>) -> Str
     augmented_text.to_string()
 }
 
+pub fn apply_env_replacements(text: &str) -> String {
+    let re = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#)
+        .unwrap_or_else(|_| panic!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
+
+    let augmented_text = re.replace_all(text, |caps: &Captures| {
+        if let Ok(replacements_value) = std::env::var(&caps[1]) {
+            replacements_value
+        } else {
+            caps[0].to_string()
+        }
+    });
+
+    augmented_text.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -29,6 +44,16 @@ mod tests {
         let mut replacements = HashMap::new();
         replacements.insert("namespace", "demo-123");
         let res = apply_replacements(text, &replacements);
+        assert_eq!("some demo-123".to_string(), res);
+    }
+
+    #[test]
+    fn replace_env_should_works() {
+        let text = "some {{namespace}}";
+        std::env::set_var("namespace", "demo-123");
+        // let mut replacements = HashMap::new();
+        // replacements.insert("namespace", "demo-123");
+        let res = apply_env_replacements(text);
         assert_eq!("some demo-123".to_string(), res);
     }
 

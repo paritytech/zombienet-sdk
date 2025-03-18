@@ -1,25 +1,23 @@
 use std::{env, time::Duration};
-use zombienet_sdk::{NetworkConfig, environment::Provider};
 
 use clap::{Parser, Subcommand};
+use zombienet_sdk::{environment::Provider, NetworkConfig};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
-    cmd: Commands
+    cmd: Commands,
 }
-
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
     Spawn {
         config: String,
         #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["docker", "k8s", "native"]),default_value="docker")]
-        provider: String
+        provider: String,
     },
 }
-
 
 #[tokio::main]
 async fn main() {
@@ -28,7 +26,7 @@ async fn main() {
     let args = Args::parse();
 
     let (config, provider) = match args.cmd {
-        Commands::Spawn { config, provider } => { (config, provider)}
+        Commands::Spawn { config, provider } => (config, provider),
     };
 
     let config = NetworkConfig::load_from_toml(&config).unwrap();

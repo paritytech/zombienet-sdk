@@ -19,7 +19,9 @@ pub enum Provider {
 }
 
 impl Provider {
-    pub fn get_spawn_fn(&self) -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResult> + Send>> {
+    pub fn get_spawn_fn(
+        &self,
+    ) -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnResult> + Send>> {
         match self {
             Provider::Native => NetworkConfigExt::spawn_native,
             Provider::K8s => NetworkConfigExt::spawn_k8s,

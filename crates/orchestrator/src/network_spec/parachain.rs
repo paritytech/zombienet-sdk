@@ -46,6 +46,9 @@ pub struct ParachainSpec {
     /// Chain-spec, only needed by cumulus based paras
     pub(crate) chain_spec: Option<ChainSpec>,
 
+    /// Do not automatically assign a bootnode role if no nodes are marked as bootnodes.
+    pub(crate) no_default_bootnodes: bool,
+
     /// Registration strategy to use
     pub(crate) registration_strategy: RegistrationStrategy,
 
@@ -203,6 +206,7 @@ impl ParachainSpec {
             wasm_override: config.wasm_override().cloned(),
             default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec,
+            no_default_bootnodes: config.no_default_bootnodes(),
             registration_strategy: config
                 .registration_strategy()
                 .unwrap_or(&RegistrationStrategy::InGenesis)

@@ -189,7 +189,8 @@ where
                 .await?;
         }
 
-        let (bootnodes, relaynodes) = split_nodes_by_bootnodes(&network_spec.relaychain.nodes);
+        let (bootnodes, relaynodes) =
+            split_nodes_by_bootnodes(&network_spec.relaychain.nodes, false);
 
         // TODO: we want to still supporting spawn a dedicated bootnode??
         let mut ctx = SpawnNodeCtx {
@@ -275,7 +276,8 @@ where
             let parachain = Parachain::from_spec(para, &global_files_to_inject, &scoped_fs).await?;
             let parachain_id = parachain.chain_id.clone();
 
-            let (bootnodes, collators) = split_nodes_by_bootnodes(&para.collators);
+            let (bootnodes, collators) =
+                split_nodes_by_bootnodes(&para.collators, para.no_default_bootnodes);
 
             // Create `ctx` for spawn parachain nodes
             let mut ctx_para = SpawnNodeCtx {
@@ -386,7 +388,10 @@ where
 
 // Split the node list depending if it's bootnode or not
 // NOTE: if there isn't a bootnode declared we use the first one
-fn split_nodes_by_bootnodes(nodes: &[NodeSpec]) -> (Vec<&NodeSpec>, Vec<&NodeSpec>) {
+fn split_nodes_by_bootnodes(
+    nodes: &[NodeSpec],
+    no_default_bootnodes: bool,
+) -> (Vec<&NodeSpec>, Vec<&NodeSpec>) {
     // get the bootnodes to spawn first and calculate the bootnode string for use later
     let mut bootnodes = vec![];
     let mut other_nodes = vec![];
@@ -398,9 +403,10 @@ fn split_nodes_by_bootnodes(nodes: &[NodeSpec]) -> (Vec<&NodeSpec>, Vec<&NodeSpe
         }
     });
 
-    if bootnodes.is_empty() {
+    if bootnodes.is_empty() && !no_default_bootnodes {
         bootnodes.push(other_nodes.remove(0))
     }
+
     (bootnodes, other_nodes)
 }
 

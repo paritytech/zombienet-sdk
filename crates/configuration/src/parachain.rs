@@ -143,6 +143,8 @@ pub struct ParachainConfig {
     is_evm_based: bool,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     bootnodes_addresses: Vec<Multiaddr>,
+    #[serde(default = "default_as_false")]
+    no_default_bootnodes: bool,
     #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     genesis_overrides: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -262,6 +264,12 @@ impl ParachainConfig {
         self.bootnodes_addresses.iter().collect::<Vec<_>>()
     }
 
+    /// Whether to not automatically assign a bootnode role if none of the nodes are marked
+    /// as bootnodes.
+    pub fn no_default_bootnodes(&self) -> bool {
+        self.no_default_bootnodes
+    }
+
     /// The collators of the parachain.
     pub fn collators(&self) -> Vec<&NodeConfig> {
         let mut cols = self.collators.iter().collect::<Vec<_>>();
@@ -332,6 +340,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 is_cumulus_based: true,
                 is_evm_based: false,
                 bootnodes_addresses: vec![],
+                no_default_bootnodes: false,
                 collators: vec![],
                 collator: None,
             },
@@ -789,6 +798,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Do not assign a bootnode role automatically if no nodes are marked as bootnodes.
+    pub fn without_default_bootnodes(self) -> Self {
+        Self::transition(
+            ParachainConfig {
+                no_default_bootnodes: true,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Add a new collator using a nested [`NodeConfigBuilder`].
     pub fn with_collator(
         self,
@@ -906,6 +927,7 @@ mod tests {
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
+            .without_default_bootnodes()
             .with_collator(|collator| {
                 collator
                     .with_name("collator1")
@@ -997,6 +1019,7 @@ mod tests {
             "/ip4/10.41.122.55/tcp/45421".try_into().unwrap(),
             "/ip4/51.144.222.10/tcp/2333".try_into().unwrap(),
         ];
+        assert!(parachain_config.no_default_bootnodes());
         assert_eq!(
             parachain_config.bootnodes_addresses(),
             bootnodes_addresses.iter().collect::<Vec<_>>()

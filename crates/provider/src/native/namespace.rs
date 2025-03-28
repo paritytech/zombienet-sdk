@@ -217,7 +217,9 @@ where
         let mut names = vec![];
 
         for node in self.nodes.read().await.values() {
-            node.abort().await.map_err(|err| ProviderError::DestroyNodeFailed(node.name().to_string(), err))?;
+            node.abort()
+                .await
+                .map_err(|err| ProviderError::DestroyNodeFailed(node.name().to_string(), err))?;
             names.push(node.name().to_string());
         }
 

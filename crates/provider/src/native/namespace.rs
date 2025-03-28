@@ -214,8 +214,6 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-
-
         let mut names = vec![];
 
         for node in self.nodes.read().await.values() {

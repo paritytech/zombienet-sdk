@@ -326,7 +326,7 @@ where
         Ok(Pid::from_raw(raw_pid as i32))
     }
 
-    async fn abort(&self) -> anyhow::Result<()> {
+    pub(crate) async fn abort(&self) -> anyhow::Result<()> {
         self.log_writing_task
             .write()
             .await

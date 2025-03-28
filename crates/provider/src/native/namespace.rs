@@ -214,8 +214,18 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
+
+
+        let mut names = vec![];
+
         for node in self.nodes.read().await.values() {
-            node.destroy().await?;
+            node.abort().await.map_err(|err| ProviderError::DestroyNodeFailed(node.name().to_string(), err))?;
+            names.push(node.name().to_string());
+        }
+
+        let mut nodes = self.nodes.write().await;
+        for name in names {
+            nodes.remove(&name);
         }
 
         if let Some(provider) = self.provider.upgrade() {

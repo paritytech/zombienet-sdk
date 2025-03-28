@@ -27,10 +27,9 @@ impl Default for GenCmdOptions<'_> {
     }
 }
 
-const FLAGS_ADDED_BY_US: [&str; 5] = [
+const FLAGS_ADDED_BY_US: [&str; 4] = [
     "--unsafe-rpc-external",
     "--no-telemetry",
-    "--no-mdns",
     "--collator",
     "--",
 ];

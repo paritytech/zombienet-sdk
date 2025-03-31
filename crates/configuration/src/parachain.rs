@@ -918,7 +918,9 @@ mod tests {
             .with_genesis_wasm_path("https://www.backupsite.com/my/wasm/file.tgz")
             .with_genesis_wasm_generator("generator_wasm")
             .with_genesis_state_path("./path/to/genesis/state")
-            .with_genesis_state_generator("generator_state")
+            .with_genesis_state_generator(
+                "undying-collator export-genesis-state --pov-size=10000 --pvf-complexity=1",
+            )
             .with_chain_spec_path("./path/to/chain/spec.json")
             .with_wasm_override("./path/to/override/runtime.wasm")
             .cumulus_based(false)
@@ -1008,8 +1010,18 @@ mod tests {
                 .unwrap()
                 .cmd()
                 .as_str(),
-            "generator_state"
+            "undying-collator"
         );
+
+        assert_eq!(
+            parachain_config.genesis_state_generator().unwrap().args(),
+            &vec![
+                "export-genesis-state".into(),
+                ("--pov-size", "10000").into(),
+                ("--pvf-complexity", "1").into()
+            ]
+        );
+
         assert!(matches!(
             parachain_config.chain_spec_path().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"

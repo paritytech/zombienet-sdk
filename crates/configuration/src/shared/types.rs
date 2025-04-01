@@ -452,7 +452,7 @@ impl de::Visitor<'_> for ArgVisitor {
         if v.starts_with("-l") || v.starts_with("-log") {
             return Ok(Arg::Flag(v.to_string()));
         }
-        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
+        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
         let captures = re.captures(v);
         if let Some(captures) = captures {
             if let Some(value) = captures.name("value") {

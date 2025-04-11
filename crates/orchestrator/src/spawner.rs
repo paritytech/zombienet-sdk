@@ -14,7 +14,7 @@ use crate::{
     generators,
     network::node::NetworkNode,
     network_spec::{node::NodeSpec, parachain::ParachainSpec},
-    shared::constants::{PROMETHEUS_PORT, RPC_PORT},
+    shared::constants::{FULL_NODE_PROMETHEUS_PORT, PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
 };
 
@@ -130,6 +130,9 @@ where
         use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
     };
 
+    let mut collator_full_node_prom_port: Option<u16> = None;
+    let mut collator_full_node_prom_port_external: Option<u16> = None;
+
     let (program, args) = match ctx.role {
         // Collator should be `non-cumulus` one (e.g adder/undying)
         ZombieRole::Node | ZombieRole::Collator => {
@@ -143,6 +146,7 @@ where
             ));
             let full_p2p = generators::generate_node_port(None)?;
             let full_prometheus = generators::generate_node_port(None)?;
+            collator_full_node_prom_port = Some(full_prometheus.0);
             generators::generate_node_command_cumulus(
                 node,
                 gen_opts,
@@ -212,11 +216,11 @@ where
     let mut ip_to_use = LOCALHOST;
 
     let (rpc_port_external, prometheus_port_external);
-
     // Create port-forward iff we are  in CI and with k8s provider
     if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
         // running kubernets in ci require to use ip and default port
         (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
+        collator_full_node_prom_port_external = Some(FULL_NODE_PROMETHEUS_PORT);
         ip_to_use = running_node.ip().await?;
     } else {
         // Create port-forward iff we are not in CI or provider doesn't use the default ports (native)
@@ -230,6 +234,11 @@ where
             ports[0].unwrap_or(node.rpc_port.0),
             ports[1].unwrap_or(node.prometheus_port.0),
         );
+
+        if let Some(full_node_prom_port) = collator_full_node_prom_port {
+            let port_fwd =running_node.create_port_forward(full_node_prom_port, FULL_NODE_PROMETHEUS_PORT).await?;
+            collator_full_node_prom_port_external = Some(port_fwd.unwrap_or(full_node_prom_port));
+        }
     }
 
     let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);
@@ -245,6 +254,10 @@ where
     );
 
     info!("📊 {}: metrics link {prometheus_uri}", node.name);
+
+    if let Some(full_node_prom_port) = collator_full_node_prom_port_external {
+        info!("📊 {}: collator full-node metrics link http://{}:{}/metrics", node.name, ip_to_use, full_node_prom_port);
+    }
 
     info!("📓 logs cmd: {}", running_node.log_cmd());
 

@@ -1,5 +1,7 @@
 /// Prometheus exporter default port
 pub const PROMETHEUS_PORT: u16 = 9615;
+/// Prometheus exporter default port in collator full-node
+pub const FULL_NODE_PROMETHEUS_PORT: u16 = 9616;
 /// JSON-RPC server (ws)
 pub const RPC_PORT: u16 = 9944;
 // JSON-RPC server (http, used by old versions)

@@ -236,7 +236,9 @@ where
         );
 
         if let Some(full_node_prom_port) = collator_full_node_prom_port {
-            let port_fwd =running_node.create_port_forward(full_node_prom_port, FULL_NODE_PROMETHEUS_PORT).await?;
+            let port_fwd = running_node
+                .create_port_forward(full_node_prom_port, FULL_NODE_PROMETHEUS_PORT)
+                .await?;
             collator_full_node_prom_port_external = Some(port_fwd.unwrap_or(full_node_prom_port));
         }
     }
@@ -256,7 +258,10 @@ where
     info!("📊 {}: metrics link {prometheus_uri}", node.name);
 
     if let Some(full_node_prom_port) = collator_full_node_prom_port_external {
-        info!("📊 {}: collator full-node metrics link http://{}:{}/metrics", node.name, ip_to_use, full_node_prom_port);
+        info!(
+            "📊 {}: collator full-node metrics link http://{}:{}/metrics",
+            node.name, ip_to_use, full_node_prom_port
+        );
     }
 
     info!("📓 logs cmd: {}", running_node.log_cmd());

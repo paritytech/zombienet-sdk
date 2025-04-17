@@ -32,6 +32,7 @@ pub struct NetworkNode {
     pub(crate) name: String,
     pub(crate) ws_uri: String,
     pub(crate) prometheus_uri: String,
+    pub(crate) multi_addr: String,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
@@ -54,6 +55,7 @@ impl NetworkNode {
         name: T,
         ws_uri: T,
         prometheus_uri: T,
+        multi_addr: T,
         spec: NodeSpec,
         inner: DynNode,
     ) -> Self {
@@ -61,6 +63,7 @@ impl NetworkNode {
             name: name.into(),
             ws_uri: ws_uri.into(),
             prometheus_uri: prometheus_uri.into(),
+            multi_addr: multi_addr.into(),
             inner,
             spec,
             metrics_cache: Arc::new(Default::default()),
@@ -81,6 +84,10 @@ impl NetworkNode {
 
     pub fn ws_uri(&self) -> &str {
         &self.ws_uri
+    }
+
+    pub fn multi_addr(&self) -> &str {
+        &self.multi_addr
     }
 
     // Subxt

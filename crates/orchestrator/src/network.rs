@@ -176,6 +176,7 @@ impl<T: FileSystem> Network<T> {
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: true,
+            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
         };
 
         let global_files_to_inject = vec![TransferedFile::new(
@@ -269,6 +270,7 @@ impl<T: FileSystem> Network<T> {
             parachain: Some(spec),
             bootnodes_addr: &vec![],
             wait_ready: true,
+            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
         };
 
         let relaychain_spec_path = if let Some(chain_spec_custom_path) = &options.chain_spec_relay {
@@ -449,6 +451,7 @@ impl<T: FileSystem> Network<T> {
             ns: &self.ns,
             scoped_fs: &scoped_fs,
             wait_ready: false,
+            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
         };
 
         // Register the parachain to the running network

@@ -31,6 +31,7 @@ use provider::{
     types::{ProviderCapabilities, TransferedFile},
     DynProvider,
 };
+use serde_json::json;
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 use tracing::{debug, info, trace};
@@ -203,6 +204,7 @@ where
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: false,
+            nodes_by_name: json!({}),
         };
 
         let global_files_to_inject = vec![TransferedFile::new(
@@ -232,7 +234,7 @@ where
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
-        for node in futures::future::try_join_all(spawning_tasks).await? {
+        for mut node in futures::future::try_join_all(spawning_tasks).await? {
             let ip = node.inner.ip().await?;
             let port = if ctx.ns.capabilities().use_default_ports_in_cmd {
                 P2P_PORT
@@ -240,6 +242,8 @@ where
                 node.spec.p2p_port.0
             };
             let bootnode_multiaddr = generate_bootnode_addr(&node, &ip, port)?;
+            node.set_multiaddr(&bootnode_multiaddr);
+
             bootnodes_addr.push(bootnode_multiaddr);
 
             // Is used in the register_para_options (We need to get this from the relay and not the collators)
@@ -247,7 +251,8 @@ where
                 node_ws_url.clone_from(&node.ws_uri)
             }
 
-            // Add the node to the `Network` instance
+            // Add the node to the  context and `Network` instance
+            ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
             network.add_running_node(node, None);
         }
 
@@ -266,7 +271,8 @@ where
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
         for node in futures::future::try_join_all(spawning_tasks).await? {
-            // Add the node to the `Network` instance
+            // Add the node to the  context and `Network` instance
+            ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
             network.add_running_node(node, None);
         }
 
@@ -299,16 +305,19 @@ where
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];
             let mut running_nodes: Vec<NetworkNode> = vec![];
-            for node in futures::future::try_join_all(spawning_tasks).await? {
+            for mut node in futures::future::try_join_all(spawning_tasks).await? {
                 let ip = node.inner.ip().await?;
                 let port = if ctx.ns.capabilities().use_default_ports_in_cmd {
                     P2P_PORT
                 } else {
                     node.spec.p2p_port.0
                 };
-                let bootnode_multiaddr = generate_bootnode_addr(&node, &ip, port)?;
-                bootnodes_addr.push(bootnode_multiaddr);
 
+                let bootnode_multiaddr = generate_bootnode_addr(&node, &ip, port)?;
+                node.set_multiaddr(&bootnode_multiaddr);
+
+                bootnodes_addr.push(bootnode_multiaddr);
+                ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 running_nodes.push(node);
             }
 

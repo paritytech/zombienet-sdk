@@ -8,9 +8,11 @@ use crate::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#)
-        .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+        .unwrap_or_else(|_| panic!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+
     static ref TOKEN_PLACEHOLDER: Regex = Regex::new(r#"\{\{ZOMBIE:(.*?):(.*?)\}\}"#)
-        .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+        .unwrap_or_else(|_| panic!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+
     static ref PLACEHOLDER_COMPAT: HashMap<&'static str, &'static str> = {
         let mut m = HashMap::new();
         m.insert("multiAddress", "multiaddr");
@@ -51,7 +53,7 @@ pub fn apply_running_network_replacements(text: &str, network: &serde_json::Valu
         if let Some(node) = network.get(&caps[1]) {
             trace!("caps1 {} - node: {node}", &caps[1]);
             let field = *PLACEHOLDER_COMPAT.get(&caps[2]).unwrap_or(&&caps[2]);
-            if let Some(val) = node.get(&field) {
+            if let Some(val) = node.get(field) {
                 trace!("caps2 {} - node: {node}", field);
                 val.as_str().unwrap_or("Invalid string").to_string()
             } else {

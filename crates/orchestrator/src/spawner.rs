@@ -7,7 +7,7 @@ use provider::{
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
-use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_running_network_replacements};
 use tracing::info;
 
 use crate::{
@@ -39,6 +39,8 @@ pub struct SpawnNodeCtx<'a, T: FileSystem> {
     /// Flag to wait node is ready or not
     /// Ready state means we can query Prometheus internal server
     pub(crate) wait_ready: bool,
+    /// A json representation of the running nodes with their names as 'key'
+    pub(crate) nodes_by_name: serde_json::Value,
 }
 
 pub async fn spawn_node<'a, T>(
@@ -160,6 +162,11 @@ where
                               * ZombieRole::Companion => todo!(), */
     };
 
+    // apply running networ replacements
+    let args: Vec<String> = args.iter().map(|arg| {
+        apply_running_network_replacements(arg, &ctx.nodes_by_name)
+    }).collect();
+
     info!(
         "🚀 {}, spawning.... with command: {} {}",
         node.name,
@@ -270,6 +277,7 @@ where
         node.name.clone(),
         ws_uri,
         prometheus_uri,
+        None,
         node.clone(),
         running_node,
     ))

@@ -31,6 +31,7 @@ pub struct NetworkNode {
     pub(crate) spec: NodeSpec,
     pub(crate) name: String,
     pub(crate) ws_uri: String,
+    pub(crate) multiaddr: Option<String>,
     pub(crate) prometheus_uri: String,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
@@ -54,6 +55,7 @@ impl NetworkNode {
         name: T,
         ws_uri: T,
         prometheus_uri: T,
+        multiaddr: Option<String>,
         spec: NodeSpec,
         inner: DynNode,
     ) -> Self {
@@ -63,8 +65,13 @@ impl NetworkNode {
             prometheus_uri: prometheus_uri.into(),
             inner,
             spec,
+            multiaddr: multiaddr,
             metrics_cache: Arc::new(Default::default()),
         }
+    }
+
+    pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String> ) {
+        self.multiaddr = Some(multiaddr.into())
     }
 
     pub fn name(&self) -> &str {

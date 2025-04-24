@@ -24,3 +24,5 @@ nix = { workspace = true, features = ["signal"] }
 rand = { workspace = true }
 regex = { workspace = true }
 tracing = { workspace = true }
+lazy_static = { workspace = true }
+serde_json = { workspace = true }

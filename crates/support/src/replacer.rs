@@ -16,6 +16,7 @@ lazy_static! {
             let mut m = HashMap::new();
             m.insert("multiAddress", "multiaddr");
             m.insert("wsUri", "ws_uri");
+            m.insert("prometheusUri", "prometheus_uri");
 
             m
         };

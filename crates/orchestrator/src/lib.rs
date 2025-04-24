@@ -204,7 +204,7 @@ where
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: false,
-            nodes_by_name: json!({})
+            nodes_by_name: json!({}),
         };
 
         let global_files_to_inject = vec![TransferedFile::new(

@@ -1,26 +1,24 @@
 use std::collections::HashMap;
+
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use tracing::{trace, warn};
 
-use crate::constants::{THIS_IS_A_BUG, SHOULD_COMPILE};
+use crate::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#)
         .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
-
     static ref TOKEN_PLACEHOLDER: Regex = Regex::new(r#"\{\{ZOMBIE:(.*?):(.*?)\}\}"#)
         .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
-
     static ref PLACEHOLDER_COMPAT: HashMap<&'static str, &'static str> = {
-            let mut m = HashMap::new();
-            m.insert("multiAddress", "multiaddr");
-            m.insert("wsUri", "ws_uri");
-            m.insert("prometheusUri", "prometheus_uri");
+        let mut m = HashMap::new();
+        m.insert("multiAddress", "multiaddr");
+        m.insert("wsUri", "ws_uri");
+        m.insert("prometheusUri", "prometheus_uri");
 
-            m
-        };
-
+        m
+    };
 }
 
 pub fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>) -> String {
@@ -57,7 +55,10 @@ pub fn apply_running_network_replacements(text: &str, network: &serde_json::Valu
                 trace!("caps2 {} - node: {node}", field);
                 val.as_str().unwrap_or("Invalid string").to_string()
             } else {
-                warn!("⚠️ The node with name {} doesn't have the value {} in context", &caps[1], &caps[2]);
+                warn!(
+                    "⚠️ The node with name {} doesn't have the value {} in context",
+                    &caps[1], &caps[2]
+                );
                 caps[0].to_string()
             }
         } else {

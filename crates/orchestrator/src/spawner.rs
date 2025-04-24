@@ -7,7 +7,9 @@ use provider::{
     types::{SpawnNodeOptions, TransferedFile},
     DynNamespace,
 };
-use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_running_network_replacements};
+use support::{
+    constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_running_network_replacements,
+};
 use tracing::info;
 
 use crate::{
@@ -163,9 +165,10 @@ where
     };
 
     // apply running networ replacements
-    let args: Vec<String> = args.iter().map(|arg| {
-        apply_running_network_replacements(arg, &ctx.nodes_by_name)
-    }).collect();
+    let args: Vec<String> = args
+        .iter()
+        .map(|arg| apply_running_network_replacements(arg, &ctx.nodes_by_name))
+        .collect();
 
     info!(
         "🚀 {}, spawning.... with command: {} {}",

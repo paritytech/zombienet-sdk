@@ -65,12 +65,12 @@ impl NetworkNode {
             prometheus_uri: prometheus_uri.into(),
             inner,
             spec,
-            multiaddr: multiaddr,
+            multiaddr,
             metrics_cache: Arc::new(Default::default()),
         }
     }
 
-    pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String> ) {
+    pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
         self.multiaddr = Some(multiaddr.into())
     }
 

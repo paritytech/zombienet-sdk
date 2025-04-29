@@ -549,8 +549,7 @@ impl<T: FileSystem> Network<T> {
             .initial_spec
             .parachains
             .iter()
-            .filter(|p| p.id == para_id)
-            .next()
+            .find(|p| p.id == para_id)
             .ok_or(anyhow::anyhow!(
                 "no parachain with id = {para_id} available",
             ))?;

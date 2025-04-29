@@ -93,6 +93,7 @@ impl NetworkNode {
     pub fn multiaddr(&self) -> Option<&str> {
         self.multiaddr.as_deref()
     }
+
     // Subxt
 
     /// Get the rpc client for the node

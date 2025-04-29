@@ -537,6 +537,7 @@ impl<T: FileSystem> Network<T> {
     /// #         .with_collator(|n| n.with_name("dave").validator(false))
     /// #     })
     /// #     .build()
+    /// #     .map_err(|_e| anyhow!("Building config"))?;
     /// let mut network = orchestrator.spawn(config).await?;
     ///
     /// network.register_parachain(100).await?;

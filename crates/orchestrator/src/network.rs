@@ -507,6 +507,79 @@ impl<T: FileSystem> Network<T> {
         Ok(())
     }
 
+    /// Register a parachain, which has already been added to the network (with manual registration
+    /// strategy)
+    ///
+    /// # Arguments
+    /// * `para_id` - Parachain Id
+    ///
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use anyhow::anyhow;
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem};
+    /// # use zombienet_orchestrator::Orchestrator;
+    /// # use configuration::{NetworkConfig, NetworkConfigBuilder, RegistrationStrategy};
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfigBuilder::new()
+    /// #     .with_relaychain(|r| {
+    /// #       r.with_chain("rococo-local")
+    /// #         .with_default_command("polkadot")
+    /// #         .with_node(|node| node.with_name("alice"))
+    /// #     })
+    /// #     .with_parachain(|p| {
+    /// #       p.with_id(100)
+    /// #         .with_registration_strategy(RegistrationStrategy::Manual)
+    /// #         .with_default_command("test-parachain")
+    /// #         .with_collator(|n| n.with_name("dave").validator(false))
+    /// #     })
+    /// #     .build()
+    /// #     .map_err(|_e| anyhow!("Building config"))?;
+    /// let mut network = orchestrator.spawn(config).await?;
+    ///
+    /// network.register_parachain(100).await?;
+    ///
+    /// #   Ok(())
+    /// # }
+    /// ```
+    pub async fn register_parachain(&mut self, para_id: u32) -> Result<(), anyhow::Error> {
+        let para = self
+            .initial_spec
+            .parachains
+            .iter()
+            .find(|p| p.id == para_id)
+            .ok_or(anyhow::anyhow!(
+                "no parachain with id = {para_id} available",
+            ))?;
+        let para_genesis_config = para.get_genesis_config()?;
+        let first_node_url = self
+            .relaychain()
+            .nodes
+            .first()
+            .ok_or(anyhow::anyhow!(
+                "At least one node of the relaychain should be running"
+            ))?
+            .ws_uri();
+        let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
+            id: para_id,
+            // This needs to resolve correctly
+            wasm_path: para_genesis_config.wasm_path.clone(),
+            state_path: para_genesis_config.state_path.clone(),
+            node_ws_url: first_node_url.to_string(),
+            onboard_as_para: para_genesis_config.as_parachain,
+            seed: None, // TODO: Seed is passed by?
+            finalization: false,
+        };
+        let base_dir = self.ns.base_dir().to_string_lossy().to_string();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+        Parachain::register(register_para_options, &scoped_fs).await?;
+
+        Ok(())
+    }
+
     // deregister and stop the collator?
     // remove_parachain()
 

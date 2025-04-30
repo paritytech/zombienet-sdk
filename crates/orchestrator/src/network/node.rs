@@ -90,6 +90,10 @@ impl NetworkNode {
         &self.ws_uri
     }
 
+    pub fn multiaddr(&self) -> Option<&str> {
+        self.multiaddr.as_deref()
+    }
+
     // Subxt
 
     /// Get the rpc client for the node
@@ -127,6 +131,7 @@ impl NetworkNode {
     pub async fn wait_client<Config: subxt::Config>(
         &self,
     ) -> Result<OnlineClient<Config>, anyhow::Error> {
+        debug!("wait_client ws_uri: {}", self.ws_uri());
         wait_ws_ready(self.ws_uri())
             .await
             .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {}", e))?;

@@ -432,14 +432,28 @@ impl NetworkNode {
     ///
     /// # Example
     /// ```rust
+    /// # use std::sync::Arc;
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem};
+    /// # use zombienet_orchestrator::{Orchestrator, network::node::{NetworkNode, LogLineCountOptions}};
+    /// # use configuration::NetworkConfig;
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// #   let network = orchestrator.spawn(config).await?;
+    /// let node = network.get_node("alice")?;
+    /// // Wait (up to 10 seconds) until pattern occurs once
     /// let options = LogLineCountOptions {
-    ///     predicate: Arc::new(|count| count == 0),
+    ///     predicate: Arc::new(|count| count == 1),
     ///     timeout_secs: 10,
-    ///     wait_until_timeout_elapses: true,
+    ///     wait_until_timeout_elapses: false,
     /// };
-    /// let result = logger
+    /// let result = node
     ///     .wait_log_line_count_with_timeout_v2("error", false, options)
     ///     .await?;
+    /// #   Ok(())
+    /// # }
     /// ```
     pub async fn wait_log_line_count_with_timeout_v2(
         &self,

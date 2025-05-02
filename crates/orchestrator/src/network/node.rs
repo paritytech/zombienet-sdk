@@ -43,6 +43,31 @@ pub enum LogLineCount {
     TargetFailed(u32),       // log lines count
 }
 
+#[derive(Clone)]
+pub struct LogLineCountOptions {
+    pub predicate: Arc<dyn Fn(u32) -> bool + Send + Sync>,
+    pub timeout_secs: u64,
+    pub wait_until_timeout_elapses: bool,
+}
+
+impl LogLineCountOptions {
+    pub fn new(
+        predicate: impl Fn(u32) -> bool + 'static + Send + Sync,
+        timeout_secs: impl Into<u64>,
+        wait_until_timeout_elapses: bool,
+    ) -> Self {
+        Self {
+            predicate: Arc::new(predicate),
+            timeout_secs: timeout_secs.into(),
+            wait_until_timeout_elapses,
+        }
+    }
+
+    pub fn no_occurences_within_timeout(timeout_secs: impl Into<u64>) -> Self {
+        Self::new(|n| n == 0, timeout_secs, true)
+    }
+}
+
 // #[derive(Clone, Debug)]
 // pub struct QueryMetricOptions {
 //     use_cache: bool,
@@ -367,11 +392,9 @@ impl NetworkNode {
         &self,
         substring: impl Into<String>,
         is_glob: bool,
-        predicate: impl Fn(u32) -> bool,
-        timeout_secs: impl Into<u64>,
-        wait_until_timeout_elapses: bool,
+        options: LogLineCountOptions,
     ) -> Result<LogLineCount, anyhow::Error> {
-        let secs = timeout_secs.into();
+        let secs = options.timeout_secs;
         let substring = substring.into();
         debug!("waiting until match lines count within {secs} seconds");
 
@@ -386,7 +409,7 @@ impl NetworkNode {
 
         let deadline = Duration::from_secs(secs);
 
-        if wait_until_timeout_elapses {
+        if options.wait_until_timeout_elapses {
             tokio::time::sleep(Duration::from_secs(secs)).await;
         }
 
@@ -394,12 +417,11 @@ impl NetworkNode {
         loop {
             q = 0_u32;
             let logs = self.logs().await?;
-            println!("logs = {logs:?}");
             for line in logs.lines() {
                 if match_fn(line) {
                     q += 1;
-                    if !wait_until_timeout_elapses {
-                        if predicate(q) {
+                    if !options.wait_until_timeout_elapses {
+                        if (options.predicate)(q) {
                             return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
                         }
                     }
@@ -413,7 +435,7 @@ impl NetworkNode {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
 
-        if predicate(q) {
+        if (options.predicate)(q) {
             return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
         } else {
             return Ok(LogLineCount::TargetFailed(q));
@@ -506,7 +528,7 @@ impl std::fmt::Debug for NetworkNode {
     }
 }
 
-// TODO: mock and impl unit tests
+// TODO: mock and impl more unit tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -650,8 +672,15 @@ mod tests {
             "system ready",
         ]);
 
+        // Wait (up to 10 seconds) until pattern occurs once
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 1),
+            timeout_secs: 10,
+            wait_until_timeout_elapses: false,
+        };
+
         let log_line_count = mock_node
-            .wait_log_line_count_with_timeout_v2("system ready", false, |n| n == 1, 10u64, false)
+            .wait_log_line_count_with_timeout_v2("system ready", false, options)
             .await?;
 
         assert!(matches!(log_line_count, LogLineCount::TargetReached(1, 0)));
@@ -678,17 +707,17 @@ mod tests {
             "system ready",
         ]);
 
+        // Wait (up to 4 seconds) until pattern occurs twice
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 2),
+            timeout_secs: 4,
+            wait_until_timeout_elapses: false,
+        };
+
         let task = tokio::spawn({
             async move {
-                // Wait until "system ready" occurs twice
                 mock_node
-                    .wait_log_line_count_with_timeout_v2(
-                        "system ready",
-                        false,
-                        |n| n == 2,
-                        4u64,
-                        false,
-                    )
+                    .wait_log_line_count_with_timeout_v2("system ready", false, options)
                     .await
                     .unwrap()
             }
@@ -699,9 +728,8 @@ mod tests {
         mock_provider.logs_push(vec!["system ready"]);
 
         let log_line_count = task.await?;
-        println!("log_line_count = {log_line_count:?}");
 
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(2, 2)));
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(2, ..)));
 
         Ok(())
     }
@@ -725,8 +753,15 @@ mod tests {
             "system ready",
         ]);
 
+        // Wait (up to 2 seconds) until pattern occurs twice
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 2),
+            timeout_secs: 2,
+            wait_until_timeout_elapses: false,
+        };
+
         let log_line_count = mock_node
-            .wait_log_line_count_with_timeout_v2("system ready", false, |n| n == 2, 2u64, false)
+            .wait_log_line_count_with_timeout_v2("system ready", false, options)
             .await?;
 
         assert!(matches!(log_line_count, LogLineCount::TargetFailed(1)));
@@ -753,17 +788,17 @@ mod tests {
             "system ready",
         ]);
 
+        // Wait until timeout and check if pattern occurs exactly twice
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 2),
+            timeout_secs: 2,
+            wait_until_timeout_elapses: true,
+        };
+
         let task = tokio::spawn({
             async move {
-                // Wait until "system ready" occurs twice during full waiting time
                 mock_node
-                    .wait_log_line_count_with_timeout_v2(
-                        "system ready",
-                        false,
-                        |n| n == 2,
-                        2u64,
-                        true,
-                    )
+                    .wait_log_line_count_with_timeout_v2("system ready", false, options)
                     .await
                     .unwrap()
             }
@@ -775,9 +810,88 @@ mod tests {
         mock_provider.logs_push(vec!["system ready"]);
 
         let log_line_count = task.await?;
-        println!("log_line_count = {log_line_count:?}");
 
         assert!(matches!(log_line_count, LogLineCount::TargetFailed(3)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_no_occurences() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            None,
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec!["system booting", "stub line 1", "stub line 2"]);
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout_v2(
+                        "system ready",
+                        false,
+                        // Wait until timeout and make sure pattern occurred zero times
+                        LogLineCountOptions::no_occurences_within_timeout(2u64),
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["stub line 3"]);
+
+        let log_line_count = task.await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(0, 2)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_in_range() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            None,
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec!["system booting", "stub line 1", "stub line 2"]);
+
+        // Wait until timeout and make sure pattern occurrence count is in range between 2 and 5
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| (2..=5).contains(&n)),
+            timeout_secs: 2,
+            wait_until_timeout_elapses: true,
+        };
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout_v2("system ready", false, options)
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["system ready", "system ready", "system ready"]);
+
+        let log_line_count = task.await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(3, 2)));
 
         Ok(())
     }

@@ -370,6 +370,10 @@ impl NetworkNode {
 
     /// Wait until a the number of matching log lines is reach
     /// with timeout (secs)
+    #[deprecated(
+        since = "0.2.32",
+        note = "Use `wait_log_line_count_with_timeout_v2` instead"
+    )]
     pub async fn wait_log_line_count_with_timeout(
         &self,
         substring: impl Into<String>,

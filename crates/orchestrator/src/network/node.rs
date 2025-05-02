@@ -37,6 +37,12 @@ pub struct NetworkNode {
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLineCount {
+    TargetReached(u32, u64), // log lines count, duration
+    TargetFailed(u32),       // log lines count
+}
+
 // #[derive(Clone, Debug)]
 // pub struct QueryMetricOptions {
 //     use_cache: bool,
@@ -355,6 +361,65 @@ impl NetworkNode {
         .await?
     }
 
+    /// Wait until a the number of matching log lines is reach
+    /// with timeout (secs)
+    pub async fn wait_log_line_count_with_timeout_v2(
+        &self,
+        substring: impl Into<String>,
+        is_glob: bool,
+        predicate: impl Fn(u32) -> bool,
+        timeout_secs: impl Into<u64>,
+        wait_until_timeout_elapses: bool,
+    ) -> Result<LogLineCount, anyhow::Error> {
+        let secs = timeout_secs.into();
+        let substring = substring.into();
+        debug!("waiting until match lines count within {secs} seconds");
+
+        let start = tokio::time::Instant::now();
+
+        let match_fn: Box<dyn Fn(&str) -> bool + Send + Sync> = if is_glob {
+            Box::new(move |line: &str| glob_match(&substring, line))
+        } else {
+            let re = Regex::new(&substring)?;
+            Box::new(move |line: &str| re.is_match(line))
+        };
+
+        let deadline = Duration::from_secs(secs);
+
+        if wait_until_timeout_elapses {
+            tokio::time::sleep(Duration::from_secs(secs)).await;
+        }
+
+        let mut q;
+        loop {
+            q = 0_u32;
+            let logs = self.logs().await?;
+            println!("logs = {logs:?}");
+            for line in logs.lines() {
+                if match_fn(line) {
+                    q += 1;
+                    if !wait_until_timeout_elapses {
+                        if predicate(q) {
+                            return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
+                        }
+                    }
+                }
+            }
+
+            if start.elapsed() >= deadline {
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+
+        if predicate(q) {
+            return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
+        } else {
+            return Ok(LogLineCount::TargetFailed(q));
+        }
+    }
+
     // TODO: impl
     // wait_event_count
     // wait_event_count_with_timeout
@@ -442,3 +507,278 @@ impl std::fmt::Debug for NetworkNode {
 }
 
 // TODO: mock and impl unit tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use provider::{types::*, ProviderError, ProviderNode};
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
+
+    struct MockNode {
+        logs: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MockNode {
+        fn new() -> Self {
+            Self {
+                logs: Arc::new(Mutex::new(vec![])),
+            }
+        }
+        fn logs_push(&self, lines: Vec<impl Into<String>>) {
+            self.logs
+                .lock()
+                .unwrap()
+                .extend(lines.into_iter().map(|l| l.into()));
+        }
+    }
+
+    #[async_trait]
+    impl ProviderNode for MockNode {
+        fn name(&self) -> &str {
+            todo!()
+        }
+
+        fn args(&self) -> Vec<&str> {
+            todo!()
+        }
+
+        fn base_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn config_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn data_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn relay_data_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn scripts_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn log_path(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn log_cmd(&self) -> String {
+            todo!()
+        }
+
+        fn path_in_node(&self, _file: &Path) -> PathBuf {
+            todo!()
+        }
+
+        async fn logs(&self) -> Result<String, ProviderError> {
+            Ok(self.logs.lock().unwrap().join("\n"))
+        }
+
+        async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn run_command(
+            &self,
+            _options: RunCommandOptions,
+        ) -> Result<ExecutionResult, ProviderError> {
+            todo!()
+        }
+
+        async fn run_script(
+            &self,
+            _options: RunScriptOptions,
+        ) -> Result<ExecutionResult, ProviderError> {
+            todo!()
+        }
+
+        async fn send_file(
+            &self,
+            _local_file_path: &Path,
+            _remote_file_path: &Path,
+            _mode: &str,
+        ) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn receive_file(
+            &self,
+            _remote_file_path: &Path,
+            _local_file_path: &Path,
+        ) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn pause(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn resume(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn restart(&self, _after: Option<Duration>) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn destroy(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_immediately() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            None,
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        let log_line_count = mock_node
+            .wait_log_line_count_with_timeout_v2("system ready", false, |n| n == 1, 10u64, false)
+            .await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(1, 0)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_after_delay() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            None,
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        let task = tokio::spawn({
+            async move {
+                // Wait until "system ready" occurs twice
+                mock_node
+                    .wait_log_line_count_with_timeout_v2(
+                        "system ready",
+                        false,
+                        |n| n == 2,
+                        4u64,
+                        false,
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        mock_provider.logs_push(vec!["system ready"]);
+
+        let log_line_count = task.await?;
+        println!("log_line_count = {log_line_count:?}");
+
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(2, 2)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_failed_timeout() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            None,
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        let log_line_count = mock_node
+            .wait_log_line_count_with_timeout_v2("system ready", false, |n| n == 2, 2u64, false)
+            .await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetFailed(1)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_failed_exceeded() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            None,
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        let task = tokio::spawn({
+            async move {
+                // Wait until "system ready" occurs twice during full waiting time
+                mock_node
+                    .wait_log_line_count_with_timeout_v2(
+                        "system ready",
+                        false,
+                        |n| n == 2,
+                        2u64,
+                        true,
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["system ready"]);
+        mock_provider.logs_push(vec!["system ready"]);
+
+        let log_line_count = task.await?;
+        println!("log_line_count = {log_line_count:?}");
+
+        assert!(matches!(log_line_count, LogLineCount::TargetFailed(3)));
+
+        Ok(())
+    }
+}

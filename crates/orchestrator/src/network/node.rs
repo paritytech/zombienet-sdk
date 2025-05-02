@@ -37,12 +37,34 @@ pub struct NetworkNode {
     metrics_cache: Arc<RwLock<MetricMap>>,
 }
 
+/// Result of waiting for a certain number of log lines to appear.
+///
+/// Indicates whether the log line count condition was met within the timeout period.
+///
+/// # Variants
+/// - `TargetReached(count, duration_ms)` – The predicate condition was satisfied within the timeout.
+///     * `count`: The number of matching log lines at the time of satisfaction.
+///     * `duration_ms`: Time elapsed (in milliseconds) until the condition was met.
+/// - `TargetFailed(count)` – The condition was not met within the timeout.
+///     * `count`: The final number of matching log lines at timeout expiration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLineCount {
-    TargetReached(u32, u64), // log lines count, duration
-    TargetFailed(u32),       // log lines count
+    TargetReached(u32, u64),
+    TargetFailed(u32),
 }
 
+/// Configuration for controlling log line count waiting behavior.
+///
+/// Allows specifying a custom predicate on the number of matching log lines,
+/// a timeout in seconds, and whether the system should wait the entire timeout duration.
+///
+/// # Fields
+/// - `predicate`: A function that takes the current number of matching lines and
+///   returns `true` if the condition is satisfied.
+/// - `timeout_secs`: Maximum number of seconds to wait.
+/// - `wait_until_timeout_elapses`: If `true`, the system will continue waiting
+///   for the full timeout duration, even if the condition is already met early.
+///   Useful when you need to verify sustained absence or stability (e.g., "ensure no new logs appear").
 #[derive(Clone)]
 pub struct LogLineCountOptions {
     pub predicate: Arc<dyn Fn(u32) -> bool + Send + Sync>,
@@ -390,8 +412,35 @@ impl NetworkNode {
         .await?
     }
 
-    /// Wait until a the number of matching log lines is reach
-    /// with timeout (secs)
+    /// Waits until the number of matching log lines satisfies a custom condition,
+    /// optionally waiting for the entire duration of the timeout.
+    ///
+    /// This method searches log lines for a given substring or glob pattern,
+    /// and evaluates the number of matching lines using a user-provided predicate function.
+    /// Optionally, it can wait for the full timeout duration to ensure the condition
+    /// holds consistently (e.g., for verifying absence of logs).
+    ///
+    /// # Arguments
+    /// * `substring` - The substring or pattern to match within log lines.
+    /// * `is_glob` - Whether to treat `substring` as a glob pattern (`true`) or a regex (`false`).
+    /// * `options` - Configuration for timeout, match count predicate, and full-duration waiting.
+    ///
+    /// # Returns
+    /// * `Ok(LogLineCount::TargetReached(n, d))` if the predicate was satisfied within the timeout,
+    /// * `Ok(LogLineCount::TargetFails(n))` if the predicate was not satisfied in time,
+    /// * `Err(e)` if an error occurred during log retrieval or matching.
+    ///
+    /// # Example
+    /// ```rust
+    /// let options = LogLineCountOptions {
+    ///     predicate: Arc::new(|count| count == 0),
+    ///     timeout_secs: 10,
+    ///     wait_until_timeout_elapses: true,
+    /// };
+    /// let result = logger
+    ///     .wait_log_line_count_with_timeout_v2("error", false, options)
+    ///     .await?;
+    /// ```
     pub async fn wait_log_line_count_with_timeout_v2(
         &self,
         substring: impl Into<String>,
@@ -424,10 +473,8 @@ impl NetworkNode {
             for line in logs.lines() {
                 if match_fn(line) {
                     q += 1;
-                    if !options.wait_until_timeout_elapses {
-                        if (options.predicate)(q) {
-                            return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
-                        }
+                    if !options.wait_until_timeout_elapses && (options.predicate)(q) {
+                        return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
                     }
                 }
             }
@@ -440,9 +487,9 @@ impl NetworkNode {
         }
 
         if (options.predicate)(q) {
-            return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
+            Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()))
         } else {
-            return Ok(LogLineCount::TargetFailed(q));
+            Ok(LogLineCount::TargetFailed(q))
         }
     }
 
@@ -535,11 +582,15 @@ impl std::fmt::Debug for NetworkNode {
 // TODO: mock and impl more unit tests
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{
+        path::{Path, PathBuf},
+        sync::{Arc, Mutex},
+    };
+
     use async_trait::async_trait;
     use provider::{types::*, ProviderError, ProviderNode};
-    use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex};
+
+    use super::*;
 
     struct MockNode {
         logs: Arc<Mutex<Vec<String>>>,
@@ -551,6 +602,7 @@ mod tests {
                 logs: Arc::new(Mutex::new(vec![])),
             }
         }
+
         fn logs_push(&self, lines: Vec<impl Into<String>>) {
             self.logs
                 .lock()

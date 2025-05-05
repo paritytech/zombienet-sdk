@@ -42,14 +42,13 @@ pub struct NetworkNode {
 /// Indicates whether the log line count condition was met within the timeout period.
 ///
 /// # Variants
-/// - `TargetReached(count, duration_ms)` – The predicate condition was satisfied within the timeout.
+/// - `TargetReached(count)` – The predicate condition was satisfied within the timeout.
 ///     * `count`: The number of matching log lines at the time of satisfaction.
-///     * `duration_ms`: Time elapsed (in milliseconds) until the condition was met.
 /// - `TargetFailed(count)` – The condition was not met within the timeout.
 ///     * `count`: The final number of matching log lines at timeout expiration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLineCount {
-    TargetReached(u32, u64),
+    TargetReached(u32),
     TargetFailed(u32),
 }
 
@@ -426,7 +425,7 @@ impl NetworkNode {
     /// * `options` - Configuration for timeout, match count predicate, and full-duration waiting.
     ///
     /// # Returns
-    /// * `Ok(LogLineCount::TargetReached(n, d))` if the predicate was satisfied within the timeout,
+    /// * `Ok(LogLineCount::TargetReached(n))` if the predicate was satisfied within the timeout,
     /// * `Ok(LogLineCount::TargetFails(n))` if the predicate was not satisfied in time,
     /// * `Err(e)` if an error occurred during log retrieval or matching.
     ///
@@ -487,8 +486,13 @@ impl NetworkNode {
             for line in logs.lines() {
                 if match_fn(line) {
                     q += 1;
+
+                    // If `wait_until_timeout_elapses` is set then check the condition just once at the
+                    // end after the whole log file is processed. This is to address the cases when the
+                    // predicate becomes true and false again.
+                    // eg. expected exactly 2 matching lines are expected but 3 are present
                     if !options.wait_until_timeout_elapses && (options.predicate)(q) {
-                        return Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()));
+                        return Ok(LogLineCount::TargetReached(q));
                     }
                 }
             }
@@ -501,7 +505,7 @@ impl NetworkNode {
         }
 
         if (options.predicate)(q) {
-            Ok(LogLineCount::TargetReached(q, start.elapsed().as_secs()))
+            Ok(LogLineCount::TargetReached(q))
         } else {
             Ok(LogLineCount::TargetFailed(q))
         }
@@ -753,7 +757,7 @@ mod tests {
             .wait_log_line_count_with_timeout_v2("system ready", false, options)
             .await?;
 
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(1, 0)));
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(1)));
 
         Ok(())
     }
@@ -799,7 +803,7 @@ mod tests {
 
         let log_line_count = task.await?;
 
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(2, ..)));
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(2)));
 
         Ok(())
     }
@@ -920,7 +924,7 @@ mod tests {
 
         let log_line_count = task.await?;
 
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(0, 2)));
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(0)));
 
         Ok(())
     }
@@ -961,7 +965,7 @@ mod tests {
 
         let log_line_count = task.await?;
 
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(3, 2)));
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(3)));
 
         Ok(())
     }

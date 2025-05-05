@@ -36,10 +36,7 @@ use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
 use tracing::{debug, info, trace};
 
-use crate::{
-    shared::{constants::P2P_PORT, types::RegisterParachainOptions},
-    spawner::SpawnNodeCtx,
-};
+use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
 pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
@@ -234,17 +231,10 @@ where
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
-        for mut node in futures::future::try_join_all(spawning_tasks).await? {
-            let ip = node.inner.ip().await?;
-            let port = if ctx.ns.capabilities().use_default_ports_in_cmd {
-                P2P_PORT
-            } else {
-                node.spec.p2p_port.0
-            };
-            let bootnode_multiaddr = generate_bootnode_addr(&node, &ip, port)?;
-            node.set_multiaddr(&bootnode_multiaddr);
+        for node in futures::future::try_join_all(spawning_tasks).await? {
+            let bootnode_multiaddr = node.multiaddr();
 
-            bootnodes_addr.push(bootnode_multiaddr);
+            bootnodes_addr.push(bootnode_multiaddr.to_string());
 
             // Is used in the register_para_options (We need to get this from the relay and not the collators)
             if node_ws_url.is_empty() {
@@ -305,18 +295,10 @@ where
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];
             let mut running_nodes: Vec<NetworkNode> = vec![];
-            for mut node in futures::future::try_join_all(spawning_tasks).await? {
-                let ip = node.inner.ip().await?;
-                let port = if ctx.ns.capabilities().use_default_ports_in_cmd {
-                    P2P_PORT
-                } else {
-                    node.spec.p2p_port.0
-                };
+            for node in futures::future::try_join_all(spawning_tasks).await? {
+                let bootnode_multiaddr = node.multiaddr();
 
-                let bootnode_multiaddr = generate_bootnode_addr(&node, &ip, port)?;
-                node.set_multiaddr(&bootnode_multiaddr);
-
-                bootnodes_addr.push(bootnode_multiaddr);
+                bootnodes_addr.push(bootnode_multiaddr.to_string());
                 ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 running_nodes.push(node);
             }

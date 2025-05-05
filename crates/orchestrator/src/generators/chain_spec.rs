@@ -1396,7 +1396,6 @@ mod tests {
         }})
     }
 
-
     fn chain_spec_with_dev_stakers() -> serde_json::Value {
         json!({"genesis": {
             "runtimeGenesis" : {
@@ -1444,7 +1443,9 @@ mod tests {
         let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
         clear_authorities(&pointer, &mut chain_spec_json);
 
-        let validator_count = chain_spec_json.pointer(&format!("{pointer}/staking/validatorCount")).unwrap();
+        let validator_count = chain_spec_json
+            .pointer(&format!("{pointer}/staking/validatorCount"))
+            .unwrap();
         assert_eq!(validator_count, &json!(500));
     }
 
@@ -1455,7 +1456,9 @@ mod tests {
         let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
         clear_authorities(&pointer, &mut chain_spec_json);
 
-        let validator_count = chain_spec_json.pointer(&format!("{pointer}/staking/validatorCount")).unwrap();
+        let validator_count = chain_spec_json
+            .pointer(&format!("{pointer}/staking/validatorCount"))
+            .unwrap();
         assert_eq!(validator_count, &json!(0));
     }
 

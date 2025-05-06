@@ -502,7 +502,6 @@ impl de::Visitor<'_> for ArgVisitor {
                         .collect();
                     return Ok(Arg::Array(name_prefix, items));
                 } else {
-                    // return Ok(Arg::Option(name, val.to_string()));
                     return Ok(Arg::Option(name_prefix, val.to_string()));
                 }
             }
@@ -564,7 +563,6 @@ mod tests {
     #[test]
     fn test_arg_array_roundtrip() {
         let arg = Arg::from(("items", ["a", "b", "c"].as_slice()));
-        // let arg = Arg::from(("--items", vec!["a", "b", "c"]));
 
         let serialized = serde_json::to_string(&arg).unwrap();
         println!("serialized = {}", serialized);

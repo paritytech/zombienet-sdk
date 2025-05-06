@@ -406,6 +406,7 @@ impl<'de> Deserialize<'de> for AssetLocation {
 pub enum Arg {
     Flag(String),
     Option(String, String),
+    Array(String, Vec<String>),
 }
 
 impl From<&str> for Arg {
@@ -420,6 +421,15 @@ impl From<(&str, &str)> for Arg {
     }
 }
 
+impl From<(&str, &[&str])> for Arg {
+    fn from((option, values): (&str, &[&str])) -> Self {
+        Self::Array(
+            option.to_owned(),
+            values.into_iter().map(|v| v.to_string()).collect(),
+        )
+    }
+}
+
 impl Serialize for Arg {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -429,6 +439,9 @@ impl Serialize for Arg {
             Arg::Flag(value) => serializer.serialize_str(value),
             Arg::Option(option, value) => {
                 serializer.serialize_str(&format!("{}={}", option, value))
+            },
+            Arg::Array(option, values) => {
+                serializer.serialize_str(&format!("{}=[{}]", option, values.join(",")))
             },
         }
     }
@@ -452,18 +465,31 @@ impl de::Visitor<'_> for ArgVisitor {
         if v.starts_with("-l") || v.starts_with("-log") {
             return Ok(Arg::Flag(v.to_string()));
         }
-        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
+        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>\\[[^\\]]*\\]|[^ ]+))?$").unwrap();
+
         let captures = re.captures(v);
         if let Some(captures) = captures {
             if let Some(value) = captures.name("value") {
-                return Ok(Arg::Option(
-                    captures
-                        .name("name_prefix")
-                        .expect(&format!("{} {}", PREFIX_CANT_BE_NONE, THIS_IS_A_BUG))
-                        .as_str()
-                        .to_string(),
-                    value.as_str().to_string(),
-                ));
+                let name_prefix = captures
+                    .name("name_prefix")
+                    .expect("BUG: name_prefix capture group missing")
+                    .as_str()
+                    .to_string();
+
+                let val = value.as_str();
+                if val.starts_with('[') && val.ends_with(']') {
+                    // Remove brackets and split by comma
+                    let inner = &val[1..val.len() - 1];
+                    let items: Vec<String> = inner
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    return Ok(Arg::Array(name_prefix, items));
+                } else {
+                    // return Ok(Arg::Option(name, val.to_string()));
+                    return Ok(Arg::Option(name_prefix, val.to_string()));
+                }
             }
             if let Some(name_prefix) = captures.name("name_prefix") {
                 return Ok(Arg::Flag(name_prefix.as_str().to_string()));

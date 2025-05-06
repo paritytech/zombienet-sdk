@@ -97,6 +97,7 @@ pub fn generate_for_cumulus_node(
         if let Some(index) = args.iter().position(|arg| match arg {
             Arg::Flag(flag) => flag.eq("--"),
             Arg::Option(..) => false,
+            Arg::Array(..) => false,
         }) {
             (collator_args, full_node_args) = args.split_at(index);
         } else {
@@ -157,6 +158,11 @@ pub fn generate_for_cumulus_node(
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
+            Arg::Array(k, v) => {
+                let mut args = vec![k.to_owned()];
+                args.extend(v.to_owned());
+                Some(args)
+            },
         })
         .flatten()
         .collect::<Vec<String>>();
@@ -189,6 +195,11 @@ pub fn generate_for_cumulus_node(
                 } else {
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
+            },
+            Arg::Array(k, v) => {
+                let mut args = vec![k.to_owned()];
+                args.extend(v.to_owned());
+                Some(args)
             },
         })
         .flatten()
@@ -300,6 +311,7 @@ pub fn generate_for_node(
                 None
             }
         },
+        Arg::Array(..) => None,
     }) {
         let mut parts = listen_val.split('/').collect::<Vec<&str>>();
         // TODO: move this to error
@@ -348,6 +360,11 @@ pub fn generate_for_node(
                 } else {
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
+            },
+            Arg::Array(k, v) => {
+                let mut args = vec![k.to_owned()];
+                args.extend(v.to_owned());
+                Some(args)
             },
         })
         .flatten()

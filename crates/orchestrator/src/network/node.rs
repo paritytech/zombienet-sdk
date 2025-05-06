@@ -389,28 +389,6 @@ impl NetworkNode {
         }
     }
 
-    /// Wait until a the number of matching log lines is reach
-    /// with timeout (secs)
-    #[deprecated(
-        since = "0.2.32",
-        note = "Use `wait_log_line_count_with_timeout_v2` instead"
-    )]
-    pub async fn wait_log_line_count_with_timeout(
-        &self,
-        substring: impl Into<String>,
-        is_glob: bool,
-        count: usize,
-        timeout_secs: impl Into<u64>,
-    ) -> Result<(), anyhow::Error> {
-        let secs = timeout_secs.into();
-        debug!("waiting until match {count} lines");
-        tokio::time::timeout(
-            Duration::from_secs(secs),
-            self.wait_log_line_count(substring, is_glob, count),
-        )
-        .await?
-    }
-
     /// Waits until the number of matching log lines satisfies a custom condition,
     /// optionally waiting for the entire duration of the timeout.
     ///
@@ -449,12 +427,12 @@ impl NetworkNode {
     ///     wait_until_timeout_elapses: false,
     /// };
     /// let result = node
-    ///     .wait_log_line_count_with_timeout_v2("error", false, options)
+    ///     .wait_log_line_count_with_timeout("error", false, options)
     ///     .await?;
     /// #   Ok(())
     /// # }
     /// ```
-    pub async fn wait_log_line_count_with_timeout_v2(
+    pub async fn wait_log_line_count_with_timeout(
         &self,
         substring: impl Into<String>,
         is_glob: bool,
@@ -754,7 +732,7 @@ mod tests {
         };
 
         let log_line_count = mock_node
-            .wait_log_line_count_with_timeout_v2("system ready", false, options)
+            .wait_log_line_count_with_timeout("system ready", false, options)
             .await?;
 
         assert!(matches!(log_line_count, LogLineCount::TargetReached(1)));
@@ -791,7 +769,7 @@ mod tests {
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count_with_timeout_v2("system ready", false, options)
+                    .wait_log_line_count_with_timeout("system ready", false, options)
                     .await
                     .unwrap()
             }
@@ -835,7 +813,7 @@ mod tests {
         };
 
         let log_line_count = mock_node
-            .wait_log_line_count_with_timeout_v2("system ready", false, options)
+            .wait_log_line_count_with_timeout("system ready", false, options)
             .await?;
 
         assert!(matches!(log_line_count, LogLineCount::TargetFailed(1)));
@@ -872,7 +850,7 @@ mod tests {
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count_with_timeout_v2("system ready", false, options)
+                    .wait_log_line_count_with_timeout("system ready", false, options)
                     .await
                     .unwrap()
             }
@@ -907,7 +885,7 @@ mod tests {
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count_with_timeout_v2(
+                    .wait_log_line_count_with_timeout(
                         "system ready",
                         false,
                         // Wait until timeout and make sure pattern occurred zero times
@@ -953,7 +931,7 @@ mod tests {
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count_with_timeout_v2("system ready", false, options)
+                    .wait_log_line_count_with_timeout("system ready", false, options)
                     .await
                     .unwrap()
             }

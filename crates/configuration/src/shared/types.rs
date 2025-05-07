@@ -12,7 +12,7 @@ use serde::{
     de::{self, IntoDeserializer},
     Deserialize, Deserializer, Serialize,
 };
-use support::constants::{INFAILABLE, PREFIX_CANT_BE_NONE, SHOULD_COMPILE, THIS_IS_A_BUG};
+use support::constants::{INFAILABLE, SHOULD_COMPILE, THIS_IS_A_BUG};
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
@@ -406,6 +406,7 @@ impl<'de> Deserialize<'de> for AssetLocation {
 pub enum Arg {
     Flag(String),
     Option(String, String),
+    Array(String, Vec<String>),
 }
 
 impl From<&str> for Arg {
@@ -420,6 +421,30 @@ impl From<(&str, &str)> for Arg {
     }
 }
 
+impl<T> From<(&str, &[T])> for Arg
+where
+    T: AsRef<str> + Clone,
+{
+    fn from((option, values): (&str, &[T])) -> Self {
+        Self::Array(
+            option.to_owned(),
+            values.iter().map(|v| v.as_ref().to_string()).collect(),
+        )
+    }
+}
+
+impl<T> From<(&str, Vec<T>)> for Arg
+where
+    T: AsRef<str>,
+{
+    fn from((option, values): (&str, Vec<T>)) -> Self {
+        Self::Array(
+            option.to_owned(),
+            values.into_iter().map(|v| v.as_ref().to_string()).collect(),
+        )
+    }
+}
+
 impl Serialize for Arg {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -429,6 +454,9 @@ impl Serialize for Arg {
             Arg::Flag(value) => serializer.serialize_str(value),
             Arg::Option(option, value) => {
                 serializer.serialize_str(&format!("{}={}", option, value))
+            },
+            Arg::Array(option, values) => {
+                serializer.serialize_str(&format!("{}=[{}]", option, values.join(",")))
             },
         }
     }
@@ -452,18 +480,30 @@ impl de::Visitor<'_> for ArgVisitor {
         if v.starts_with("-l") || v.starts_with("-log") {
             return Ok(Arg::Flag(v.to_string()));
         }
-        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>.+))?$").unwrap();
+        let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>\\[[^\\]]*\\]|[^ ]+))?$").unwrap();
+
         let captures = re.captures(v);
         if let Some(captures) = captures {
             if let Some(value) = captures.name("value") {
-                return Ok(Arg::Option(
-                    captures
-                        .name("name_prefix")
-                        .expect(&format!("{} {}", PREFIX_CANT_BE_NONE, THIS_IS_A_BUG))
-                        .as_str()
-                        .to_string(),
-                    value.as_str().to_string(),
-                ));
+                let name_prefix = captures
+                    .name("name_prefix")
+                    .expect("BUG: name_prefix capture group missing")
+                    .as_str()
+                    .to_string();
+
+                let val = value.as_str();
+                if val.starts_with('[') && val.ends_with(']') {
+                    // Remove brackets and split by comma
+                    let inner = &val[1..val.len() - 1];
+                    let items: Vec<String> = inner
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    return Ok(Arg::Array(name_prefix, items));
+                } else {
+                    return Ok(Arg::Option(name_prefix, val.to_string()));
+                }
             }
             if let Some(name_prefix) = captures.name("name_prefix") {
                 return Ok(Arg::Flag(name_prefix.as_str().to_string()));
@@ -471,7 +511,7 @@ impl de::Visitor<'_> for ArgVisitor {
         }
 
         Err(de::Error::custom(
-            "the provided argument is invalid and doesn't match Arg::Option or Arg::Flag",
+            "the provided argument is invalid and doesn't match Arg::Option, Arg::Flag or Arg::Array",
         ))
     }
 }
@@ -504,6 +544,92 @@ pub struct ChainDefaultContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_arg_flag_roundtrip() {
+        let arg = Arg::from("verbose");
+        let serialized = serde_json::to_string(&arg).unwrap();
+        let deserialized: Arg = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(arg, deserialized);
+    }
+    #[test]
+    fn test_arg_option_roundtrip() {
+        let arg = Arg::from(("mode", "fast"));
+        let serialized = serde_json::to_string(&arg).unwrap();
+        let deserialized: Arg = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(arg, deserialized);
+    }
+
+    #[test]
+    fn test_arg_array_roundtrip() {
+        let arg = Arg::from(("items", ["a", "b", "c"].as_slice()));
+
+        let serialized = serde_json::to_string(&arg).unwrap();
+        println!("serialized = {}", serialized);
+        let deserialized: Arg = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(arg, deserialized);
+    }
+
+    #[test]
+    fn test_arg_option_valid_input() {
+        let expected = Arg::from(("--foo", "bar"));
+
+        // name and value delimited with =
+        let valid = "\"--foo=bar\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // name and value delimited with space
+        let valid = "\"--foo bar\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // value contains =
+        let expected = Arg::from(("--foo", "bar=baz"));
+        let valid = "\"--foo=bar=baz\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_arg_array_valid_input() {
+        let expected = Arg::from(("--foo", vec!["bar", "baz"]));
+
+        // name and values delimited with =
+        let valid = "\"--foo=[bar,baz]\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // name and values delimited with space
+        let valid = "\"--foo [bar,baz]\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // values delimited with commas and space
+        let valid = "\"--foo [bar , baz]\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // empty values array
+        let expected = Arg::from(("--foo", Vec::<&str>::new()));
+        let valid = "\"--foo []\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_arg_invalid_input() {
+        // missing = or space
+        let invalid = "\"--foo[bar]\"";
+        let result: Result<Arg, _> = serde_json::from_str(invalid);
+        assert!(result.is_err());
+
+        // value contains space
+        let invalid = "\"--foo=bar baz\"";
+        let result: Result<Arg, _> = serde_json::from_str(invalid);
+        println!("result = {:?}", result);
+        assert!(result.is_err());
+    }
 
     #[test]
     fn converting_a_str_without_whitespaces_into_a_chain_should_succeeds() {

@@ -253,6 +253,14 @@ where
         }
     }
 
+    let multiaddr = generators::generate_node_bootnode_addr(
+        &node.peer_id,
+        &ip_to_use,
+        node.p2p_port.0,
+        running_node.args().as_ref(),
+        &node.p2p_cert_hash,
+    )?;
+
     let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);
     let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
     info!("🚀 {}, should be running now", node.name);
@@ -280,7 +288,7 @@ where
         node.name.clone(),
         ws_uri,
         prometheus_uri,
-        None,
+        multiaddr,
         node.clone(),
         running_node,
     ))

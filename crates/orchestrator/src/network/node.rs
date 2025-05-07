@@ -31,7 +31,7 @@ pub struct NetworkNode {
     pub(crate) spec: NodeSpec,
     pub(crate) name: String,
     pub(crate) ws_uri: String,
-    pub(crate) multiaddr: Option<String>,
+    pub(crate) multiaddr: String,
     pub(crate) prometheus_uri: String,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
@@ -116,7 +116,7 @@ impl NetworkNode {
         name: T,
         ws_uri: T,
         prometheus_uri: T,
-        multiaddr: Option<String>,
+        multiaddr: T,
         spec: NodeSpec,
         inner: DynNode,
     ) -> Self {
@@ -126,13 +126,13 @@ impl NetworkNode {
             prometheus_uri: prometheus_uri.into(),
             inner,
             spec,
-            multiaddr,
+            multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
         }
     }
 
     pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
-        self.multiaddr = Some(multiaddr.into())
+        self.multiaddr = multiaddr.into();
     }
 
     pub fn name(&self) -> &str {
@@ -151,8 +151,8 @@ impl NetworkNode {
         &self.ws_uri
     }
 
-    pub fn multiaddr(&self) -> Option<&str> {
-        self.multiaddr.as_deref()
+    pub fn multiaddr(&self) -> &str {
+        self.multiaddr.as_ref()
     }
 
     // Subxt
@@ -721,7 +721,7 @@ mod tests {
             "node1",
             "ws_uri",
             "prometheus_uri",
-            None,
+            "multiaddr",
             NodeSpec::default(),
             mock_provider.clone(),
         );
@@ -756,7 +756,7 @@ mod tests {
             "node1",
             "ws_uri",
             "prometheus_uri",
-            None,
+            "multiaddr",
             NodeSpec::default(),
             mock_provider.clone(),
         );
@@ -802,7 +802,7 @@ mod tests {
             "node1",
             "ws_uri",
             "prometheus_uri",
-            None,
+            "multiaddr",
             NodeSpec::default(),
             mock_provider.clone(),
         );
@@ -837,7 +837,7 @@ mod tests {
             "node1",
             "ws_uri",
             "prometheus_uri",
-            None,
+            "multiaddr",
             NodeSpec::default(),
             mock_provider.clone(),
         );
@@ -884,7 +884,7 @@ mod tests {
             "node1",
             "ws_uri",
             "prometheus_uri",
-            None,
+            "multiaddr",
             NodeSpec::default(),
             mock_provider.clone(),
         );
@@ -921,7 +921,7 @@ mod tests {
             "node1",
             "ws_uri",
             "prometheus_uri",
-            None,
+            "multiaddr",
             NodeSpec::default(),
             mock_provider.clone(),
         );

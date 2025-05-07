@@ -132,6 +132,10 @@ impl ParaArtifact {
                         args.push(flag.into());
                         args.push(flag_value.into());
                     },
+                    configuration::types::Arg::Array(flag, values) => {
+                        args.push(flag.into());
+                        values.iter().for_each(|v| args.push(v.into()));
+                    },
                 }
             }
 

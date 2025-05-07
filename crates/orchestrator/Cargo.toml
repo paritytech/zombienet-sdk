@@ -44,6 +44,7 @@ prom-metrics-parser = { workspace = true }
 
 [dev-dependencies]
 toml = { workspace = true }
+async-trait = { workspace = true }
 
 [features]
 pjs = ["dep:pjs-rs"]

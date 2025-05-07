@@ -76,25 +76,25 @@ impl LogLineCount {
 #[derive(Clone)]
 pub struct LogLineCountOptions {
     pub predicate: Arc<dyn Fn(u32) -> bool + Send + Sync>,
-    pub timeout_secs: u64,
+    pub timeout: Duration,
     pub wait_until_timeout_elapses: bool,
 }
 
 impl LogLineCountOptions {
     pub fn new(
         predicate: impl Fn(u32) -> bool + 'static + Send + Sync,
-        timeout_secs: impl Into<u64>,
+        timeout: Duration,
         wait_until_timeout_elapses: bool,
     ) -> Self {
         Self {
             predicate: Arc::new(predicate),
-            timeout_secs: timeout_secs.into(),
+            timeout,
             wait_until_timeout_elapses,
         }
     }
 
-    pub fn no_occurences_within_timeout(timeout_secs: impl Into<u64>) -> Self {
-        Self::new(|n| n == 0, timeout_secs, true)
+    pub fn no_occurences_within_timeout(timeout: Duration) -> Self {
+        Self::new(|n| n == 0, timeout, true)
     }
 }
 
@@ -418,7 +418,7 @@ impl NetworkNode {
     ///
     /// # Example
     /// ```rust
-    /// # use std::sync::Arc;
+    /// # use std::{sync::Arc, time::Duration};
     /// # use provider::NativeProvider;
     /// # use support::{fs::local::LocalFileSystem};
     /// # use zombienet_orchestrator::{Orchestrator, network::node::{NetworkNode, LogLineCountOptions}};
@@ -432,7 +432,7 @@ impl NetworkNode {
     /// // Wait (up to 10 seconds) until pattern occurs once
     /// let options = LogLineCountOptions {
     ///     predicate: Arc::new(|count| count == 1),
-    ///     timeout_secs: 10,
+    ///     timeout: Duration::from_secs(10),
     ///     wait_until_timeout_elapses: false,
     /// };
     /// let result = node
@@ -447,9 +447,11 @@ impl NetworkNode {
         is_glob: bool,
         options: LogLineCountOptions,
     ) -> Result<LogLineCount, anyhow::Error> {
-        let secs = options.timeout_secs;
         let substring = substring.into();
-        debug!("waiting until match lines count within {secs} seconds");
+        debug!(
+            "waiting until match lines count within {} seconds",
+            options.timeout.as_secs_f64()
+        );
 
         let start = tokio::time::Instant::now();
 
@@ -460,10 +462,8 @@ impl NetworkNode {
             Box::new(move |line: &str| re.is_match(line))
         };
 
-        let deadline = Duration::from_secs(secs);
-
         if options.wait_until_timeout_elapses {
-            tokio::time::sleep(Duration::from_secs(secs)).await;
+            tokio::time::sleep(options.timeout).await;
         }
 
         let mut q;
@@ -484,7 +484,7 @@ impl NetworkNode {
                 }
             }
 
-            if start.elapsed() >= deadline {
+            if start.elapsed() >= options.timeout {
                 break;
             }
 
@@ -736,7 +736,7 @@ mod tests {
         // Wait (up to 10 seconds) until pattern occurs once
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| n == 1),
-            timeout_secs: 10,
+            timeout: Duration::from_secs(10),
             wait_until_timeout_elapses: false,
         };
 
@@ -771,7 +771,7 @@ mod tests {
         // Wait (up to 4 seconds) until pattern occurs twice
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| n == 2),
-            timeout_secs: 4,
+            timeout: Duration::from_secs(4),
             wait_until_timeout_elapses: false,
         };
 
@@ -817,7 +817,7 @@ mod tests {
         // Wait (up to 2 seconds) until pattern occurs twice
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| n == 2),
-            timeout_secs: 2,
+            timeout: Duration::from_secs(2),
             wait_until_timeout_elapses: false,
         };
 
@@ -852,7 +852,7 @@ mod tests {
         // Wait until timeout and check if pattern occurs exactly twice
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| n == 2),
-            timeout_secs: 2,
+            timeout: Duration::from_secs(2),
             wait_until_timeout_elapses: true,
         };
 
@@ -898,7 +898,7 @@ mod tests {
                         "system ready",
                         false,
                         // Wait until timeout and make sure pattern occurred zero times
-                        LogLineCountOptions::no_occurences_within_timeout(2u64),
+                        LogLineCountOptions::no_occurences_within_timeout(Duration::from_secs(2)),
                     )
                     .await
                     .unwrap()
@@ -931,7 +931,7 @@ mod tests {
         // Wait until timeout and make sure pattern occurrence count is in range between 2 and 5
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| (2..=5).contains(&n)),
-            timeout_secs: 2,
+            timeout: Duration::from_secs(2),
             wait_until_timeout_elapses: true,
         };
 

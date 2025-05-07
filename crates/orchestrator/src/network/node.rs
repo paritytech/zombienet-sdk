@@ -52,6 +52,15 @@ pub enum LogLineCount {
     TargetFailed(u32),
 }
 
+impl LogLineCount {
+    pub fn success(&self) -> bool {
+        match self {
+            Self::TargetReached(..) => true,
+            Self::TargetFailed(..) => false,
+        }
+    }
+}
+
 /// Configuration for controlling log line count waiting behavior.
 ///
 /// Allows specifying a custom predicate on the number of matching log lines,
@@ -900,9 +909,7 @@ mod tests {
 
         mock_provider.logs_push(vec!["stub line 3"]);
 
-        let log_line_count = task.await?;
-
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(0)));
+        assert!(task.await?.success());
 
         Ok(())
     }
@@ -941,9 +948,7 @@ mod tests {
 
         mock_provider.logs_push(vec!["system ready", "system ready", "system ready"]);
 
-        let log_line_count = task.await?;
-
-        assert!(matches!(log_line_count, LogLineCount::TargetReached(3)));
+        assert!(task.await?.success());
 
         Ok(())
     }

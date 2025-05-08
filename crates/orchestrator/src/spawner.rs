@@ -229,7 +229,8 @@ where
     // Create port-forward iff we are  in CI and with k8s provider
     if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
         // running kubernets in ci require to use ip and default port
-        (rpc_port_external, prometheus_port_external, p2p_external) = (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);
+        (rpc_port_external, prometheus_port_external, p2p_external) =
+            (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);
         collator_full_node_prom_port_external = Some(FULL_NODE_PROMETHEUS_PORT);
         ip_to_use = running_node.ip().await?;
     } else {

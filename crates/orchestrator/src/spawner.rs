@@ -225,11 +225,12 @@ where
 
     let mut ip_to_use = LOCALHOST;
 
-    let (rpc_port_external, prometheus_port_external);
+    let (rpc_port_external, prometheus_port_external, p2p_external);
     // Create port-forward iff we are  in CI and with k8s provider
     if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
         // running kubernets in ci require to use ip and default port
-        (rpc_port_external, prometheus_port_external) = (RPC_PORT, PROMETHEUS_PORT);
+        (rpc_port_external, prometheus_port_external, p2p_external) =
+            (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);
         collator_full_node_prom_port_external = Some(FULL_NODE_PROMETHEUS_PORT);
         ip_to_use = running_node.ip().await?;
     } else {
@@ -240,9 +241,11 @@ where
         ])
         .await?;
 
-        (rpc_port_external, prometheus_port_external) = (
+        (rpc_port_external, prometheus_port_external, p2p_external) = (
             ports[0].unwrap_or(node.rpc_port.0),
             ports[1].unwrap_or(node.prometheus_port.0),
+            // p2p don't need port-fwd
+            node.p2p_port.0,
         );
 
         if let Some(full_node_prom_port) = collator_full_node_prom_port {
@@ -255,8 +258,8 @@ where
 
     let multiaddr = generators::generate_node_bootnode_addr(
         &node.peer_id,
-        &ip_to_use,
-        node.p2p_port.0,
+        &running_node.ip().await?,
+        p2p_external,
         running_node.args().as_ref(),
         &node.p2p_cert_hash,
     )?;

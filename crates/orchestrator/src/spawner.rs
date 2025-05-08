@@ -258,7 +258,7 @@ where
 
     let multiaddr = generators::generate_node_bootnode_addr(
         &node.peer_id,
-        &ip_to_use,
+        &running_node.ip().await?,
         p2p_external,
         running_node.args().as_ref(),
         &node.p2p_cert_hash,

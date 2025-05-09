@@ -1,0 +1,32 @@
+name: Spellcheck
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  spellcheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install cargo-spellcheck
+        run: |
+          sudo apt-get install libclang-dev
+          export LIBCLANG_PATH=/usr/lib/llvm-18/lib/
+          cargo install cargo-spellcheck
+
+      - name: Run cargo-spellcheck
+        run: cargo spellcheck

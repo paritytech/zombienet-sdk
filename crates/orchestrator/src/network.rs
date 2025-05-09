@@ -4,6 +4,7 @@ pub mod parachain;
 pub mod relaychain;
 
 use std::{collections::HashMap, path::PathBuf};
+use tracing::debug;
 
 use configuration::{
     para_states::{Initial, Running},
@@ -665,5 +666,21 @@ impl<T: FileSystem> Network<T> {
                 .iter_mut()
                 .flat_map(|(_, p)| &mut p.collators),
         )
+    }
+
+    pub async fn dump_logs(&self) -> Result<(), anyhow::Error> {
+        let logs_path = self.ns.base_dir().join("logs");
+
+        debug!("dumping network logs to {:?}", logs_path);
+        self.filesystem.create_dir_all(&logs_path).await?;
+
+        let tasks = self.nodes_iter().map(|node| {
+            let dest_path = logs_path.join(format!("{}.log", node.name()));
+            node.dump_logs(dest_path)
+        });
+
+        let _ = futures::future::try_join_all(tasks).await?;
+
+        Ok(())
     }
 }

@@ -158,7 +158,12 @@ impl Parachain {
                     options.node_ws_url.as_str()
                 )
             })?;
-        let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
+
+        let api = if subxt::utils::url_is_secure(&options.node_ws_url)? {
+            OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?
+        } else {
+            OnlineClient::<SubstrateConfig>::from_insecure_url(options.node_ws_url).await?
+        };
 
         let schedule_para = subxt::dynamic::tx(
             "ParasSudoWrapper",

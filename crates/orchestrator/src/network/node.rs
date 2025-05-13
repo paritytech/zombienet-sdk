@@ -159,7 +159,11 @@ impl NetworkNode {
 
     /// Get the rpc client for the node
     pub async fn rpc(&self) -> Result<RpcClient, subxt::Error> {
-        RpcClient::from_url(&self.ws_uri).await
+        if subxt::utils::url_is_secure(&self.ws_uri)? {
+            RpcClient::from_url(&self.ws_uri).await
+        } else {
+            RpcClient::from_insecure_url(&self.ws_uri).await
+        }
     }
 
     /// Get the [online client](subxt::client::OnlineClient) for the node

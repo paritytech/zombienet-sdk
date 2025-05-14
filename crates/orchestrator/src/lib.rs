@@ -227,7 +227,7 @@ where
             .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
         // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
-        let mut node_ws_url: String = "".to_string();
+        let mut first_bootnode: Option<NetworkNode> = None;
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
@@ -237,8 +237,8 @@ where
             bootnodes_addr.push(bootnode_multiaddr.to_string());
 
             // Is used in the register_para_options (We need to get this from the relay and not the collators)
-            if node_ws_url.is_empty() {
-                node_ws_url.clone_from(&node.ws_uri)
+            if first_bootnode.is_none() {
+                first_bootnode = Some(node.clone());
             }
 
             // Add the node to the  context and `Network` instance
@@ -355,7 +355,10 @@ where
                         "artifact path for state must be set at this point",
                     ))?
                     .to_path_buf(),
-                node_ws_url: node_ws_url.clone(),
+                node: first_bootnode
+                    .as_ref()
+                    .expect("bootnode not configured")
+                    .clone(),
                 onboard_as_para: para.onboard_as_parachain,
                 seed: None, // TODO: Seed is passed by?
                 finalization: false,

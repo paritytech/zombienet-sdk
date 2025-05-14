@@ -9,7 +9,7 @@ use provider::types::TransferedFile;
 use serde::Serialize;
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
-use support::{constants::THIS_IS_A_BUG, fs::FileSystem, net::wait_ws_ready};
+use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::info;
 
 use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
@@ -150,20 +150,7 @@ impl Parachain {
                 "Wasm Path should be ok by this point {THIS_IS_A_BUG}"
             ));
 
-        wait_ws_ready(options.node_ws_url.as_str())
-            .await
-            .map_err(|_| {
-                anyhow::anyhow!(
-                    "Error waiting for ws to be ready, at {}",
-                    options.node_ws_url.as_str()
-                )
-            })?;
-
-        let api = if subxt::utils::url_is_secure(&options.node_ws_url)? {
-            OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?
-        } else {
-            OnlineClient::<SubstrateConfig>::from_insecure_url(options.node_ws_url).await?
-        };
+        let api: OnlineClient<SubstrateConfig> = options.node.wait_client().await?;
 
         let schedule_para = subxt::dynamic::tx(
             "ParasSudoWrapper",

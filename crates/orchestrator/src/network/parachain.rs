@@ -123,7 +123,7 @@ impl Parachain {
     }
 
     pub async fn register(
-        options: RegisterParachainOptions,
+        options: RegisterParachainOptions<'_>,
         scoped_fs: &ScopedFilesystem<'_, impl FileSystem>,
     ) -> Result<(), anyhow::Error> {
         info!("Registering parachain: {:?}", options);

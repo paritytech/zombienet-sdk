@@ -477,7 +477,7 @@ impl<T: FileSystem> Network<T> {
                         "artifact path for state must be set at this point",
                     ))?
                     .to_path_buf(),
-                node: first_node.clone(),
+                node: first_node,
                 onboard_as_para: para_spec.onboard_as_parachain,
                 seed: None, // TODO: Seed is passed by?
                 finalization: false,
@@ -559,7 +559,7 @@ impl<T: FileSystem> Network<T> {
             // This needs to resolve correctly
             wasm_path: para_genesis_config.wasm_path.clone(),
             state_path: para_genesis_config.state_path.clone(),
-            node: first_node.clone(),
+            node: first_node,
             onboard_as_para: para_genesis_config.as_parachain,
             seed: None, // TODO: Seed is passed by?
             finalization: false,

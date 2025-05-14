@@ -336,10 +336,6 @@ where
         // verify nodes
         // network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
-        let first_bootnode = &first_bootnode.ok_or(OrchestratorError::InvalidConfig(format!(
-            "Bootnode not configured"
-        )))?;
-
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
             let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
@@ -359,7 +355,10 @@ where
                         "artifact path for state must be set at this point",
                     ))?
                     .to_path_buf(),
-                node: first_bootnode,
+                node: first_bootnode
+                    .as_ref()
+                    .expect("bootnode not configured")
+                    .clone(),
                 onboard_as_para: para.onboard_as_parachain,
                 seed: None, // TODO: Seed is passed by?
                 finalization: false,

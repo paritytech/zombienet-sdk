@@ -65,11 +65,11 @@ pub struct ChainDefaultContext<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct RegisterParachainOptions<'a> {
+pub struct RegisterParachainOptions {
     pub id: u32,
     pub wasm_path: PathBuf,
     pub state_path: PathBuf,
-    pub node: &'a NetworkNode,
+    pub node: NetworkNode,
     pub onboard_as_para: bool,
     pub seed: Option<[u8; 32]>,
     pub finalization: bool,

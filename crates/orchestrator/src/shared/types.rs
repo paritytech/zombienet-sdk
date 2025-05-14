@@ -11,8 +11,6 @@ use configuration::shared::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::network::node::NetworkNode;
-
 pub type Accounts = HashMap<String, NodeAccount>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,7 +67,7 @@ pub struct RegisterParachainOptions {
     pub id: u32,
     pub wasm_path: PathBuf,
     pub state_path: PathBuf,
-    pub node: NetworkNode,
+    pub node_ws_url: String,
     pub onboard_as_para: bool,
     pub seed: Option<[u8; 32]>,
     pub finalization: bool,

@@ -455,9 +455,14 @@ impl<T: FileSystem> Network<T> {
         };
 
         // Register the parachain to the running network
-        let first_node = self.relaychain().nodes.first().ok_or(anyhow::anyhow!(
-            "At least one node of the relaychain should be running"
-        ))?;
+        let first_node_url = self
+            .relaychain()
+            .nodes
+            .first()
+            .ok_or(anyhow::anyhow!(
+                "At least one node of the relaychain should be running"
+            ))?
+            .ws_uri();
 
         if para_config.registration_strategy() == Some(&RegistrationStrategy::UsingExtrinsic) {
             let register_para_options = RegisterParachainOptions {
@@ -477,7 +482,7 @@ impl<T: FileSystem> Network<T> {
                         "artifact path for state must be set at this point",
                     ))?
                     .to_path_buf(),
-                node: first_node.clone(),
+                node_ws_url: first_node_url.to_string(),
                 onboard_as_para: para_spec.onboard_as_parachain,
                 seed: None, // TODO: Seed is passed by?
                 finalization: false,
@@ -550,16 +555,20 @@ impl<T: FileSystem> Network<T> {
                 "no parachain with id = {para_id} available",
             ))?;
         let para_genesis_config = para.get_genesis_config()?;
-        let first_node = self.relaychain().nodes.first().ok_or(anyhow::anyhow!(
-            "At least one node of the relaychain should be running"
-        ))?;
-
+        let first_node_url = self
+            .relaychain()
+            .nodes
+            .first()
+            .ok_or(anyhow::anyhow!(
+                "At least one node of the relaychain should be running"
+            ))?
+            .ws_uri();
         let register_para_options: RegisterParachainOptions = RegisterParachainOptions {
             id: para_id,
             // This needs to resolve correctly
             wasm_path: para_genesis_config.wasm_path.clone(),
             state_path: para_genesis_config.state_path.clone(),
-            node: first_node.clone(),
+            node_ws_url: first_node_url.to_string(),
             onboard_as_para: para_genesis_config.as_parachain,
             seed: None, // TODO: Seed is passed by?
             finalization: false,

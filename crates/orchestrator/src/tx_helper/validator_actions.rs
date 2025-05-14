@@ -15,11 +15,7 @@ pub async fn register(validator_ids: Vec<String>, node_ws_url: &str) -> Result<(
     let sudo = Keypair::from_uri(&uri)?;
     // }
 
-    let api = if subxt::utils::url_is_secure(&options.node_ws_url)? {
-        OnlineClient::<SubstrateConfig>::from_url(node_ws_url).await?;
-    } else {
-        OnlineClient::<SubstrateConfig>::from_insecure_url(node_ws_url).await?
-    };
+    let api: OnlineClient<SubstrateConfig> = get_client_from_url(&options.node_ws_url).await?;
 
     let register_call = subxt::dynamic::tx(
         "ValidatorManager",
@@ -43,4 +39,3 @@ pub async fn register(validator_ids: Vec<String>, node_ws_url: &str) -> Result<(
     debug!("In block: {:#?}", result.block_hash());
     Ok(())
 }
-

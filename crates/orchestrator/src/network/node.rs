@@ -12,10 +12,9 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
-use crate::network_spec::node::NodeSpec;
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
-use crate::tx_helper::client::get_client_from_url;
+use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
 #[derive(Error, Debug)]
 pub enum NetworkNodeError {

@@ -3,8 +3,7 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{collections::HashMap, path::PathBuf, time::SystemTime};
-use tracing::{debug, error, info};
+use std::{collections::HashMap, path::PathBuf};
 
 use configuration::{
     para_states::{Initial, Running},
@@ -15,6 +14,7 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tracing::{debug, error, info};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
@@ -25,7 +25,6 @@ use crate::{
         types::{ChainDefaultContext, RegisterParachainOptions},
     },
     spawner::{self, SpawnNodeCtx},
-    utils::get_loki_url,
     ScopedFilesystem, ZombieRole,
 };
 
@@ -40,7 +39,6 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Parachain>,
     #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
-    start_time: SystemTime,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -80,7 +78,7 @@ impl<T: FileSystem> Drop for Network<T> {
 
 impl<T: FileSystem> Network<T> {
     async fn shutdown(&self) -> Result<(), anyhow::Error> {
-        self.process_logs().await?;
+        self.dump_logs().await?;
         self.destroy().await?;
         Ok(())
     }
@@ -98,7 +96,6 @@ impl<T: FileSystem> Network<T> {
             initial_spec,
             parachains: Default::default(),
             nodes_by_name: Default::default(),
-            start_time: SystemTime::now(),
         }
     }
 
@@ -691,40 +688,27 @@ impl<T: FileSystem> Network<T> {
         )
     }
 
-    pub async fn dump_logs(&self) -> Result<PathBuf, anyhow::Error> {
+    pub async fn dump_logs(&self) -> Result<(), anyhow::Error> {
         let logs_path = self.ns.base_dir().join("logs");
 
         debug!("dumping network logs to {:?}", logs_path);
         self.filesystem.create_dir_all(&logs_path).await?;
 
-        let tasks = self.nodes_iter().map(|node| {
+        info!("Relay nodes:");
+        for node in self.relay.nodes().iter() {
             let dest_path = logs_path.join(format!("{}.log", node.name()));
-            node.dump_logs(dest_path)
-        });
+            let log_path = node.dump_logs(dest_path).await?;
+            info!("\t{}: {}", node.name(), log_path);
+        }
+        for para in self.parachains().iter() {
+            info!("ParaId: {}", para.para_id());
+            for node in para.collators.iter() {
+                let dest_path = logs_path.join(format!("{}.log", node.name()));
+                let log_path = node.dump_logs(dest_path).await?;
+                info!("\t{}: {}", node.name(), log_path);
+            }
+        }
 
-        let _ = futures::future::try_join_all(tasks).await?;
-        debug!("dumped to {:?}", logs_path);
-
-        Ok(logs_path)
-    }
-
-    async fn process_logs(&self) -> Result<(), anyhow::Error> {
-        let logs_path = self.dump_logs().await?;
-
-        let end_time = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_millis();
-        let start_time = self
-            .start_time
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_millis();
-
-        info!("provider: {}", self.ns.name());
-        info!("logs_path: {}", logs_path.to_string_lossy());
-        self.nodes_iter().for_each(|node| {
-            let loki_url = get_loki_url(&self.ns_name(), node.name(), start_time, Some(end_time));
-            info!("{}: {loki_url}", node.name());
-        });
         Ok(())
     }
 }

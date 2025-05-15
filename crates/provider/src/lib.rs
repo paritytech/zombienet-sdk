@@ -193,7 +193,7 @@ pub trait ProviderNode {
 
     async fn logs(&self) -> Result<String, ProviderError>;
 
-    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError>;
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<String, ProviderError>;
 
     // By default return localhost, should be overrided for k8s
     async fn ip(&self) -> Result<IpAddr, ProviderError> {

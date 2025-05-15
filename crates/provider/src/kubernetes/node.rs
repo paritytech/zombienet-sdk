@@ -4,7 +4,7 @@ use std::{
     net::IpAddr,
     path::{Component, Path, PathBuf},
     sync::{Arc, Weak},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use anyhow::anyhow;
@@ -26,6 +26,7 @@ use crate::{
         NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
         PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
     },
+    shared::helpers::{get_loki_url, running_in_ci},
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -71,6 +72,7 @@ where
     http_client: reqwest::Client,
     filesystem: FS,
     port_fwds: RwLock<HashMap<u16, FwdInfo>>,
+    start_time: SystemTime,
 }
 
 impl<FS> KubernetesNode<FS>
@@ -122,6 +124,7 @@ where
             k8s_client: options.k8s_client.clone(),
             http_client: reqwest::Client::new(),
             port_fwds: Default::default(),
+            start_time: SystemTime::now(),
         });
 
         node.initialize_k8s().await?;
@@ -538,15 +541,38 @@ where
             .map_err(|err| ProviderError::GetLogsFailed(self.name.to_string(), err.into()))
     }
 
-    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
+    // Dump logs to the given destination
+    // If running in CI then generate the Loki URL for given node.
+    // Return destination log path or Loki URL.
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<String, ProviderError> {
         let logs = self.logs().await?;
 
         self.filesystem
-            .write(local_dest, logs)
+            .write(&local_dest, logs)
             .await
             .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?;
 
-        Ok(())
+        if running_in_ci() {
+            let end_time = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?
+                .as_millis();
+            let start_time = self
+                .start_time
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?
+                .as_millis();
+
+            let loki_url = get_loki_url(
+                &self.namespace_name(),
+                self.name(),
+                start_time,
+                Some(end_time),
+            );
+            Ok(loki_url)
+        } else {
+            Ok(local_dest.to_string_lossy().into())
+        }
     }
 
     async fn create_port_forward(

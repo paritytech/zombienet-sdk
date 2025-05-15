@@ -425,8 +425,11 @@ where
         Ok(self.filesystem.read_to_string(&self.log_path).await?)
     }
 
-    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
-        Ok(self.filesystem.copy(&self.log_path, local_dest).await?)
+    // Copy logs to the given destination.
+    // Return destination log
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<String, ProviderError> {
+        self.filesystem.copy(&self.log_path, &local_dest).await?;
+        Ok(local_dest.to_string_lossy().into())
     }
 
     async fn run_command(

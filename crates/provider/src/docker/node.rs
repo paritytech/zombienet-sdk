@@ -361,7 +361,7 @@ where
         todo!()
     }
 
-    async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
+    async fn dump_logs(&self, _local_dest: PathBuf) -> Result<String, ProviderError> {
         todo!()
     }
 

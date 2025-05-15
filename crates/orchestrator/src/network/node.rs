@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
 use glob_match::glob_match;
@@ -354,6 +354,10 @@ impl NetworkNode {
 
     // Logs
 
+    pub async fn dump_logs(&self, local_dest: PathBuf) -> Result<String, anyhow::Error> {
+        Ok(self.inner.dump_logs(local_dest).await?)
+    }
+
     /// Get the logs of the node
     /// TODO: do we need the `since` param, maybe we could be handy later for loop filtering
     pub async fn logs(&self) -> Result<String, anyhow::Error> {
@@ -658,7 +662,7 @@ mod tests {
             Ok(self.logs.lock().unwrap().join("\n"))
         }
 
-        async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
+        async fn dump_logs(&self, _local_dest: PathBuf) -> Result<String, ProviderError> {
             todo!()
         }
 

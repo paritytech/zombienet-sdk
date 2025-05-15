@@ -14,6 +14,7 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tracing::{debug, error, info};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
@@ -61,7 +62,27 @@ macros::create_add_options!(AddCollatorOptions {
     chain_spec_relay: Option<PathBuf>
 });
 
+impl<T: FileSystem> Drop for Network<T> {
+    fn drop(&mut self) {
+        // Below works only in multi-threaded runtime.
+        // In order to not lock other async threads move this thread to the blocking pool.
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { self.shutdown().await })
+        });
+
+        if let Err(err) = result {
+            error!("Error shutting down the network - {:?}", err);
+        };
+    }
+}
+
 impl<T: FileSystem> Network<T> {
+    async fn shutdown(&self) -> Result<(), anyhow::Error> {
+        self.dump_logs().await?;
+        self.destroy().await?;
+        Ok(())
+    }
+
     pub(crate) fn new_with_relay(
         relay: Relaychain,
         ns: DynNamespace,
@@ -92,7 +113,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     // Teardown the network
-    pub async fn destroy(self) -> Result<(), ProviderError> {
+    pub async fn destroy(&self) -> Result<(), ProviderError> {
         self.ns.destroy().await
     }
 
@@ -665,5 +686,29 @@ impl<T: FileSystem> Network<T> {
                 .iter_mut()
                 .flat_map(|(_, p)| &mut p.collators),
         )
+    }
+
+    pub async fn dump_logs(&self) -> Result<(), anyhow::Error> {
+        let logs_path = self.ns.base_dir().join("logs");
+
+        debug!("dumping network logs to {:?}", logs_path);
+        self.filesystem.create_dir_all(&logs_path).await?;
+
+        info!("Relay nodes:");
+        for node in self.relay.nodes().iter() {
+            let dest_path = logs_path.join(format!("{}.log", node.name()));
+            let log_path = node.dump_logs(dest_path).await?;
+            info!("\t{}: {}", node.name(), log_path);
+        }
+        for para in self.parachains().iter() {
+            info!("ParaId: {}", para.para_id());
+            for node in para.collators.iter() {
+                let dest_path = logs_path.join(format!("{}.log", node.name()));
+                let log_path = node.dump_logs(dest_path).await?;
+                info!("\t{}: {}", node.name(), log_path);
+            }
+        }
+
+        Ok(())
     }
 }

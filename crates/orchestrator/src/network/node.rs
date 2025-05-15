@@ -12,9 +12,9 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
-use crate::network_spec::node::NodeSpec;
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
+use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
 #[derive(Error, Debug)]
 pub enum NetworkNodeError {
@@ -159,7 +159,7 @@ impl NetworkNode {
 
     /// Get the rpc client for the node
     pub async fn rpc(&self) -> Result<RpcClient, subxt::Error> {
-        RpcClient::from_url(&self.ws_uri).await
+        get_client_from_url(&self.ws_uri).await
     }
 
     /// Get the [online client](subxt::client::OnlineClient) for the node
@@ -181,11 +181,7 @@ impl NetworkNode {
     pub async fn try_client<Config: subxt::Config>(
         &self,
     ) -> Result<OnlineClient<Config>, subxt::Error> {
-        if subxt::utils::url_is_secure(&self.ws_uri)? {
-            OnlineClient::from_url(&self.ws_uri).await
-        } else {
-            OnlineClient::from_insecure_url(&self.ws_uri).await
-        }
+        get_client_from_url(&self.ws_uri).await
     }
 
     /// Wait until get the [online client](subxt::client::OnlineClient) for the node

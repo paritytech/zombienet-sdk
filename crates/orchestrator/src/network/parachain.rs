@@ -16,6 +16,7 @@ use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
 use crate::{
     network_spec::parachain::ParachainSpec,
     shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
+    tx_helper::client::get_client_from_url,
     ScopedFilesystem,
 };
 
@@ -158,7 +159,8 @@ impl Parachain {
                     options.node_ws_url.as_str()
                 )
             })?;
-        let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
+
+        let api: OnlineClient<SubstrateConfig> = get_client_from_url(&options.node_ws_url).await?;
 
         let schedule_para = subxt::dynamic::tx(
             "ParasSudoWrapper",

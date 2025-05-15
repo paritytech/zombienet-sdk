@@ -6,6 +6,7 @@ pub mod generators;
 pub mod network;
 pub mod network_helper;
 pub mod tx_helper;
+pub mod utils;
 
 mod network_spec;
 #[cfg(feature = "pjs")]

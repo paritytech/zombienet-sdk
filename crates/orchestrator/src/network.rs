@@ -3,9 +3,7 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
-use tokio::sync::oneshot;
 use tracing::{debug, error};
 
 use configuration::{
@@ -41,8 +39,6 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Parachain>,
     #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
-    #[serde(skip)]
-    shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -68,27 +64,22 @@ macros::create_add_options!(AddCollatorOptions {
 
 impl<T: FileSystem> Drop for Network<T> {
     fn drop(&mut self) {
-        debug!("Dropping Network");
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(()); // Trigger async cleanup
-        }
+        // Below works only in multi-threaded runtime.
+        // In order to not lock other async threads move this thread to the blocking pool.
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { self.shutdown().await })
+        });
+
+        if let Err(err) = result {
+            error!("Error shutting down the network - {:?}", err);
+        };
     }
 }
 
-impl<T: FileSystem + Sync + Send + 'static> Network<T> {
-    async fn shutdown(
-        self: Arc<Self>,
-        mut shutdown_rx: oneshot::Receiver<()>,
-    ) -> Result<(), anyhow::Error> {
-        debug!("Task for started.");
-
-        tokio::select! {
-            _ = &mut shutdown_rx => {
-                debug!("Shutdown received");
-                self.dump_logs().await?;
-                self.destroy().await?;
-            }
-        }
+impl<T: FileSystem> Network<T> {
+    async fn shutdown(&self) -> Result<(), anyhow::Error> {
+        self.dump_logs().await?;
+        self.destroy().await?;
         Ok(())
     }
 
@@ -98,33 +89,13 @@ impl<T: FileSystem + Sync + Send + 'static> Network<T> {
         fs: T,
         initial_spec: NetworkSpec,
     ) -> Self {
-        let (tx, rx) = oneshot::channel();
-
-        let network = Self {
+        Self {
             ns,
             filesystem: fs,
             relay,
             initial_spec,
             parachains: Default::default(),
             nodes_by_name: Default::default(),
-            shutdown_tx: Some(tx),
-        };
-
-        // Clone Arc for background task
-        let arc_network = Arc::new(network);
-        let arc_clone = Arc::clone(&arc_network);
-
-        tokio::spawn(async move {
-            if let Err(err) = arc_clone.shutdown(rx).await {
-                error!("shutdown task error: {:?}", err);
-            }
-        });
-
-        // Now unwrap back to owned `Self` from the Arc
-        // SAFETY: only safe if no other strong refs exist
-        match Arc::try_unwrap(arc_network) {
-            Ok(network) => network,
-            Err(_) => panic!("Unexpected Network clone left"),
         }
     }
 

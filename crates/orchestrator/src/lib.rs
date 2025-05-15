@@ -47,7 +47,7 @@ where
 
 impl<T> Orchestrator<T>
 where
-    T: FileSystem + Sync + Send + Clone + 'static,
+    T: FileSystem + Sync + Send + Clone,
 {
     pub fn new(filesystem: T, provider: DynProvider) -> Self {
         Self {

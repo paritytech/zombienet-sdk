@@ -17,7 +17,7 @@ use std::{
     collections::HashSet,
     net::IpAddr,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use configuration::{NetworkConfig, RegistrationStrategy};
@@ -34,7 +34,7 @@ use provider::{
 use serde_json::json;
 use support::fs::{FileSystem, FileSystemError};
 use tokio::time::timeout;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
 pub struct Orchestrator<T>
@@ -111,8 +111,10 @@ where
             self.provider.create_namespace().await?
         };
 
+        let start_time = SystemTime::now();
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());
+        info!("🕰 start time: {:?}", start_time);
 
         network_spec
             .populate_nodes_available_args(ns.clone())
@@ -367,6 +369,15 @@ where
         // - write zombie.json state file
         let mut zombie_json = serde_json::to_value(&network)?;
         zombie_json["local_base_dir"] = serde_json::value::Value::String(base_dir.to_string());
+        zombie_json["ns"] = serde_json::value::Value::String(ns.name().to_string());
+
+        if let Ok(start_time_ts) = start_time.duration_since(SystemTime::UNIX_EPOCH) {
+            zombie_json["start_time_ts"] =
+                serde_json::value::Value::String(start_time_ts.as_millis().to_string());
+        } else {
+            // Just warn, do not propagate the err (this should not happens)
+            warn!("⚠️ Error getting start_time timestamp");
+        }
 
         scoped_fs
             .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)

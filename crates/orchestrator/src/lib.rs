@@ -16,7 +16,6 @@ mod spawner;
 use std::{
     collections::HashSet,
     net::IpAddr,
-    os::macos::raw::stat,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };

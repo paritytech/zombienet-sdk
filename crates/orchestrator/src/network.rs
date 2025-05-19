@@ -650,7 +650,7 @@ impl<T: FileSystem> Network<T> {
 
     /// Get a first parachain from the list of the parachains with specified id.
     /// NOTE!
-    /// Usually the list will contain only one parachain of.
+    /// Usually the list will contain only one parachain.
     /// Multiple parachains with the same id is a corner case.
     /// If this is the case then one can get such parachain with
     /// `parachain_by_unique_id()` method
@@ -661,6 +661,13 @@ impl<T: FileSystem> Network<T> {
         self.parachains.get(&para_id)?.first()
     }
 
+    /// Get a parachain by its unique id.
+    ///
+    /// This is particularly useful if there are multiple parachains
+    /// with the same id (this is a rare corner case).
+    ///
+    /// # Arguments
+    /// * `unique_id` - unique id of the parachain
     pub fn parachain_by_unique_id(&self, unique_id: impl AsRef<str>) -> Option<&Parachain> {
         self.parachains
             .values()

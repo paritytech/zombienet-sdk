@@ -24,6 +24,8 @@ use crate::{
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,
+    // unique_id is internally used to allow multiple parachains with the same id
+    // See `ParachainConfig` for more details
     pub(crate) unique_id: String,
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,

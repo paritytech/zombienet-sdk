@@ -35,7 +35,7 @@ pub struct Network<T: FileSystem> {
     filesystem: T,
     relay: Relaychain,
     initial_spec: NetworkSpec,
-    parachains: HashMap<u32, Parachain>,
+    parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
 }
@@ -204,7 +204,9 @@ impl<T: FileSystem> Network<T> {
 
     /// Add a new collator to a parachain
     ///
-    /// NOTE: name must be unique in the whole network.
+    /// NOTE #1: name must be unique in the whole network.
+    /// NOTE #2: if more parachains with given id available (rare corner case)
+    /// then it adds collator to the first parachain
     ///
     /// # Example:
     /// ```rust
@@ -251,9 +253,12 @@ impl<T: FileSystem> Network<T> {
             default_db_snapshot: spec.default_db_snapshot.as_ref(),
             default_args: spec.default_args.iter().collect(),
         };
+
         let parachain = self
             .parachains
-            .get(&para_id)
+            .get_mut(&para_id)
+            .ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?
+            .get_mut(0)
             .ok_or(anyhow::anyhow!(format!("parachain: {para_id} not found!")))?;
 
         let base_dir = self.ns.base_dir().to_string_lossy();
@@ -317,8 +322,7 @@ impl<T: FileSystem> Network<T> {
         );
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
-        let para = self.parachains.get_mut(&para_id).unwrap();
-        para.collators.push(node.clone());
+        parachain.collators.push(node.clone());
         self.add_running_node(node, None);
 
         Ok(())
@@ -622,7 +626,7 @@ impl<T: FileSystem> Network<T> {
     // Internal API
     pub(crate) fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
         if let Some(para_id) = para_id {
-            if let Some(para) = self.parachains.get_mut(&para_id) {
+            if let Some(para) = self.parachains.get_mut(&para_id).and_then(|p| p.get_mut(0)) {
                 para.collators.push(node.clone());
             } else {
                 // is the first node of the para, let create the entry
@@ -637,33 +641,52 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {
-        self.parachains.insert(para.para_id, para);
+        self.parachains.entry(para.para_id).or_default().push(para);
     }
 
     pub fn name(&self) -> &str {
         self.ns.name()
     }
 
+    /// Get a first parachain from the list of the parachains with specified id.
+    /// NOTE!
+    /// Usually the list will contain only one parachain of.
+    /// Multiple parachains with the same id is a corner case.
+    /// If this is the case then one can get such parachain with
+    /// `parachain_by_unique_id()` method
+    ///
+    /// # Arguments
+    /// * `para_id` - Parachain Id
     pub fn parachain(&self, para_id: u32) -> Option<&Parachain> {
-        self.parachains.get(&para_id)
+        self.parachains.get(&para_id)?.first()
+    }
+
+    pub fn parachain_by_unique_id(&self, unique_id: impl AsRef<str>) -> Option<&Parachain> {
+        self.parachains
+            .values()
+            .flat_map(|p| p.iter())
+            .find(|p| p.unique_id == unique_id.as_ref())
     }
 
     pub fn parachains(&self) -> Vec<&Parachain> {
-        self.parachains.values().collect()
+        self.parachains.values().flatten().collect()
     }
 
     pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
-        self.relay
-            .nodes
-            .iter()
-            .chain(self.parachains.values().flat_map(|p| &p.collators))
+        self.relay.nodes.iter().chain(
+            self.parachains
+                .values()
+                .flat_map(|p| p.iter())
+                .flat_map(|p| &p.collators),
+        )
     }
 
     pub(crate) fn nodes_iter_mut(&mut self) -> impl Iterator<Item = &mut NetworkNode> {
         self.relay.nodes.iter_mut().chain(
             self.parachains
-                .iter_mut()
-                .flat_map(|(_, p)| &mut p.collators),
+                .values_mut()
+                .flat_map(|p| p.iter_mut())
+                .flat_map(|p| &mut p.collators),
         )
     }
 }

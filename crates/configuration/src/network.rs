@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, fs, marker::PhantomData, rc::Rc};
 
 use anyhow::anyhow;
 use regex::Regex;
@@ -23,6 +23,8 @@ use crate::{
         node::NodeConfig,
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
     },
+    types::ParaId,
+    RegistrationStrategy,
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
@@ -501,8 +503,32 @@ impl NetworkConfigBuilder<WithRelaychain> {
 
     /// Seals the builder and returns a [`NetworkConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
-        if !self.errors.is_empty() {
-            return Err(self.errors);
+        let mut paras_to_register: HashSet<ParaId> = Default::default();
+        let mut errs: Vec<anyhow::Error> = self
+            .config
+            .parachains
+            .iter()
+            .filter_map(|para| {
+                if let Some(RegistrationStrategy::Manual) = para.registration_strategy() {
+                    return None;
+                };
+
+                if paras_to_register.insert(para.id()) {
+                    None
+                } else {
+                    // already in the set
+                    Some(anyhow!(
+                        "ParaId {} already set to be registered, only one should be.",
+                        para.id()
+                    ))
+                }
+            })
+            .collect();
+
+        if !self.errors.is_empty() || !errs.is_empty() {
+            let mut ret_errs = self.errors;
+            ret_errs.append(&mut errs);
+            return Err(ret_errs);
         }
 
         Ok(self.config)
@@ -602,6 +628,7 @@ mod tests {
         assert_eq!(collator.command().unwrap().as_str(), "command1");
         assert!(collator.is_validator());
         assert_eq!(parachain1.initial_balance(), 100_000);
+        assert_eq!(parachain1.unique_id(), "1");
 
         // parachain2
         let &parachain2 = network_config.parachains().last().unwrap();
@@ -1720,6 +1747,74 @@ mod tests {
         assert_eq!(
             load_from_toml.parachains()[0].wasm_override(),
             expected.parachains()[0].wasm_override()
+        );
+    }
+
+    #[test]
+    fn multiple_paras_with_same_id_should_work() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_node(|node| node.with_name("node").with_command("command"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1)
+                    .with_chain("myparachain1")
+                    .with_collator(|collator| {
+                        collator.with_name("collator1").with_command("command1")
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1)
+                    .with_chain("myparachain1")
+                    .with_registration_strategy(RegistrationStrategy::Manual)
+                    .with_collator(|collator| {
+                        collator.with_name("collator2").with_command("command1")
+                    })
+            })
+            .build()
+            .unwrap();
+
+        let &parachain2 = network_config.parachains().last().unwrap();
+        assert_eq!(parachain2.unique_id(), "1-1");
+    }
+
+    #[test]
+    fn multiple_paras_with_same_id_both_for_register_should_fail() {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("polkadot")
+                    .with_node(|node| node.with_name("node").with_command("command"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1)
+                    .with_chain("myparachain1")
+                    .with_collator(|collator| {
+                        collator.with_name("collator1").with_command("command1")
+                    })
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1)
+                    .with_chain("myparachain1")
+                    // .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+                    .with_collator(|collator| {
+                        collator
+                            .with_name("collator2")
+                            .with_command("command1")
+                    })
+            })
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "ParaId 1 already set to be registered, only one should be."
         );
     }
 }

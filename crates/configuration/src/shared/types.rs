@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     fmt::{self, Display},
     path::PathBuf,
@@ -529,6 +530,8 @@ impl<'de> Deserialize<'de> for Arg {
 pub struct ValidationContext {
     pub used_ports: Vec<Port>,
     pub used_nodes_names: Vec<String>,
+    // Store para_id already used
+    pub used_para_ids: HashMap<ParaId, u8>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize)]

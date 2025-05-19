@@ -1,9 +1,10 @@
-use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
+use zombienet_sdk::{environment::get_spawn_fn, NetworkConfigBuilder};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn two_paras_same_id() {
     tracing_subscriber::fmt::init();
-    let network = NetworkConfigBuilder::new()
+    let spawn_fn = get_spawn_fn();
+    let config = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
@@ -25,10 +26,9 @@ async fn two_paras_same_id() {
                 .with_collator(|n| n.with_name("collator1"))
         })
         .build()
-        .unwrap()
-        .spawn_native()
-        .await
         .unwrap();
+
+    let network = spawn_fn(config).await.unwrap();
 
     assert!(network.get_node("collator").is_ok());
     assert!(network.get_node("collator1").is_ok());

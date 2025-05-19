@@ -1,0 +1,93 @@
+name: Cargo Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build:
+    name: Zombienet SDK - latest
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          # TODO 24-02-08: Disable nightly due to tkaitchuck/aHash#200.
+          #- nightly
+    steps:
+      # https://github.com/jlumbroso/free-disk-space
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+
+      - uses: actions/checkout@v3
+
+      - name: Init nigthly install for fmt
+        run: rustup update nightly && rustup default nightly && rustup component add rustfmt
+
+      - name: Check format
+        run: cargo +nightly fmt --check --all
+
+      - name: Init install
+        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
+
+      - name: Fetch cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          shared-key: "zombie-cache"
+
+      - name: Clippy
+        # disable needless_lifetimes until we align the version with polakdot-sdk
+        run: cargo clippy --all-targets --all-features -- -A clippy::needless_lifetimes
+
+      - name: Build
+        run: cargo build
+
+      - name: Tests
+        run: cargo test --workspace -- --skip ci_k8s
+
+  coverage:
+    name: Zombienet SDK - coverage
+    needs: build
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'pull_request'
+
+    permissions:
+       issues: write
+       pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # https://github.com/jlumbroso/free-disk-space
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+
+      - name: Fetch cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          shared-key: "zombie-cache"
+
+      - name: Install latest nextest release
+        uses: taiki-e/install-action@nextest
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Collect coverage data
+        run: cargo llvm-cov nextest --workspace --exclude zombienet-sdk --test-threads 1 --lcov --output-path lcov.info
+
+      - name: Report code coverage
+        uses: Nef10/lcov-reporter-action@v0.4.0
+        with:
+          lcov-file: lcov.info
+          pr-number: ${{ github.event.pull_request.number }}

@@ -4,7 +4,7 @@ use support::constants::{BORROWABLE, THIS_IS_A_BUG};
 
 use super::{
     errors::ValidationError,
-    types::{Port, ValidationContext},
+    types::{ParaId, Port, ValidationContext},
 };
 
 pub fn merge_errors(errors: Vec<anyhow::Error>, new_error: anyhow::Error) -> Vec<anyhow::Error> {
@@ -66,4 +66,22 @@ pub fn ensure_port_unique(
     }
 
     Err(ValidationError::PortAlreadyUsed(port).into())
+}
+
+pub fn generate_unique_para_id(
+    para_id: ParaId,
+    validation_context: Rc<RefCell<ValidationContext>>,
+) -> String {
+    let mut context = validation_context
+        .try_borrow_mut()
+        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
+
+    if let Some(suffix) = context.used_para_ids.get_mut(&para_id) {
+        *suffix += 1;
+        format!("{para_id}-{suffix}")
+    } else {
+        // insert 0, since will be used next time.
+        context.used_para_ids.insert(para_id, 0);
+        para_id.to_string()
+    }
 }

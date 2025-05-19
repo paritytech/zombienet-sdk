@@ -165,16 +165,16 @@ impl NetworkSpec {
             debug!("parachain chain-spec built!");
 
             if base_dir_exists {
-                scoped_fs.create_dir_all(para.id.to_string()).await?;
+                scoped_fs.create_dir_all(&para.unique_id).await?;
             } else {
-                scoped_fs.create_dir(para.id.to_string()).await?;
+                scoped_fs.create_dir(&para.unique_id).await?;
             };
 
             // create wasm/state
             para.genesis_state
                 .build(
                     chain_spec_raw_path.clone(),
-                    format!("{}/genesis-state", para.id),
+                    format!("{}/genesis-state", para.unique_id),
                     &ns,
                     scoped_fs,
                 )
@@ -183,7 +183,7 @@ impl NetworkSpec {
             para.genesis_wasm
                 .build(
                     chain_spec_raw_path,
-                    format!("{}/genesis-wasm", para.id),
+                    format!("{}/genesis-wasm", para.unique_id),
                     &ns,
                     scoped_fs,
                 )

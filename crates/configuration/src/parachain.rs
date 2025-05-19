@@ -11,7 +11,7 @@ use serde::{
 use crate::{
     shared::{
         errors::{ConfigError, FieldError},
-        helpers::{merge_errors, merge_errors_vecs},
+        helpers::{generate_unique_para_id, merge_errors, merge_errors_vecs},
         node::{self, NodeConfig, NodeConfigBuilder},
         resources::{Resources, ResourcesBuilder},
         types::{
@@ -107,6 +107,10 @@ impl<'de> Deserialize<'de> for RegistrationStrategy {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParachainConfig {
     id: u32,
+    #[serde(skip)]
+    // unique_id is internally used to allow multiple parachains with the same id
+    // BUT, only one of them could be register automatically at spawn
+    unique_id: String,
     chain: Option<Chain>,
     #[serde(flatten)]
     registration_strategy: Option<RegistrationStrategy>,
@@ -162,6 +166,11 @@ impl ParachainConfig {
     /// The parachain ID.
     pub fn id(&self) -> u32 {
         self.id
+    }
+
+    /// The parachain unique ID.
+    pub fn unique_id(&self) -> &str {
+        &self.unique_id
     }
 
     /// The chain name.
@@ -319,6 +328,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
         Self {
             config: ParachainConfig {
                 id: 100,
+                unique_id: String::from("100"),
                 chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
                 onboard_as_parachain: true,
@@ -452,11 +462,15 @@ impl ParachainConfigBuilder<Initial, Running> {
 }
 
 impl<C: Context> ParachainConfigBuilder<Initial, C> {
-    /// Set the parachain ID (should be unique).
-    // TODO: handle unique validation
+    /// Set the parachain ID and the unique_id (with the suffix `<para_id>-x` if the id is already used)
     pub fn with_id(self, id: u32) -> ParachainConfigBuilder<WithId, C> {
+        let unique_id = generate_unique_para_id(id, self.validation_context.clone());
         Self::transition(
-            ParachainConfig { id, ..self.config },
+            ParachainConfig {
+                id,
+                unique_id,
+                ..self.config
+            },
             self.validation_context,
             self.errors,
         )

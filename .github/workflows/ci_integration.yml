@@ -1,4 +1,4 @@
-name: Cargo Build & Test
+name: Integration test
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
     runs-on: zombienet-arc-runner
     timeout-minutes: 60
     container:
-        image: ${{ vars.BASE_IMAGE }}
+        image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
     runs-on: zombienet-arc-runner
     timeout-minutes: 60
     container:
-        image: ${{ vars.BASE_IMAGE }}
+        image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
     steps:
       - name: Checkout
         uses: actions/checkout@v4

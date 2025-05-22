@@ -224,16 +224,13 @@ where
         let mut network =
             Network::new_with_relay(r, ns.clone(), self.filesystem.clone(), network_spec.clone());
 
-        let spawning_tasks = bootnodes
-            .iter()
-            .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
-
         // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
         let mut node_ws_url: String = "".to_string();
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
-        for node in futures::future::try_join_all(spawning_tasks).await? {
+        for node in bootnodes {
+            let node = spawner::spawn_node(node, global_files_to_inject.clone(), &ctx).await?;
             let bootnode_multiaddr = node.multiaddr();
 
             bootnodes_addr.push(bootnode_multiaddr.to_string());
@@ -258,12 +255,8 @@ where
         ctx.bootnodes_addr = &bootnodes_addr;
 
         // spawn the rest of the nodes (TODO: in batches)
-        let spawning_tasks = relaynodes
-            .iter()
-            .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
-
-        for node in futures::future::try_join_all(spawning_tasks).await? {
-            // Add the node to the  context and `Network` instance
+        for node in relaynodes {
+            let node = spawner::spawn_node(node, global_files_to_inject.clone(), &ctx).await?;
             ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
             network.add_running_node(node, None);
         }
@@ -273,7 +266,10 @@ where
             // Create parachain (in the context of the running network)
             let parachain = Parachain::from_spec(para, &global_files_to_inject, &scoped_fs).await?;
             let parachain_id = parachain.chain_id.clone();
+            let parachain_para_id = parachain.para_id();
+            let parachain_files_to_inject = parachain.files_to_inject.clone();
 
+            network.add_para(parachain);
             let (bootnodes, collators) =
                 split_nodes_by_bootnodes(&para.collators, para.no_default_bootnodes);
 
@@ -290,19 +286,16 @@ where
                 ..ctx.clone()
             };
 
-            let spawning_tasks = bootnodes.iter().map(|node| {
-                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-            });
-
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];
-            let mut running_nodes: Vec<NetworkNode> = vec![];
-            for node in futures::future::try_join_all(spawning_tasks).await? {
+            for node in bootnodes {
+                let node =
+                    spawner::spawn_node(node, parachain_files_to_inject.clone(), &ctx_para).await?;
                 let bootnode_multiaddr = node.multiaddr();
 
                 bootnodes_addr.push(bootnode_multiaddr.to_string());
                 ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                running_nodes.push(node);
+                network.add_running_node(node, Some(parachain_para_id));
             }
 
             if let Some(para_chain_spec) = para.chain_spec.as_ref() {
@@ -314,21 +307,11 @@ where
             ctx_para.bootnodes_addr = &bootnodes_addr;
 
             // Spawn the rest of the nodes
-            let spawning_tasks = collators.iter().map(|node| {
-                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-            });
-
-            // join all the running nodes
-            running_nodes.extend_from_slice(
-                futures::future::try_join_all(spawning_tasks)
-                    .await?
-                    .as_slice(),
-            );
-
-            let running_para_id = parachain.para_id;
-            network.add_para(parachain);
-            for node in running_nodes {
-                network.add_running_node(node, Some(running_para_id));
+            for node in collators {
+                let node =
+                    spawner::spawn_node(node, parachain_files_to_inject.clone(), &ctx_para).await?;
+                ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                network.add_running_node(node, Some(parachain_para_id));
             }
         }
 

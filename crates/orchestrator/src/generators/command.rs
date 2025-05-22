@@ -73,9 +73,8 @@ pub fn generate_for_cumulus_node(
         let bootnodes = bootnodes_addresses
             .iter()
             .map(|m| m.to_string())
-            .collect::<Vec<String>>()
-            .join(" ");
-        tmp_args.push(bootnodes)
+            .collect::<Vec<String>>();
+        tmp_args.extend(bootnodes)
     }
 
     // ports
@@ -118,7 +117,7 @@ pub fn generate_for_cumulus_node(
     let full_bootnodes = [node_specific_bootnodes, options.bootnode_addr].concat();
     if !full_bootnodes.is_empty() {
         tmp_args.push("--bootnodes".into());
-        tmp_args.push(full_bootnodes.join(" "));
+        tmp_args.extend(full_bootnodes);
     }
 
     let mut full_node_p2p_needs_to_be_injected = true;
@@ -284,9 +283,8 @@ pub fn generate_for_node(
         let bootnodes = bootnodes_addresses
             .iter()
             .map(|m| m.to_string())
-            .collect::<Vec<String>>()
-            .join(" ");
-        tmp_args.push(bootnodes)
+            .collect::<Vec<String>>();
+        tmp_args.extend(bootnodes)
     }
 
     // ports
@@ -340,7 +338,7 @@ pub fn generate_for_node(
     let full_bootnodes = [node_specific_bootnodes, options.bootnode_addr].concat();
     if !full_bootnodes.is_empty() {
         tmp_args.push("--bootnodes".into());
-        tmp_args.push(full_bootnodes.join(" "));
+        tmp_args.extend(full_bootnodes);
     }
 
     // add the rest of the args

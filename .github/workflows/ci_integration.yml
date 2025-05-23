@@ -25,7 +25,7 @@ jobs:
     runs-on: zombienet-arc-runner
     timeout-minutes: 60
     container:
-        image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
+      image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +33,7 @@ jobs:
       - name: script
         run: |
           export ZOMBIE_PROVIDER="k8s"
+          ls -la
           cargo test --test smoke -- --nocapture
 
       - name: upload logs
@@ -44,10 +45,10 @@ jobs:
   #
   #
   native-integration-test-smoke:
-    runs-on: zombienet-arc-runner
+    runs-on: parity-zombienet
     timeout-minutes: 60
     container:
-        image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
+      image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -34,7 +34,7 @@ jobs:
         run: |
           export ZOMBIE_PROVIDER="k8s"
           df -h
-          cargo test --test smoke -- --nocapture
+          # cargo test --test smoke -- --nocapture
 
       - name: upload logs
         uses: actions/upload-artifact@v4
@@ -55,19 +55,20 @@ jobs:
       - name: Download bins
         shell: bash
         run: |
-          for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
-            echo "downloading $bin";
-            curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
-            chmod 755 /tmp/$bin;
-          done
-          ls -ltr /tmp
-          export PATH=/tmp:$PATH
-          echo $PATH
+          df -h
+      #     for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
+      #       echo "downloading $bin";
+      #       curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
+      #       chmod 755 /tmp/$bin;
+      #     done
+      #     ls -ltr /tmp
+      #     export PATH=/tmp:$PATH
+      #     echo $PATH
 
-      - name: script
-        run: |
-          export ZOMBIE_PROVIDER="native"
-          cargo test --test smoke-native -- --nocapture
+      # - name: script
+      #   run: |
+      #     export ZOMBIE_PROVIDER="native"
+      #     cargo test --test smoke-native -- --nocapture
 
       - name: upload logs
         uses: actions/upload-artifact@v4

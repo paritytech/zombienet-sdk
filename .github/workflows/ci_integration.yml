@@ -66,6 +66,8 @@ jobs:
 
       - name: script
         run: |
+          export PATH=/tmp:$PATH
+          echo $PATH
           export ZOMBIE_PROVIDER="native"
           cargo test --test smoke-native -- --nocapture
 

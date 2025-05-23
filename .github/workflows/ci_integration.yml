@@ -33,7 +33,7 @@ jobs:
       - name: script
         run: |
           export ZOMBIE_PROVIDER="k8s"
-          ls -la
+          df -h
           cargo test --test smoke -- --nocapture
 
       - name: upload logs

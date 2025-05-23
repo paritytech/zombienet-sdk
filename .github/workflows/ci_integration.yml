@@ -34,6 +34,7 @@ jobs:
         run: |
           export ZOMBIE_PROVIDER="k8s"
           df -h
+          pwd
           # cargo test --test smoke -- --nocapture
 
       - name: upload logs
@@ -55,6 +56,7 @@ jobs:
       - name: Download bins
         shell: bash
         run: |
+          pwd
           df -h
       #     for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
       #       echo "downloading $bin";

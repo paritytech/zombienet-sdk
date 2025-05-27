@@ -38,33 +38,49 @@ jobs:
       - name: Build tests
         run: |
           cargo build --tests --keep-going
-          cd /tmp/target/debug/deps/
-          find . -executable -type f
+          mkdir -p artifacts
+          cp /tmp/target/debug/deps/smoke-* artifacts/smoke
+          cp /tmp/target/debug/deps/smoke_native-* artifacts/smoke_native
 
-  # k8s-integration-test-smoke:
-  #   runs-on: parity-zombienet
-  #   timeout-minutes: 60
-  #   container:
-  #     image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zombienet-tests-${{ github.job }}-${{ github.sha }}
+          path: |
+            artifacts/smoke-*
+            artifacts/smoke_native-*
 
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-on-failure: true
+  k8s-integration-test-smoke:
+    runs-on: parity-zombienet
+    needs: build-tests
+    timeout-minutes: 60
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: script
-  #       run: |
-  #         export ZOMBIE_PROVIDER="k8s"
-  #         cargo test --test smoke -- --nocapture
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-  #     - name: upload logs
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: zombienet-logs-${{ github.job }}-${{ github.sha }}
-  #         path: |
-  #           /tmp/zombie*/logs/*
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: zombienet-tests-${{ github.job }}-${{ github.sha }}
+
+      - name: script
+        run: |
+          export ZOMBIE_PROVIDER="k8s"
+          ./smoke --nocapture
+          # cargo test --test smoke -- --nocapture
+
+      - name: upload logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie*/logs/*
   # #
   # #
   # native-integration-test-smoke:

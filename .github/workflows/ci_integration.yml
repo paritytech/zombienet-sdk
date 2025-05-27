@@ -47,7 +47,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zombienet-tests-${{ github.job }}-${{ github.sha }}
+          name: zombienet-tests-${{ github.sha }}
           path: |
             artifacts/smoke
             artifacts/smoke_native
@@ -69,7 +69,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: zombienet-tests-${{ github.job }}-${{ github.sha }}
+          name: zombienet-tests-${{ github.sha }}
 
       - name: script
         run: |

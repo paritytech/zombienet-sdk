@@ -59,13 +59,6 @@ jobs:
     container:
       image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
     steps:
-      # - name: Checkout
-      #   uses: actions/checkout@v4
-
-      # - uses: Swatinem/rust-cache@v2
-      #   with:
-      #     cache-on-failure: true
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -90,40 +83,45 @@ jobs:
             /tmp/zombie*/logs/*
   # #
   # #
-  # native-integration-test-smoke:
-  #   runs-on: parity-zombienet
-  #   timeout-minutes: 60
-  #   container:
-  #     image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-on-failure: true
+  native-integration-test-smoke:
+    runs-on: parity-zombienet
+    timeout-minutes: 60
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          part: artifacts.tar.gz
 
-  #     - name: Download bins
-  #       shell: bash
-  #       run: |
-  #         for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
-  #           echo "downloading $bin";
-  #           curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
-  #           chmod 755 /tmp/$bin;
-  #         done
-  #         ls -ltr /tmp
-  #         export PATH=/tmp:$PATH
-  #         echo $PATH
+      - name: Download bins
+        shell: bash
+        run: |
+          for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
+            echo "downloading $bin";
+            curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
+            chmod 755 /tmp/$bin;
+          done
+          ls -ltr /tmp
+          export PATH=/tmp:$PATH
+          echo $PATH
 
-  #     - name: script
-  #       run: |
-  #         export PATH=/tmp:$PATH
-  #         echo $PATH
-  #         export ZOMBIE_PROVIDER="native"
-  #         cargo test --test smoke-native -- --nocapture
+      - name: script
+        run: |
+          export PATH=/tmp:$PATH
+          echo $PATH
+          mv artifacts.tar.gz /tmp
+          cd /tmp
+          ls -la
+          tar xvfz artifacts.tar.gz
+          export ZOMBIE_PROVIDER="native"
+          ./artifacts/smoke_native --nocapture
+          # cargo test --test smoke-native -- --nocapture
 
-  #     - name: upload logs
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: zombienet-logs-${{ github.job }}-${{ github.sha }}
-  #         path: |
-  #           /tmp/zombie*/logs/*
+      - name: upload logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie*/logs/*

@@ -52,7 +52,6 @@ jobs:
           path: artifacts.tar.gz
 
   k8s-integration-test-smoke:
-    # runs-on: parity-zombienet
     runs-on: zombienet-arc-runner
     needs: build-tests
     timeout-minutes: 60

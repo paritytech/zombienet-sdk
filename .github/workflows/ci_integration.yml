@@ -41,7 +41,7 @@ jobs:
           mkdir -p artifacts
           cd artifacts
           find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke-*" ! -name "*.d" -exec mv {} $(pwd)/smoke \;
-          find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke_native-*" ! -name "*.d" -exec mv {} $(pwd)/smoke-native \;
+          find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke_native-*" ! -name "*.d" -exec mv {} $(pwd)/smoke_native \;
           ls -la
 
       - name: Upload artifacts
@@ -62,9 +62,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      # - uses: Swatinem/rust-cache@v2
+      #   with:
+      #     cache-on-failure: true
 
       - name: Download artifacts
         uses: actions/download-artifact@v4

@@ -39,13 +39,10 @@ jobs:
         run: |
           cargo build --tests --keep-going
           mkdir -p artifacts
-          ls -la /tmp/target/debug/deps/smoke-*
-          ls -la /tmp/target/debug/deps/smoke_native-*
-          cp /tmp/target/debug/deps/smoke-* ./artifacts/
-          cp /tmp/target/debug/deps/smoke_native-* ./artifacts/
           cd artifacts
-          mv smoke-* smoke
-          mv smoke_native-* smoke_native
+          find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke-*" ! -name "*.d" -exec mv {} $(pwd)/smoke \;
+          find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke_native-*" ! -name "*.d" -exec mv {} $(pwd)/smoke \;
+          ls -la
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -84,7 +84,7 @@ jobs:
   # #
   # #
   native-integration-test-smoke:
-    runs-on: parity-zombienet
+    runs-on: parity-default
     needs: build-tests
     timeout-minutes: 60
     container:

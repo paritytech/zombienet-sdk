@@ -42,13 +42,14 @@ jobs:
           cd artifacts
           find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke-*" ! -name "*.d" -exec mv {} $(pwd)/smoke \;
           find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke_native-*" ! -name "*.d" -exec mv {} $(pwd)/smoke_native \;
-          ls -la
+          cd ..
+          tar cvfz artifacts.tar.gz artifacts
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          path: artifacts/
+          path: artifacts.tar.gz
 
   k8s-integration-test-smoke:
     runs-on: parity-zombienet
@@ -72,7 +73,8 @@ jobs:
       - name: script
         run: |
           export ZOMBIE_PROVIDER="k8s"
-          ./smoke --nocapture
+          tar xvfz artifacts.tar.gz
+          ./artifacts/smoke --nocapture
           # cargo test --test smoke -- --nocapture
 
       - name: upload logs

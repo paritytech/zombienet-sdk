@@ -81,8 +81,8 @@ jobs:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
             /tmp/zombie*/logs/*
-  # #
-  # #
+  #
+  #
   native-integration-test-smoke:
     runs-on: parity-default
     needs: build-tests

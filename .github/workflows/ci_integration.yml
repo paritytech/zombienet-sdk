@@ -73,6 +73,7 @@ jobs:
       - name: script
         run: |
           export ZOMBIE_PROVIDER="k8s"
+          cd /tmp
           tar xvfz artifacts.tar.gz
           ./artifacts/smoke --nocapture
           # cargo test --test smoke -- --nocapture

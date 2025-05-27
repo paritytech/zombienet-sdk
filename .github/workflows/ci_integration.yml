@@ -38,7 +38,8 @@ jobs:
       - name: Build tests
         run: |
           cargo build --tests --keep-going
-          ls -la /tmp/target/debug/deps/
+          cd /tmp/target/debug/deps/
+          find . -executable -type f
 
   # k8s-integration-test-smoke:
   #   runs-on: parity-zombienet

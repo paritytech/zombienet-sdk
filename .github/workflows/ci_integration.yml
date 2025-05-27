@@ -39,8 +39,13 @@ jobs:
         run: |
           cargo build --tests --keep-going
           mkdir -p artifacts
-          mv /tmp/target/debug/deps/smoke-* artifacts/smoke
-          mv /tmp/target/debug/deps/smoke_native-* artifacts/smoke_native
+          ls -la /tmp/target/debug/deps/smoke-*
+          ls -la /tmp/target/debug/deps/smoke_native-*
+          cp /tmp/target/debug/deps/smoke-* ./artifacts/
+          cp /tmp/target/debug/deps/smoke_native-* ./artifacts/
+          cd artifacts
+          mv smoke-* smoke
+          mv smoke_native-* smoke_native
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

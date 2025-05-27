@@ -85,6 +85,7 @@ jobs:
   # #
   native-integration-test-smoke:
     runs-on: parity-zombienet
+    needs: build-tests
     timeout-minutes: 60
     container:
       image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220

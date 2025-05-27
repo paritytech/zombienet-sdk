@@ -52,11 +52,12 @@ jobs:
           path: artifacts.tar.gz
 
   k8s-integration-test-smoke:
-    runs-on: parity-zombienet
+    # runs-on: parity-zombienet
+    runs-on: zombienet-arc-runner
     needs: build-tests
     timeout-minutes: 60
-    container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
+    # container:
+    #   image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
     steps:
       # - name: Checkout
       #   uses: actions/checkout@v4

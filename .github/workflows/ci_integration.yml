@@ -27,6 +27,7 @@ jobs:
     timeout-minutes: 60
     container:
       image: docker.io/paritytech/ci-unified:bullseye-1.84.1-2025-01-28-v202502131220
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,8 +39,6 @@ jobs:
       - name: script
         run: |
           export ZOMBIE_PROVIDER="k8s"
-          # df -h
-          # pwd
           cargo test --test smoke -- --nocapture
 
       - name: upload logs
@@ -61,6 +60,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+
       - name: Download bins
         shell: bash
         run: |
@@ -75,6 +75,8 @@ jobs:
 
       - name: script
         run: |
+          export PATH=/tmp:$PATH
+          echo $PATH
           export ZOMBIE_PROVIDER="native"
           cargo test --test smoke-native -- --nocapture
 

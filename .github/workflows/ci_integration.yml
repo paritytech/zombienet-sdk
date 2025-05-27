@@ -38,9 +38,7 @@ jobs:
       - name: Build tests
         run: |
           cargo build --tests --keep-going
-          cd ${CARGO_TARGET_DIR}
-          apt-get update && apt-get install -y tree
-          tree
+          ls -la /tmp/target/debug/deps/
 
   # k8s-integration-test-smoke:
   #   runs-on: parity-zombienet

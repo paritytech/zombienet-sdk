@@ -39,8 +39,8 @@ jobs:
         run: |
           cargo build --tests --keep-going
           mkdir -p artifacts
-          cp /tmp/target/debug/deps/smoke-* artifacts/smoke
-          cp /tmp/target/debug/deps/smoke_native-* artifacts/smoke_native
+          mv /tmp/target/debug/deps/smoke-* artifacts/smoke
+          mv /tmp/target/debug/deps/smoke_native-* artifacts/smoke_native
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

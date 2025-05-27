@@ -69,12 +69,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          part: /tmp/artifacts.tar.gz
+          part: artifacts.tar.gz
 
       - name: script
         run: |
           export ZOMBIE_PROVIDER="k8s"
+          mv artifacts.tar.gz /tmp
           cd /tmp
+          ls -la
           tar xvfz artifacts.tar.gz
           ./artifacts/smoke --nocapture
           # cargo test --test smoke -- --nocapture

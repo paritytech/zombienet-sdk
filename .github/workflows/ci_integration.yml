@@ -48,9 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          path: |
-            artifacts/smoke
-            artifacts/smoke_native
+          path: artifacts/
 
   k8s-integration-test-smoke:
     runs-on: parity-zombienet

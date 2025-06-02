@@ -195,7 +195,7 @@ impl GlobalSettingsBuilder {
     pub fn with_spawn_concurrency(self, spawn_concurrency: usize) -> Self {
         Self::transition(
             GlobalSettings {
-                spawn_concurrency: Some(spawn_concurrency.into()),
+                spawn_concurrency: Some(spawn_concurrency),
                 ..self.config
             },
             self.errors,

@@ -1,6 +1,6 @@
 [settings]
 timeout = 3600
-node_spawn_timeout = 300
+node_spawn_timeout = 600
 
 [relaychain]
 chain = "polkadot"

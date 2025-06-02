@@ -6,7 +6,7 @@ use configuration::{
     ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::{fs::FileSystem, replacer::apply_replacements};
 use tracing::debug;
 
@@ -21,7 +21,7 @@ use crate::{
     ScopedFilesystem,
 };
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)
     // name: Option<Chain>,

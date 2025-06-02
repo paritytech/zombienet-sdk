@@ -14,7 +14,7 @@ struct Args {
 enum Commands {
     Spawn {
         config: String,
-        #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["docker", "k8s", "native"]),default_value="docker")]
+        #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["docker", "k8s", "native"]), default_value="docker")]
         provider: String,
     },
 }

@@ -39,6 +39,8 @@ pub struct GlobalSettings {
     /// Used to reuse the same files (database) from a previous run,
     /// also note that we will override the content of some of those files.
     base_dir: Option<PathBuf>,
+    /// Number of concurrent spawning process to launch, None means try to spawn all at the same time.
+    spawn_concurrency: Option<usize>,
 }
 
 impl GlobalSettings {
@@ -67,6 +69,11 @@ impl GlobalSettings {
     pub fn base_dir(&self) -> Option<&Path> {
         self.base_dir.as_deref()
     }
+
+    /// Number of concurrent spawning process to launch
+    pub fn spawn_concurrency(&self) -> Option<usize> {
+        self.spawn_concurrency
+    }
 }
 
 impl Default for GlobalSettings {
@@ -77,6 +84,7 @@ impl Default for GlobalSettings {
             node_spawn_timeout: default_node_spawn_timeout(),
             local_ip: Default::default(),
             base_dir: Default::default(),
+            spawn_concurrency: Default::default(),
         }
     }
 }
@@ -90,13 +98,7 @@ pub struct GlobalSettingsBuilder {
 impl Default for GlobalSettingsBuilder {
     fn default() -> Self {
         Self {
-            config: GlobalSettings {
-                bootnodes_addresses: vec![],
-                network_spawn_timeout: default_timeout(),
-                node_spawn_timeout: default_node_spawn_timeout(),
-                local_ip: None,
-                base_dir: None,
-            },
+            config: GlobalSettings::default(),
             errors: vec![],
         }
     }
@@ -189,6 +191,17 @@ impl GlobalSettingsBuilder {
         )
     }
 
+    /// Set the spawn concurrency
+    pub fn with_spawn_concurrency(self, spawn_concurrency: usize) -> Self {
+        Self::transition(
+            GlobalSettings {
+                spawn_concurrency: Some(spawn_concurrency.into()),
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
     /// Seals the builder and returns a [`GlobalSettings`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<GlobalSettings, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
@@ -218,6 +231,7 @@ mod tests {
             .with_node_spawn_timeout(120)
             .with_local_ip("10.0.0.1")
             .with_base_dir("/home/nonroot/mynetwork")
+            .with_spawn_concurrency(5)
             .build()
             .unwrap();
 
@@ -243,6 +257,7 @@ mod tests {
             global_settings_config.base_dir().unwrap(),
             Path::new("/home/nonroot/mynetwork")
         );
+        assert_eq!(global_settings_config.spawn_concurrency().unwrap(), 5)
     }
 
     #[test]

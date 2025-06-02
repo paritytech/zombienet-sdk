@@ -579,12 +579,10 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
         if let Some(spawn_concurrency) = desired_spawn_concurrency {
             if spawn_concurrency == 1 {
                 (1, false)
-            } else {
-                if has_tokens(&serde_json::to_string(spec)?) {
+            } else if has_tokens(&serde_json::to_string(spec)?) {
                     (1, true)
-                } else {
-                    (spawn_concurrency, false)
-                }
+            } else {
+                (spawn_concurrency, false)
             }
         } else {
             // not set
@@ -697,24 +695,26 @@ pub use pjs_helper::PjsResult;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, MutexGuard};
+    use tokio::sync::Mutex;
+    use lazy_static::lazy_static;
 
     use configuration::{GlobalSettingsBuilder, NetworkConfigBuilder};
 
     use super::*;
 
-    // mutex for test that use env
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
-    const ENV_KEY: &str = "ZOMBIE_SPAWN_CONCURRENCY";
 
-    fn get_lock_with_env(concurrency: Option<u32>) -> MutexGuard<'static, ()> {
-        let guard = ENV_MUTEX.lock().unwrap();
+    const ENV_KEY: &str = "ZOMBIE_SPAWN_CONCURRENCY";
+    // mutex for test that use env
+    lazy_static! {
+        static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
+    }
+
+    fn set_env(concurrency: Option<u32>) {
         if let Some(value) = concurrency {
             env::set_var(ENV_KEY, value.to_string());
         } else {
             env::remove_var(ENV_KEY);
         }
-        guard
     }
 
     fn generate(
@@ -812,7 +812,8 @@ mod tests {
 
     #[tokio::test]
     async fn default_spawn_concurrency() {
-        let _guard = get_lock_with_env(None);
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
         let network_config = generate(false, Some("cargo")).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let (concurrency, _) = calculate_concurrency(&spec).unwrap();
@@ -821,7 +822,9 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency() {
-        let _guard = get_lock_with_env(None);
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+
         let network_config = generate(false, Some("cargo")).unwrap();
         let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
 
@@ -838,7 +841,11 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency_but_limited() {
-        let _guard = get_lock_with_env(None);
+        // let mutex = ENV_MUTEX;
+        // let _g = mutex.lock().await;
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+
         let network_config = generate(false, Some("cargo")).unwrap();
         let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
 
@@ -858,7 +865,11 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency_from_env() {
-        let _guard = get_lock_with_env(Some(10));
+        // let mutex = ENV_MUTEX;
+        // let _g = mutex.lock().await;
+        let _g = ENV_MUTEX.lock().await;
+        set_env(Some(10));
+
         let network_config = generate(false, Some("cargo")).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
@@ -868,7 +879,11 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency_from_env_but_limited() {
-        let _guard = get_lock_with_env(Some(12));
+        // let mutex = ENV_MUTEX;
+        // let _g = mutex.lock().await;
+        let _g = ENV_MUTEX.lock().await;
+        set_env(Some(12));
+
         let network_config = generate(false, Some("cargo")).unwrap();
         let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let node = spec.relaychain.nodes.first_mut().unwrap();

@@ -90,19 +90,20 @@ impl Default for GlobalSettings {
 }
 
 /// A global settings builder, used to build [`GlobalSettings`] declaratively with fields validation.
+#[derive(Default)]
 pub struct GlobalSettingsBuilder {
     config: GlobalSettings,
     errors: Vec<anyhow::Error>,
 }
 
-impl Default for GlobalSettingsBuilder {
-    fn default() -> Self {
-        Self {
-            config: GlobalSettings::default(),
-            errors: vec![],
-        }
-    }
-}
+// impl Default for GlobalSettingsBuilder {
+//     fn default() -> Self {
+//         Self {
+//             config: GlobalSettings::default(),
+//             errors: vec![],
+//         }
+//     }
+// }
 
 impl GlobalSettingsBuilder {
     pub fn new() -> Self {

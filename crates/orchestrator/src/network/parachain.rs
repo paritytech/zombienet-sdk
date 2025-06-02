@@ -24,6 +24,9 @@ use crate::{
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,
+    // unique_id is internally used to allow multiple parachains with the same id
+    // See `ParachainConfig` for more details
+    pub(crate) unique_id: String,
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,
     pub(crate) collators: Vec<NetworkNode>,
@@ -61,10 +64,11 @@ impl ChainUpgrade for Parachain {
 }
 
 impl Parachain {
-    pub(crate) fn new(para_id: u32) -> Self {
+    pub(crate) fn new(para_id: u32, unique_id: impl Into<String>) -> Self {
         Self {
             chain: None,
             para_id,
+            unique_id: unique_id.into(),
             chain_id: None,
             chain_spec_path: None,
             collators: Default::default(),
@@ -74,11 +78,13 @@ impl Parachain {
 
     pub(crate) fn with_chain_spec(
         para_id: u32,
+        unique_id: impl Into<String>,
         chain_id: impl Into<String>,
         chain_spec_path: impl AsRef<Path>,
     ) -> Self {
         Self {
             para_id,
+            unique_id: unique_id.into(),
             chain: None,
             chain_id: Some(chain_id.into()),
             chain_spec_path: Some(chain_spec_path.as_ref().into()),
@@ -109,13 +115,14 @@ impl Parachain {
             let raw_path = chain_spec
                 .raw_path()
                 .ok_or(anyhow::anyhow!("chain-spec path should be set by now.",))?;
-            let mut running_para = Parachain::with_chain_spec(para.id, id, raw_path);
+            let mut running_para =
+                Parachain::with_chain_spec(para.id, &para.unique_id, id, raw_path);
             if let Some(chain_name) = chain_spec.chain_name() {
                 running_para.chain = Some(chain_name.to_string());
             }
             running_para
         } else {
-            Parachain::new(para.id)
+            Parachain::new(para.id, &para.unique_id)
         };
 
         para.files_to_inject = para_files_to_inject;
@@ -214,6 +221,10 @@ impl Parachain {
         self.para_id
     }
 
+    pub fn unique_id(&self) -> &str {
+        self.unique_id.as_str()
+    }
+
     pub fn chain_id(&self) -> Option<&str> {
         self.chain_id.as_deref()
     }
@@ -231,9 +242,10 @@ mod tests {
 
     #[test]
     fn create_with_is_works() {
-        let para = Parachain::new(100);
-        // only para_id should be set
+        let para = Parachain::new(100, "100");
+        // only para_id and unique_id should be set
         assert_eq!(para.para_id, 100);
+        assert_eq!(para.unique_id, "100");
         assert_eq!(para.chain_id, None);
         assert_eq!(para.chain, None);
         assert_eq!(para.chain_spec_path, None);
@@ -241,9 +253,9 @@ mod tests {
 
     #[test]
     fn create_with_chain_spec_works() {
-        let para = Parachain::with_chain_spec(100, "rococo-local", "/tmp/rococo-local.json");
-        // only para_id should be set
+        let para = Parachain::with_chain_spec(100, "100", "rococo-local", "/tmp/rococo-local.json");
         assert_eq!(para.para_id, 100);
+        assert_eq!(para.unique_id, "100");
         assert_eq!(para.chain_id, Some("rococo-local".to_string()));
         assert_eq!(para.chain, None);
         assert_eq!(
@@ -282,6 +294,7 @@ mod tests {
             .unwrap();
         println!("{:#?}", para);
         assert_eq!(para.para_id, 100);
+        assert_eq!(para.unique_id, "100");
         assert_eq!(para.chain_id, None);
         assert_eq!(para.chain, None);
         // one file should be added.

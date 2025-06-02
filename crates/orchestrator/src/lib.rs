@@ -839,8 +839,6 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency_but_limited() {
-        // let mutex = ENV_MUTEX;
-        // let _g = mutex.lock().await;
         let _g = ENV_MUTEX.lock().await;
         set_env(None);
 
@@ -863,8 +861,6 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency_from_env() {
-        // let mutex = ENV_MUTEX;
-        // let _g = mutex.lock().await;
         let _g = ENV_MUTEX.lock().await;
         set_env(Some(10));
 
@@ -877,8 +873,6 @@ mod tests {
 
     #[tokio::test]
     async fn set_spawn_concurrency_from_env_but_limited() {
-        // let mutex = ENV_MUTEX;
-        // let _g = mutex.lock().await;
         let _g = ENV_MUTEX.lock().await;
         set_env(Some(12));
 

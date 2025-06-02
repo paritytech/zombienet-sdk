@@ -96,15 +96,6 @@ pub struct GlobalSettingsBuilder {
     errors: Vec<anyhow::Error>,
 }
 
-// impl Default for GlobalSettingsBuilder {
-//     fn default() -> Self {
-//         Self {
-//             config: GlobalSettings::default(),
-//             errors: vec![],
-//         }
-//     }
-// }
-
 impl GlobalSettingsBuilder {
     pub fn new() -> Self {
         Self::default()

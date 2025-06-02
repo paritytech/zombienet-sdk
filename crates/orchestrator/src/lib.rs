@@ -15,6 +15,7 @@ mod spawner;
 
 use std::{
     collections::HashSet,
+    env,
     net::IpAddr,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
@@ -32,7 +33,10 @@ use provider::{
     DynProvider,
 };
 use serde_json::json;
-use support::fs::{FileSystem, FileSystemError};
+use support::{
+    fs::{FileSystem, FileSystemError},
+    replacer::has_tokens,
+};
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
@@ -111,10 +115,14 @@ where
             self.provider.create_namespace().await?
         };
 
+        // set the spawn_concurrency
+        let (spawn_concurrency, limited_by_tokens) = calculate_concurrency(&network_spec)?;
+
         let start_time = SystemTime::now();
         info!("🧰 ns: {}", ns.name());
         info!("🧰 base_dir: {:?}", ns.base_dir());
         info!("🕰 start time: {:?}", start_time);
+        info!("⚙️ spawn concurrency: {spawn_concurrency} (limited by tokens: {limited_by_tokens})");
 
         network_spec
             .populate_nodes_available_args(ns.clone())
@@ -224,28 +232,31 @@ where
         let mut network =
             Network::new_with_relay(r, ns.clone(), self.filesystem.clone(), network_spec.clone());
 
-        let spawning_tasks = bootnodes
-            .iter()
-            .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
-
-        // Initiate the node_ws_uel which will be later used in the Parachain_with_extrinsic config
+        // Initiate the node_ws_url which will be later used in the Parachain_with_extrinsic config
         let mut node_ws_url: String = "".to_string();
 
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
-        for node in futures::future::try_join_all(spawning_tasks).await? {
-            let bootnode_multiaddr = node.multiaddr();
 
-            bootnodes_addr.push(bootnode_multiaddr.to_string());
+        for chunk in bootnodes.chunks(spawn_concurrency) {
+            let spawning_tasks = chunk
+                .iter()
+                .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
-            // Is used in the register_para_options (We need to get this from the relay and not the collators)
-            if node_ws_url.is_empty() {
-                node_ws_url.clone_from(&node.ws_uri)
+            for node in futures::future::try_join_all(spawning_tasks).await? {
+                let bootnode_multiaddr = node.multiaddr();
+
+                bootnodes_addr.push(bootnode_multiaddr.to_string());
+
+                // Is used in the register_para_options (We need to get this from the relay and not the collators)
+                if node_ws_url.is_empty() {
+                    node_ws_url.clone_from(&node.ws_uri)
+                }
+
+                // Add the node to the  context and `Network` instance
+                ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                network.add_running_node(node, None);
             }
-
-            // Add the node to the  context and `Network` instance
-            ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-            network.add_running_node(node, None);
         }
 
         // Add the bootnodes to the relaychain spec file and ctx
@@ -257,15 +268,16 @@ where
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
-        // spawn the rest of the nodes (TODO: in batches)
-        let spawning_tasks = relaynodes
-            .iter()
-            .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
+        for chunk in relaynodes.chunks(spawn_concurrency) {
+            let spawning_tasks = chunk
+                .iter()
+                .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
-        for node in futures::future::try_join_all(spawning_tasks).await? {
-            // Add the node to the  context and `Network` instance
-            ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-            network.add_running_node(node, None);
+            for node in futures::future::try_join_all(spawning_tasks).await? {
+                // Add the node to the  context and `Network` instance
+                ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                network.add_running_node(node, None);
+            }
         }
 
         // spawn paras
@@ -290,19 +302,22 @@ where
                 ..ctx.clone()
             };
 
-            let spawning_tasks = bootnodes.iter().map(|node| {
-                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-            });
-
             // Calculate the bootnodes addr from the running nodes
             let mut bootnodes_addr: Vec<String> = vec![];
             let mut running_nodes: Vec<NetworkNode> = vec![];
-            for node in futures::future::try_join_all(spawning_tasks).await? {
-                let bootnode_multiaddr = node.multiaddr();
 
-                bootnodes_addr.push(bootnode_multiaddr.to_string());
-                ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                running_nodes.push(node);
+            for chunk in bootnodes.chunks(spawn_concurrency) {
+                let spawning_tasks = chunk.iter().map(|node| {
+                    spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+                });
+
+                for node in futures::future::try_join_all(spawning_tasks).await? {
+                    let bootnode_multiaddr = node.multiaddr();
+
+                    bootnodes_addr.push(bootnode_multiaddr.to_string());
+                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                    running_nodes.push(node);
+                }
             }
 
             if let Some(para_chain_spec) = para.chain_spec.as_ref() {
@@ -314,16 +329,18 @@ where
             ctx_para.bootnodes_addr = &bootnodes_addr;
 
             // Spawn the rest of the nodes
-            let spawning_tasks = collators.iter().map(|node| {
-                spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-            });
+            for chunk in collators.chunks(spawn_concurrency) {
+                let spawning_tasks = chunk.iter().map(|node| {
+                    spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+                });
 
-            // join all the running nodes
-            running_nodes.extend_from_slice(
-                futures::future::try_join_all(spawning_tasks)
-                    .await?
-                    .as_slice(),
-            );
+                // join all the running nodes
+                running_nodes.extend_from_slice(
+                    futures::future::try_join_all(spawning_tasks)
+                        .await?
+                        .as_slice(),
+                );
+            }
 
             let running_para_id = parachain.para_id;
             network.add_para(parachain);
@@ -539,6 +556,47 @@ fn help_msg(cmd: &str) -> String {
     }
 }
 
+/// Allow to set the default concurrency through env var `ZOMBIE_SPAWN_CONCURRENCY`
+fn spawn_concurrency_from_env() -> Option<usize> {
+    if let Ok(concurrency) = env::var("ZOMBIE_SPAWN_CONCURRENCY") {
+        concurrency.parse::<usize>().ok()
+    } else {
+        None
+    }
+}
+
+fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Error> {
+    let desired_spawn_concurrency = match (
+        spawn_concurrency_from_env(),
+        spec.global_settings.spawn_concurrency(),
+    ) {
+        (Some(n), _) => Some(n),
+        (None, Some(n)) => Some(n),
+        _ => None,
+    };
+
+    let (spawn_concurrency, limited_by_tokens) =
+        if let Some(spawn_concurrency) = desired_spawn_concurrency {
+            if spawn_concurrency == 1 {
+                (1, false)
+            } else if has_tokens(&serde_json::to_string(spec)?) {
+                (1, true)
+            } else {
+                (spawn_concurrency, false)
+            }
+        } else {
+            // not set
+            if has_tokens(&serde_json::to_string(spec)?) {
+                (1, true)
+            } else {
+                // use 100 as max concurrency, we can set a max by provider later
+                (100, false)
+            }
+        };
+
+    Ok((spawn_concurrency, limited_by_tokens))
+}
+
 // TODO: get the fs from `DynNamespace` will make this not needed
 // but the FileSystem trait isn't object-safe so we can't pass around
 // as `dyn FileSystem`. We can refactor or using some `erase` techniques
@@ -637,9 +695,25 @@ pub use pjs_helper::PjsResult;
 
 #[cfg(test)]
 mod tests {
-    use configuration::NetworkConfigBuilder;
+    use configuration::{GlobalSettingsBuilder, NetworkConfigBuilder};
+    use lazy_static::lazy_static;
+    use tokio::sync::Mutex;
 
     use super::*;
+
+    const ENV_KEY: &str = "ZOMBIE_SPAWN_CONCURRENCY";
+    // mutex for test that use env
+    lazy_static! {
+        static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
+    }
+
+    fn set_env(concurrency: Option<u32>) {
+        if let Some(value) = concurrency {
+            env::set_var(ENV_KEY, value.to_string());
+        } else {
+            env::remove_var(ENV_KEY);
+        }
+    }
 
     fn generate(
         with_image: bool,
@@ -732,5 +806,89 @@ mod tests {
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
         println!("{:?}", valid);
         assert!(valid.is_ok())
+    }
+
+    #[tokio::test]
+    async fn default_spawn_concurrency() {
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let (concurrency, _) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 100);
+    }
+
+    #[tokio::test]
+    async fn set_spawn_concurrency() {
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+
+        let global_settings = GlobalSettingsBuilder::new()
+            .with_spawn_concurrency(4)
+            .build()
+            .unwrap();
+
+        spec.set_global_settings(global_settings);
+        let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 4);
+        assert!(!limited);
+    }
+
+    #[tokio::test]
+    async fn set_spawn_concurrency_but_limited() {
+        // let mutex = ENV_MUTEX;
+        // let _g = mutex.lock().await;
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+
+        let global_settings = GlobalSettingsBuilder::new()
+            .with_spawn_concurrency(4)
+            .build()
+            .unwrap();
+
+        spec.set_global_settings(global_settings);
+        let node = spec.relaychain.nodes.first_mut().unwrap();
+        node.args
+            .push("--bootnodes {{ZOMBIE:bob:multiAddress')}}".into());
+        let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 1);
+        assert!(limited);
+    }
+
+    #[tokio::test]
+    async fn set_spawn_concurrency_from_env() {
+        // let mutex = ENV_MUTEX;
+        // let _g = mutex.lock().await;
+        let _g = ENV_MUTEX.lock().await;
+        set_env(Some(10));
+
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 10);
+        assert!(!limited);
+    }
+
+    #[tokio::test]
+    async fn set_spawn_concurrency_from_env_but_limited() {
+        // let mutex = ENV_MUTEX;
+        // let _g = mutex.lock().await;
+        let _g = ENV_MUTEX.lock().await;
+        set_env(Some(12));
+
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let node = spec.relaychain.nodes.first_mut().unwrap();
+        node.args
+            .push("--bootnodes {{ZOMBIE:bob:multiAddress')}}".into());
+        let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 1);
+        assert!(limited);
     }
 }

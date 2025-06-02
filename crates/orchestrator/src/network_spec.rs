@@ -6,7 +6,7 @@ use std::{
 use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
 use provider::{DynNamespace, ProviderError, ProviderNamespace};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::debug;
 
@@ -18,7 +18,7 @@ pub mod relaychain;
 
 use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkSpec {
     /// Relaychain configuration.
     pub(crate) relaychain: RelaychainSpec,

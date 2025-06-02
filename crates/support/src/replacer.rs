@@ -21,6 +21,11 @@ lazy_static! {
     };
 }
 
+/// Return true if the text contains any TOKEN_PLACEHOLDER
+pub fn has_tokens(text: &str) -> bool {
+    TOKEN_PLACEHOLDER.is_match(text)
+}
+
 pub fn apply_replacements(text: &str, replacements: &HashMap<&str, &str>) -> String {
     let augmented_text = RE.replace_all(text, |caps: &Captures| {
         if let Some(replacements_value) = replacements.get(&caps[1]) {

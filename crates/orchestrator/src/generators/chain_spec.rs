@@ -10,7 +10,7 @@ use provider::{
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace, ProviderError,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::process::Command;
@@ -23,7 +23,7 @@ use crate::{
 };
 
 // TODO: (javier) move to state
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Context {
     Relay,
     Para,
@@ -53,7 +53,7 @@ impl Default for SessionKeyType {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CommandInContext {
     Local(String),
     Remote(String),
@@ -75,7 +75,7 @@ pub struct ParaGenesisConfig<T: AsRef<Path>> {
     pub(crate) as_parachain: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainSpec {
     // Name of the spec file, most of the times could be the same as the chain_name. (e.g rococo-local)
     chain_spec_name: String,

@@ -580,7 +580,7 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
             if spawn_concurrency == 1 {
                 (1, false)
             } else if has_tokens(&serde_json::to_string(spec)?) {
-                    (1, true)
+                (1, true)
             } else {
                 (spawn_concurrency, false)
             }
@@ -695,13 +695,11 @@ pub use pjs_helper::PjsResult;
 
 #[cfg(test)]
 mod tests {
-    use tokio::sync::Mutex;
-    use lazy_static::lazy_static;
-
     use configuration::{GlobalSettingsBuilder, NetworkConfigBuilder};
+    use lazy_static::lazy_static;
+    use tokio::sync::Mutex;
 
     use super::*;
-
 
     const ENV_KEY: &str = "ZOMBIE_SPAWN_CONCURRENCY";
     // mutex for test that use env

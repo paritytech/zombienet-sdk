@@ -266,7 +266,7 @@ mod tests {
             bootnodes_addresses.iter().collect::<Vec<_>>()
         );
         assert_eq!(global_settings_config.network_spawn_timeout(), 600);
-        assert_eq!(global_settings_config.node_spawn_timeout(), 300);
+        assert_eq!(global_settings_config.node_spawn_timeout(), 600);
         assert_eq!(
             global_settings_config
                 .local_ip()

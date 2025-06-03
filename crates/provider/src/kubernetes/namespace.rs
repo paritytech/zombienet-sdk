@@ -61,7 +61,13 @@ where
         filesystem: &FS,
         custom_base_dir: Option<&Path>,
     ) -> Result<Arc<Self>, ProviderError> {
-        let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
+        // If the namespace is already provided
+        let name = if let Ok(name) = env::var("ZOMBIE_NAMESPACE") {
+            name
+        } else {
+            format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4())
+        };
+
         let base_dir = if let Some(custom_base_dir) = custom_base_dir {
             if !filesystem.exists(custom_base_dir).await {
                 filesystem.create_dir(custom_base_dir).await?;
@@ -98,7 +104,17 @@ where
     }
 
     async fn initialize(&self) -> Result<(), ProviderError> {
-        self.initialize_k8s().await?;
+        // Initialize the namespace IFF
+        // we are not in CI or we don't have the env `ZOMBIE_NAMESPACE` set
+        if env::var("ZOMBIE_NAMESPACE").is_err() || !running_in_ci() {
+            self.initialize_k8s().await?;
+        }
+
+        // Ensure namespace isolation and minimal resources IFF we are running in CI
+        if running_in_ci() {
+            self.initialize_static_resources().await?
+        }
+
         self.initialize_file_server().await?;
 
         self.setup_script_config_map(
@@ -158,10 +174,6 @@ where
             .write(dest_path, serialized_manifest)
             .await?;
 
-        // Ensure namespace isolation and minimal resources IFF we are running in CI
-        if running_in_ci() {
-            self.initialize_static_resources().await?
-        }
         Ok(())
     }
 

@@ -8,7 +8,7 @@ use futures::future::try_join_all;
 use provider::{DynNamespace, ProviderError, ProviderNamespace};
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{errors::OrchestratorError, ScopedFilesystem};
 
@@ -162,13 +162,14 @@ impl NetworkSpec {
     ) -> Result<(), anyhow::Error> {
         for para in self.parachains.iter_mut() {
             let chain_spec_raw_path = para.build_chain_spec(relaychain_id, &ns, scoped_fs).await?;
-            debug!("parachain chain-spec built!");
 
+            trace!("creating dirs for {}", &para.unique_id);
             if base_dir_exists {
                 scoped_fs.create_dir_all(&para.unique_id).await?;
             } else {
                 scoped_fs.create_dir(&para.unique_id).await?;
             };
+            trace!("created dirs for {}", &para.unique_id);
 
             // create wasm/state
             para.genesis_state

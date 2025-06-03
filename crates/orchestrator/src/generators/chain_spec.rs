@@ -172,7 +172,18 @@ impl ChainSpec {
                             ))
                         })?;
                 },
-                AssetLocation::Url(_url) => todo!(),
+                AssetLocation::Url(url) => {
+                    let res = reqwest::get(url.as_str())
+                        .await
+                        .map_err(|err| ProviderError::DownloadFile(url.to_string(), err.into()))?;
+
+                    let contents: &[u8] = &res.bytes().await.unwrap();
+                    trace!(
+                        "writing content from {} to: {maybe_plain_spec_path:?}",
+                        url.as_str()
+                    );
+                    scoped_fs.write(&maybe_plain_spec_path, contents).await?;
+                },
             }
         } else {
             // we should create the chain-spec using command.

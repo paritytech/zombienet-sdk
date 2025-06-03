@@ -52,7 +52,7 @@ jobs:
           path: artifacts.tar.gz
 
   k8s-integration-test-smoke:
-    runs-on: zombienet-arc-runner
+    runs-on: parity-zombienet
     needs: build-tests
     timeout-minutes: 60
     container:
@@ -66,12 +66,14 @@ jobs:
 
       - name: script
         run: |
+          export ZOMBIE_NAMESPACE=$(cat /data/namespace)
           export ZOMBIE_PROVIDER="k8s"
           mv artifacts.tar.gz /tmp
           cd /tmp
           ls -la
           tar xvfz artifacts.tar.gz
           ./artifacts/smoke --nocapture
+          # for running local
           # cargo test --test smoke -- --nocapture
 
       - name: upload logs

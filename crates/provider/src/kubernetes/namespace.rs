@@ -32,6 +32,9 @@ use crate::{
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
 
+// env var used by our internal CI to pass the namespace created and ready to use
+const ZOMBIE_K8S_CI_NAMESPACE: &str = "ZOMBIE_K8S_CI_NAMESPACE";
+
 pub(super) struct KubernetesNamespace<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
@@ -62,7 +65,7 @@ where
         custom_base_dir: Option<&Path>,
     ) -> Result<Arc<Self>, ProviderError> {
         // If the namespace is already provided
-        let name = if let Ok(name) = env::var("ZOMBIE_NAMESPACE") {
+        let name = if let Ok(name) = env::var(ZOMBIE_K8S_CI_NAMESPACE) {
             name
         } else {
             format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4())
@@ -106,7 +109,7 @@ where
     async fn initialize(&self) -> Result<(), ProviderError> {
         // Initialize the namespace IFF
         // we are not in CI or we don't have the env `ZOMBIE_NAMESPACE` set
-        if env::var("ZOMBIE_NAMESPACE").is_err() || !running_in_ci() {
+        if env::var(ZOMBIE_K8S_CI_NAMESPACE).is_err() || !running_in_ci() {
             self.initialize_k8s().await?;
         }
 

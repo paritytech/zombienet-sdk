@@ -208,7 +208,12 @@ impl ParachainSpec {
 
         let para_spec = ParachainSpec {
             id: config.id(),
-            unique_id: config.unique_id().to_string(),
+            // ensure unique id is set at this point, if not just set to the para_id
+            unique_id: if config.unique_id().is_empty() {
+                config.id().to_string()
+            } else {
+                config.unique_id().to_string()
+            },
             default_command: config.default_command().cloned(),
             default_image: config.default_image().cloned(),
             default_resources: config.default_resources().cloned(),

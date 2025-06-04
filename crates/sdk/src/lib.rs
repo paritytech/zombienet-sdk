@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 pub use configuration::{
     GlobalSettings, GlobalSettingsBuilder, NetworkConfig, NetworkConfigBuilder,
-    RegistrationStrategy,
+    RegistrationStrategy, WithRelaychain
 };
 #[cfg(feature = "pjs")]
 pub use orchestrator::pjs_helper::PjsResult;

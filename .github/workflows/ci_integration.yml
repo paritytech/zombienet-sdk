@@ -37,7 +37,7 @@ jobs:
 
       - name: Build tests
         run: |
-          cargo build --tests --keep-going
+          cargo build --tests --keep-going --locked
           mkdir -p artifacts
           cd artifacts
           find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke-*" ! -name "*.d" -exec mv {} $(pwd)/smoke \;

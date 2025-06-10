@@ -476,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_for_native_cumulus_node_rpce_external_is_removed() {
+    fn generate_for_native_cumulus_node_rpc_external_is_removed() {
         let mut node = get_node_spec();
         node.args.push("--unsafe-rpc-external".into());
         let opts = GenCmdOptions {

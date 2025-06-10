@@ -132,7 +132,7 @@ where
         bootnode_addr: ctx.bootnodes_addr.clone(),
         use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
         // IFF the provider require an image (e.g k8s) we know this is not native
-        is_native: !ctx.ns.capabilities().requires_image
+        is_native: !ctx.ns.capabilities().requires_image,
     };
 
     let mut collator_full_node_prom_port: Option<u16> = None;

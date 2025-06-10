@@ -466,10 +466,7 @@ mod tests {
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
 
-        assert!(args
-            .iter()
-            .find(|arg| *arg == "--unsafe-rpc-external")
-            .is_none());
+        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 
     #[test]
@@ -484,10 +481,7 @@ mod tests {
 
         let (_, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
 
-        assert!(args
-            .iter()
-            .find(|arg| *arg == "--unsafe-rpc-external")
-            .is_none());
+        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 
     #[test]
@@ -517,9 +511,6 @@ mod tests {
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
 
-        assert!(args
-            .iter()
-            .find(|arg| *arg == "--unsafe-rpc-external")
-            .is_some());
+        assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 }

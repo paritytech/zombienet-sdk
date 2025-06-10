@@ -517,6 +517,39 @@ mod tests {
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
 
+        // we expect to find this arg in collator node part
+        assert!(&args[0..divider_flag]
+            .iter()
+            .any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn generate_for_native_node_rpc_external_works() {
+        let node = get_node_spec();
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: true,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        assert_eq!(program.as_str(), "polkadot");
+
+        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn generate_for_non_native_node_rpc_external_works() {
+        let node = get_node_spec();
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: false,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        assert_eq!(program.as_str(), "polkadot");
+
         assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 }

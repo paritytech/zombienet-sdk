@@ -402,6 +402,12 @@ pub fn generate_for_node(
         final_args.push("--unsafe-rpc-external".into());
     }
 
+    final_args.append(&mut tmp_args);
+
+    if let Some(ref subcommand) = node.subcommand {
+        final_args.insert(1, subcommand.as_str().to_string());
+    }
+
     if options.use_wrapper {
         ("/cfg/zombie-wrapper.sh".to_string(), final_args)
     } else {

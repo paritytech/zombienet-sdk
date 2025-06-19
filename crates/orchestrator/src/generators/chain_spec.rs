@@ -10,7 +10,7 @@ use provider::{
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace, ProviderError,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::process::Command;
@@ -23,7 +23,7 @@ use crate::{
 };
 
 // TODO: (javier) move to state
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Context {
     Relay,
     Para,
@@ -53,7 +53,7 @@ impl Default for SessionKeyType {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CommandInContext {
     Local(String),
     Remote(String),
@@ -75,7 +75,7 @@ pub struct ParaGenesisConfig<T: AsRef<Path>> {
     pub(crate) as_parachain: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainSpec {
     // Name of the spec file, most of the times could be the same as the chain_name. (e.g rococo-local)
     chain_spec_name: String,
@@ -172,7 +172,18 @@ impl ChainSpec {
                             ))
                         })?;
                 },
-                AssetLocation::Url(_url) => todo!(),
+                AssetLocation::Url(url) => {
+                    let res = reqwest::get(url.as_str())
+                        .await
+                        .map_err(|err| ProviderError::DownloadFile(url.to_string(), err.into()))?;
+
+                    let contents: &[u8] = &res.bytes().await.unwrap();
+                    trace!(
+                        "writing content from {} to: {maybe_plain_spec_path:?}",
+                        url.as_str()
+                    );
+                    scoped_fs.write(&maybe_plain_spec_path, contents).await?;
+                },
             }
         } else {
             // we should create the chain-spec using command.
@@ -1003,11 +1014,14 @@ fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json:
             val["collatorSelection"]["invulnerables"] = json!([]);
         }
 
-        // clear staking
+        // clear staking but not `validatorCount` if `devStakers` is set
         if val.get("staking").is_some() {
-            val["staking"]["stakers"] = json!([]);
             val["staking"]["invulnerables"] = json!([]);
-            val["staking"]["validatorCount"] = json!(0);
+            val["staking"]["stakers"] = json!([]);
+
+            if val["staking"]["devStakers"] == json!(null) {
+                val["staking"]["validatorCount"] = json!(0);
+            }
         }
     } else {
         unreachable!("pointer to runtime config should be valid!")
@@ -1393,6 +1407,36 @@ mod tests {
         }})
     }
 
+    fn chain_spec_with_dev_stakers() -> serde_json::Value {
+        json!({"genesis": {
+            "runtimeGenesis" : {
+                "patch": {
+                    "staking": {
+                        "activeEra": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "canceledPayout": 0,
+                        "devStakers": [
+                            2000,
+                            25000
+                        ],
+                        "forceEra": "NotForcing",
+                        "invulnerables": [],
+                        "maxNominatorCount": null,
+                        "maxValidatorCount": null,
+                        "minNominatorBond": 0,
+                        "minValidatorBond": 0,
+                        "slashRewardFraction": 0,
+                        "stakers": [],
+                        "validatorCount": 500
+                    },
+                }
+            }
+        }})
+    }
+
     #[test]
     fn get_min_stake_works() {
         let mut chain_spec_json = chain_spec_with_stake();
@@ -1402,6 +1446,33 @@ mod tests {
 
         assert_eq!(100000000000001, min);
     }
+
+    #[test]
+    fn dev_stakers_not_override_count_works() {
+        let mut chain_spec_json = chain_spec_with_dev_stakers();
+
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+        clear_authorities(&pointer, &mut chain_spec_json);
+
+        let validator_count = chain_spec_json
+            .pointer(&format!("{pointer}/staking/validatorCount"))
+            .unwrap();
+        assert_eq!(validator_count, &json!(500));
+    }
+
+    #[test]
+    fn dev_stakers_override_count_works() {
+        let mut chain_spec_json = chain_spec_with_stake();
+
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+        clear_authorities(&pointer, &mut chain_spec_json);
+
+        let validator_count = chain_spec_json
+            .pointer(&format!("{pointer}/staking/validatorCount"))
+            .unwrap();
+        assert_eq!(validator_count, &json!(0));
+    }
+
     #[test]
     fn overrides_from_toml_works() {
         use serde::{Deserialize, Serialize};

@@ -11,6 +11,7 @@ pub struct GenCmdOptions<'a> {
     pub use_wrapper: bool,
     pub bootnode_addr: Vec<String>,
     pub use_default_ports_in_cmd: bool,
+    pub is_native: bool,
 }
 
 impl Default for GenCmdOptions<'_> {
@@ -23,6 +24,7 @@ impl Default for GenCmdOptions<'_> {
             use_wrapper: true,
             bootnode_addr: vec![],
             use_default_ports_in_cmd: false,
+            is_native: true,
         }
     }
 }
@@ -97,6 +99,7 @@ pub fn generate_for_cumulus_node(
         if let Some(index) = args.iter().position(|arg| match arg {
             Arg::Flag(flag) => flag.eq("--"),
             Arg::Option(..) => false,
+            Arg::Array(..) => false,
         }) {
             (collator_args, full_node_args) = args.split_at(index);
         } else {
@@ -157,6 +160,11 @@ pub fn generate_for_cumulus_node(
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
+            Arg::Array(k, v) => {
+                let mut args = vec![k.to_owned()];
+                args.extend(v.to_owned());
+                Some(args)
+            },
         })
         .flatten()
         .collect::<Vec<String>>();
@@ -190,6 +198,11 @@ pub fn generate_for_cumulus_node(
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
+            Arg::Array(k, v) => {
+                let mut args = vec![k.to_owned()];
+                args.extend(v.to_owned());
+                Some(args)
+            },
         })
         .flatten()
         .collect::<Vec<String>>();
@@ -205,10 +218,17 @@ pub fn generate_for_cumulus_node(
         node.name.clone(),
         "--rpc-cors".into(),
         "all".into(),
-        "--unsafe-rpc-external".into(),
         "--rpc-methods".into(),
         "unsafe".into(),
     ];
+
+    // The `--unsafe-rpc-external` option spawns an additional RPC server on a random port,
+    // which can conflict with reserved ports, causing an "Address already in use" error
+    // when using the `native` provider. Since this option isn't needed for `native`,
+    // it should be omitted in that case.
+    if !options.is_native {
+        final_args.push("--unsafe-rpc-external".into());
+    }
 
     final_args.append(&mut tmp_args);
 
@@ -300,6 +320,7 @@ pub fn generate_for_node(
                 None
             }
         },
+        Arg::Array(..) => None,
     }) {
         let mut parts = listen_val.split('/').collect::<Vec<&str>>();
         // TODO: move this to error
@@ -349,6 +370,11 @@ pub fn generate_for_node(
                     Some(vec![k.to_owned(), v.to_owned()])
                 }
             },
+            Arg::Array(k, v) => {
+                let mut args = vec![k.to_owned()];
+                args.extend(v.to_owned());
+                Some(args)
+            },
         })
         .flatten()
         .collect::<Vec<String>>();
@@ -364,10 +390,17 @@ pub fn generate_for_node(
         node.name.clone(),
         "--rpc-cors".into(),
         "all".into(),
-        "--unsafe-rpc-external".into(),
         "--rpc-methods".into(),
         "unsafe".into(),
     ];
+
+    // The `--unsafe-rpc-external` option spawns an additional RPC server on a random port,
+    // which can conflict with reserved ports, causing an "Address already in use" error
+    // when using the `native` provider. Since this option isn't needed for `native`,
+    // it should be omitted in that case.
+    if !options.is_native {
+        final_args.push("--unsafe-rpc-external".into());
+    }
 
     final_args.append(&mut tmp_args);
 
@@ -396,8 +429,7 @@ mod tests {
     use super::*;
     use crate::{generators, shared::types::NodeAccounts};
 
-    #[test]
-    fn generate_for_cumulus_node_works() {
+    fn get_node_spec() -> NodeSpec {
         let mut name = String::from("luca");
         let initial_balance = 1_000_000_000_000_u128;
         let seed = format!("//{}{name}", name.remove(0).to_uppercase());
@@ -405,15 +437,20 @@ mod tests {
             accounts: generators::generate_node_keys(&seed).unwrap(),
             seed,
         };
-        let node = NodeSpec {
+        NodeSpec {
             name,
             accounts,
             initial_balance,
             ..Default::default()
-        };
+        }
+    }
 
+    #[test]
+    fn generate_for_native_cumulus_node_works() {
+        let node = get_node_spec();
         let opts = GenCmdOptions {
             use_wrapper: false,
+            is_native: true,
             ..GenCmdOptions::default()
         };
 
@@ -434,5 +471,85 @@ mod tests {
             .position(|x| x == "60002")
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
+
+        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn generate_for_native_cumulus_node_rpc_external_is_removed() {
+        let mut node = get_node_spec();
+        node.args.push("--unsafe-rpc-external".into());
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: true,
+            ..GenCmdOptions::default()
+        };
+
+        let (_, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
+
+        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn generate_for_non_native_cumulus_node_works() {
+        let node = get_node_spec();
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: false,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
+        assert_eq!(program.as_str(), "polkadot");
+
+        let divider_flag = args.iter().position(|x| x == "--").unwrap();
+
+        // ensure full node ports
+        let i = args[divider_flag..]
+            .iter()
+            .position(|x| x == "60001")
+            .unwrap();
+        assert_eq!(&args[divider_flag + i - 1], "--port");
+
+        let i = args[divider_flag..]
+            .iter()
+            .position(|x| x == "60002")
+            .unwrap();
+        assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
+
+        // we expect to find this arg in collator node part
+        assert!(&args[0..divider_flag]
+            .iter()
+            .any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn generate_for_native_node_rpc_external_works() {
+        let node = get_node_spec();
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: true,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        assert_eq!(program.as_str(), "polkadot");
+
+        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn generate_for_non_native_node_rpc_external_works() {
+        let node = get_node_spec();
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: false,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        assert_eq!(program.as_str(), "polkadot");
+
+        assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 }

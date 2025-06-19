@@ -12,9 +12,9 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
-use crate::network_spec::node::NodeSpec;
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
+use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
 #[derive(Error, Debug)]
 pub enum NetworkNodeError {
@@ -31,10 +31,71 @@ pub struct NetworkNode {
     pub(crate) spec: NodeSpec,
     pub(crate) name: String,
     pub(crate) ws_uri: String,
-    pub(crate) multiaddr: Option<String>,
+    pub(crate) multiaddr: String,
     pub(crate) prometheus_uri: String,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
+}
+
+/// Result of waiting for a certain number of log lines to appear.
+///
+/// Indicates whether the log line count condition was met within the timeout period.
+///
+/// # Variants
+/// - `TargetReached(count)` – The predicate condition was satisfied within the timeout.
+///     * `count`: The number of matching log lines at the time of satisfaction.
+/// - `TargetFailed(count)` – The condition was not met within the timeout.
+///     * `count`: The final number of matching log lines at timeout expiration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLineCount {
+    TargetReached(u32),
+    TargetFailed(u32),
+}
+
+impl LogLineCount {
+    pub fn success(&self) -> bool {
+        match self {
+            Self::TargetReached(..) => true,
+            Self::TargetFailed(..) => false,
+        }
+    }
+}
+
+/// Configuration for controlling log line count waiting behavior.
+///
+/// Allows specifying a custom predicate on the number of matching log lines,
+/// a timeout in seconds, and whether the system should wait the entire timeout duration.
+///
+/// # Fields
+/// - `predicate`: A function that takes the current number of matching lines and
+///   returns `true` if the condition is satisfied.
+/// - `timeout_secs`: Maximum number of seconds to wait.
+/// - `wait_until_timeout_elapses`: If `true`, the system will continue waiting
+///   for the full timeout duration, even if the condition is already met early.
+///   Useful when you need to verify sustained absence or stability (e.g., "ensure no new logs appear").
+#[derive(Clone)]
+pub struct LogLineCountOptions {
+    pub predicate: Arc<dyn Fn(u32) -> bool + Send + Sync>,
+    pub timeout: Duration,
+    pub wait_until_timeout_elapses: bool,
+}
+
+impl LogLineCountOptions {
+    pub fn new(
+        predicate: impl Fn(u32) -> bool + 'static + Send + Sync,
+        timeout: Duration,
+        wait_until_timeout_elapses: bool,
+    ) -> Self {
+        Self {
+            predicate: Arc::new(predicate),
+            timeout,
+            wait_until_timeout_elapses,
+        }
+    }
+
+    pub fn no_occurences_within_timeout(timeout: Duration) -> Self {
+        Self::new(|n| n == 0, timeout, true)
+    }
 }
 
 // #[derive(Clone, Debug)]
@@ -55,7 +116,7 @@ impl NetworkNode {
         name: T,
         ws_uri: T,
         prometheus_uri: T,
-        multiaddr: Option<String>,
+        multiaddr: T,
         spec: NodeSpec,
         inner: DynNode,
     ) -> Self {
@@ -65,13 +126,13 @@ impl NetworkNode {
             prometheus_uri: prometheus_uri.into(),
             inner,
             spec,
-            multiaddr,
+            multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
         }
     }
 
     pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
-        self.multiaddr = Some(multiaddr.into())
+        self.multiaddr = multiaddr.into();
     }
 
     pub fn name(&self) -> &str {
@@ -90,15 +151,15 @@ impl NetworkNode {
         &self.ws_uri
     }
 
-    pub fn multiaddr(&self) -> Option<&str> {
-        self.multiaddr.as_deref()
+    pub fn multiaddr(&self) -> &str {
+        self.multiaddr.as_ref()
     }
 
     // Subxt
 
     /// Get the rpc client for the node
     pub async fn rpc(&self) -> Result<RpcClient, subxt::Error> {
-        RpcClient::from_url(&self.ws_uri).await
+        get_client_from_url(&self.ws_uri).await
     }
 
     /// Get the [online client](subxt::client::OnlineClient) for the node
@@ -120,11 +181,7 @@ impl NetworkNode {
     pub async fn try_client<Config: subxt::Config>(
         &self,
     ) -> Result<OnlineClient<Config>, subxt::Error> {
-        if subxt::utils::url_is_secure(&self.ws_uri)? {
-            OnlineClient::from_url(&self.ws_uri).await
-        } else {
-            OnlineClient::from_insecure_url(&self.ws_uri).await
-        }
+        get_client_from_url(&self.ws_uri).await
     }
 
     /// Wait until get the [online client](subxt::client::OnlineClient) for the node
@@ -337,22 +394,104 @@ impl NetworkNode {
         }
     }
 
-    /// Wait until a the number of matching log lines is reach
-    /// with timeout (secs)
+    /// Waits until the number of matching log lines satisfies a custom condition,
+    /// optionally waiting for the entire duration of the timeout.
+    ///
+    /// This method searches log lines for a given substring or glob pattern,
+    /// and evaluates the number of matching lines using a user-provided predicate function.
+    /// Optionally, it can wait for the full timeout duration to ensure the condition
+    /// holds consistently (e.g., for verifying absence of logs).
+    ///
+    /// # Arguments
+    /// * `substring` - The substring or pattern to match within log lines.
+    /// * `is_glob` - Whether to treat `substring` as a glob pattern (`true`) or a regex (`false`).
+    /// * `options` - Configuration for timeout, match count predicate, and full-duration waiting.
+    ///
+    /// # Returns
+    /// * `Ok(LogLineCount::TargetReached(n))` if the predicate was satisfied within the timeout,
+    /// * `Ok(LogLineCount::TargetFails(n))` if the predicate was not satisfied in time,
+    /// * `Err(e)` if an error occurred during log retrieval or matching.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use std::{sync::Arc, time::Duration};
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem};
+    /// # use zombienet_orchestrator::{Orchestrator, network::node::{NetworkNode, LogLineCountOptions}};
+    /// # use configuration::NetworkConfig;
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// #   let network = orchestrator.spawn(config).await?;
+    /// let node = network.get_node("alice")?;
+    /// // Wait (up to 10 seconds) until pattern occurs once
+    /// let options = LogLineCountOptions {
+    ///     predicate: Arc::new(|count| count == 1),
+    ///     timeout: Duration::from_secs(10),
+    ///     wait_until_timeout_elapses: false,
+    /// };
+    /// let result = node
+    ///     .wait_log_line_count_with_timeout("error", false, options)
+    ///     .await?;
+    /// #   Ok(())
+    /// # }
+    /// ```
     pub async fn wait_log_line_count_with_timeout(
         &self,
         substring: impl Into<String>,
         is_glob: bool,
-        count: usize,
-        timeout_secs: impl Into<u64>,
-    ) -> Result<(), anyhow::Error> {
-        let secs = timeout_secs.into();
-        debug!("waiting until match {count} lines");
-        tokio::time::timeout(
-            Duration::from_secs(secs),
-            self.wait_log_line_count(substring, is_glob, count),
-        )
-        .await?
+        options: LogLineCountOptions,
+    ) -> Result<LogLineCount, anyhow::Error> {
+        let substring = substring.into();
+        debug!(
+            "waiting until match lines count within {} seconds",
+            options.timeout.as_secs_f64()
+        );
+
+        let start = tokio::time::Instant::now();
+
+        let match_fn: Box<dyn Fn(&str) -> bool + Send + Sync> = if is_glob {
+            Box::new(move |line: &str| glob_match(&substring, line))
+        } else {
+            let re = Regex::new(&substring)?;
+            Box::new(move |line: &str| re.is_match(line))
+        };
+
+        if options.wait_until_timeout_elapses {
+            tokio::time::sleep(options.timeout).await;
+        }
+
+        let mut q;
+        loop {
+            q = 0_u32;
+            let logs = self.logs().await?;
+            for line in logs.lines() {
+                if match_fn(line) {
+                    q += 1;
+
+                    // If `wait_until_timeout_elapses` is set then check the condition just once at the
+                    // end after the whole log file is processed. This is to address the cases when the
+                    // predicate becomes true and false again.
+                    // eg. expected exactly 2 matching lines are expected but 3 are present
+                    if !options.wait_until_timeout_elapses && (options.predicate)(q) {
+                        return Ok(LogLineCount::TargetReached(q));
+                    }
+                }
+            }
+
+            if start.elapsed() >= options.timeout {
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+
+        if (options.predicate)(q) {
+            Ok(LogLineCount::TargetReached(q))
+        } else {
+            Ok(LogLineCount::TargetFailed(q))
+        }
     }
 
     // TODO: impl
@@ -441,4 +580,372 @@ impl std::fmt::Debug for NetworkNode {
     }
 }
 
-// TODO: mock and impl unit tests
+// TODO: mock and impl more unit tests
+#[cfg(test)]
+mod tests {
+    use std::{
+        path::{Path, PathBuf},
+        sync::{Arc, Mutex},
+    };
+
+    use async_trait::async_trait;
+    use provider::{types::*, ProviderError, ProviderNode};
+
+    use super::*;
+
+    struct MockNode {
+        logs: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MockNode {
+        fn new() -> Self {
+            Self {
+                logs: Arc::new(Mutex::new(vec![])),
+            }
+        }
+
+        fn logs_push(&self, lines: Vec<impl Into<String>>) {
+            self.logs
+                .lock()
+                .unwrap()
+                .extend(lines.into_iter().map(|l| l.into()));
+        }
+    }
+
+    #[async_trait]
+    impl ProviderNode for MockNode {
+        fn name(&self) -> &str {
+            todo!()
+        }
+
+        fn args(&self) -> Vec<&str> {
+            todo!()
+        }
+
+        fn base_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn config_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn data_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn relay_data_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn scripts_dir(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn log_path(&self) -> &PathBuf {
+            todo!()
+        }
+
+        fn log_cmd(&self) -> String {
+            todo!()
+        }
+
+        fn path_in_node(&self, _file: &Path) -> PathBuf {
+            todo!()
+        }
+
+        async fn logs(&self) -> Result<String, ProviderError> {
+            Ok(self.logs.lock().unwrap().join("\n"))
+        }
+
+        async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn run_command(
+            &self,
+            _options: RunCommandOptions,
+        ) -> Result<ExecutionResult, ProviderError> {
+            todo!()
+        }
+
+        async fn run_script(
+            &self,
+            _options: RunScriptOptions,
+        ) -> Result<ExecutionResult, ProviderError> {
+            todo!()
+        }
+
+        async fn send_file(
+            &self,
+            _local_file_path: &Path,
+            _remote_file_path: &Path,
+            _mode: &str,
+        ) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn receive_file(
+            &self,
+            _remote_file_path: &Path,
+            _local_file_path: &Path,
+        ) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn pause(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn resume(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn restart(&self, _after: Option<Duration>) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn destroy(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_immediately() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        // Wait (up to 10 seconds) until pattern occurs once
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 1),
+            timeout: Duration::from_secs(10),
+            wait_until_timeout_elapses: false,
+        };
+
+        let log_line_count = mock_node
+            .wait_log_line_count_with_timeout("system ready", false, options)
+            .await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(1)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_after_delay() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        // Wait (up to 4 seconds) until pattern occurs twice
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 2),
+            timeout: Duration::from_secs(4),
+            wait_until_timeout_elapses: false,
+        };
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout("system ready", false, options)
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        mock_provider.logs_push(vec!["system ready"]);
+
+        let log_line_count = task.await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetReached(2)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_failed_timeout() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        // Wait (up to 2 seconds) until pattern occurs twice
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 2),
+            timeout: Duration::from_secs(2),
+            wait_until_timeout_elapses: false,
+        };
+
+        let log_line_count = mock_node
+            .wait_log_line_count_with_timeout("system ready", false, options)
+            .await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetFailed(1)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_failed_exceeded() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            "stub line 2",
+            "system ready",
+        ]);
+
+        // Wait until timeout and check if pattern occurs exactly twice
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 2),
+            timeout: Duration::from_secs(2),
+            wait_until_timeout_elapses: true,
+        };
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout("system ready", false, options)
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["system ready"]);
+        mock_provider.logs_push(vec!["system ready"]);
+
+        let log_line_count = task.await?;
+
+        assert!(matches!(log_line_count, LogLineCount::TargetFailed(3)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_no_occurences() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec!["system booting", "stub line 1", "stub line 2"]);
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout(
+                        "system ready",
+                        false,
+                        // Wait until timeout and make sure pattern occurred zero times
+                        LogLineCountOptions::no_occurences_within_timeout(Duration::from_secs(2)),
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["stub line 3"]);
+
+        assert!(task.await?.success());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_target_reached_in_range() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec!["system booting", "stub line 1", "stub line 2"]);
+
+        // Wait until timeout and make sure pattern occurrence count is in range between 2 and 5
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| (2..=5).contains(&n)),
+            timeout: Duration::from_secs(2),
+            wait_until_timeout_elapses: true,
+        };
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout("system ready", false, options)
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["system ready", "system ready", "system ready"]);
+
+        assert!(task.await?.success());
+
+        Ok(())
+    }
+}

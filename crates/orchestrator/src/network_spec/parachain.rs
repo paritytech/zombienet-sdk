@@ -6,7 +6,7 @@ use configuration::{
     ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::{fs::FileSystem, replacer::apply_replacements};
 use tracing::debug;
 
@@ -21,12 +21,16 @@ use crate::{
     ScopedFilesystem,
 };
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParachainSpec {
     // `name` of the parachain (used in some corner cases)
     // name: Option<Chain>,
     /// Parachain id
     pub(crate) id: u32,
+
+    /// Unique id of the parachain, in the patter of <para_id>-<n>
+    /// where the suffix is only present if more than one parachain is set with the same id
+    pub(crate) unique_id: String,
 
     /// Default command to run the node. Can be overridden on each node.
     pub(crate) default_command: Option<Command>,
@@ -112,10 +116,15 @@ impl ParachainSpec {
             };
 
             let chain_spec_builder = if chain_name.is_empty() {
-                // if the chain don't have name use the id for the name of the file
-                ChainSpec::new(config.id().to_string(), Context::Para)
+                // if the chain don't have name use the unique_id for the name of the file
+                ChainSpec::new(config.unique_id().to_string(), Context::Para)
             } else {
-                ChainSpec::new(chain_name, Context::Para)
+                let chain_spec_file_name = if config.unique_id().contains('-') {
+                    &format!("{}-{}", chain_name, config.unique_id())
+                } else {
+                    chain_name
+                };
+                ChainSpec::new(chain_spec_file_name, Context::Para)
             };
             let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
 
@@ -199,6 +208,12 @@ impl ParachainSpec {
 
         let para_spec = ParachainSpec {
             id: config.id(),
+            // ensure unique id is set at this point, if not just set to the para_id
+            unique_id: if config.unique_id().is_empty() {
+                config.id().to_string()
+            } else {
+                config.unique_id().to_string()
+            },
             default_command: config.default_command().cloned(),
             default_image: config.default_image().cloned(),
             default_resources: config.default_resources().cloned(),

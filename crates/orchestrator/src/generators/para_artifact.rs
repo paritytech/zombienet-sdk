@@ -6,20 +6,20 @@ use provider::{
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::fs::FileSystem;
 use uuid::Uuid;
 
 use super::errors::GeneratorError;
 use crate::ScopedFilesystem;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ParaArtifactType {
     Wasm,
     State,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum ParaArtifactBuildOption {
     Path(String),
     Command(String),
@@ -27,7 +27,7 @@ pub(crate) enum ParaArtifactBuildOption {
 }
 
 /// Parachain artifact (could be either the genesis state or genesis wasm)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParaArtifact {
     artifact_type: ParaArtifactType,
     build_option: ParaArtifactBuildOption,
@@ -131,6 +131,10 @@ impl ParaArtifact {
                     configuration::types::Arg::Option(flag, flag_value) => {
                         args.push(flag.into());
                         args.push(flag_value.into());
+                    },
+                    configuration::types::Arg::Array(flag, values) => {
+                        args.push(flag.into());
+                        values.iter().for_each(|v| args.push(v.into()));
                     },
                 }
             }

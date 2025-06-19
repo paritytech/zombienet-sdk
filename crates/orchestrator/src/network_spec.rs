@@ -6,9 +6,9 @@ use std::{
 use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
 use provider::{DynNamespace, ProviderError, ProviderNamespace};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{errors::OrchestratorError, ScopedFilesystem};
 
@@ -18,7 +18,7 @@ pub mod relaychain;
 
 use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkSpec {
     /// Relaychain configuration.
     pub(crate) relaychain: RelaychainSpec,
@@ -162,19 +162,20 @@ impl NetworkSpec {
     ) -> Result<(), anyhow::Error> {
         for para in self.parachains.iter_mut() {
             let chain_spec_raw_path = para.build_chain_spec(relaychain_id, &ns, scoped_fs).await?;
-            debug!("parachain chain-spec built!");
 
+            trace!("creating dirs for {}", &para.unique_id);
             if base_dir_exists {
-                scoped_fs.create_dir_all(para.id.to_string()).await?;
+                scoped_fs.create_dir_all(&para.unique_id).await?;
             } else {
-                scoped_fs.create_dir(para.id.to_string()).await?;
+                scoped_fs.create_dir(&para.unique_id).await?;
             };
+            trace!("created dirs for {}", &para.unique_id);
 
             // create wasm/state
             para.genesis_state
                 .build(
                     chain_spec_raw_path.clone(),
-                    format!("{}/genesis-state", para.id),
+                    format!("{}/genesis-state", para.unique_id),
                     &ns,
                     scoped_fs,
                 )
@@ -183,7 +184,7 @@ impl NetworkSpec {
             para.genesis_wasm
                 .build(
                     chain_spec_raw_path,
-                    format!("{}/genesis-wasm", para.id),
+                    format!("{}/genesis-wasm", para.unique_id),
                     &ns,
                     scoped_fs,
                 )

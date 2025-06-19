@@ -36,7 +36,7 @@ pub async fn register(
             "Wasm Path should be ok by this point {THIS_IS_A_BUG}"
         ));
 
-    let api = OnlineClient::<SubstrateConfig>::from_url(options.node_ws_url).await?;
+    let api: OnlineClient<SubstrateConfig> = get_client_from_url(&options.node_ws_url).await?;
 
     let schedule_para = subxt::dynamic::tx(
         "ParasSudoWrapper",

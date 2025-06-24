@@ -14,12 +14,13 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
         },
     },
-    utils::{default_command_polkadot, is_false},
+    utils::{default_command_polkadot, default_relaychain_chain, is_false},
 };
 
 /// A relay chain configuration, composed of nodes and fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RelaychainConfig {
+    #[serde(default = "default_relaychain_chain")]
     chain: Chain,
     #[serde(default = "default_command_polkadot")]
     default_command: Option<Command>,

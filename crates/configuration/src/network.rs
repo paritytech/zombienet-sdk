@@ -1817,4 +1817,16 @@ mod tests {
             "ParaId 1 already set to be registered, only one should be."
         );
     }
+
+    #[test]
+    fn network_config_should_work_from_toml_without_chain_name() {
+        let loaded_from_toml =
+            NetworkConfig::load_from_toml("./testing/snapshots/0006-without-rc-chain-name.toml")
+                .unwrap();
+
+        assert_eq!(
+            "rococo-local",
+            loaded_from_toml.relaychain().chain().as_str()
+        );
+    }
 }

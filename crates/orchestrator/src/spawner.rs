@@ -209,6 +209,12 @@ where
     node.p2p_port.drop_listener();
     node.rpc_port.drop_listener();
     node.prometheus_port.drop_listener();
+    if let Some(port) = &node.full_node_p2p_port {
+        port.drop_listener();
+    }
+    if let Some(port) = &node.full_node_prometheus_port {
+        port.drop_listener();
+    }
 
     let running_node = ctx.ns.spawn_node(&spawn_ops).await.with_context(|| {
         format!(

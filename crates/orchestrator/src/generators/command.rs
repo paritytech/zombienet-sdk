@@ -256,7 +256,6 @@ pub fn generate_for_cumulus_node(
         "wasm".into(),
     ];
 
-    tracing::info!("full_node_args_filtered = {full_node_args_filtered:?}");
     final_args.append(&mut full_node_injected);
     final_args.append(&mut full_node_args_filtered);
 

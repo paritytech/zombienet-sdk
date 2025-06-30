@@ -8,9 +8,9 @@ use crate::constants::{SHOULD_COMPILE, THIS_IS_A_BUG};
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r#"\{\{([a-zA-Z0-9_]*)\}\}"#)
-        .unwrap_or_else(|_| panic!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+        .unwrap_or_else(|_| panic!("{SHOULD_COMPILE}, {THIS_IS_A_BUG}"));
     static ref TOKEN_PLACEHOLDER: Regex = Regex::new(r#"\{\{ZOMBIE:(.*?):(.*?)\}\}"#)
-        .unwrap_or_else(|_| panic!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+        .unwrap_or_else(|_| panic!("{SHOULD_COMPILE}, {THIS_IS_A_BUG}"));
     static ref PLACEHOLDER_COMPAT: HashMap<&'static str, &'static str> = {
         let mut m = HashMap::new();
         m.insert("multiAddress", "multiaddr");

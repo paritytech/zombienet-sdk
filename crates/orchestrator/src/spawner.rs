@@ -103,8 +103,7 @@ where
             files_to_inject.push(f);
         }
         created_paths.push(PathBuf::from(format!(
-            "/data/chains/{}/keystore",
-            remote_keystore_chain_id
+            "/data/chains/{remote_keystore_chain_id}/keystore"
         )));
     }
 
@@ -264,8 +263,8 @@ where
         &node.p2p_cert_hash,
     )?;
 
-    let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);
-    let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
+    let ws_uri = format!("ws://{ip_to_use}:{rpc_port_external}");
+    let prometheus_uri = format!("http://{ip_to_use}:{prometheus_port_external}/metrics");
     info!("🚀 {}, should be running now", node.name);
     info!(
         "💻 {}: direct link (pjs) https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",

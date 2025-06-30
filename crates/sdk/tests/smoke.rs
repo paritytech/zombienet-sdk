@@ -41,7 +41,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // network.detach().await;
 
     let elapsed = now.elapsed();
-    println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);
+    println!("🚀🚀🚀🚀 network deployed in {elapsed:.2?}");
 
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
@@ -99,7 +99,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .await
         .unwrap();
 
-    assert!(best_block >= 2.0, "Current best {}", best_block);
+    assert!(best_block >= 2.0, "Current best {best_block}");
 
     #[cfg(feature = "pjs")]
     {
@@ -126,7 +126,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
 
         let paras = alice.pjs(query_paras, vec![], None).await.unwrap();
 
-        println!("parachains registered: {:?}", paras);
+        println!("parachains registered: {paras:?}");
     }
 
     // collator

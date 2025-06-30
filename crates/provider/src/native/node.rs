@@ -93,10 +93,10 @@ where
         trace!("created base_dir {:?}", base_dir);
 
         let base_dir_raw = base_dir.to_string_lossy();
-        let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
-        let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
-        let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
-        let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
+        let config_dir = PathBuf::from(format!("{base_dir_raw}{NODE_CONFIG_DIR}"));
+        let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
+        let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
+        let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
         let log_path = base_dir.join(format!("{}.log", options.name));
 
         trace!("creating dirs {:?}", config_dir);
@@ -185,7 +185,7 @@ where
             },
         };
 
-        let full_path = format!("{}/{}.tgz", ns_base_dir, hashed_location);
+        let full_path = format!("{ns_base_dir}/{hashed_location}.tgz");
         trace!("db_snap fullpath in ns: {full_path}");
         if !self.filesystem.exists(&full_path).await {
             // needs to download/copy
@@ -363,7 +363,7 @@ where
         self.namespace
             .upgrade()
             .map(|namespace| namespace.base_dir().to_string_lossy().to_string())
-            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}", THIS_IS_A_BUG))
+            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {THIS_IS_A_BUG}"))
     }
 }
 

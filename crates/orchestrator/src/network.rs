@@ -312,7 +312,7 @@ impl<T: FileSystem> Network<T> {
         if let Some(para_spec_path) = para_chain_spec_local_path {
             global_files_to_inject.push(TransferedFile::new(
                 para_spec_path,
-                PathBuf::from(format!("/cfg/{}.json", para_id)),
+                PathBuf::from(format!("/cfg/{para_id}.json")),
             ));
         }
 

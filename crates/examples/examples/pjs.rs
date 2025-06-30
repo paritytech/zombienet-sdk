@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let paras = alice.pjs(query_paras, vec![], None).await??;
 
-    println!("parachains registered: {:?}", paras);
+    println!("parachains registered: {paras:?}");
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     // run pjs with file

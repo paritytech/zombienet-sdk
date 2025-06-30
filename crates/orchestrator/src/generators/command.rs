@@ -89,7 +89,7 @@ pub fn generate_for_cumulus_node(
     tmp_args.push(rpc_port.to_string());
 
     tmp_args.push("--listen-addr".into());
-    tmp_args.push(format!("/ip4/0.0.0.0/tcp/{}/ws", p2p_port));
+    tmp_args.push(format!("/ip4/0.0.0.0/tcp/{p2p_port}/ws"));
 
     let mut collator_args: &[Arg] = &[];
     let mut full_node_args: &[Arg] = &[];
@@ -344,7 +344,7 @@ pub fn generate_for_node(
         *port_part = port_to_use.as_str();
         parts.join("/")
     } else {
-        format!("/ip4/0.0.0.0/tcp/{}/ws", p2p_port)
+        format!("/ip4/0.0.0.0/tcp/{p2p_port}/ws")
     };
 
     tmp_args.push("--listen-addr".into());

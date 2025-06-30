@@ -49,7 +49,7 @@ impl NetworkConfig {
     pub fn relaychain(&self) -> &RelaychainConfig {
         self.relaychain
             .as_ref()
-            .expect(&format!("{}, {}", RELAY_NOT_NONE, THIS_IS_A_BUG))
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
     }
 
     /// The parachains of the network.
@@ -66,7 +66,7 @@ impl NetworkConfig {
     pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
         // This regex is used to replace the "" enclosed u128 value to a raw u128 because u128 is not supported for TOML serialization/deserialization.
         let re = Regex::new(r#""U128%(?<u128_value>\d+)""#)
-            .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
+            .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
         let toml_string = toml::to_string_pretty(&self)?;
 
         Ok(re.replace_all(&toml_string, "$u128_value").to_string())
@@ -84,9 +84,9 @@ impl NetworkConfig {
 
     /// A helper function to load a network configuration from a TOML file.
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
-        let file_str = fs::read_to_string(path).expect(&format!("{} {}", RW_FAILED, THIS_IS_A_BUG));
+        let file_str = fs::read_to_string(path).expect(&format!("{RW_FAILED} {THIS_IS_A_BUG}"));
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
-            .expect(&format!("{} {}", VALID_REGEX, THIS_IS_A_BUG));
+            .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
         let toml_text = re.replace_all(&file_str, "$field_name = \"$u128_value\"");
         trace!("toml text to parse: {}", toml_text);
@@ -205,7 +205,7 @@ impl NetworkConfig {
         network_config
             .relaychain
             .as_mut()
-            .expect(&format!("{}, {}", NO_ERR_DEF_BUILDER, THIS_IS_A_BUG))
+            .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}"))
             .set_nodes(nodes);
 
         // Validation checks for parachains
@@ -312,7 +312,7 @@ impl Default for NetworkConfigBuilder<Initial> {
             config: NetworkConfig {
                 global_settings: GlobalSettingsBuilder::new()
                     .build()
-                    .expect(&format!("{}, {}", NO_ERR_DEF_BUILDER, THIS_IS_A_BUG)),
+                    .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}")),
                 relaychain: None,
                 parachains: vec![],
                 hrmp_channels: vec![],

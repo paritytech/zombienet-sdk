@@ -27,7 +27,7 @@ async fn ci_native_smoke_should_works() {
     let network = spawn_fn(config).await.unwrap();
 
     let elapsed = now.elapsed();
-    println!("🚀🚀🚀🚀 network deployed in {:.2?}", elapsed);
+    println!("🚀🚀🚀🚀 network deployed in {elapsed:.2?}");
 
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();

@@ -84,10 +84,10 @@ where
         filesystem.create_dir_all(&base_dir).await?;
 
         let base_dir_raw = base_dir.to_string_lossy();
-        let config_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_CONFIG_DIR));
-        let data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_DATA_DIR));
-        let relay_data_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_RELAY_DATA_DIR));
-        let scripts_dir = PathBuf::from(format!("{}{}", base_dir_raw, NODE_SCRIPTS_DIR));
+        let config_dir = PathBuf::from(format!("{base_dir_raw}{NODE_CONFIG_DIR}"));
+        let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
+        let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
+        let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
         let log_path = base_dir.join("node.log");
 
         try_join!(
@@ -302,7 +302,7 @@ where
         self.namespace
             .upgrade()
             .map(|namespace| namespace.name().to_string())
-            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {}", THIS_IS_A_BUG))
+            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {THIS_IS_A_BUG}"))
     }
 }
 

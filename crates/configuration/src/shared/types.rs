@@ -155,7 +155,7 @@ impl TryFrom<&str> for Image {
             static ref RE: Regex = Regex::new(&format!(
                 "^({IP_PART}|{HOSTNAME_PART}/)?{TAG_NAME_PART}(:{TAG_VERSION_PART})?$",
             ))
-            .expect(&format!("{}, {}", SHOULD_COMPILE, THIS_IS_A_BUG));
+            .expect(&format!("{SHOULD_COMPILE}, {THIS_IS_A_BUG}"));
         };
 
         if !RE.is_match(value) {
@@ -311,9 +311,7 @@ impl From<&str> for AssetLocation {
             return Self::Url(parsed_url);
         }
 
-        Self::FilePath(
-            PathBuf::from_str(value).expect(&format!("{}, {}", INFAILABLE, THIS_IS_A_BUG)),
-        )
+        Self::FilePath(PathBuf::from_str(value).expect(&format!("{INFAILABLE}, {THIS_IS_A_BUG}")))
     }
 }
 
@@ -453,9 +451,7 @@ impl Serialize for Arg {
     {
         match self {
             Arg::Flag(value) => serializer.serialize_str(value),
-            Arg::Option(option, value) => {
-                serializer.serialize_str(&format!("{}={}", option, value))
-            },
+            Arg::Option(option, value) => serializer.serialize_str(&format!("{option}={value}")),
             Arg::Array(option, values) => {
                 serializer.serialize_str(&format!("{}=[{}]", option, values.join(",")))
             },
@@ -568,7 +564,7 @@ mod tests {
         let arg = Arg::from(("items", ["a", "b", "c"].as_slice()));
 
         let serialized = serde_json::to_string(&arg).unwrap();
-        println!("serialized = {}", serialized);
+        println!("serialized = {serialized}");
         let deserialized: Arg = serde_json::from_str(&serialized).unwrap();
         assert_eq!(arg, deserialized);
     }
@@ -630,7 +626,7 @@ mod tests {
         // value contains space
         let invalid = "\"--foo=bar baz\"";
         let result: Result<Arg, _> = serde_json::from_str(invalid);
-        println!("result = {:?}", result);
+        println!("result = {result:?}");
         assert!(result.is_err());
     }
 

@@ -33,7 +33,7 @@ pub fn ensure_node_name_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
+        .expect(&format!("{BORROWABLE}, {THIS_IS_A_BUG}"));
 
     let node_name = node_name.into();
     if !context.used_nodes_names.contains(&node_name) {
@@ -58,7 +58,7 @@ pub fn ensure_port_unique(
 ) -> Result<(), anyhow::Error> {
     let mut context = validation_context
         .try_borrow_mut()
-        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
+        .expect(&format!("{BORROWABLE}, {THIS_IS_A_BUG}"));
 
     if !context.used_ports.contains(&port) {
         context.used_ports.push(port);
@@ -74,7 +74,7 @@ pub fn generate_unique_para_id(
 ) -> String {
     let mut context = validation_context
         .try_borrow_mut()
-        .expect(&format!("{}, {}", BORROWABLE, THIS_IS_A_BUG));
+        .expect(&format!("{BORROWABLE}, {THIS_IS_A_BUG}"));
 
     if let Some(suffix) = context.used_para_ids.get_mut(&para_id) {
         *suffix += 1;

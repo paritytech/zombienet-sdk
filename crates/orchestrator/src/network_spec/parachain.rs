@@ -164,7 +164,7 @@ impl ParachainSpec {
         let mut errs: Vec<OrchestratorError> = Default::default();
         let mut collators: Vec<NodeSpec> = Default::default();
         config.collators().iter().for_each(|node_config| {
-            match NodeSpec::from_config(node_config, &chain_context) {
+            match NodeSpec::from_config(node_config, &chain_context, true) {
                 Ok(node) => collators.push(node),
                 Err(err) => errs.push(err),
             }

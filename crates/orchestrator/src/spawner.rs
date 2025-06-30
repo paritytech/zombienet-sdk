@@ -103,8 +103,7 @@ where
             files_to_inject.push(f);
         }
         created_paths.push(PathBuf::from(format!(
-            "/data/chains/{}/keystore",
-            remote_keystore_chain_id
+            "/data/chains/{remote_keystore_chain_id}/keystore"
         )));
     }
 
@@ -149,16 +148,9 @@ where
             let para = ctx.parachain.expect(&format!(
                 "parachain must be part of the context {THIS_IS_A_BUG}"
             ));
-            let full_p2p = generators::generate_node_port(None)?;
-            let full_prometheus = generators::generate_node_port(None)?;
-            collator_full_node_prom_port = Some(full_prometheus.0);
-            generators::generate_node_command_cumulus(
-                node,
-                gen_opts,
-                para.id,
-                full_p2p.0,
-                full_prometheus.0,
-            )
+            collator_full_node_prom_port = node.full_node_prometheus_port.as_ref().map(|p| p.0);
+
+            generators::generate_node_command_cumulus(node, gen_opts, para.id)
         },
         _ => unreachable!(), /* TODO: do we need those?
                               * ZombieRole::Bootnode => todo!(),
@@ -216,6 +208,12 @@ where
     node.p2p_port.drop_listener();
     node.rpc_port.drop_listener();
     node.prometheus_port.drop_listener();
+    if let Some(port) = &node.full_node_p2p_port {
+        port.drop_listener();
+    }
+    if let Some(port) = &node.full_node_prometheus_port {
+        port.drop_listener();
+    }
 
     let running_node = ctx.ns.spawn_node(&spawn_ops).await.with_context(|| {
         format!(
@@ -265,8 +263,8 @@ where
         &node.p2p_cert_hash,
     )?;
 
-    let ws_uri = format!("ws://{}:{}", ip_to_use, rpc_port_external);
-    let prometheus_uri = format!("http://{}:{}/metrics", ip_to_use, prometheus_port_external);
+    let ws_uri = format!("ws://{ip_to_use}:{rpc_port_external}");
+    let prometheus_uri = format!("http://{ip_to_use}:{prometheus_port_external}/metrics");
     info!("🚀 {}, should be running now", node.name);
     info!(
         "💻 {}: direct link (pjs) https://polkadot.js.org/apps/?rpc={ws_uri}#/explorer",

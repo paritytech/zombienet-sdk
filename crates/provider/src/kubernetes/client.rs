@@ -457,7 +457,7 @@ impl KubernetesClient {
     where
         K: Clone + DeserializeOwned + Debug,
     {
-        let params = &WatchParams::default().fields(&format!("metadata.name={}", name));
+        let params = &WatchParams::default().fields(&format!("metadata.name={name}"));
         let mut stream = api
             .watch(params, "0")
             .await
@@ -478,10 +478,7 @@ impl KubernetesClient {
                 WatchEvent::Error(err) => Err(Error::from(anyhow!(
                     "error while awaiting resource {name} is created: {err}"
                 )))?,
-                _ => panic!(
-                    "Unexpected event happened while creating '{}' {THIS_IS_A_BUG}",
-                    name
-                ),
+                _ => panic!("Unexpected event happened while creating '{name}' {THIS_IS_A_BUG}"),
             }
         }
 

@@ -19,7 +19,7 @@ pub fn generate(seed: &str) -> Result<Accounts, GeneratorError> {
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
             "sr_stash" => {
-                let pair = generate_pair::<sr25519::Pair>(&format!("{}//stash", seed))
+                let pair = generate_pair::<sr25519::Pair>(&format!("{seed}//stash"))
                     .map_err(|_| GeneratorError::KeyGeneration(k.into(), seed.into()))?;
                 (pair.public().to_string(), hex::encode(pair.public()))
             },
@@ -61,7 +61,7 @@ mod tests {
     fn generate_for_alice() {
         use sp_core::crypto::Ss58Codec;
         let s = "Alice";
-        let seed = format!("//{}", s);
+        let seed = format!("//{s}");
 
         let pair = generate_pair::<sr25519::Pair>(&seed).unwrap();
         assert_eq!(
@@ -86,7 +86,7 @@ mod tests {
     fn generate_for_zombie() {
         use sp_core::crypto::Ss58Codec;
         let s = "Zombie";
-        let seed = format!("//{}", s);
+        let seed = format!("//{s}");
 
         let pair = generate_pair::<sr25519::Pair>(&seed).unwrap();
         assert_eq!(
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn generate_work() {
         let s = "Alice";
-        let seed = format!("//{}", s);
+        let seed = format!("//{s}");
 
         let pair = generate(&seed).unwrap();
         let sr = pair.get("sr").unwrap();

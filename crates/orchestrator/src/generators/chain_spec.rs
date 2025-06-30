@@ -237,8 +237,7 @@ impl ChainSpec {
             );
             scoped_fs.copy_files(vec![&tf_file]).await.map_err(|e| {
                 GeneratorError::ChainSpecGeneration(format!(
-                    "Error copying file: {}, err: {}",
-                    tf_file, e
+                    "Error copying file: {tf_file}, err: {e}"
                 ))
             })?;
 
@@ -365,8 +364,7 @@ impl ChainSpec {
         // read override wasm
         let override_content = wasm_override.get_asset().await.map_err(|_| {
             GeneratorError::OverridingWasm(format!(
-                "Can not get asset to override wasm, asset: {}",
-                wasm_override
+                "Can not get asset to override wasm, asset: {wasm_override}"
             ))
         })?;
 
@@ -529,12 +527,12 @@ impl ChainSpec {
 
             // check chain key types
             if chain_spec_json
-                .pointer(&format!("{}/session", pointer))
+                .pointer(&format!("{pointer}/session"))
                 .is_some()
             {
                 add_authorities(&pointer, &mut chain_spec_json, &validators, key_type_to_use);
             } else if chain_spec_json
-                .pointer(&format!("{}/aura", pointer))
+                .pointer(&format!("{pointer}/aura"))
                 .is_some()
             {
                 add_aura_authorities(&pointer, &mut chain_spec_json, &validators, KeyType::Aura);
@@ -645,7 +643,7 @@ impl ChainSpec {
 
             // check chain key types
             if chain_spec_json
-                .pointer(&format!("{}/session", pointer))
+                .pointer(&format!("{pointer}/session"))
                 .is_some()
             {
                 add_authorities(

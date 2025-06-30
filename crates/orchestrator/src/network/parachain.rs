@@ -108,7 +108,7 @@ impl Parachain {
             let spec_name = chain_spec.chain_spec_name();
             let base = PathBuf::from_str(scoped_fs.base_dir)?;
             para_files_to_inject.push(TransferedFile::new(
-                base.join(format!("{}.json", spec_name)),
+                base.join(format!("{spec_name}.json")),
                 PathBuf::from(format!("/cfg/{}.json", para.id)),
             ));
 
@@ -292,7 +292,7 @@ mod tests {
         let para = Parachain::from_spec(&para_spec, &files, &scoped_fs)
             .await
             .unwrap();
-        println!("{:#?}", para);
+        println!("{para:#?}");
         assert_eq!(para.para_id, 100);
         assert_eq!(para.unique_id, "100");
         assert_eq!(para.chain_id, None);

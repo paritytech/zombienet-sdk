@@ -112,12 +112,18 @@ pub struct NodeSpec {
 
     /// Database snapshot. Override the default.
     pub(crate) db_snapshot: Option<AssetLocation>,
+
+    /// P2P port to use by full node if this is the case
+    pub(crate) full_node_p2p_port: Option<ParkedPort>,
+    /// Prometheus port to use by full node if this is the case
+    pub(crate) full_node_prometheus_port: Option<ParkedPort>,
 }
 
 impl NodeSpec {
     pub fn from_config(
         node_config: &NodeConfig,
         chain_context: &ChainDefaultContext,
+        full_node_present: bool,
     ) -> Result<Self, OrchestratorError> {
         // Check first if the image is set at node level, then try with the default
         let image = node_config.image().or(chain_context.default_image).cloned();
@@ -161,6 +167,15 @@ impl NodeSpec {
             _ => None,
         };
 
+        let (full_node_p2p_port, full_node_prometheus_port) = if full_node_present {
+            (
+                Some(generators::generate_node_port(None)?),
+                Some(generators::generate_node_port(None)?),
+            )
+        } else {
+            (None, None)
+        };
+
         Ok(Self {
             name: node_config.name().to_string(),
             key,
@@ -188,6 +203,8 @@ impl NodeSpec {
             rpc_port: generators::generate_node_port(node_config.rpc_port())?,
             prometheus_port: generators::generate_node_port(node_config.prometheus_port())?,
             p2p_port: generators::generate_node_port(node_config.p2p_port())?,
+            full_node_p2p_port,
+            full_node_prometheus_port,
         })
     }
 
@@ -195,6 +212,7 @@ impl NodeSpec {
         name: impl Into<String>,
         options: AddNodeSpecOpts,
         chain_context: &ChainDefaultContext,
+        full_node_present: bool,
     ) -> Result<Self, OrchestratorError> {
         // Check first if the image is set at node level, then try with the default
         let image = if let Some(img) = options.image {
@@ -240,6 +258,15 @@ impl NodeSpec {
         let accounts = generators::generate_node_keys(&seed)?;
         let accounts = NodeAccounts { seed, accounts };
 
+        let (full_node_p2p_port, full_node_prometheus_port) = if full_node_present {
+            (
+                Some(generators::generate_node_port(None)?),
+                Some(generators::generate_node_port(None)?),
+            )
+        } else {
+            (None, None)
+        };
+
         //
         Ok(Self {
             name,
@@ -265,6 +292,8 @@ impl NodeSpec {
             rpc_port: generators::generate_node_port(options.rpc_port)?,
             prometheus_port: generators::generate_node_port(options.prometheus_port)?,
             p2p_port: generators::generate_node_port(options.p2p_port)?,
+            full_node_p2p_port,
+            full_node_prometheus_port,
         })
     }
 

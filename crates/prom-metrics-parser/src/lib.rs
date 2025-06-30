@@ -111,16 +111,14 @@ pub fn parse(input: &str) -> Result<MetricMap, ParserError> {
                             format!("{{{}}}", labels_without_chain.join(","))
                         };
 
-                        metric_map.insert(format!("{}{}", key, labels_without_chain_str), val);
+                        metric_map.insert(format!("{key}{labels_without_chain_str}"), val);
                         metric_map.insert(
-                            format!("{}{}", key_with_out_prefix, labels_without_chain_str),
+                            format!("{key_with_out_prefix}{labels_without_chain_str}"),
                             val,
                         );
-                        metric_map.insert(format!("{}{}", key, labels_with_chain_str), val);
-                        metric_map.insert(
-                            format!("{}{}", key_with_out_prefix, labels_with_chain_str),
-                            val,
-                        );
+                        metric_map.insert(format!("{key}{labels_with_chain_str}"), val);
+                        metric_map
+                            .insert(format!("{key_with_out_prefix}{labels_with_chain_str}"), val);
                     },
                     _ => {},
                 }

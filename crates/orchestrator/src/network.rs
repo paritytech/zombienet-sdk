@@ -154,8 +154,12 @@ impl<T: FileSystem> Network<T> {
             default_args: self.initial_spec.relaychain.default_args.iter().collect(),
         };
 
-        let mut node_spec =
-            network_spec::node::NodeSpec::from_ad_hoc(&name, options.into(), &chain_context)?;
+        let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
+            &name,
+            options.into(),
+            &chain_context,
+            false,
+        )?;
 
         node_spec.available_args_output = Some(
             self.initial_spec
@@ -308,12 +312,16 @@ impl<T: FileSystem> Network<T> {
         if let Some(para_spec_path) = para_chain_spec_local_path {
             global_files_to_inject.push(TransferedFile::new(
                 para_spec_path,
-                PathBuf::from(format!("/cfg/{}.json", para_id)),
+                PathBuf::from(format!("/cfg/{para_id}.json")),
             ));
         }
 
-        let mut node_spec =
-            network_spec::node::NodeSpec::from_ad_hoc(name.into(), options.into(), &chain_context)?;
+        let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
+            name.into(),
+            options.into(),
+            &chain_context,
+            true,
+        )?;
 
         node_spec.available_args_output = Some(
             self.initial_spec

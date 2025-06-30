@@ -30,7 +30,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let alice = network.get_node("alice")?;
     tokio::time::sleep(Duration::from_secs(10)).await;
-    println!("{:#?}", alice);
+    println!("{alice:#?}");
     let client = alice.wait_client::<subxt::PolkadotConfig>().await?;
 
     // wait 3 blocks
@@ -47,7 +47,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let collator = network.get_node("collator")?;
     tokio::time::sleep(Duration::from_secs(10)).await;
-    println!("{:#?}", collator);
+    println!("{collator:#?}");
 
     let client = collator.wait_client::<subxt::PolkadotConfig>().await?;
 

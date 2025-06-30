@@ -512,7 +512,7 @@ fn validate_spec_with_provider_capabilities(
             } else {
                 // should be in the PATH
                 !parts.iter().any(|part| {
-                    let path_to = format!("{}/{}", part, cmd);
+                    let path_to = format!("{part}/{cmd}");
                     trace!("checking {path_to}");
                     let check_result = std::fs::metadata(&path_to);
                     trace!("result {:?}", check_result);
@@ -804,7 +804,7 @@ mod tests {
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
-        println!("{:?}", valid);
+        println!("{valid:?}");
         assert!(valid.is_ok())
     }
 

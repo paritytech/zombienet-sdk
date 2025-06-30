@@ -49,8 +49,6 @@ pub fn generate_for_cumulus_node(
     node: &NodeSpec,
     options: GenCmdOptions,
     para_id: u32,
-    full_p2p_port: u16,
-    full_prometheus_port: u16,
 ) -> (String, Vec<String>) {
     let NodeSpec {
         key,
@@ -169,6 +167,21 @@ pub fn generate_for_cumulus_node(
         .flatten()
         .collect::<Vec<String>>();
 
+    let full_p2p_port = node
+        .full_node_p2p_port
+        .as_ref()
+        .expect(&format!(
+            "full node p2p_port should be specifed: {THIS_IS_A_BUG}"
+        ))
+        .0;
+    let full_prometheus_port = node
+        .full_node_prometheus_port
+        .as_ref()
+        .expect(&format!(
+            "full node prometheus_port should be specifed: {THIS_IS_A_BUG}"
+        ))
+        .0;
+
     // full_node: change p2p port if is the default
     if full_node_p2p_needs_to_be_injected {
         full_node_args_filtered.push("--port".into());
@@ -243,6 +256,7 @@ pub fn generate_for_cumulus_node(
         "wasm".into(),
     ];
 
+    tracing::info!("full_node_args_filtered = {full_node_args_filtered:?}");
     final_args.append(&mut full_node_injected);
     final_args.append(&mut full_node_args_filtered);
 
@@ -429,7 +443,7 @@ mod tests {
     use super::*;
     use crate::{generators, shared::types::NodeAccounts};
 
-    fn get_node_spec() -> NodeSpec {
+    fn get_node_spec(full_node_present: bool) -> NodeSpec {
         let mut name = String::from("luca");
         let initial_balance = 1_000_000_000_000_u128;
         let seed = format!("//{}{name}", name.remove(0).to_uppercase());
@@ -437,24 +451,34 @@ mod tests {
             accounts: generators::generate_node_keys(&seed).unwrap(),
             seed,
         };
+        let (full_node_p2p_port, full_node_prometheus_port) = if full_node_present {
+            (
+                Some(generators::generate_node_port(None).unwrap()),
+                Some(generators::generate_node_port(None).unwrap()),
+            )
+        } else {
+            (None, None)
+        };
         NodeSpec {
             name,
             accounts,
             initial_balance,
+            full_node_p2p_port,
+            full_node_prometheus_port,
             ..Default::default()
         }
     }
 
     #[test]
     fn generate_for_native_cumulus_node_works() {
-        let node = get_node_spec();
+        let node = get_node_spec(true);
         let opts = GenCmdOptions {
             use_wrapper: false,
             is_native: true,
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
+        let (program, args) = generate_for_cumulus_node(&node, opts, 1000);
         assert_eq!(program.as_str(), "polkadot");
 
         let divider_flag = args.iter().position(|x| x == "--").unwrap();
@@ -462,13 +486,29 @@ mod tests {
         // ensure full node ports
         let i = args[divider_flag..]
             .iter()
-            .position(|x| x == "60001")
+            .position(|x| {
+                x == node
+                    .full_node_p2p_port
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .to_string()
+                    .as_str()
+            })
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--port");
 
         let i = args[divider_flag..]
             .iter()
-            .position(|x| x == "60002")
+            .position(|x| {
+                x == node
+                    .full_node_prometheus_port
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .to_string()
+                    .as_str()
+            })
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
 
@@ -477,7 +517,7 @@ mod tests {
 
     #[test]
     fn generate_for_native_cumulus_node_rpc_external_is_removed() {
-        let mut node = get_node_spec();
+        let mut node = get_node_spec(true);
         node.args.push("--unsafe-rpc-external".into());
         let opts = GenCmdOptions {
             use_wrapper: false,
@@ -485,21 +525,21 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (_, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
+        let (_, args) = generate_for_cumulus_node(&node, opts, 1000);
 
         assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 
     #[test]
     fn generate_for_non_native_cumulus_node_works() {
-        let node = get_node_spec();
+        let node = get_node_spec(true);
         let opts = GenCmdOptions {
             use_wrapper: false,
             is_native: false,
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_cumulus_node(&node, opts, 1000, 60001, 60002);
+        let (program, args) = generate_for_cumulus_node(&node, opts, 1000);
         assert_eq!(program.as_str(), "polkadot");
 
         let divider_flag = args.iter().position(|x| x == "--").unwrap();
@@ -507,13 +547,29 @@ mod tests {
         // ensure full node ports
         let i = args[divider_flag..]
             .iter()
-            .position(|x| x == "60001")
+            .position(|x| {
+                x == node
+                    .full_node_p2p_port
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .to_string()
+                    .as_str()
+            })
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--port");
 
         let i = args[divider_flag..]
             .iter()
-            .position(|x| x == "60002")
+            .position(|x| {
+                x == node
+                    .full_node_prometheus_port
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .to_string()
+                    .as_str()
+            })
             .unwrap();
         assert_eq!(&args[divider_flag + i - 1], "--prometheus-port");
 
@@ -525,7 +581,7 @@ mod tests {
 
     #[test]
     fn generate_for_native_node_rpc_external_works() {
-        let node = get_node_spec();
+        let node = get_node_spec(false);
         let opts = GenCmdOptions {
             use_wrapper: false,
             is_native: true,
@@ -540,7 +596,7 @@ mod tests {
 
     #[test]
     fn generate_for_non_native_node_rpc_external_works() {
-        let node = get_node_spec();
+        let node = get_node_spec(false);
         let opts = GenCmdOptions {
             use_wrapper: false,
             is_native: false,

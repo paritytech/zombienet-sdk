@@ -149,16 +149,9 @@ where
             let para = ctx.parachain.expect(&format!(
                 "parachain must be part of the context {THIS_IS_A_BUG}"
             ));
-            let full_p2p = generators::generate_node_port(None)?;
-            let full_prometheus = generators::generate_node_port(None)?;
-            collator_full_node_prom_port = Some(full_prometheus.0);
-            generators::generate_node_command_cumulus(
-                node,
-                gen_opts,
-                para.id,
-                full_p2p.0,
-                full_prometheus.0,
-            )
+            collator_full_node_prom_port = node.full_node_prometheus_port.as_ref().map(|p| p.0);
+
+            generators::generate_node_command_cumulus(node, gen_opts, para.id)
         },
         _ => unreachable!(), /* TODO: do we need those?
                               * ZombieRole::Bootnode => todo!(),

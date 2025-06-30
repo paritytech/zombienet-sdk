@@ -111,7 +111,7 @@ impl RelaychainSpec {
         let (nodes, mut errs) = config
             .nodes()
             .iter()
-            .map(|node_config| NodeSpec::from_config(node_config, &chain_context))
+            .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false))
             .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
                 match result {
                     Ok(node) => nodes.push(node),

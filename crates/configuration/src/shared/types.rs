@@ -311,9 +311,7 @@ impl From<&str> for AssetLocation {
             return Self::Url(parsed_url);
         }
 
-        Self::FilePath(
-            PathBuf::from_str(value).expect(&format!("{INFAILABLE}, {THIS_IS_A_BUG}")),
-        )
+        Self::FilePath(PathBuf::from_str(value).expect(&format!("{INFAILABLE}, {THIS_IS_A_BUG}")))
     }
 }
 
@@ -453,9 +451,7 @@ impl Serialize for Arg {
     {
         match self {
             Arg::Flag(value) => serializer.serialize_str(value),
-            Arg::Option(option, value) => {
-                serializer.serialize_str(&format!("{option}={value}"))
-            },
+            Arg::Option(option, value) => serializer.serialize_str(&format!("{option}={value}")),
             Arg::Array(option, values) => {
                 serializer.serialize_str(&format!("{}=[{}]", option, values.join(",")))
             },

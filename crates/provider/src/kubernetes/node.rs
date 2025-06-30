@@ -709,9 +709,7 @@ where
         if let Some(ip) = status.pod_ip {
             // Pod ip should be parseable
             Ok(ip.parse::<IpAddr>().map_err(|err| {
-                ProviderError::InvalidConfig(format!(
-                    "Can not parse the pod ip: {ip}, err: {err}"
-                ))
+                ProviderError::InvalidConfig(format!("Can not parse the pod ip: {ip}, err: {err}"))
             })?)
         } else {
             Err(ProviderError::InvalidConfig(format!(

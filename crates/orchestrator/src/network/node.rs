@@ -950,7 +950,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_wait_log_count_with_timeout_with_lockahead_regex() -> Result<(), anyhow::Error> {
+    async fn test_wait_log_count_with_timeout_with_lookahead_regex() -> Result<(), anyhow::Error> {
         let mock_provider = Arc::new(MockNode::new());
         let mock_node = NetworkNode::new(
             "node1",
@@ -969,7 +969,6 @@ mod tests {
             "stub line 2"
         ]);
 
-        // Wait until timeout and make sure pattern occurrence count is in range between 2 and 5
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| n == 1),
             timeout: Duration::from_secs(3),
@@ -1004,7 +1003,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_wait_log_count_with_timeout_with_lockahead_regex_fails(
+    async fn test_wait_log_count_with_timeout_with_lookahead_regex_fails(
     ) -> Result<(), anyhow::Error> {
         let mock_provider = Arc::new(MockNode::new());
         let mock_node = NetworkNode::new(
@@ -1101,7 +1100,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_wait_log_count_with_lockahead_regex_fails() -> Result<(), anyhow::Error> {
+    async fn test_wait_log_count_with_lookahead_regex_fails() -> Result<(), anyhow::Error> {
         let mock_provider = Arc::new(MockNode::new());
         let mock_node = NetworkNode::new(
             "node1",

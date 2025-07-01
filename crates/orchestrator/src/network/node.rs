@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;
+use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
-use fancy_regex::Regex;
 use serde::Serialize;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
@@ -451,7 +451,7 @@ impl NetworkNode {
 
         let start = tokio::time::Instant::now();
 
-        let match_fn: Box<dyn Fn(&str) -> Result<bool,anyhow::Error> + Send + Sync> = if is_glob {
+        let match_fn: Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync> = if is_glob {
             Box::new(move |line: &str| Ok(glob_match(&substring, line)))
         } else {
             let re = Regex::new(&substring)?;
@@ -979,7 +979,11 @@ mod tests {
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count_with_timeout("error(?! importing block .*: block has an unknown parent)", false, options)
+                    .wait_log_line_count_with_timeout(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        options,
+                    )
                     .await
                     .unwrap()
             }
@@ -991,7 +995,8 @@ mod tests {
             "system ready",
             // this line should match
             "system error",
-            "system ready"]);
+            "system ready",
+        ]);
 
         assert!(task.await?.success());
 
@@ -999,7 +1004,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_wait_log_count_with_timeout_with_lockahead_regex_fails() -> Result<(), anyhow::Error> {
+    async fn test_wait_log_count_with_timeout_with_lockahead_regex_fails(
+    ) -> Result<(), anyhow::Error> {
         let mock_provider = Arc::new(MockNode::new());
         let mock_node = NetworkNode::new(
             "node1",
@@ -1028,7 +1034,11 @@ mod tests {
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count_with_timeout("error(?! importing block .*: block has an unknown parent)", false, options)
+                    .wait_log_line_count_with_timeout(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        options,
+                    )
                     .await
                     .unwrap()
             }
@@ -1036,9 +1046,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        mock_provider.logs_push(vec![
-            "system ready",
-            "system ready"]);
+        mock_provider.logs_push(vec!["system ready", "system ready"]);
 
         assert!(!task.await?.success());
 
@@ -1065,11 +1073,14 @@ mod tests {
             "stub line 2"
         ]);
 
-
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count("error(?! importing block .*: block has an unknown parent)", false, 1)
+                    .wait_log_line_count(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        1,
+                    )
                     .await
                     .unwrap()
             }
@@ -1081,7 +1092,8 @@ mod tests {
             "system ready",
             // this line should match
             "system error",
-            "system ready"]);
+            "system ready",
+        ]);
 
         assert!(task.await.is_ok());
 
@@ -1108,11 +1120,14 @@ mod tests {
             "stub line 2"
         ]);
 
-
         let task = tokio::spawn({
             async move {
                 mock_node
-                    .wait_log_line_count("error(?! importing block .*: block has an unknown parent)", false, 1)
+                    .wait_log_line_count(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        1,
+                    )
                     .await
                     .unwrap()
             }
@@ -1120,9 +1135,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        mock_provider.logs_push(vec![
-            "system ready",
-            "system ready"]);
+        mock_provider.logs_push(vec!["system ready", "system ready"]);
 
         assert!(task.await.is_err());
 

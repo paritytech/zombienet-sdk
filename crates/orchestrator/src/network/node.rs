@@ -16,6 +16,8 @@ use tracing::{debug, trace};
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
 use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
+type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
+
 #[derive(Error, Debug)]
 pub enum NetworkNodeError {
     #[error("metric '{0}' not found!")]
@@ -367,10 +369,11 @@ impl NetworkNode {
         is_glob: bool,
         count: usize,
     ) -> Result<(), anyhow::Error> {
-        let pattern: String = pattern.into();
+        let pattern = pattern.into();
+        let pattern_clone = pattern.clone();
         debug!("waiting until we find pattern {pattern} {count} times");
-        let match_fn: Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync> = if is_glob {
-            Box::new(|line: &str| Ok(glob_match(&pattern, line)))
+        let match_fn: BoxedClosure = if is_glob {
+            Box::new(move |line: &str| Ok(glob_match(&pattern, line)))
         } else {
             let re = Regex::new(&pattern)?;
             Box::new(move |line: &str| re.is_match(line).map_err(|e| anyhow!(e.to_string())))
@@ -382,7 +385,7 @@ impl NetworkNode {
             for line in logs.lines() {
                 trace!("line is {line}");
                 if match_fn(line)? {
-                    trace!("pattern {pattern} match in line {line}");
+                    trace!("pattern {pattern_clone} match in line {line}");
                     q += 1;
                     if q >= count {
                         return Ok(());
@@ -451,7 +454,7 @@ impl NetworkNode {
 
         let start = tokio::time::Instant::now();
 
-        let match_fn: Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync> = if is_glob {
+        let match_fn: BoxedClosure = if is_glob {
             Box::new(move |line: &str| Ok(glob_match(&substring, line)))
         } else {
             let re = Regex::new(&substring)?;
@@ -1023,7 +1026,6 @@ mod tests {
             "stub line 2"
         ]);
 
-        // Wait until timeout and make sure pattern occurrence count is in range between 2 and 5
         let options = LogLineCountOptions {
             predicate: Arc::new(|n| n == 1),
             timeout: Duration::from_secs(6),

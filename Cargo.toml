@@ -61,6 +61,7 @@ glob-match = "0.2.1"
 libsecp256k1 = { version = "0.7.1", default-features = false }
 pjs-rs = "0.1.4"
 flate2 = "1.0"
+fancy-regex = "0.14.0"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.3.6", path = "crates/support" }

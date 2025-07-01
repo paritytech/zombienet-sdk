@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::anyhow;
+use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
-use regex::Regex;
 use serde::Serialize;
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
@@ -15,6 +15,8 @@ use tracing::{debug, trace};
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
 use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
+
+type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
 
 #[derive(Error, Debug)]
 pub enum NetworkNodeError {
@@ -367,13 +369,14 @@ impl NetworkNode {
         is_glob: bool,
         count: usize,
     ) -> Result<(), anyhow::Error> {
-        let pattern: String = pattern.into();
+        let pattern = pattern.into();
+        let pattern_clone = pattern.clone();
         debug!("waiting until we find pattern {pattern} {count} times");
-        let match_fn: Box<dyn Fn(&str) -> bool> = if is_glob {
-            Box::new(|line: &str| -> bool { glob_match(&pattern, line) })
+        let match_fn: BoxedClosure = if is_glob {
+            Box::new(move |line: &str| Ok(glob_match(&pattern, line)))
         } else {
             let re = Regex::new(&pattern)?;
-            Box::new(move |line: &str| -> bool { re.is_match(line) })
+            Box::new(move |line: &str| re.is_match(line).map_err(|e| anyhow!(e.to_string())))
         };
 
         loop {
@@ -381,8 +384,8 @@ impl NetworkNode {
             let logs = self.logs().await?;
             for line in logs.lines() {
                 trace!("line is {line}");
-                if match_fn(line) {
-                    trace!("pattern {pattern} match in line {line}");
+                if match_fn(line)? {
+                    trace!("pattern {pattern_clone} match in line {line}");
                     q += 1;
                     if q >= count {
                         return Ok(());
@@ -451,11 +454,11 @@ impl NetworkNode {
 
         let start = tokio::time::Instant::now();
 
-        let match_fn: Box<dyn Fn(&str) -> bool + Send + Sync> = if is_glob {
-            Box::new(move |line: &str| glob_match(&substring, line))
+        let match_fn: BoxedClosure = if is_glob {
+            Box::new(move |line: &str| Ok(glob_match(&substring, line)))
         } else {
             let re = Regex::new(&substring)?;
-            Box::new(move |line: &str| re.is_match(line))
+            Box::new(move |line: &str| re.is_match(line).map_err(|e| anyhow!(e.to_string())))
         };
 
         if options.wait_until_timeout_elapses {
@@ -467,7 +470,7 @@ impl NetworkNode {
             q = 0_u32;
             let logs = self.logs().await?;
             for line in logs.lines() {
-                if match_fn(line) {
+                if match_fn(line)? {
                     q += 1;
 
                     // If `wait_until_timeout_elapses` is set then check the condition just once at the
@@ -945,6 +948,197 @@ mod tests {
         mock_provider.logs_push(vec!["system ready", "system ready", "system ready"]);
 
         assert!(task.await?.success());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_with_timeout_with_lookahead_regex() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            // this line should not match
+            "Error importing block 0xfd66e545c446b1c01205503130b816af0ec2c0e504a8472808e6ff4a644ce1fa: block has an unknown parent",
+            "stub line 2"
+        ]);
+
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 1),
+            timeout: Duration::from_secs(3),
+            wait_until_timeout_elapses: true,
+        };
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        options,
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec![
+            "system ready",
+            // this line should match
+            "system error",
+            "system ready",
+        ]);
+
+        assert!(task.await?.success());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_with_timeout_with_lookahead_regex_fails(
+    ) -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            // this line should not match
+            "Error importing block 0xfd66e545c446b1c01205503130b816af0ec2c0e504a8472808e6ff4a644ce1fa: block has an unknown parent",
+            "stub line 2"
+        ]);
+
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|n| n == 1),
+            timeout: Duration::from_secs(6),
+            wait_until_timeout_elapses: true,
+        };
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count_with_timeout(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        options,
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["system ready", "system ready"]);
+
+        assert!(!task.await?.success());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_with_lockahead_regex() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            // this line should not match
+            "Error importing block 0xfd66e545c446b1c01205503130b816af0ec2c0e504a8472808e6ff4a644ce1fa: block has an unknown parent",
+            "stub line 2"
+        ]);
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        1,
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec![
+            "system ready",
+            // this line should match
+            "system error",
+            "system ready",
+        ]);
+
+        assert!(task.await.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_wait_log_count_with_lookahead_regex_fails() -> Result<(), anyhow::Error> {
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "node1",
+            "ws_uri",
+            "prometheus_uri",
+            "multiaddr",
+            NodeSpec::default(),
+            mock_provider.clone(),
+        );
+
+        mock_provider.logs_push(vec![
+            "system booting",
+            "stub line 1",
+            // this line should not match
+            "Error importing block 0xfd66e545c446b1c01205503130b816af0ec2c0e504a8472808e6ff4a644ce1fa: block has an unknown parent",
+            "stub line 2"
+        ]);
+
+        let task = tokio::spawn({
+            async move {
+                mock_node
+                    .wait_log_line_count(
+                        "error(?! importing block .*: block has an unknown parent)",
+                        false,
+                        1,
+                    )
+                    .await
+                    .unwrap()
+            }
+        });
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        mock_provider.logs_push(vec!["system ready", "system ready"]);
+
+        assert!(task.await.is_err());
 
         Ok(())
     }

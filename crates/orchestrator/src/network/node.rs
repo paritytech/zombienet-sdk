@@ -569,6 +569,26 @@ impl NetworkNode {
             Err(NetworkNodeError::MetricNotFound(metric_name.into()).into())
         }
     }
+
+    /// Waits given number of seconds until node reports that it is up and running, which
+    /// is determined by metric 'process_start_time_seconds', which should appear,
+    /// when node finished booting up.
+    ///
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - The number of seconds to wait.
+    ///
+    /// # Returns
+    /// * `Ok()` if the node is up before timeout occured.
+    /// * `Err(e)` if timeout or other error occurred while waiting.
+    pub async fn wait_until_is_up(
+        &self,
+        timeout_secs: impl Into<u64>,
+    ) -> Result<(), anyhow::Error> {
+        self.wait_metric_with_timeout("process_start_time_seconds", |b| b >= 1.0, timeout_secs)
+            .await
+            .map_err(|err| anyhow::anyhow!("{}: {:?}", self.name(), err))
+    }
 }
 
 impl std::fmt::Debug for NetworkNode {

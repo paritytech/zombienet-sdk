@@ -1165,7 +1165,7 @@ mod tests {
 
         mock_provider.logs_push(vec!["system ready", "system ready"]);
 
-        assert_eq!(task.await?.success(), false);
+        assert!(!task.await?.success());
 
         Ok(())
     }

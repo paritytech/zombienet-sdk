@@ -1141,13 +1141,20 @@ mod tests {
             "stub line 2"
         ]);
 
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|count| count == 1),
+            timeout: Duration::from_secs(2),
+            wait_until_timeout_elapses: true,
+        };
+
         let task = tokio::spawn({
             async move {
+                // we expect no match, thus wait with timeout
                 mock_node
-                    .wait_log_line_count(
+                    .wait_log_line_count_with_timeout(
                         "error(?! importing block .*: block has an unknown parent)",
                         false,
-                        1,
+                        options,
                     )
                     .await
                     .unwrap()
@@ -1158,7 +1165,7 @@ mod tests {
 
         mock_provider.logs_push(vec!["system ready", "system ready"]);
 
-        assert!(task.await.is_err());
+        assert_eq!(task.await?.success(), false);
 
         Ok(())
     }

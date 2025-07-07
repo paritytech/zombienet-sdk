@@ -29,6 +29,11 @@ async fn ci_native_smoke_should_works() {
     let elapsed = now.elapsed();
     println!("🚀🚀🚀🚀 network deployed in {elapsed:.2?}");
 
+    network.wait_until_is_up(20).await.unwrap();
+
+    let elapsed = now.elapsed();
+    println!("✅✅✅✅ network is up in {elapsed:.2?}");
+
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
     // wait 10 blocks

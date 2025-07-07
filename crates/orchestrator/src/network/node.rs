@@ -569,6 +569,26 @@ impl NetworkNode {
             Err(NetworkNodeError::MetricNotFound(metric_name.into()).into())
         }
     }
+
+    /// Waits given number of seconds until node reports that it is up and running, which
+    /// is determined by metric 'process_start_time_seconds', which should appear,
+    /// when node finished booting up.
+    ///
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - The number of seconds to wait.
+    ///
+    /// # Returns
+    /// * `Ok()` if the node is up before timeout occured.
+    /// * `Err(e)` if timeout or other error occurred while waiting.
+    pub async fn wait_until_is_up(
+        &self,
+        timeout_secs: impl Into<u64>,
+    ) -> Result<(), anyhow::Error> {
+        self.wait_metric_with_timeout("process_start_time_seconds", |b| b >= 1.0, timeout_secs)
+            .await
+            .map_err(|err| anyhow::anyhow!("{}: {:?}", self.name(), err))
+    }
 }
 
 impl std::fmt::Debug for NetworkNode {
@@ -1121,13 +1141,20 @@ mod tests {
             "stub line 2"
         ]);
 
+        let options = LogLineCountOptions {
+            predicate: Arc::new(|count| count == 1),
+            timeout: Duration::from_secs(2),
+            wait_until_timeout_elapses: true,
+        };
+
         let task = tokio::spawn({
             async move {
+                // we expect no match, thus wait with timeout
                 mock_node
-                    .wait_log_line_count(
+                    .wait_log_line_count_with_timeout(
                         "error(?! importing block .*: block has an unknown parent)",
                         false,
-                        1,
+                        options,
                     )
                     .await
                     .unwrap()
@@ -1138,7 +1165,7 @@ mod tests {
 
         mock_provider.logs_push(vec!["system ready", "system ready"]);
 
-        assert!(task.await.is_err());
+        assert!(!task.await?.success());
 
         Ok(())
     }

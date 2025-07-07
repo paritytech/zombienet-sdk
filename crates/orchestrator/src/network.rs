@@ -704,4 +704,23 @@ impl<T: FileSystem> Network<T> {
                 .flat_map(|p| &mut p.collators),
         )
     }
+
+    /// Waits given number of seconds until all nodes in the network report that they are
+    /// up and running.
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - The number of seconds to wait.
+    ///
+    /// # Returns
+    /// * `Ok()` if the node is up before timeout occured.
+    /// * `Err(e)` if timeout or other error occurred while waiting.
+    pub async fn wait_until_is_up(&self, timeout_secs: u64) -> Result<(), anyhow::Error> {
+        let handles = self
+            .nodes_iter()
+            .map(|node| node.wait_until_is_up(timeout_secs));
+
+        futures::future::try_join_all(handles).await?;
+
+        Ok(())
+    }
 }

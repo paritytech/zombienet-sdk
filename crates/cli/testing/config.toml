@@ -1,0 +1,23 @@
+[settings]
+timeout = 3600
+node_spawn_timeout = 300
+base_dir = "/tmp/zombie-bite_1751850079747/spawn"
+spawn_concurrency = 4
+
+[relaychain]
+chain = "polkadot"
+default_command = "doppelganger"
+
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 1000
+chain = "asset-hub-polkadot"
+
+[[parachains.collators]]
+name = "collator"

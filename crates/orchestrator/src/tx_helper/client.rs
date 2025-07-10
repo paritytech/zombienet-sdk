@@ -24,7 +24,9 @@ impl ClientFromUrl for RpcClient {
     }
 
     async fn from_insecure_url(url: &str) -> Result<Self, subxt::Error> {
-        Self::from_insecure_url(url).await.map_err(|e| subxt::Error::from(e))
+        Self::from_insecure_url(url)
+            .await
+            .map_err(|e| subxt::Error::from(e))
     }
 }
 

@@ -64,7 +64,7 @@ pub fn network_config(
     base_path: Option<String>,
     concurrency: Option<usize>,
 ) -> NetworkConfig {
-    let network_config = NetworkConfig::load_from_toml(&config).unwrap();
+    let network_config = NetworkConfig::load_from_toml(config).unwrap();
 
     // nothing to override
     if base_path.is_none() && concurrency.is_none() {
@@ -113,7 +113,7 @@ pub fn network_config(
     };
 
     let settings = settings_builder.build().unwrap();
-    NetworkConfig::load_from_toml_with_settings(&config, &settings).unwrap()
+    NetworkConfig::load_from_toml_with_settings(config, &settings).unwrap()
 }
 
 #[cfg(test)]

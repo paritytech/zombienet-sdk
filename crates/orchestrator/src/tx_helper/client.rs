@@ -20,13 +20,13 @@ impl<Config: subxt::Config + Send + Sync> ClientFromUrl for OnlineClient<Config>
 #[async_trait::async_trait]
 impl ClientFromUrl for RpcClient {
     async fn from_secure_url(url: &str) -> Result<Self, subxt::Error> {
-        Self::from_url(url).await.map_err(|e| subxt::Error::from(e))
+        Self::from_url(url).await.map_err(subxt::Error::from)
     }
 
     async fn from_insecure_url(url: &str) -> Result<Self, subxt::Error> {
         Self::from_insecure_url(url)
             .await
-            .map_err(|e| subxt::Error::from(e))
+            .map_err(subxt::Error::from)
     }
 }
 

@@ -44,7 +44,7 @@ pest_derive = "2.7"
 rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
-sp-core = "35.0.0"
+sp-core = "36.0.1"
 libp2p = "0.54.1"
 subxt = "0.42.1"
 subxt-signer = { version = "0.42.1", features = ["subxt"] }

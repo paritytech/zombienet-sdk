@@ -29,11 +29,7 @@ impl Default for GenCmdOptions<'_> {
     }
 }
 
-const FLAGS_ADDED_BY_US: [&str; 3] = [
-    "--no-telemetry",
-    "--collator",
-    "--",
-];
+const FLAGS_ADDED_BY_US: [&str; 3] = ["--no-telemetry", "--collator", "--"];
 const OPS_ADDED_BY_US: [&str; 6] = [
     "--chain",
     "--name",

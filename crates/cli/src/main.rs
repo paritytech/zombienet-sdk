@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use zombienet_sdk::{environment::Provider, GlobalSettingsBuilder, NetworkConfig};
 
 #[derive(Parser, Debug)]
@@ -33,7 +34,13 @@ pub enum Commands {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
 
     let args = Args::parse();
 
@@ -52,7 +59,7 @@ async fn main() {
     let spawn_fn = provider.get_spawn_fn();
     let _n = spawn_fn(config).await.unwrap();
 
-    println!("looping...");
+    println!("Network spawned 🚀🚀");
 
     loop {
         tokio::time::sleep(Duration::from_secs(60)).await;

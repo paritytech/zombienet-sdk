@@ -510,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_for_native_cumulus_node_rpc_external_is_removed() {
+    fn generate_for_native_cumulus_node_rpc_external_is_not_removed_if_is_set_by_user() {
         let mut node = get_node_spec(true);
         node.args.push("--unsafe-rpc-external".into());
         let opts = GenCmdOptions {
@@ -521,7 +521,7 @@ mod tests {
 
         let (_, args) = generate_for_cumulus_node(&node, opts, 1000);
 
-        assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
+        assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
 
     #[test]

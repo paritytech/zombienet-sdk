@@ -11486,6 +11486,7 @@ dependencies = [
 name = "zombie-cli"
 version = "0.3.10"
 dependencies = [
+ "anyhow",
  "clap",
  "tokio",
  "tracing-subscriber",

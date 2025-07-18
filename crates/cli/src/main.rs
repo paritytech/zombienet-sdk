@@ -1,8 +1,23 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use zombienet_sdk::{environment::Provider, GlobalSettingsBuilder, NetworkConfig};
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum NodeVerifier {
+    None,
+    Metric,
+}
+
+impl<T: AsRef<str>> From<T> for NodeVerifier {
+    fn from(value: T) -> Self {
+        match value.as_ref().to_ascii_lowercase().as_ref() {
+            "none" => NodeVerifier::None,
+            _ => NodeVerifier::Metric, // default
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -29,11 +44,20 @@ pub enum Commands {
             help = "Number of concurrent spawning process to launch"
         )]
         spawn_concurrency: Option<usize>,
+        /// Allow to manage how we verify node readiness or disable (None)
+        /// For 'metric' we query prometheus 'process_start_time_seconds' in order to check the rediness".
+        #[arg(
+            short = 'v',
+            long = "node-verifier",
+            value_parser = clap::builder::PossibleValuesParser::new(["none", "metric"]), default_value="metric",
+            verbatim_doc_comment,
+        )]
+        node_verifier: String,
     },
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
@@ -42,28 +66,56 @@ async fn main() {
         )
         .init();
 
+    let now = Instant::now();
     let args = Args::parse();
 
-    let (config, provider, base_path, spawn_concurrency) = match args.cmd {
+    let (config, provider, base_path, spawn_concurrency, node_verifier) = match args.cmd {
         Commands::Spawn {
             config,
             provider,
             base_path,
             spawn_concurrency,
-        } => (config, provider, base_path, spawn_concurrency),
+            node_verifier,
+        } => (
+            config,
+            provider,
+            base_path,
+            spawn_concurrency,
+            node_verifier,
+        ),
     };
 
     let config = network_config(&config, base_path, spawn_concurrency);
 
     let provider: Provider = provider.into();
-    let spawn_fn = provider.get_spawn_fn();
-    let _n = spawn_fn(config).await.unwrap();
+    let node_verifier: NodeVerifier = node_verifier.into();
 
-    println!("Network spawned 🚀🚀");
+    let spawn_fn = provider.get_spawn_fn();
+    let network = spawn_fn(config).await.unwrap();
+
+    if node_verifier == NodeVerifier::Metric {
+        network
+            .wait_until_is_up(20)
+            .await
+            .map_err(display_node_crash)?;
+    }
+
+    let elapsed = now.elapsed();
+    println!("🚀🚀🚀 network is up, in {elapsed:.2?}");
 
     loop {
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        if node_verifier == NodeVerifier::Metric {
+            network
+                .wait_until_is_up(5)
+                .await
+                .map_err(display_node_crash)?;
+        }
     }
+}
+
+fn display_node_crash(e: anyhow::Error) -> anyhow::Error {
+    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {}", e.to_string())
 }
 
 pub fn network_config(

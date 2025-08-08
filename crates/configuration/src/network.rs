@@ -248,27 +248,27 @@ fn populate_collator_with_defaults(
     parachain_default_command: &Option<Command>,
     parachain_default_image: &Option<Image>,
     parachain_default_db_snapshot: &Option<AssetLocation>,
-    default_args: &Vec<Arg>,
+    default_args: &[Arg],
 ) {
     if parachain_default_command.is_some() {
         // we modify only nodes which don't already have a command
         if collator.command.is_none() {
-            collator.command.clone_from(&parachain_default_command);
+            collator.command.clone_from(parachain_default_command);
         }
     }
 
     if parachain_default_image.is_some() && collator.image.is_none() {
-        collator.image.clone_from(&parachain_default_image);
+        collator.image.clone_from(parachain_default_image);
     }
 
     if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
         collator
             .db_snapshot
-            .clone_from(&parachain_default_db_snapshot);
+            .clone_from(parachain_default_db_snapshot);
     }
 
     if !default_args.is_empty() && collator.args().is_empty() {
-        collator.set_args(default_args.clone());
+        collator.set_args(default_args.to_owned());
     }
 }
 

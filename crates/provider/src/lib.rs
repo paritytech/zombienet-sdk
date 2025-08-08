@@ -52,9 +52,6 @@ pub enum ProviderError {
     #[error("Can not recover node: {0} info, field: {1}")]
     MissingNodeInfo(String, String),
 
-    #[error("Duplicated node name: {0}")]
-    DuplicatedNodeName(String),
-
     #[error("File generation failed: {0}")]
     FileGenerationFailed(anyhow::Error),
 

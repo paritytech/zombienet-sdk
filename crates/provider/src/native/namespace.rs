@@ -124,10 +124,8 @@ where
     }
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
-        if self.nodes.read().await.contains_key(&options.name) {
-            return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
-        }
-
+        trace!("spawn node options {options:?}");
+        
         let node = NativeNode::new(NativeNodeOptions {
             namespace: &self.weak,
             namespace_base_dir: &self.base_dir,

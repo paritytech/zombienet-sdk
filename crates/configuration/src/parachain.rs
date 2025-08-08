@@ -159,7 +159,7 @@ pub struct ParachainConfig {
     // with `[parachain.collator]` key.
     // NOTE: if the file also contains multiple collators defined in
     // `[[parachain.collators]], the single configuration will be added to the bottom.
-    collator: Option<NodeConfig>,
+    pub(crate) collator: Option<NodeConfig>,
 }
 
 impl ParachainConfig {
@@ -865,7 +865,7 @@ impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
         match f(NodeConfigBuilder::new(
-            ChainDefaultContext::default(),
+            self.default_chain_context(),
             self.validation_context.clone(),
         ))
         .build()

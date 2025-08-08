@@ -1,6 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::{hash_map::Entry, HashMap}, rc::Rc};
 
 use support::constants::{BORROWABLE, THIS_IS_A_BUG};
+use tracing::warn;
 
 use super::{
     errors::ValidationError,
@@ -27,21 +28,39 @@ pub fn merge_errors_vecs(
     errors
 }
 
-pub fn ensure_node_name_unique(
+pub fn generate_unique_node_name(
     node_name: impl Into<String>,
     validation_context: Rc<RefCell<ValidationContext>>,
-) -> Result<(), anyhow::Error> {
+) -> String {
     let mut context = validation_context
         .try_borrow_mut()
         .expect(&format!("{BORROWABLE}, {THIS_IS_A_BUG}"));
 
-    let node_name = node_name.into();
-    if !context.used_nodes_names.contains(&node_name) {
-        context.used_nodes_names.push(node_name);
-        return Ok(());
-    }
+    generate_unique_node_name_from_map(node_name, &mut context.used_nodes_names)
+}
 
-    Err(ValidationError::NodeNameAlreadyUsed(node_name).into())
+pub fn generate_unique_node_name_from_map(
+    node_name: impl Into<String>,
+    map: &mut HashMap<String, u8>,
+) -> String {
+    let node_name = node_name.into();
+    match map.entry(node_name.clone()) {
+        Entry::Vacant(e) => {
+            e.insert(1);
+            node_name
+        },
+        Entry::Occupied(mut e) => {
+            let count = e.get_mut();
+            let new_name = format!("{}-{}", node_name, *count);
+            warn!(
+              original = %node_name,
+              adjusted = %new_name,
+              "Duplicate node name detected."
+            );
+            *count += 1;
+            new_name
+        },
+    }
 }
 
 pub fn ensure_value_is_not_empty(value: &str) -> Result<(), anyhow::Error> {

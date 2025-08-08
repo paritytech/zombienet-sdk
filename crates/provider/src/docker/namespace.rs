@@ -301,9 +301,6 @@ where
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         debug!("spawn option {:?}", options);
-        if self.nodes.read().await.contains_key(&options.name) {
-            return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
-        }
 
         let node = DockerNode::new(DockerNodeOptions {
             namespace: &self.weak,

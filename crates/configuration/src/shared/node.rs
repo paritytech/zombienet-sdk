@@ -6,7 +6,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use super::{
     errors::FieldError,
     helpers::{
-        generate_unique_node_name, ensure_port_unique, ensure_value_is_not_empty, merge_errors,
+        ensure_port_unique, ensure_value_is_not_empty, generate_unique_node_name, merge_errors,
         merge_errors_vecs,
     },
     macros::states,

@@ -125,7 +125,7 @@ where
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         trace!("spawn node options {options:?}");
-        
+
         let node = NativeNode::new(NativeNodeOptions {
             namespace: &self.weak,
             namespace_base_dir: &self.base_dir,

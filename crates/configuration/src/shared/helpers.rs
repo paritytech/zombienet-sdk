@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::{hash_map::Entry, HashMap}, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{hash_map::Entry, HashMap},
+    rc::Rc,
+};
 
 use support::constants::{BORROWABLE, THIS_IS_A_BUG};
 use tracing::warn;

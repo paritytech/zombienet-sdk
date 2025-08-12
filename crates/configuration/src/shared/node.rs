@@ -672,7 +672,7 @@ impl NodeConfigBuilder<Buildable> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::HashSet;
 
     use super::*;
 
@@ -750,8 +750,8 @@ mod tests {
 
     #[test]
     fn node_config_builder_should_use_unique_name_if_node_name_already_used() {
-        let mut used_nodes_names = HashMap::new();
-        used_nodes_names.insert("mynode".into(), 1);
+        let mut used_nodes_names = HashSet::new();
+        used_nodes_names.insert("mynode".into());
         let validation_context = Rc::new(RefCell::new(ValidationContext {
             used_nodes_names,
             ..Default::default()

@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::{hash_map::Entry, HashMap},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use support::constants::{BORROWABLE, THIS_IS_A_BUG};
 use tracing::warn;
@@ -40,31 +36,34 @@ pub fn generate_unique_node_name(
         .try_borrow_mut()
         .expect(&format!("{BORROWABLE}, {THIS_IS_A_BUG}"));
 
-    generate_unique_node_name_from_map(node_name, &mut context.used_nodes_names)
+    generate_unique_node_name_from_names(node_name, &mut context.used_nodes_names)
 }
 
-pub fn generate_unique_node_name_from_map(
+pub fn generate_unique_node_name_from_names(
     node_name: impl Into<String>,
-    map: &mut HashMap<String, u8>,
+    names: &mut HashSet<String>,
 ) -> String {
     let node_name = node_name.into();
-    match map.entry(node_name.clone()) {
-        Entry::Vacant(e) => {
-            e.insert(1);
-            node_name
-        },
-        Entry::Occupied(mut e) => {
-            let count = e.get_mut();
-            let new_name = format!("{}-{}", node_name, *count);
-            warn!(
-              original = %node_name,
-              adjusted = %new_name,
-              "Duplicate node name detected."
-            );
-            *count += 1;
-            new_name
-        },
+
+    if names.insert(node_name.clone()) {
+        return node_name;
     }
+
+    let mut counter = 1;
+    let mut candidate = node_name.clone();
+    while names.contains(&candidate) {
+        candidate = format!("{node_name}-{counter}");
+        counter += 1;
+    }
+
+    warn!(
+        original = %node_name,
+        adjusted = %candidate,
+        "Duplicate node name detected."
+    );
+
+    names.insert(candidate.clone());
+    candidate
 }
 
 pub fn ensure_value_is_not_empty(value: &str) -> Result<(), anyhow::Error> {

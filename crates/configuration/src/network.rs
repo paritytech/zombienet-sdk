@@ -1,10 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    fs,
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashSet, fs, marker::PhantomData, rc::Rc};
 
 use anyhow::anyhow;
 use regex::Regex;
@@ -24,7 +18,7 @@ use crate::{
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
         errors::{ConfigError, ValidationError},
-        helpers::{generate_unique_node_name_from_map, merge_errors, merge_errors_vecs},
+        helpers::{generate_unique_node_name_from_names, merge_errors, merge_errors_vecs},
         macros::states,
         node::NodeConfig,
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
@@ -153,7 +147,7 @@ impl NetworkConfig {
         }
 
         // Keep track of node names to ensure uniqueness
-        let mut names: HashMap<String, u8> = HashMap::new();
+        let mut names = HashSet::new();
 
         for node in nodes.iter_mut() {
             if relaychain_default_command.is_some() {
@@ -175,7 +169,7 @@ impl NetworkConfig {
                 node.set_args(default_args.clone());
             }
 
-            let unique_name = generate_unique_node_name_from_map(node.name(), &mut names);
+            let unique_name = generate_unique_node_name_from_names(node.name(), &mut names);
             node.name = unique_name;
         }
 
@@ -200,7 +194,7 @@ impl NetworkConfig {
                     &parachain_default_db_snapshot,
                     &default_args,
                 );
-                let unique_name = generate_unique_node_name_from_map(collator.name(), &mut names);
+                let unique_name = generate_unique_node_name_from_names(collator.name(), &mut names);
                 collator.name = unique_name;
             }
 
@@ -215,7 +209,7 @@ impl NetworkConfig {
                     &parachain_default_db_snapshot,
                     &default_args,
                 );
-                let unique_name = generate_unique_node_name_from_map(collator.name(), &mut names);
+                let unique_name = generate_unique_node_name_from_names(collator.name(), &mut names);
                 collator.name = unique_name;
                 para.collator = Some(collator);
             }

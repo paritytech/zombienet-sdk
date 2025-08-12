@@ -95,7 +95,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          part: artifacts.tar.gz
+          path: artifacts.tar.gz
 
       - name: Download bins
         shell: bash

@@ -62,13 +62,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          path: artifacts.tar.gz
+          path: /tmp/artifacts.tar.gz
 
       - name: script
         run: |
           export ZOMBIE_K8S_CI_NAMESPACE=$(cat /data/namespace)
           export ZOMBIE_PROVIDER="k8s"
-          mv artifacts.tar.gz /tmp
+          # mv artifacts.tar.gz /tmp
           cd /tmp
           ls -la
           tar xvfz artifacts.tar.gz

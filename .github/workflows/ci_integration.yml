@@ -62,7 +62,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          path: /tmp/artifacts.tar.gz
+          path: /tmp
 
       - name: script
         run: |

@@ -95,7 +95,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: zombienet-tests-${{ github.sha }}
-          path: artifacts.tar.gz
+          path: /tmp
 
       - name: Download bins
         shell: bash
@@ -113,7 +113,7 @@ jobs:
         run: |
           export PATH=/tmp:$PATH
           echo $PATH
-          mv artifacts.tar.gz /tmp
+          # mv artifacts.tar.gz /tmp
           cd /tmp
           ls -la
           tar xvfz artifacts.tar.gz

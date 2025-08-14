@@ -1,0 +1,40 @@
+[settings]
+timeout = 3600
+node_spawn_timeout = 600
+
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+default_image = "docker.io/parity/polkadot:latest"
+default_args = ["-lparachain=debug"]
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+invulnerable = true
+bootnode = false
+balance = 2000000000000
+
+[[relaychain.nodes]]
+name = "bob"
+args = ["--database=paritydb-experimental"]
+validator = true
+invulnerable = false
+bootnode = true
+balance = 2000000000000
+
+[[parachains]]
+id = 1000
+chain = "myparachain"
+onboard_as_parachain = false
+balance = 2000000000000
+default_db_snapshot = "https://storage.com/path/to/db_snapshot.tgz"
+chain_spec_path = "/path/to/my/chain/spec.json"
+cumulus_based = true
+
+[parachains.collator]
+name = "alice"
+validator = true
+invulnerable = true
+bootnode = true
+balance = 5000000000

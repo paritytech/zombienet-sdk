@@ -438,9 +438,6 @@ where
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError> {
         trace!("spawn node options {options:?}");
-        if self.nodes.read().await.contains_key(&options.name) {
-            return Err(ProviderError::DuplicatedNodeName(options.name.clone()));
-        }
 
         let node = KubernetesNode::new(KubernetesNodeOptions {
             namespace: &self.weak,

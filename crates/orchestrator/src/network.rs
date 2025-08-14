@@ -97,9 +97,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     /// Add a node to the relaychain
-    ///
     // The new node is added to the running network instance.
-    ///
     /// # Example:
     /// ```rust
     /// # use provider::NativeProvider;

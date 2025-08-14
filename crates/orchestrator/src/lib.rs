@@ -238,6 +238,8 @@ where
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
 
+        let mut nodes_with_dependencies= vec![];
+
         for chunk in bootnodes.chunks(spawn_concurrency) {
             let spawning_tasks = chunk
                 .iter()
@@ -255,7 +257,13 @@ where
 
                 // Add the node to the  context and `Network` instance
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                network.add_running_node(node, None);
+                network.add_running_node(node.clone(), None);
+                if network_spec
+                    .parachains_iter()
+                    .flat_map(|para| &para.collators)
+                    .any(|_c| true) {
+                        nodes_with_dependencies.push(node);
+                    }
             }
         }
 
@@ -276,9 +284,18 @@ where
             for node in futures::future::try_join_all(spawning_tasks).await? {
                 // Add the node to the  context and `Network` instance
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                network.add_running_node(node, None);
+                network.add_running_node(node.clone(), None);
+                if network_spec
+                    .parachains_iter()
+                    .flat_map(|para| &para.collators)
+                    .any(|_c| true) {
+                        nodes_with_dependencies.push(node);
+                    }
             }
         }
+        
+        // before we spawn paras, let's make sure relevant relay nodes are ready
+        network_helper::verifier::verify_nodes(&nodes_with_dependencies.iter().collect::<Vec<_>>()).await?;
 
         // spawn paras
         for para in network_spec.parachains.iter() {

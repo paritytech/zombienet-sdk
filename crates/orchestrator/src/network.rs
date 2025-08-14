@@ -98,8 +98,7 @@ impl<T: FileSystem> Network<T> {
 
     /// Add a node to the relaychain
     ///
-    /// NOTE: name must be unique in the whole network. The new node is added to the
-    /// running network instance.
+    // The new node is added to the running network instance.
     ///
     /// # Example:
     /// ```rust
@@ -208,8 +207,7 @@ impl<T: FileSystem> Network<T> {
 
     /// Add a new collator to a parachain
     ///
-    /// NOTE #1: name must be unique in the whole network.
-    /// NOTE #2: if more parachains with given id available (rare corner case)
+    /// NOTE: if more parachains with given id available (rare corner case)
     /// then it adds collator to the first parachain
     ///
     /// # Example:

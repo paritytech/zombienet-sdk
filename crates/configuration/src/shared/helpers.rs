@@ -28,6 +28,11 @@ pub fn merge_errors_vecs(
     errors
 }
 
+/// Generates a unique name from a base name and the names already present in a
+/// [`ValidationContext`].
+///
+/// Uses [`generate_unique_node_name_from_names()`] internally to ensure uniqueness.
+/// Logs a warning if the generated name differs from the original due to duplicates.
 pub fn generate_unique_node_name(
     node_name: impl Into<String>,
     validation_context: Rc<RefCell<ValidationContext>>,
@@ -39,6 +44,10 @@ pub fn generate_unique_node_name(
     generate_unique_node_name_from_names(node_name, &mut context.used_nodes_names)
 }
 
+/// Returns `node_name` if it is not already in `names`.
+///
+/// Otherwise, appends an incrementing `-{counter}` suffix until a unique name is found,
+/// then returns it. Logs a warning when a duplicate is detected.
 pub fn generate_unique_node_name_from_names(
     node_name: impl Into<String>,
     names: &mut HashSet<String>,

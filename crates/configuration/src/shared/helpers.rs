@@ -1,6 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use support::constants::{BORROWABLE, THIS_IS_A_BUG};
+use tracing::warn;
 
 use super::{
     errors::ValidationError,
@@ -27,21 +28,51 @@ pub fn merge_errors_vecs(
     errors
 }
 
-pub fn ensure_node_name_unique(
+/// Generates a unique name from a base name and the names already present in a
+/// [`ValidationContext`].
+///
+/// Uses [`generate_unique_node_name_from_names()`] internally to ensure uniqueness.
+/// Logs a warning if the generated name differs from the original due to duplicates.
+pub fn generate_unique_node_name(
     node_name: impl Into<String>,
     validation_context: Rc<RefCell<ValidationContext>>,
-) -> Result<(), anyhow::Error> {
+) -> String {
     let mut context = validation_context
         .try_borrow_mut()
         .expect(&format!("{BORROWABLE}, {THIS_IS_A_BUG}"));
 
+    generate_unique_node_name_from_names(node_name, &mut context.used_nodes_names)
+}
+
+/// Returns `node_name` if it is not already in `names`.
+///
+/// Otherwise, appends an incrementing `-{counter}` suffix until a unique name is found,
+/// then returns it. Logs a warning when a duplicate is detected.
+pub fn generate_unique_node_name_from_names(
+    node_name: impl Into<String>,
+    names: &mut HashSet<String>,
+) -> String {
     let node_name = node_name.into();
-    if !context.used_nodes_names.contains(&node_name) {
-        context.used_nodes_names.push(node_name);
-        return Ok(());
+
+    if names.insert(node_name.clone()) {
+        return node_name;
     }
 
-    Err(ValidationError::NodeNameAlreadyUsed(node_name).into())
+    let mut counter = 1;
+    let mut candidate = node_name.clone();
+    while names.contains(&candidate) {
+        candidate = format!("{node_name}-{counter}");
+        counter += 1;
+    }
+
+    warn!(
+        original = %node_name,
+        adjusted = %candidate,
+        "Duplicate node name detected."
+    );
+
+    names.insert(candidate.clone());
+    candidate
 }
 
 pub fn ensure_value_is_not_empty(value: &str) -> Result<(), anyhow::Error> {

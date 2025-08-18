@@ -6,7 +6,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use super::{
     errors::FieldError,
     helpers::{
-        ensure_node_name_unique, ensure_port_unique, ensure_value_is_not_empty, merge_errors,
+        ensure_port_unique, ensure_value_is_not_empty, generate_unique_node_name, merge_errors,
         merge_errors_vecs,
     },
     macros::states,
@@ -65,7 +65,7 @@ impl From<(&str, &str)> for EnvVar {
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct NodeConfig {
-    name: String,
+    pub(crate) name: String,
     pub(crate) image: Option<Image>,
     pub(crate) command: Option<Command>,
     pub(crate) subcommand: Option<Command>,
@@ -341,13 +341,10 @@ impl NodeConfigBuilder<Initial> {
 
     /// Set the name of the node.
     pub fn with_name<T: Into<String> + Copy>(self, name: T) -> NodeConfigBuilder<Buildable> {
-        let name: String = name.into();
+        let name: String = generate_unique_node_name(name, self.validation_context.clone());
 
-        match (
-            ensure_value_is_not_empty(&name),
-            ensure_node_name_unique(&name, self.validation_context.clone()),
-        ) {
-            (Ok(_), Ok(_)) => Self::transition(
+        match ensure_value_is_not_empty(&name) {
+            Ok(_) => Self::transition(
                 NodeConfig {
                     name,
                     ..self.config
@@ -355,16 +352,7 @@ impl NodeConfigBuilder<Initial> {
                 self.validation_context,
                 self.errors,
             ),
-            (Err(e), _) => Self::transition(
-                NodeConfig {
-                    // we still set the name in error case to display error path
-                    name,
-                    ..self.config
-                },
-                self.validation_context,
-                merge_errors(self.errors, FieldError::Name(e).into()),
-            ),
-            (_, Err(e)) => Self::transition(
+            Err(e) => Self::transition(
                 NodeConfig {
                     // we still set the name in error case to display error path
                     name,
@@ -684,6 +672,8 @@ impl NodeConfigBuilder<Buildable> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -756,6 +746,23 @@ mod tests {
         assert!(matches!(
             node_config.db_snapshot().unwrap(), AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
         ));
+    }
+
+    #[test]
+    fn node_config_builder_should_use_unique_name_if_node_name_already_used() {
+        let mut used_nodes_names = HashSet::new();
+        used_nodes_names.insert("mynode".into());
+        let validation_context = Rc::new(RefCell::new(ValidationContext {
+            used_nodes_names,
+            ..Default::default()
+        }));
+        let node_config =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
+                .with_name("mynode")
+                .build()
+                .unwrap();
+
+        assert_eq!(node_config.name, "mynode-1");
     }
 
     #[test]
@@ -909,27 +916,6 @@ mod tests {
         assert_eq!(
             errors.get(3).unwrap().to_string(),
             r"resources.request_memory: 'invalid' doesn't match regex '^\d+(.\d+)?(m|K|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$'"
-        );
-    }
-
-    #[test]
-    fn node_config_builder_should_fails_and_returns_an_error_and_node_name_if_node_name_is_already_used(
-    ) {
-        let validation_context = Rc::new(RefCell::new(ValidationContext {
-            used_nodes_names: vec!["mynode".into()],
-            ..Default::default()
-        }));
-        let (node_name, errors) =
-            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context)
-                .with_name("mynode")
-                .build()
-                .unwrap_err();
-
-        assert_eq!(node_name, "mynode");
-        assert_eq!(errors.len(), 1);
-        assert_eq!(
-            errors.first().unwrap().to_string(),
-            "name: 'mynode' is already used across config"
         );
     }
 

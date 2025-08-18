@@ -3,12 +3,12 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
 
 use configuration::{
     para_states::{Initial, Running},
-    shared::node::EnvVar,
-    types::{Arg, Command, Image, Port},
+    shared::{helpers::generate_unique_node_name_from_names, node::EnvVar},
+    types::{Arg, Command, Image, Port, ValidationContext},
     ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
@@ -97,10 +97,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     /// Add a node to the relaychain
-    ///
-    /// NOTE: name must be unique in the whole network. The new node is added to the
-    /// running network instance.
-    ///
+    // The new node is added to the running network instance.
     /// # Example:
     /// ```rust
     /// # use provider::NativeProvider;
@@ -129,12 +126,12 @@ impl<T: FileSystem> Network<T> {
         name: impl Into<String>,
         options: AddNodeOptions,
     ) -> Result<(), anyhow::Error> {
-        let name = name.into();
-        let relaychain = self.relaychain();
+        let name = generate_unique_node_name_from_names(
+            name,
+            &mut self.nodes_by_name.keys().cloned().collect(),
+        );
 
-        if self.nodes_iter().any(|n| n.name == name) {
-            return Err(anyhow::anyhow!("Name: {} is already used.", name));
-        }
+        let relaychain = self.relaychain();
 
         let chain_spec_path = if let Some(chain_spec_custom_path) = &options.chain_spec {
             chain_spec_custom_path.clone()
@@ -208,8 +205,7 @@ impl<T: FileSystem> Network<T> {
 
     /// Add a new collator to a parachain
     ///
-    /// NOTE #1: name must be unique in the whole network.
-    /// NOTE #2: if more parachains with given id available (rare corner case)
+    /// NOTE: if more parachains with given id available (rare corner case)
     /// then it adds collator to the first parachain
     ///
     /// # Example:
@@ -239,6 +235,10 @@ impl<T: FileSystem> Network<T> {
         options: AddCollatorOptions,
         para_id: u32,
     ) -> Result<(), anyhow::Error> {
+        let name = generate_unique_node_name_from_names(
+            name,
+            &mut self.nodes_by_name.keys().cloned().collect(),
+        );
         let spec = self
             .initial_spec
             .parachains
@@ -316,12 +316,8 @@ impl<T: FileSystem> Network<T> {
             ));
         }
 
-        let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
-            name.into(),
-            options.into(),
-            &chain_context,
-            true,
-        )?;
+        let mut node_spec =
+            network_spec::node::NodeSpec::from_ad_hoc(name, options.into(), &chain_context, true)?;
 
         node_spec.available_args_output = Some(
             self.initial_spec
@@ -341,8 +337,18 @@ impl<T: FileSystem> Network<T> {
     /// This allow you to build a new parachain config to be deployed into
     /// the running network.
     pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
-        // TODO: build the validation context from the running network
-        ParachainConfigBuilder::new_with_running(Default::default())
+        let used_ports = vec![]; // TODO: generate used ports from the network
+        let used_nodes_names = self.nodes_by_name.keys().cloned().collect();
+        let used_para_ids = HashMap::new(); // TODO: generate used para ids from the network
+
+        let context = ValidationContext {
+            used_ports,
+            used_nodes_names,
+            used_para_ids,
+        };
+        let context = Rc::new(RefCell::new(context));
+
+        ParachainConfigBuilder::new_with_running(context)
     }
 
     /// Add a new parachain to the running network

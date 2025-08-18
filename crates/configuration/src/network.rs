@@ -18,7 +18,7 @@ use crate::{
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
         errors::{ConfigError, ValidationError},
-        helpers::{merge_errors, merge_errors_vecs},
+        helpers::{generate_unique_node_name_from_names, merge_errors, merge_errors_vecs},
         macros::states,
         node::NodeConfig,
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
@@ -60,6 +60,10 @@ impl NetworkConfig {
     /// The HRMP channels of the network.
     pub fn hrmp_channels(&self) -> Vec<&HrmpChannelConfig> {
         self.hrmp_channels.iter().collect::<Vec<_>>()
+    }
+
+    fn set_parachains(&mut self, parachains: Vec<ParachainConfig>) {
+        self.parachains = parachains;
     }
 
     /// A helper function to dump the network configuration to a TOML string.
@@ -142,6 +146,9 @@ impl NetworkConfig {
             )?;
         }
 
+        // Keep track of node names to ensure uniqueness
+        let mut names = HashSet::new();
+
         for node in nodes.iter_mut() {
             if relaychain_default_command.is_some() {
                 // we modify only nodes which don't already have a command
@@ -161,6 +168,9 @@ impl NetworkConfig {
             if !default_args.is_empty() && node.args().is_empty() {
                 node.set_args(default_args.clone());
             }
+
+            let unique_name = generate_unique_node_name_from_names(node.name(), &mut names);
+            node.name = unique_name;
         }
 
         for para in parachains.iter_mut() {
@@ -174,32 +184,35 @@ impl NetworkConfig {
 
             let default_args: Vec<Arg> = para.default_args().into_iter().cloned().collect();
 
-            let mut collators: Vec<NodeConfig> = para.collators().into_iter().cloned().collect();
+            let mut collators: Vec<NodeConfig> = para.collators.clone();
 
             for collator in collators.iter_mut() {
-                if parachain_default_command.is_some() {
-                    // we modify only nodes which don't already have a command
-                    if collator.command.is_none() {
-                        collator.command.clone_from(&parachain_default_command);
-                    }
-                }
-
-                if parachain_default_image.is_some() && collator.image.is_none() {
-                    collator.image.clone_from(&parachain_default_image);
-                }
-
-                if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
-                    collator
-                        .db_snapshot
-                        .clone_from(&parachain_default_db_snapshot);
-                }
-
-                if !default_args.is_empty() && collator.args().is_empty() {
-                    collator.set_args(default_args.clone());
-                }
+                populate_collator_with_defaults(
+                    collator,
+                    &parachain_default_command,
+                    &parachain_default_image,
+                    &parachain_default_db_snapshot,
+                    &default_args,
+                );
+                let unique_name = generate_unique_node_name_from_names(collator.name(), &mut names);
+                collator.name = unique_name;
             }
 
             para.collators = collators;
+
+            if para.collator.is_some() {
+                let mut collator = para.collator.clone().unwrap();
+                populate_collator_with_defaults(
+                    &mut collator,
+                    &parachain_default_command,
+                    &parachain_default_image,
+                    &parachain_default_db_snapshot,
+                    &default_args,
+                );
+                let unique_name = generate_unique_node_name_from_names(collator.name(), &mut names);
+                collator.name = unique_name;
+                para.collator = Some(collator);
+            }
         }
 
         network_config
@@ -207,6 +220,8 @@ impl NetworkConfig {
             .as_mut()
             .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}"))
             .set_nodes(nodes);
+
+        network_config.set_parachains(parachains);
 
         // Validation checks for parachains
         network_config.parachains().iter().for_each(|parachain| {
@@ -219,6 +234,35 @@ impl NetworkConfig {
         });
 
         Ok(network_config)
+    }
+}
+
+fn populate_collator_with_defaults(
+    collator: &mut NodeConfig,
+    parachain_default_command: &Option<Command>,
+    parachain_default_image: &Option<Image>,
+    parachain_default_db_snapshot: &Option<AssetLocation>,
+    default_args: &[Arg],
+) {
+    if parachain_default_command.is_some() {
+        // we modify only nodes which don't already have a command
+        if collator.command.is_none() {
+            collator.command.clone_from(parachain_default_command);
+        }
+    }
+
+    if parachain_default_image.is_some() && collator.image.is_none() {
+        collator.image.clone_from(parachain_default_image);
+    }
+
+    if parachain_default_db_snapshot.is_some() && collator.db_snapshot.is_none() {
+        collator
+            .db_snapshot
+            .clone_from(parachain_default_db_snapshot);
+    }
+
+    if !default_args.is_empty() && collator.args().is_empty() {
+        collator.set_args(default_args.to_owned());
     }
 }
 
@@ -1827,6 +1871,33 @@ mod tests {
         assert_eq!(
             "rococo-local",
             loaded_from_toml.relaychain().chain().as_str()
+        );
+    }
+
+    #[test]
+    fn network_config_should_work_from_toml_with_duplicate_name_between_collator_and_relay_node() {
+        let loaded_from_toml = NetworkConfig::load_from_toml(
+            "./testing/snapshots/0007-small-network_w_parachain_w_duplicate_node_names.toml",
+        )
+        .unwrap();
+
+        assert_eq!(
+            loaded_from_toml
+                .relaychain()
+                .nodes()
+                .iter()
+                .filter(|n| n.name() == "alice")
+                .count(),
+            1
+        );
+        assert_eq!(
+            loaded_from_toml
+                .parachains()
+                .iter()
+                .flat_map(|para| para.collators())
+                .filter(|n| n.name() == "alice-1")
+                .count(),
+            1
         );
     }
 }

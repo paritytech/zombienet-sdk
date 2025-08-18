@@ -478,6 +478,9 @@ impl KubernetesClient {
                 WatchEvent::Error(err) => Err(Error::from(anyhow!(
                     "error while awaiting resource {name} is created: {err}"
                 )))?,
+                WatchEvent::Bookmark(_) => {
+                    // bookmark events are periodically sent as keep-alive/checkpoint, we should continue waiting
+                }
                 any_other_event => panic!("Unexpected event happened while creating '{name}' {THIS_IS_A_BUG}. Event: {any_other_event:?}"),
             }
         }

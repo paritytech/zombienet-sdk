@@ -14,7 +14,7 @@ pub mod shared;
 mod spawner;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet, VecDeque},
     env,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -35,7 +35,7 @@ use provider::{
 use serde_json::json;
 use support::{
     fs::{FileSystem, FileSystemError},
-    replacer::has_tokens,
+    replacer::{get_tokens_to_replace, has_tokens},
 };
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
@@ -595,6 +595,68 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
         };
 
     Ok((spawn_concurrency, limited_by_tokens))
+}
+
+fn calculate_dependencies(nodes: Vec<&NodeSpec>) -> Vec<(&NodeSpec, &NodeSpec)> {
+    let mut dependencies = vec![];
+
+    for node in &nodes {
+        if let Ok(valid_str) = serde_json::to_string(&node.args) {
+            let depends_on = get_tokens_to_replace(&valid_str);
+            let depends_on = depends_on
+                .iter()
+                .filter_map(|dep| nodes.iter().find(|n| &n.name == dep))
+                .map(|dep| (*dep, *node))
+                .collect::<Vec<_>>();
+
+            dependencies.extend(depends_on);
+        };
+    }
+
+    dependencies
+}
+
+fn topo_levels<'a>(edges: Vec<(&'a NodeSpec, &'a NodeSpec)>) -> Vec<Vec<&'a NodeSpec>> {
+    let mut graph: HashMap<&str, Vec<&'a NodeSpec>> = HashMap::new();
+    let mut indegree: HashMap<&str, usize> = HashMap::new();
+    let mut nodes: HashMap<&str, &'a NodeSpec> = HashMap::new();
+
+    for (u, v) in &edges {
+        graph.entry(&u.name).or_default().push(v);
+        *indegree.entry(&v.name).or_insert(0) += 1;
+        nodes.insert(&u.name, u);
+        nodes.insert(&v.name, v);
+    }
+
+    let mut queue: VecDeque<&'a NodeSpec> = nodes
+        .iter()
+        .filter(|(name, _)| !indegree.contains_key(*name))
+        .map(|(_, node)| *node)
+        .collect();
+
+    let mut levels: Vec<Vec<&'a NodeSpec>> = Vec::new();
+
+    while !queue.is_empty() {
+        let mut level: Vec<&'a NodeSpec> = Vec::new();
+        for _ in 0..queue.len() {
+            let node = queue.pop_front().unwrap();
+            level.push(node);
+
+            if let Some(neighs) = graph.get(node.name.as_str()) {
+                for &neigh in neighs {
+                    if let Some(ind) = indegree.get_mut(neigh.name.as_str()) {
+                        *ind -= 1;
+                        if *ind == 0 {
+                            queue.push_back(neigh);
+                        }
+                    }
+                }
+            }
+        }
+        levels.push(level);
+    }
+
+    levels
 }
 
 // TODO: get the fs from `DynNamespace` will make this not needed

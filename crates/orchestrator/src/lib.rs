@@ -238,21 +238,39 @@ where
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
 
-        for chunk in bootnodes.chunks(spawn_concurrency) {
-            let spawning_tasks = chunk
-                .iter()
-                .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
+        for level in dependency_levels_among(&bootnodes) {
+            let mut running_nodes_per_level = vec![];
+            for chunk in level.chunks(spawn_concurrency) {
+                let spawning_tasks = chunk
+                    .iter()
+                    .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
-            for node in futures::future::try_join_all(spawning_tasks).await? {
-                let bootnode_multiaddr = node.multiaddr();
+                for node in futures::future::try_join_all(spawning_tasks).await? {
+                    let bootnode_multiaddr = node.multiaddr();
 
-                bootnodes_addr.push(bootnode_multiaddr.to_string());
+                    bootnodes_addr.push(bootnode_multiaddr.to_string());
 
-                // Is used in the register_para_options (We need to get this from the relay and not the collators)
-                if node_ws_url.is_empty() {
-                    node_ws_url.clone_from(&node.ws_uri)
+                    // Is used in the register_para_options (We need to get this from the relay and not the collators)
+                    if node_ws_url.is_empty() {
+                        node_ws_url.clone_from(&node.ws_uri)
+                    }
+
+                    running_nodes_per_level.push(node);
                 }
+            }
+            info!(
+                "🕰 waiting for level: {:?} to be up...",
+                level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+            );
 
+            // Wait for all nodes in the current level to be up
+            let waiting_tasks = running_nodes_per_level
+                .iter()
+                .map(|node| node.wait_until_is_up(90_u64));
+
+            let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+            for node in running_nodes_per_level {
                 // Add the node to the  context and `Network` instance
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 network.add_running_node(node, None);
@@ -268,13 +286,30 @@ where
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
-        for chunk in relaynodes.chunks(spawn_concurrency) {
-            let spawning_tasks = chunk
-                .iter()
-                .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
+        for level in dependency_levels_among(&relaynodes) {
+            let mut running_nodes_per_level = vec![];
+            for chunk in level.chunks(spawn_concurrency) {
+                let spawning_tasks = chunk
+                    .iter()
+                    .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
-            for node in futures::future::try_join_all(spawning_tasks).await? {
-                // Add the node to the  context and `Network` instance
+                for node in futures::future::try_join_all(spawning_tasks).await? {
+                    running_nodes_per_level.push(node);
+                }
+            }
+            info!(
+                "🕰 waiting for level: {:?} to be up...",
+                level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+            );
+
+            // Wait for all nodes in the current level to be up
+            let waiting_tasks = running_nodes_per_level
+                .iter()
+                .map(|node| node.wait_until_is_up(90_u64));
+
+            let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+            for node in running_nodes_per_level {
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 network.add_running_node(node, None);
             }
@@ -306,15 +341,35 @@ where
             let mut bootnodes_addr: Vec<String> = vec![];
             let mut running_nodes: Vec<NetworkNode> = vec![];
 
-            for chunk in bootnodes.chunks(spawn_concurrency) {
-                let spawning_tasks = chunk.iter().map(|node| {
-                    spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-                });
+            for level in dependency_levels_among(&bootnodes) {
+                let mut running_nodes_per_level = vec![];
+                for chunk in level.chunks(spawn_concurrency) {
+                    let spawning_tasks = chunk.iter().map(|node| {
+                        spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+                    });
 
-                for node in futures::future::try_join_all(spawning_tasks).await? {
-                    let bootnode_multiaddr = node.multiaddr();
+                    for node in futures::future::try_join_all(spawning_tasks).await? {
+                        let bootnode_multiaddr = node.multiaddr();
 
-                    bootnodes_addr.push(bootnode_multiaddr.to_string());
+                        bootnodes_addr.push(bootnode_multiaddr.to_string());
+
+                        running_nodes_per_level.push(node);
+                    }
+                }
+                info!(
+                    "🕰 waiting for level: {:?} to be up...",
+                    level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+                );
+
+                // Wait for all nodes in the current level to be up
+                let waiting_tasks = running_nodes_per_level
+                    .iter()
+                    .map(|node| node.wait_until_is_up(90_u64));
+
+                let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+                for node in running_nodes_per_level {
+                    // Add the node to the  context and `Network` instance
                     ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                     running_nodes.push(node);
                 }
@@ -329,17 +384,33 @@ where
             ctx_para.bootnodes_addr = &bootnodes_addr;
 
             // Spawn the rest of the nodes
-            for chunk in collators.chunks(spawn_concurrency) {
-                let spawning_tasks = chunk.iter().map(|node| {
-                    spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-                });
+            for level in dependency_levels_among(&collators) {
+                let mut running_nodes_per_level = vec![];
+                for chunk in level.chunks(spawn_concurrency) {
+                    let spawning_tasks = chunk.iter().map(|node| {
+                        spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+                    });
 
-                // join all the running nodes
-                running_nodes.extend_from_slice(
-                    futures::future::try_join_all(spawning_tasks)
-                        .await?
-                        .as_slice(),
+                    for node in futures::future::try_join_all(spawning_tasks).await? {
+                        running_nodes_per_level.push(node);
+                    }
+                }
+                info!(
+                    "🕰 waiting for level: {:?} to be up...",
+                    level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
                 );
+
+                // Wait for all nodes in the current level to be up
+                let waiting_tasks = running_nodes_per_level
+                    .iter()
+                    .map(|node| node.wait_until_is_up(90_u64));
+
+                let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+                for node in running_nodes_per_level {
+                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                    running_nodes.push(node);
+                }
             }
 
             let running_para_id = parachain.para_id;
@@ -597,63 +668,103 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
     Ok((spawn_concurrency, limited_by_tokens))
 }
 
-fn calculate_dependencies(nodes: Vec<&NodeSpec>) -> Vec<(&NodeSpec, &NodeSpec)> {
-    let mut dependencies = vec![];
+/// Build deterministic dependency **levels** among the given nodes.
+/// - Only dependencies **between nodes in `nodes`** are considered.
+/// - Unknown/out-of-scope references are ignored.
+/// - Self-dependencies are ignored.
+/// - Cycles do not error: any nodes still not produced after are appended as a final fallback level (sorted by name).
+fn dependency_levels_among<'a>(nodes: &'a [&'a NodeSpec]) -> Vec<Vec<&'a NodeSpec>> {
+    let by_name: HashMap<&'a str, &'a NodeSpec> =
+        nodes.iter().map(|n| (n.name.as_str(), *n)).collect();
 
-    for node in &nodes {
-        if let Ok(valid_str) = serde_json::to_string(&node.args) {
-            let depends_on = get_tokens_to_replace(&valid_str);
-            let depends_on = depends_on
-                .iter()
-                .filter_map(|dep| nodes.iter().find(|n| &n.name == dep))
-                .map(|dep| (*dep, *node))
-                .collect::<Vec<_>>();
+    // Seed all nodes with indegree 0 and empty adjacency
+    let mut graph: HashMap<&'a str, Vec<&'a NodeSpec>> = HashMap::new();
+    let mut indegree: HashMap<&'a str, usize> = HashMap::new();
 
-            dependencies.extend(depends_on);
-        };
+    for &name in by_name.keys() {
+        graph.entry(name).or_default();
+        indegree.entry(name).or_insert(0);
     }
 
-    dependencies
-}
-
-fn topo_levels<'a>(edges: Vec<(&'a NodeSpec, &'a NodeSpec)>) -> Vec<Vec<&'a NodeSpec>> {
-    let mut graph: HashMap<&str, Vec<&'a NodeSpec>> = HashMap::new();
-    let mut indegree: HashMap<&str, usize> = HashMap::new();
-    let mut nodes: HashMap<&str, &'a NodeSpec> = HashMap::new();
-
-    for (u, v) in &edges {
-        graph.entry(&u.name).or_default().push(v);
-        *indegree.entry(&v.name).or_insert(0) += 1;
-        nodes.insert(&u.name, u);
-        nodes.insert(&v.name, v);
+    // Build edges dep -> node, but only if both ends are in `nodes`
+    let mut seen_edges: HashSet<(&'a str, &'a str)> = HashSet::new();
+    for &n in nodes {
+        if let Ok(s) = serde_json::to_string(&n.args) {
+            for dep in get_tokens_to_replace(&s) {
+                if dep == n.name {
+                    continue; // ignore self-edge
+                }
+                if let Some(&dep_node) = by_name.get(dep.as_str()) {
+                    let u = dep_node.name.as_str();
+                    let v = n.name.as_str();
+                    if seen_edges.insert((u, v)) {
+                        graph.entry(u).or_default().push(n);
+                        *indegree.entry(v).or_insert(0) += 1;
+                    }
+                } else {
+                    debug!(
+                        "ignoring out-of-scope dependency '{}' referenced by '{}'",
+                        dep, n.name
+                    );
+                }
+            }
+        }
     }
 
-    let mut queue: VecDeque<&'a NodeSpec> = nodes
-        .iter()
-        .filter(|(name, _)| !indegree.contains_key(*name))
-        .map(|(_, node)| *node)
+    // Initial zero-indegree queue (deterministic)
+    let mut zeros: Vec<&'a NodeSpec> = by_name
+        .values()
+        .filter(|n| indegree.get(n.name.as_str()).copied().unwrap_or(0) == 0)
+        .copied()
         .collect();
+    zeros.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut q: VecDeque<&'a NodeSpec> = zeros.into();
 
+    let mut produced: HashSet<&'a str> = HashSet::new();
     let mut levels: Vec<Vec<&'a NodeSpec>> = Vec::new();
 
-    while !queue.is_empty() {
-        let mut level: Vec<&'a NodeSpec> = Vec::new();
-        for _ in 0..queue.len() {
-            let node = queue.pop_front().unwrap();
-            level.push(node);
+    // Kahn-by-levels
+    while !q.is_empty() {
+        let width = q.len();
+        let mut level = Vec::with_capacity(width);
 
-            if let Some(neighs) = graph.get(node.name.as_str()) {
-                for &neigh in neighs {
-                    if let Some(ind) = indegree.get_mut(neigh.name.as_str()) {
+        for _ in 0..width {
+            let n = q.pop_front().unwrap();
+            level.push(n);
+            produced.insert(n.name.as_str());
+
+            if let Some(neighs) = graph.get(n.name.as_str()) {
+                // deterministic neighbor traversal
+                let mut neighs_sorted = neighs.clone();
+                neighs_sorted.sort_by(|a, b| a.name.cmp(&b.name));
+                for &m in &neighs_sorted {
+                    if let Some(ind) = indegree.get_mut(m.name.as_str()) {
                         *ind -= 1;
                         if *ind == 0 {
-                            queue.push_back(neigh);
+                            q.push_back(m);
                         }
                     }
                 }
             }
         }
+
+        level.sort_by(|a, b| a.name.cmp(&b.name));
         levels.push(level);
+    }
+
+    // Cycle fallback: anything not produced goes into a final level
+    if produced.len() != by_name.len() {
+        let mut remainder: Vec<&'a NodeSpec> = by_name
+            .values()
+            .filter(|n| !produced.contains(n.name.as_str()))
+            .copied()
+            .collect();
+        remainder.sort_by(|a, b| a.name.cmp(&b.name));
+        warn!(
+            "dependency cycle(s) among nodes: {:?}",
+            remainder.iter().map(|n| &n.name).collect::<Vec<_>>()
+        );
+        levels.push(remainder);
     }
 
     levels

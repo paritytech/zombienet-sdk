@@ -238,7 +238,7 @@ where
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
 
-        for level in dependency_levels_among(&bootnodes) {
+        for level in dependency_levels_among(&bootnodes)? {
             let mut running_nodes_per_level = vec![];
             for chunk in level.chunks(spawn_concurrency) {
                 let spawning_tasks = chunk
@@ -286,7 +286,7 @@ where
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
-        for level in dependency_levels_among(&relaynodes) {
+        for level in dependency_levels_among(&relaynodes)? {
             let mut running_nodes_per_level = vec![];
             for chunk in level.chunks(spawn_concurrency) {
                 let spawning_tasks = chunk
@@ -341,7 +341,7 @@ where
             let mut bootnodes_addr: Vec<String> = vec![];
             let mut running_nodes: Vec<NetworkNode> = vec![];
 
-            for level in dependency_levels_among(&bootnodes) {
+            for level in dependency_levels_among(&bootnodes)? {
                 let mut running_nodes_per_level = vec![];
                 for chunk in level.chunks(spawn_concurrency) {
                     let spawning_tasks = chunk.iter().map(|node| {
@@ -384,7 +384,7 @@ where
             ctx_para.bootnodes_addr = &bootnodes_addr;
 
             // Spawn the rest of the nodes
-            for level in dependency_levels_among(&collators) {
+            for level in dependency_levels_among(&collators)? {
                 let mut running_nodes_per_level = vec![];
                 for chunk in level.chunks(spawn_concurrency) {
                     let spawning_tasks = chunk.iter().map(|node| {
@@ -672,102 +672,82 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
 /// - Only dependencies **between nodes in `nodes`** are considered.
 /// - Unknown/out-of-scope references are ignored.
 /// - Self-dependencies are ignored.
-/// - Cycles do not error: any nodes still not produced after are appended as a final fallback level (sorted by name).
-fn dependency_levels_among<'a>(nodes: &'a [&'a NodeSpec]) -> Vec<Vec<&'a NodeSpec>> {
-    let by_name: HashMap<&'a str, &'a NodeSpec> =
-        nodes.iter().map(|n| (n.name.as_str(), *n)).collect();
+fn dependency_levels_among<'a>(
+    nodes: &'a [&'a NodeSpec],
+) -> Result<Vec<Vec<&'a NodeSpec>>, OrchestratorError> {
+    let by_name = nodes
+        .iter()
+        .map(|n| (n.name.as_str(), *n))
+        .collect::<HashMap<_, _>>();
 
-    // Seed all nodes with indegree 0 and empty adjacency
-    let mut graph: HashMap<&'a str, Vec<&'a NodeSpec>> = HashMap::new();
-    let mut indegree: HashMap<&'a str, usize> = HashMap::new();
+    let mut graph = HashMap::with_capacity(nodes.len());
+    let mut indegree = HashMap::with_capacity(nodes.len());
 
-    for &name in by_name.keys() {
-        graph.entry(name).or_default();
-        indegree.entry(name).or_insert(0);
+    for node in nodes {
+        graph.insert(node.name.as_str(), Vec::new());
+        indegree.insert(node.name.as_str(), 0);
     }
 
-    // Build edges dep -> node, but only if both ends are in `nodes`
-    let mut seen_edges: HashSet<(&'a str, &'a str)> = HashSet::new();
-    for &n in nodes {
-        if let Ok(s) = serde_json::to_string(&n.args) {
-            for dep in get_tokens_to_replace(&s) {
-                if dep == n.name {
-                    continue; // ignore self-edge
-                }
-                if let Some(&dep_node) = by_name.get(dep.as_str()) {
-                    let u = dep_node.name.as_str();
-                    let v = n.name.as_str();
-                    if seen_edges.insert((u, v)) {
-                        graph.entry(u).or_default().push(n);
-                        *indegree.entry(v).or_insert(0) += 1;
-                    }
-                } else {
-                    debug!(
-                        "ignoring out-of-scope dependency '{}' referenced by '{}'",
-                        dep, n.name
-                    );
-                }
+    // build dependency graph
+    for &node in nodes {
+        if let Ok(args_json) = serde_json::to_string(&node.args) {
+            // collect dependencies
+            let unique_deps = get_tokens_to_replace(&args_json)
+                .into_iter()
+                .filter(|dep| dep != &node.name)
+                .filter_map(|dep| by_name.get(dep.as_str()))
+                .map(|&dep_node| dep_node.name.as_str())
+                .collect::<HashSet<_>>();
+
+            for dep_name in unique_deps {
+                graph.get_mut(dep_name).unwrap().push(node);
+                *indegree.get_mut(node.name.as_str()).unwrap() += 1;
             }
         }
     }
 
-    // Initial zero-indegree queue (deterministic)
-    let mut zeros: Vec<&'a NodeSpec> = by_name
-        .values()
-        .filter(|n| indegree.get(n.name.as_str()).copied().unwrap_or(0) == 0)
+    // find all nodes with no dependencies
+    let mut queue = nodes
+        .iter()
+        .filter(|n| indegree[n.name.as_str()] == 0)
         .copied()
-        .collect();
-    zeros.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut q: VecDeque<&'a NodeSpec> = zeros.into();
+        .collect::<VecDeque<_>>();
 
-    let mut produced: HashSet<&'a str> = HashSet::new();
-    let mut levels: Vec<Vec<&'a NodeSpec>> = Vec::new();
+    let mut processed_count = 0;
+    let mut levels = Vec::new();
 
-    // Kahn-by-levels
-    while !q.is_empty() {
-        let width = q.len();
-        let mut level = Vec::with_capacity(width);
+    // Kahn's algorithm
+    while !queue.is_empty() {
+        let level_size = queue.len();
+        let mut current_level = Vec::with_capacity(level_size);
 
-        for _ in 0..width {
-            let n = q.pop_front().unwrap();
-            level.push(n);
-            produced.insert(n.name.as_str());
+        for _ in 0..level_size {
+            let n = queue.pop_front().unwrap();
+            current_level.push(n);
+            processed_count += 1;
 
-            if let Some(neighs) = graph.get(n.name.as_str()) {
-                // deterministic neighbor traversal
-                let mut neighs_sorted = neighs.clone();
-                neighs_sorted.sort_by(|a, b| a.name.cmp(&b.name));
-                for &m in &neighs_sorted {
-                    if let Some(ind) = indegree.get_mut(m.name.as_str()) {
-                        *ind -= 1;
-                        if *ind == 0 {
-                            q.push_back(m);
-                        }
-                    }
+            for &neighbour in &graph[n.name.as_str()] {
+                let neighbour_indegree = indegree.get_mut(neighbour.name.as_str()).unwrap();
+                *neighbour_indegree -= 1;
+
+                if *neighbour_indegree == 0 {
+                    queue.push_back(neighbour);
                 }
             }
         }
 
-        level.sort_by(|a, b| a.name.cmp(&b.name));
-        levels.push(level);
+        current_level.sort_by_key(|n| &n.name);
+        levels.push(current_level);
     }
 
-    // Cycle fallback: anything not produced goes into a final level
-    if produced.len() != by_name.len() {
-        let mut remainder: Vec<&'a NodeSpec> = by_name
-            .values()
-            .filter(|n| !produced.contains(n.name.as_str()))
-            .copied()
-            .collect();
-        remainder.sort_by(|a, b| a.name.cmp(&b.name));
-        warn!(
-            "dependency cycle(s) among nodes: {:?}",
-            remainder.iter().map(|n| &n.name).collect::<Vec<_>>()
-        );
-        levels.push(remainder);
+    // cycles detected, e.g A -> B -> A
+    if processed_count != nodes.len() {
+        return Err(OrchestratorError::InvalidConfig(
+            "Tokens have cyclical dependencies".to_string(),
+        ));
     }
 
-    levels
+    Ok(levels)
 }
 
 // TODO: get the fs from `DynNamespace` will make this not needed

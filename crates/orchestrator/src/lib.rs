@@ -14,7 +14,7 @@ pub mod shared;
 mod spawner;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet, VecDeque},
     env,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -35,7 +35,7 @@ use provider::{
 use serde_json::json;
 use support::{
     fs::{FileSystem, FileSystemError},
-    replacer::has_tokens,
+    replacer::{get_tokens_to_replace, has_tokens},
 };
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
@@ -238,21 +238,39 @@ where
         // Calculate the bootnodes addr from the running nodes
         let mut bootnodes_addr: Vec<String> = vec![];
 
-        for chunk in bootnodes.chunks(spawn_concurrency) {
-            let spawning_tasks = chunk
-                .iter()
-                .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
+        for level in dependency_levels_among(&bootnodes)? {
+            let mut running_nodes_per_level = vec![];
+            for chunk in level.chunks(spawn_concurrency) {
+                let spawning_tasks = chunk
+                    .iter()
+                    .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
-            for node in futures::future::try_join_all(spawning_tasks).await? {
-                let bootnode_multiaddr = node.multiaddr();
+                for node in futures::future::try_join_all(spawning_tasks).await? {
+                    let bootnode_multiaddr = node.multiaddr();
 
-                bootnodes_addr.push(bootnode_multiaddr.to_string());
+                    bootnodes_addr.push(bootnode_multiaddr.to_string());
 
-                // Is used in the register_para_options (We need to get this from the relay and not the collators)
-                if node_ws_url.is_empty() {
-                    node_ws_url.clone_from(&node.ws_uri)
+                    // Is used in the register_para_options (We need to get this from the relay and not the collators)
+                    if node_ws_url.is_empty() {
+                        node_ws_url.clone_from(&node.ws_uri)
+                    }
+
+                    running_nodes_per_level.push(node);
                 }
+            }
+            info!(
+                "🕰 waiting for level: {:?} to be up...",
+                level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+            );
 
+            // Wait for all nodes in the current level to be up
+            let waiting_tasks = running_nodes_per_level
+                .iter()
+                .map(|node| node.wait_until_is_up(90_u64));
+
+            let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+            for node in running_nodes_per_level {
                 // Add the node to the  context and `Network` instance
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 network.add_running_node(node, None);
@@ -268,13 +286,30 @@ where
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
-        for chunk in relaynodes.chunks(spawn_concurrency) {
-            let spawning_tasks = chunk
-                .iter()
-                .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
+        for level in dependency_levels_among(&relaynodes)? {
+            let mut running_nodes_per_level = vec![];
+            for chunk in level.chunks(spawn_concurrency) {
+                let spawning_tasks = chunk
+                    .iter()
+                    .map(|node| spawner::spawn_node(node, global_files_to_inject.clone(), &ctx));
 
-            for node in futures::future::try_join_all(spawning_tasks).await? {
-                // Add the node to the  context and `Network` instance
+                for node in futures::future::try_join_all(spawning_tasks).await? {
+                    running_nodes_per_level.push(node);
+                }
+            }
+            info!(
+                "🕰 waiting for level: {:?} to be up...",
+                level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+            );
+
+            // Wait for all nodes in the current level to be up
+            let waiting_tasks = running_nodes_per_level
+                .iter()
+                .map(|node| node.wait_until_is_up(90_u64));
+
+            let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+            for node in running_nodes_per_level {
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 network.add_running_node(node, None);
             }
@@ -306,15 +341,35 @@ where
             let mut bootnodes_addr: Vec<String> = vec![];
             let mut running_nodes: Vec<NetworkNode> = vec![];
 
-            for chunk in bootnodes.chunks(spawn_concurrency) {
-                let spawning_tasks = chunk.iter().map(|node| {
-                    spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-                });
+            for level in dependency_levels_among(&bootnodes)? {
+                let mut running_nodes_per_level = vec![];
+                for chunk in level.chunks(spawn_concurrency) {
+                    let spawning_tasks = chunk.iter().map(|node| {
+                        spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+                    });
 
-                for node in futures::future::try_join_all(spawning_tasks).await? {
-                    let bootnode_multiaddr = node.multiaddr();
+                    for node in futures::future::try_join_all(spawning_tasks).await? {
+                        let bootnode_multiaddr = node.multiaddr();
 
-                    bootnodes_addr.push(bootnode_multiaddr.to_string());
+                        bootnodes_addr.push(bootnode_multiaddr.to_string());
+
+                        running_nodes_per_level.push(node);
+                    }
+                }
+                info!(
+                    "🕰 waiting for level: {:?} to be up...",
+                    level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+                );
+
+                // Wait for all nodes in the current level to be up
+                let waiting_tasks = running_nodes_per_level
+                    .iter()
+                    .map(|node| node.wait_until_is_up(90_u64));
+
+                let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+                for node in running_nodes_per_level {
+                    // Add the node to the  context and `Network` instance
                     ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                     running_nodes.push(node);
                 }
@@ -329,17 +384,33 @@ where
             ctx_para.bootnodes_addr = &bootnodes_addr;
 
             // Spawn the rest of the nodes
-            for chunk in collators.chunks(spawn_concurrency) {
-                let spawning_tasks = chunk.iter().map(|node| {
-                    spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-                });
+            for level in dependency_levels_among(&collators)? {
+                let mut running_nodes_per_level = vec![];
+                for chunk in level.chunks(spawn_concurrency) {
+                    let spawning_tasks = chunk.iter().map(|node| {
+                        spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
+                    });
 
-                // join all the running nodes
-                running_nodes.extend_from_slice(
-                    futures::future::try_join_all(spawning_tasks)
-                        .await?
-                        .as_slice(),
+                    for node in futures::future::try_join_all(spawning_tasks).await? {
+                        running_nodes_per_level.push(node);
+                    }
+                }
+                info!(
+                    "🕰 waiting for level: {:?} to be up...",
+                    level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
                 );
+
+                // Wait for all nodes in the current level to be up
+                let waiting_tasks = running_nodes_per_level
+                    .iter()
+                    .map(|node| node.wait_until_is_up(90_u64));
+
+                let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+                for node in running_nodes_per_level {
+                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                    running_nodes.push(node);
+                }
             }
 
             let running_para_id = parachain.para_id;
@@ -595,6 +666,88 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
         };
 
     Ok((spawn_concurrency, limited_by_tokens))
+}
+
+/// Build deterministic dependency **levels** among the given nodes.
+/// - Only dependencies **between nodes in `nodes`** are considered.
+/// - Unknown/out-of-scope references are ignored.
+/// - Self-dependencies are ignored.
+fn dependency_levels_among<'a>(
+    nodes: &'a [&'a NodeSpec],
+) -> Result<Vec<Vec<&'a NodeSpec>>, OrchestratorError> {
+    let by_name = nodes
+        .iter()
+        .map(|n| (n.name.as_str(), *n))
+        .collect::<HashMap<_, _>>();
+
+    let mut graph = HashMap::with_capacity(nodes.len());
+    let mut indegree = HashMap::with_capacity(nodes.len());
+
+    for node in nodes {
+        graph.insert(node.name.as_str(), Vec::new());
+        indegree.insert(node.name.as_str(), 0);
+    }
+
+    // build dependency graph
+    for &node in nodes {
+        if let Ok(args_json) = serde_json::to_string(&node.args) {
+            // collect dependencies
+            let unique_deps = get_tokens_to_replace(&args_json)
+                .into_iter()
+                .filter(|dep| dep != &node.name)
+                .filter_map(|dep| by_name.get(dep.as_str()))
+                .map(|&dep_node| dep_node.name.as_str())
+                .collect::<HashSet<_>>();
+
+            for dep_name in unique_deps {
+                graph.get_mut(dep_name).unwrap().push(node);
+                *indegree.get_mut(node.name.as_str()).unwrap() += 1;
+            }
+        }
+    }
+
+    // find all nodes with no dependencies
+    let mut queue = nodes
+        .iter()
+        .filter(|n| indegree[n.name.as_str()] == 0)
+        .copied()
+        .collect::<VecDeque<_>>();
+
+    let mut processed_count = 0;
+    let mut levels = Vec::new();
+
+    // Kahn's algorithm
+    while !queue.is_empty() {
+        let level_size = queue.len();
+        let mut current_level = Vec::with_capacity(level_size);
+
+        for _ in 0..level_size {
+            let n = queue.pop_front().unwrap();
+            current_level.push(n);
+            processed_count += 1;
+
+            for &neighbour in &graph[n.name.as_str()] {
+                let neighbour_indegree = indegree.get_mut(neighbour.name.as_str()).unwrap();
+                *neighbour_indegree -= 1;
+
+                if *neighbour_indegree == 0 {
+                    queue.push_back(neighbour);
+                }
+            }
+        }
+
+        current_level.sort_by_key(|n| &n.name);
+        levels.push(current_level);
+    }
+
+    // cycles detected, e.g A -> B -> A
+    if processed_count != nodes.len() {
+        return Err(OrchestratorError::InvalidConfig(
+            "Tokens have cyclical dependencies".to_string(),
+        ));
+    }
+
+    Ok(levels)
 }
 
 // TODO: get the fs from `DynNamespace` will make this not needed

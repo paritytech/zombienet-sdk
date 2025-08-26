@@ -34,6 +34,10 @@ use provider::{
 };
 use serde_json::json;
 use support::{
+    constants::{
+        GRAPH_CONTAINS_DEP, GRAPH_CONTAINS_NAME, INDEGREE_CONTAINS_NAME, QUEUE_NOT_EMPTY,
+        THIS_IS_A_BUG,
+    },
     fs::{FileSystem, FileSystemError},
     replacer::{get_tokens_to_replace, has_tokens},
 };
@@ -677,12 +681,6 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
 fn dependency_levels_among<'a>(
     nodes: &'a [&'a NodeSpec],
 ) -> Result<Vec<Vec<&'a NodeSpec>>, OrchestratorError> {
-    const GRAPH_ERROR_MSG: &str = "graph contains node name; we initialize it with all node names";
-    const GRAPH_CONTAINS_DEP_ERROR_MSG: &str = "graph contains dep_name; we filter out deps not contained in by_name and populate the graph with all nodes";
-    const INDEGREE_ERROR_MSG: &str =
-        "indegree contains node name; we initialize it with all node names";
-    const QUEUE_ERROR_MSG: &str = "queue is not empty; we're looping over its length";
-
     let by_name = nodes
         .iter()
         .map(|n| (n.name.as_str(), *n))
@@ -710,11 +708,11 @@ fn dependency_levels_among<'a>(
             for dep_name in unique_deps {
                 graph
                     .get_mut(dep_name)
-                    .expect(GRAPH_CONTAINS_DEP_ERROR_MSG)
+                    .expect(&format!("{GRAPH_CONTAINS_DEP} {THIS_IS_A_BUG}"))
                     .push(node);
                 *indegree
                     .get_mut(node.name.as_str())
-                    .expect(INDEGREE_ERROR_MSG) += 1;
+                    .expect(&format!("{INDEGREE_CONTAINS_NAME} {THIS_IS_A_BUG}")) += 1;
             }
         }
     }
@@ -722,7 +720,12 @@ fn dependency_levels_among<'a>(
     // find all nodes with no dependencies
     let mut queue = nodes
         .iter()
-        .filter(|n| *indegree.get(n.name.as_str()).expect(INDEGREE_ERROR_MSG) == 0)
+        .filter(|n| {
+            *indegree
+                .get(n.name.as_str())
+                .expect(&format!("{INDEGREE_CONTAINS_NAME} {THIS_IS_A_BUG}"))
+                == 0
+        })
         .copied()
         .collect::<VecDeque<_>>();
 
@@ -735,14 +738,19 @@ fn dependency_levels_among<'a>(
         let mut current_level = Vec::with_capacity(level_size);
 
         for _ in 0..level_size {
-            let n = queue.pop_front().expect(QUEUE_ERROR_MSG);
+            let n = queue
+                .pop_front()
+                .expect(&format!("{QUEUE_NOT_EMPTY} {THIS_IS_A_BUG}"));
             current_level.push(n);
             processed_count += 1;
 
-            for &neighbour in graph.get(n.name.as_str()).expect(GRAPH_ERROR_MSG) {
+            for &neighbour in graph
+                .get(n.name.as_str())
+                .expect(&format!("{GRAPH_CONTAINS_NAME} {THIS_IS_A_BUG}"))
+            {
                 let neighbour_indegree = indegree
                     .get_mut(neighbour.name.as_str())
-                    .expect(INDEGREE_ERROR_MSG);
+                    .expect(&format!("{INDEGREE_CONTAINS_NAME} {THIS_IS_A_BUG}"));
                 *neighbour_indegree -= 1;
 
                 if *neighbour_indegree == 0 {

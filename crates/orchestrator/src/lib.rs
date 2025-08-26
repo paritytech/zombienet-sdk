@@ -372,7 +372,6 @@ where
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 
                 for node in running_nodes_per_level {
-                    // Add the node to the  context and `Network` instance
                     ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                     running_nodes.push(node);
                 }

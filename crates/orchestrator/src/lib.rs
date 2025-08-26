@@ -900,6 +900,36 @@ mod tests {
             .build()
     }
 
+    fn get_node_with_dependencies(name: &str, dependencies: Option<Vec<&NodeSpec>>) -> NodeSpec {
+        let mut spec = NodeSpec {
+            name: name.to_string(),
+            ..Default::default()
+        };
+        if let Some(dependencies) = dependencies {
+            for node in dependencies {
+                spec.args.push(
+                    format!("{{{{ZOMBIE:{}:someField}}}}", node.name)
+                        .as_str()
+                        .into(),
+                );
+            }
+        }
+        spec
+    }
+
+    fn verify_levels(actual_levels: Vec<Vec<&NodeSpec>>, expected_levels: Vec<Vec<&str>>) {
+        actual_levels
+            .iter()
+            .zip(expected_levels)
+            .for_each(|(actual_level, expected_level)| {
+                assert_eq!(actual_level.len(), expected_level.len());
+                actual_level
+                    .iter()
+                    .zip(expected_level.iter())
+                    .for_each(|(node, expected_name)| assert_eq!(node.name, *expected_name));
+            });
+    }
+
     #[tokio::test]
     async fn valid_config_with_image() {
         let network_config = generate(true, None).unwrap();
@@ -1037,5 +1067,77 @@ mod tests {
         let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
         assert_eq!(concurrency, 1);
         assert!(limited);
+    }
+
+    #[test]
+    fn dependency_levels_among_should_work() {
+        // no nodes
+        assert!(dependency_levels_among(&[]).unwrap().is_empty());
+
+        // one node
+        let alice = get_node_with_dependencies("alice", None);
+        let nodes = [&alice];
+
+        let levels = dependency_levels_among(&nodes).unwrap();
+        let expected = vec![vec!["alice"]];
+        
+        verify_levels(levels, expected);
+
+        // two independent nodes
+        let alice = get_node_with_dependencies("alice", None);
+        let bob = get_node_with_dependencies("bob", None);
+        let nodes = [&alice, &bob];
+
+        let levels = dependency_levels_among(&nodes).unwrap();
+        let expected = vec![vec!["alice", "bob"]];
+
+        verify_levels(levels, expected);
+
+        // alice -> bob -> charlie
+        let alice = get_node_with_dependencies("alice", None);
+        let bob = get_node_with_dependencies("bob", Some(vec![&alice]));
+        let charlie = get_node_with_dependencies("charlie", Some(vec![&bob]));
+        let nodes = [&alice, &bob, &charlie];
+
+        let levels = dependency_levels_among(&nodes).unwrap();
+        let expected = vec![vec!["alice"], vec!["bob"], vec!["charlie"]];
+
+        verify_levels(levels, expected);
+
+        //         ┌─> bob
+        // alice ──|
+        //         └─> charlie
+        let alice = get_node_with_dependencies("alice", None);
+        let bob = get_node_with_dependencies("bob", Some(vec![&alice]));
+        let charlie = get_node_with_dependencies("charlie", Some(vec![&alice]));
+        let nodes = [&alice, &bob, &charlie];
+
+        let levels = dependency_levels_among(&nodes).unwrap();
+        let expected = vec![vec!["alice"], vec!["bob", "charlie"]];
+
+        verify_levels(levels, expected);
+
+        //         ┌─>   bob  ──┐
+        // alice ──|            ├─> dave
+        //         └─> charlie  ┘
+        let alice = get_node_with_dependencies("alice", None);
+        let bob = get_node_with_dependencies("bob", Some(vec![&alice]));
+        let charlie = get_node_with_dependencies("charlie", Some(vec![&alice]));
+        let dave = get_node_with_dependencies("dave", Some(vec![&charlie, &bob]));
+        let nodes = [&alice, &bob, &charlie, &dave];
+
+        let levels = dependency_levels_among(&nodes).unwrap();
+        let expected = vec![vec!["alice"], vec!["bob", "charlie"], vec!["dave"]];
+
+        verify_levels(levels, expected);
+    }
+
+    #[test]
+    fn dependency_levels_among_should_detect_cycles() {
+        let mut alice = get_node_with_dependencies("alice", None);
+        let bob = get_node_with_dependencies("bob", Some(vec![&alice]));
+        alice.args.push("{{ZOMBIE:bob:someField}}".into());
+
+        assert!(dependency_levels_among(&[&alice, &bob]).is_err())
     }
 }

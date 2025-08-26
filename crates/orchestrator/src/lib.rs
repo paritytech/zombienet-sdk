@@ -40,7 +40,10 @@ use support::{
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
-use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
+use crate::{
+    shared::{constants::DEFAULT_NODE_SPAWN_TIMEOUT, types::RegisterParachainOptions},
+    spawner::SpawnNodeCtx,
+};
 pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
@@ -266,7 +269,7 @@ where
             // Wait for all nodes in the current level to be up
             let waiting_tasks = running_nodes_per_level
                 .iter()
-                .map(|node| node.wait_until_is_up(90_u64));
+                .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT));
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -305,7 +308,7 @@ where
             // Wait for all nodes in the current level to be up
             let waiting_tasks = running_nodes_per_level
                 .iter()
-                .map(|node| node.wait_until_is_up(90_u64));
+                .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT));
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -364,7 +367,7 @@ where
                 // Wait for all nodes in the current level to be up
                 let waiting_tasks = running_nodes_per_level
                     .iter()
-                    .map(|node| node.wait_until_is_up(90_u64));
+                    .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT));
 
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -403,7 +406,7 @@ where
                 // Wait for all nodes in the current level to be up
                 let waiting_tasks = running_nodes_per_level
                     .iter()
-                    .map(|node| node.wait_until_is_up(90_u64));
+                    .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT));
 
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -1080,7 +1083,7 @@ mod tests {
 
         let levels = dependency_levels_among(&nodes).unwrap();
         let expected = vec![vec!["alice"]];
-        
+
         verify_levels(levels, expected);
 
         // two independent nodes

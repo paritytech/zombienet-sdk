@@ -678,6 +678,12 @@ fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Er
 fn dependency_levels_among<'a>(
     nodes: &'a [&'a NodeSpec],
 ) -> Result<Vec<Vec<&'a NodeSpec>>, OrchestratorError> {
+    const GRAPH_ERROR_MSG: &str = "graph contains node name; we initialize it with all node names";
+    const GRAPH_CONTAINS_DEP_ERROR_MSG: &str = "graph contains dep_name; we filter out deps not contained in by_name and populate the graph with all nodes";
+    const INDEGREE_ERROR_MSG: &str =
+        "indegree contains node name; we initialize it with all node names";
+    const QUEUE_ERROR_MSG: &str = "queue is not empty; we're looping over its length";
+
     let by_name = nodes
         .iter()
         .map(|n| (n.name.as_str(), *n))
@@ -703,8 +709,13 @@ fn dependency_levels_among<'a>(
                 .collect::<HashSet<_>>();
 
             for dep_name in unique_deps {
-                graph.get_mut(dep_name).unwrap().push(node);
-                *indegree.get_mut(node.name.as_str()).unwrap() += 1;
+                graph
+                    .get_mut(dep_name)
+                    .expect(GRAPH_CONTAINS_DEP_ERROR_MSG)
+                    .push(node);
+                *indegree
+                    .get_mut(node.name.as_str())
+                    .expect(INDEGREE_ERROR_MSG) += 1;
             }
         }
     }
@@ -712,7 +723,7 @@ fn dependency_levels_among<'a>(
     // find all nodes with no dependencies
     let mut queue = nodes
         .iter()
-        .filter(|n| indegree[n.name.as_str()] == 0)
+        .filter(|n| *indegree.get(n.name.as_str()).expect(INDEGREE_ERROR_MSG) == 0)
         .copied()
         .collect::<VecDeque<_>>();
 
@@ -725,12 +736,14 @@ fn dependency_levels_among<'a>(
         let mut current_level = Vec::with_capacity(level_size);
 
         for _ in 0..level_size {
-            let n = queue.pop_front().unwrap();
+            let n = queue.pop_front().expect(QUEUE_ERROR_MSG);
             current_level.push(n);
             processed_count += 1;
 
-            for &neighbour in &graph[n.name.as_str()] {
-                let neighbour_indegree = indegree.get_mut(neighbour.name.as_str()).unwrap();
+            for &neighbour in graph.get(n.name.as_str()).expect(GRAPH_ERROR_MSG) {
+                let neighbour_indegree = indegree
+                    .get_mut(neighbour.name.as_str())
+                    .expect(INDEGREE_ERROR_MSG);
                 *neighbour_indegree -= 1;
 
                 if *neighbour_indegree == 0 {

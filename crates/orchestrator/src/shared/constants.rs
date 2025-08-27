@@ -12,4 +12,4 @@ pub const P2P_PORT: u16 = 30333;
 pub const DEFAULT_CHAIN_SPEC_TPL_COMMAND: &str =
     "{{mainCommand}} build-spec --chain {{chainName}} {{disableBootnodes}}";
 // default maximum time in seconds to wait for a node to be up
-pub const DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS: u64 = 90;
+pub const DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS: u64 = 300;

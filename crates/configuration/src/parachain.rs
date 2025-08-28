@@ -141,6 +141,7 @@ pub struct ParachainConfig {
     // Does the chain_spec_command needs to be run locally
     #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
+    runtime_path: Option<AssetLocation>,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
     #[serde(rename = "evm_based", default = "default_as_false")]
@@ -292,6 +293,12 @@ impl ParachainConfig {
     pub fn wasm_override(&self) -> Option<&AssetLocation> {
         self.wasm_override.as_ref()
     }
+
+    /// The location of runtime to use by `chain-spec-builder`if command is `polkadot-parachain`
+    ///  and [`chain_spec_command`] is `None`.
+    pub fn runtime_path(&self) -> Option<&AssetLocation> {
+        self.runtime_path.as_ref()
+    }
 }
 
 pub mod states {
@@ -347,6 +354,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 chain_spec_command: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote by default
+                runtime_path: None,
                 is_cumulus_based: true,
                 is_evm_based: false,
                 bootnodes_addresses: vec![],
@@ -760,6 +768,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Set the runtime path to use if command is `polkadot-parachain` and and [`chain_spec_command`] is `None`.
+    pub fn with_runtime_path(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                runtime_path: Some(location.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set whether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
     pub fn cumulus_based(self, choice: bool) -> Self {
         Self::transition(
@@ -936,6 +956,7 @@ mod tests {
                 "undying-collator export-genesis-state --pov-size=10000 --pvf-complexity=1",
             )
             .with_chain_spec_path("./path/to/chain/spec.json")
+            .with_runtime_path("./path/to/runtime")
             .with_wasm_override("./path/to/override/runtime.wasm")
             .cumulus_based(false)
             .evm_based(false)
@@ -1000,6 +1021,10 @@ mod tests {
         assert!(matches!(
             parachain_config.wasm_override().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/runtime.wasm"
+        ));
+        assert!(matches!(
+            parachain_config.runtime_path().unwrap(),
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/runtime"
         ));
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(

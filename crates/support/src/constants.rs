@@ -10,5 +10,12 @@ pub const VALIDATION_CHECK: &str = "validation failed ";
 
 pub const PREFIX_CANT_BE_NONE: &str = "name prefix can't be None if a value exists ";
 
+pub const GRAPH_CONTAINS_NAME: &str =
+    "graph contains node name; we initialize it with all node names";
+pub const GRAPH_CONTAINS_DEP: &str = "graph contains dep_name; we filter out deps not contained in by_name and populate the graph with all nodes";
+pub const INDEGREE_CONTAINS_NAME: &str =
+    "indegree contains node name; we initialize it with all node names";
+pub const QUEUE_NOT_EMPTY: &str = "queue is not empty; we're looping over its length";
+
 pub const THIS_IS_A_BUG: &str =
     "- this is a bug please report it: https://github.com/paritytech/zombienet-sdk/issues";

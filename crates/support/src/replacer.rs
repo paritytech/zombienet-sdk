@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
@@ -74,6 +74,19 @@ pub fn apply_running_network_replacements(text: &str, network: &serde_json::Valu
 
     augmented_text.to_string()
 }
+
+pub fn get_tokens_to_replace(text: &str) -> HashSet<String> {
+    let mut tokens = HashSet::new();
+
+    TOKEN_PLACEHOLDER
+        .captures_iter(text)
+        .for_each(|caps: Captures| {
+            tokens.insert(caps[1].to_string());
+        });
+
+    tokens
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -170,5 +183,15 @@ mod tests {
 
         let res = apply_running_network_replacements("{{ZOMBIE:alice:someField}}", &network);
         assert_eq!(res.as_str(), "{{ZOMBIE:alice:someField}}");
+    }
+
+    #[test]
+    fn get_tokens_to_replace_should_work() {
+        let res = get_tokens_to_replace("{{ZOMBIE:alice:multiaddr}} {{ZOMBIE:bob:multiaddr}}");
+        let mut expected = HashSet::new();
+        expected.insert("alice".to_string());
+        expected.insert("bob".to_string());
+
+        assert_eq!(res, expected);
     }
 }

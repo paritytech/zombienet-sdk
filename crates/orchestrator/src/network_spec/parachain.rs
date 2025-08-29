@@ -14,10 +14,17 @@ use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
     generators::{
-        chain_spec::{ChainSpec, Context, ParaGenesisConfig},
+        chain_spec::{ChainSpec, CommandInContext, Context, GenerationStrategy, ParaGenesisConfig},
         para_artifact::*,
     },
-    shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
+    shared::{
+        constants::{
+            DEFAULT_CHAIN_SPEC_TPL_COMMAND, DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_DEFAULT_COMMAND,
+            DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_NAMED_PRESET_COMMAND,
+            DEFAULT_LIST_PRESETS_TPL_COMMAND,
+        },
+        types::ChainDefaultContext,
+    },
     ScopedFilesystem,
 };
 
@@ -109,44 +116,94 @@ impl ParachainSpec {
 
         let chain_spec = if config.is_cumulus_based() {
             // we need a chain-spec
-            let chain_name = if let Some(chain_name) = config.chain() {
-                chain_name.as_str()
-            } else {
-                ""
-            };
-
-            let chain_spec_builder = if chain_name.is_empty() {
-                // if the chain don't have name use the unique_id for the name of the file
-                ChainSpec::new(config.unique_id().to_string(), Context::Para)
-            } else {
-                let chain_spec_file_name = if config.unique_id().contains('-') {
-                    &format!("{}-{}", chain_name, config.unique_id())
-                } else {
-                    chain_name
-                };
-                ChainSpec::new(chain_spec_file_name, Context::Para)
-            };
-            let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
+            let chain_name = config.chain().map(|ch| ch.as_str()).unwrap_or("");
 
             let replacements = HashMap::from([
                 ("disableBootnodes", "--disable-default-bootnode"),
                 ("mainCommand", main_cmd.as_str()),
             ]);
+
             let tmpl = if let Some(tmpl) = config.chain_spec_command() {
                 apply_replacements(tmpl, &replacements)
             } else {
                 apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
             };
 
-            let chain_spec = chain_spec_builder
-                .command(tmpl.as_str(), config.chain_spec_command_is_local())
-                .image(main_image.clone());
+            let generation_strategy = {
+                if let Some(chain_spec_path) = config.chain_spec_path() {
+                    GenerationStrategy::WithAssetLocation {
+                        asset_location: chain_spec_path.clone(),
+                        build_raw_command: CommandInContext::new(
+                            tmpl,
+                            config.chain_spec_command_is_local(),
+                        ),
+                    }
+                } else if config.chain_spec_command().is_some() {
+                    GenerationStrategy::WithCommand(CommandInContext::new(
+                        tmpl,
+                        config.chain_spec_command_is_local(),
+                    ))
+                } else if main_cmd.as_str().ends_with("polkadot-parachain")
+                    && config.runtime_path().is_some()
+                {
+                    let is_local = config.chain_spec_command_is_local();
 
-            if let Some(chain_spec_path) = config.chain_spec_path() {
-                Some(chain_spec.asset_location(chain_spec_path.clone()))
+                    let build_with_preset_command = apply_replacements(
+                        DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_NAMED_PRESET_COMMAND,
+                        &replacements,
+                    );
+                    let build_with_preset_command =
+                        CommandInContext::new(build_with_preset_command, is_local);
+
+                    let build_default_command = apply_replacements(
+                        DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_DEFAULT_COMMAND,
+                        &replacements,
+                    );
+                    let build_default_command =
+                        CommandInContext::new(build_default_command, is_local);
+
+                    let build_raw_command =
+                        apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements);
+                    let build_raw_command = CommandInContext::new(build_raw_command, is_local);
+
+                    let list_presets_command =
+                        apply_replacements(DEFAULT_LIST_PRESETS_TPL_COMMAND, &replacements);
+                    let list_presets_command =
+                        CommandInContext::new(list_presets_command, is_local);
+
+                    GenerationStrategy::WithChainSpecBuilder {
+                        build_with_preset_command,
+                        build_default_command,
+                        build_raw_command,
+                        list_presets_command,
+                    }
+                } else {
+                    GenerationStrategy::WithCommand(CommandInContext::new(
+                        tmpl,
+                        config.chain_spec_command_is_local(),
+                    ))
+                }
+            };
+
+            let chain_spec_builder = if chain_name.is_empty() {
+                // if the chain don't have name use the unique_id for the name of the file
+                ChainSpec::new(
+                    config.unique_id().to_string(),
+                    Context::Para,
+                    generation_strategy,
+                )
             } else {
-                Some(chain_spec)
-            }
+                let chain_spec_file_name = if config.unique_id().contains('-') {
+                    &format!("{}-{}", chain_name, config.unique_id())
+                } else {
+                    chain_name
+                };
+                ChainSpec::new(chain_spec_file_name, Context::Para, generation_strategy)
+            };
+            let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
+
+            let chain_spec = chain_spec_builder.image(main_image.clone());
+            Some(chain_spec)
         } else {
             None
         };

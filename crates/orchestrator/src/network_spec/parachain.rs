@@ -148,6 +148,8 @@ impl ParachainSpec {
                 {
                     let is_local = config.chain_spec_command_is_local();
 
+                    let runtime_path = config.runtime_path().unwrap().clone();
+
                     let build_with_preset_command = apply_replacements(
                         DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_NAMED_PRESET_COMMAND,
                         &replacements,
@@ -176,6 +178,7 @@ impl ParachainSpec {
                         build_default_command,
                         build_raw_command,
                         list_presets_command,
+                        runtime_path,
                     }
                 } else {
                     GenerationStrategy::WithCommand(CommandInContext::new(

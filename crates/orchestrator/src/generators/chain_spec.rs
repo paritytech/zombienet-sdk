@@ -95,6 +95,7 @@ pub enum GenerationStrategy {
         build_default_command: CommandInContext,
         build_raw_command: CommandInContext,
         list_presets_command: CommandInContext,
+        runtime_path: AssetLocation,
     },
 }
 
@@ -232,7 +233,21 @@ impl ChainSpec {
                     ns.generate_files(options).await?;
                 }
             },
-            _ => todo!(),
+            GenerationStrategy::WithChainSpecBuilder {
+                build_with_preset_command,
+                build_default_command,
+                list_presets_command,
+                runtime_path,
+                ..
+            } => {
+                // TODO:
+                // fetch runtime
+                // if no name use default cmd
+                // else list presets
+                // if name matches some preset use build with preset command
+                // else use default command
+                todo!()
+            },
         };
 
         if is_raw(maybe_plain_spec_path.clone(), scoped_fs).await? {

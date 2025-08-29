@@ -76,6 +76,17 @@ pub struct ParaGenesisConfig<T: AsRef<Path>> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GenerationStrategy {
+    WithAssetLocation(AssetLocation),
+    WithCommand(CommandInContext),
+    WithChainSpecBuilder {
+        build_with_preset_command: CommandInContext,
+        build_default_commanf: CommandInContext,
+        build_raw_command: CommandInContext,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainSpec {
     // Name of the spec file, most of the times could be the same as the chain_name. (e.g rococo-local)
     chain_spec_name: String,

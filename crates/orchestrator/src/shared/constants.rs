@@ -20,3 +20,5 @@ pub const DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_DEFAULT_COMMAND: &str =
 // default command template to check available presets
 pub const DEFAULT_LIST_PRESETS_TPL_COMMAND: &str =
     "{{mainCommand}} chain-spec-builder list-presets --runtime {{runtimePath}}";
+// default maximum time in seconds to wait for a node to be up
+pub const DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS: u64 = 300;

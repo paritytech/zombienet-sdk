@@ -199,7 +199,8 @@ impl ChainSpec {
 
                 let generate_command =
                     GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
-                let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
+                let options =
+                    GenerateFilesOptions::new(vec![generate_command.clone()], self.image.clone());
 
                 execute_command(ns, scoped_fs, command, generate_command, options).await?;
             },
@@ -210,9 +211,14 @@ impl ChainSpec {
                 runtime_path,
                 ..
             } => {
-                // TODO: name for path, temp_name
-                let path = PathBuf::from("runtime.wasm");
+                let path = PathBuf::from(format!("runtime-{}.wasm", self.chain_spec_name));
                 copy_from_location(scoped_fs, runtime_path, path.clone()).await?;
+
+                let temp_name = format!(
+                    "temp-runtime-{}-{}",
+                    self.chain_spec_name,
+                    rand::random::<u8>()
+                );
 
                 let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
                     self.build_paths(ns, &path, &temp_name);
@@ -245,14 +251,14 @@ impl ChainSpec {
                             .args(args);
 
                     let options = GenerateFilesOptions::with_files(
-                        vec![generate_command],
+                        vec![generate_command.clone()],
                         self.image.clone(),
                         &[TransferedFile::new(
                             runtime_path_local.clone(),
                             runtime_path_in_pod.clone(),
                         )],
                     )
-                    .temp_name(temp_name);
+                    .temp_name(&temp_name);
 
                     execute_command(
                         ns,
@@ -267,7 +273,7 @@ impl ChainSpec {
                     let matches = scoped_fs
                         .read_to_string(list_presets_local_output_path)
                         .await?
-                        .contains(&self.chain_name.unwrap());
+                        .contains(self.chain_name.as_ref().unwrap());
 
                     if matches {
                         build_with_preset_command
@@ -278,10 +284,7 @@ impl ChainSpec {
 
                 let replacements = HashMap::from([
                     ("runtimePath", runtime_path_in_args.as_str()),
-                    (
-                        "chainName",
-                        &self.chain_name.map(|s| s.as_str()).unwrap_or(""),
-                    ),
+                    ("chainName", self.chain_name.as_deref().unwrap_or("")),
                 ]);
 
                 let full_cmd = apply_replacements(cmd_in_context.cmd(), &replacements);
@@ -811,7 +814,7 @@ impl ChainSpec {
     fn build_paths(
         &self,
         ns: &DynNamespace,
-        path: &PathBuf,
+        path: &Path,
         temp_name: &str,
     ) -> (String, String, String) {
         // TODO: we should get the full path from the scoped filesystem

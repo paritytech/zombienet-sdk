@@ -84,12 +84,17 @@ pub struct ParaGenesisConfig<T: AsRef<Path>> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Strategy used for chainspec generation
 pub enum GenerationStrategy {
+    // Uses asset_location as chainspec source, build_raw command is used if provided chainspec is plain to build the raw version.
     WithAssetLocation {
         asset_location: AssetLocation,
         build_raw_command: CommandInContext,
     },
+    // Uses the provided command to build the chainspec.
     WithCommand(CommandInContext),
+    // Uses chain-spec-builder, first we list available presets for a given runtime, if there's a matching preset we use it
+    // otherwise we use the default.
     WithChainSpecBuilder {
         build_with_preset_command: CommandInContext,
         build_default_command: CommandInContext,
@@ -163,9 +168,13 @@ impl ChainSpec {
         match &self.generation_strategy {
             // if we have a path, copy to the base_dir of the ns with the name `<name>-plain.json`
             GenerationStrategy::WithAssetLocation { asset_location, .. } => {
+                trace!("building chainspec using GenerationStrategy::WithAssetLocation");
+
                 copy_from_location(scoped_fs, asset_location, maybe_plain_spec_path.clone()).await?
             },
             GenerationStrategy::WithCommand(command) => {
+                trace!("building chainspec using GenerationStrategy::WithCommand");
+
                 // we should create the chain-spec using command.
                 let mut replacement_value = String::default();
                 if let Some(chain_name) = self.chain_name.as_ref() {
@@ -211,6 +220,8 @@ impl ChainSpec {
                 runtime_path,
                 ..
             } => {
+                trace!("building chainspec using GenerationStrategy::WithChainSpecBuilder");
+
                 let path = PathBuf::from(format!("runtime-{}.wasm", self.chain_spec_name));
                 copy_from_location(scoped_fs, runtime_path, path.clone()).await?;
 
@@ -263,13 +274,12 @@ impl ChainSpec {
                     execute_command(
                         ns,
                         scoped_fs,
-                        self.build_raw_command(),
+                        list_presets_command,
                         generate_command,
                         options,
                     )
                     .await?;
 
-                    // TODO: map_err ?
                     let matches = scoped_fs
                         .read_to_string(list_presets_local_output_path)
                         .await?

@@ -22,6 +22,11 @@ use crate::{
     ScopedFilesystem,
 };
 
+#[derive(Debug, Deserialize, Default)]
+struct ListPresetsResult {
+    presets: Vec<String>,
+}
+
 // TODO: (javier) move to state
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Context {
@@ -278,13 +283,15 @@ impl ChainSpec {
                     )
                     .await?;
 
-                    let presets = scoped_fs
+                    let list_presets_result = scoped_fs
                         .read_to_string(list_presets_local_output_path)
                         .await?;
 
-                    trace!("found presets: {presets}");
+                    let list_presets_result: ListPresetsResult = serde_json::from_str(&list_presets_result).unwrap_or_default();
 
-                    if presets.contains(self.chain_name.as_ref().unwrap()) {
+                    trace!("found presets: {list_presets_result:?}");
+
+                    if list_presets_result.presets.contains(self.chain_name.as_ref().unwrap()) {
                         build_with_preset_command
                     } else {
                         build_default_command
@@ -300,17 +307,31 @@ impl ChainSpec {
                 let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
                     self.build_paths(ns, &path, &temp_name);
 
+                let mut replacement_value = String::default();
+
+                if let Some(chain_name) = self.chain_name.as_ref() {
+                    if !chain_name.is_empty() {
+                        replacement_value.clone_from(chain_name);
+                    }
+                };
+
+                let sanitized_cmd = if replacement_value.is_empty() {
+                    cmd_in_context.cmd().replace("--chain-name", "")
+                } else {
+                    cmd_in_context.cmd().to_owned()
+                };
+
                 // as opposed to build-spec, chain-spec-builder doesn't write the result to stdout automatically,
                 // but we can redirect the output to stdout
                 let output_path = "/dev/stdout";
 
                 let replacements = HashMap::from([
                     ("runtimePath", runtime_path_in_args.as_str()),
-                    ("chainName", self.chain_name.as_deref().unwrap_or("")),
+                    ("chainName", self.chain_name.as_deref().unwrap()),
                     ("outputPath", output_path),
                 ]);
 
-                let full_cmd = apply_replacements(cmd_in_context.cmd(), &replacements);
+                let full_cmd = apply_replacements(&sanitized_cmd, &replacements);
 
                 trace!("full_cmd: {:?}", full_cmd);
 

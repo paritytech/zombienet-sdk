@@ -294,7 +294,7 @@ impl ParachainConfig {
         self.wasm_override.as_ref()
     }
 
-    /// The location of runtime to use by `chain-spec-builder`if command is `polkadot-parachain`
+    /// The location of runtime to use by `chain-spec-builder` if command is compatible with `chain-spec-builder`
     ///  and [`chain_spec_command`] is `None`.
     pub fn runtime_path(&self) -> Option<&AssetLocation> {
         self.runtime_path.as_ref()
@@ -768,7 +768,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
-    /// Set the runtime path to use if command is `polkadot-parachain` and and [`chain_spec_command`] is `None`.
+    /// Set the runtime path to use if command is compatible with `chain-spec-builder` and [`chain_spec_command`] is `None`.
     pub fn with_runtime_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             ParachainConfig {

@@ -287,11 +287,15 @@ impl ChainSpec {
                         .read_to_string(list_presets_local_output_path)
                         .await?;
 
-                    let list_presets_result: ListPresetsResult = serde_json::from_str(&list_presets_result).unwrap_or_default();
+                    let list_presets_result: ListPresetsResult =
+                        serde_json::from_str(&list_presets_result).unwrap_or_default();
 
                     trace!("found presets: {list_presets_result:?}");
 
-                    if list_presets_result.presets.contains(self.chain_name.as_ref().unwrap()) {
+                    if list_presets_result
+                        .presets
+                        .contains(self.chain_name.as_ref().unwrap())
+                    {
                         build_with_preset_command
                     } else {
                         build_default_command

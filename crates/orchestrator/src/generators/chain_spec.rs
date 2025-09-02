@@ -183,8 +183,6 @@ impl ChainSpec {
                     }
                 };
 
-                // SAFETY: we ensure that command is some with the first check of the fn
-                // default as empty
                 let sanitized_cmd = if replacement_value.is_empty() {
                     // we need to remove the `--chain` flag
                     command.cmd().replace("--chain", "")
@@ -225,20 +223,20 @@ impl ChainSpec {
                 let path = PathBuf::from(format!("runtime-{}.wasm", self.chain_spec_name));
                 copy_from_location(scoped_fs, runtime_path, path.clone()).await?;
 
-                let temp_name = format!(
-                    "temp-runtime-{}-{}",
-                    self.chain_spec_name,
-                    rand::random::<u8>()
-                );
-
-                let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
-                    self.build_paths(ns, &path, &temp_name);
-
                 let cmd_in_context = if self.chain_name.is_none() {
                     // if chain name is empty we use the default command
                     build_default_command
                 } else {
                     // we list presets and if there's a matching preset we use it, else use the default command
+                    let temp_name = format!(
+                        "temp-runtime-{}-{}",
+                        self.chain_spec_name,
+                        rand::random::<u8>()
+                    );
+
+                    let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
+                        self.build_paths(ns, &path, &temp_name);
+
                     let replacements =
                         HashMap::from([("runtimePath", runtime_path_in_args.as_str())]);
                     let list_presets_cmd =
@@ -280,21 +278,36 @@ impl ChainSpec {
                     )
                     .await?;
 
-                    let matches = scoped_fs
+                    let presets = scoped_fs
                         .read_to_string(list_presets_local_output_path)
-                        .await?
-                        .contains(self.chain_name.as_ref().unwrap());
+                        .await?;
 
-                    if matches {
+                    trace!("found presets: {presets}");
+
+                    if presets.contains(self.chain_name.as_ref().unwrap()) {
                         build_with_preset_command
                     } else {
                         build_default_command
                     }
                 };
 
+                let temp_name = format!(
+                    "temp-runtime-{}-{}",
+                    self.chain_spec_name,
+                    rand::random::<u8>()
+                );
+
+                let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
+                    self.build_paths(ns, &path, &temp_name);
+
+                // as opposed to build-spec, chain-spec-builder doesn't write the result to stdout automatically,
+                // but we can redirect the output to stdout
+                let output_path = "/dev/stdout";
+
                 let replacements = HashMap::from([
                     ("runtimePath", runtime_path_in_args.as_str()),
                     ("chainName", self.chain_name.as_deref().unwrap_or("")),
+                    ("outputPath", output_path),
                 ]);
 
                 let full_cmd = apply_replacements(cmd_in_context.cmd(), &replacements);

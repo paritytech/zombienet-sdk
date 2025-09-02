@@ -19,7 +19,8 @@ use crate::{
     },
     shared::{
         constants::{
-            DEFAULT_CHAIN_SPEC_TPL_COMMAND, DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_DEFAULT_COMMAND,
+            CHAIN_SPEC_BUILDER_COMPATIBLE_COMMANDS, DEFAULT_CHAIN_SPEC_TPL_COMMAND,
+            DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_DEFAULT_COMMAND,
             DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_NAMED_PRESET_COMMAND,
             DEFAULT_LIST_PRESETS_TPL_COMMAND,
         },
@@ -143,7 +144,9 @@ impl ParachainSpec {
                         tmpl,
                         config.chain_spec_command_is_local(),
                     ))
-                } else if main_cmd.as_str().ends_with("polkadot-parachain")
+                } else if CHAIN_SPEC_BUILDER_COMPATIBLE_COMMANDS
+                    .iter()
+                    .any(|cmd| main_cmd.as_str().ends_with(cmd))
                     && config.runtime_path().is_some()
                 {
                     let is_local = config.chain_spec_command_is_local();

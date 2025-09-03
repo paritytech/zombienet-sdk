@@ -106,6 +106,7 @@ pub enum GenerationStrategy {
         build_raw_command: CommandInContext,
         list_presets_command: CommandInContext,
         runtime_path: AssetLocation,
+        relay_chain: Option<String>,
     },
 }
 
@@ -157,6 +158,14 @@ impl ChainSpec {
     pub(crate) fn image(mut self, image: Option<String>) -> Self {
         self.image = image;
         self
+    }
+
+    pub(crate) fn set_relay_id(&mut self, relay_id: &str) {
+        if let GenerationStrategy::WithChainSpecBuilder { relay_chain, .. } =
+            &mut self.generation_strategy
+        {
+            relay_chain.replace(relay_id.to_string());
+        }
     }
 
     /// Build the chain-spec
@@ -221,6 +230,7 @@ impl ChainSpec {
                 build_default_command,
                 list_presets_command,
                 runtime_path,
+                relay_chain,
                 ..
             } => {
                 trace!("building chainspec using GenerationStrategy::WithChainSpecBuilder");
@@ -328,11 +338,15 @@ impl ChainSpec {
                 // as opposed to build-spec, chain-spec-builder doesn't write the result to stdout automatically,
                 // but we can redirect the output to stdout
                 let output_path = "/dev/stdout";
+                let relay_chain = relay_chain.as_deref().expect(&format!(
+                    "relay chain should be set at this point. {THIS_IS_A_BUG}"
+                ));
 
                 let replacements = HashMap::from([
                     ("runtimePath", runtime_path_in_args.as_str()),
                     ("chainName", self.chain_name.as_deref().unwrap()),
                     ("outputPath", output_path),
+                    ("relayChain", relay_chain),
                 ]);
 
                 let full_cmd = apply_replacements(&sanitized_cmd, &replacements);

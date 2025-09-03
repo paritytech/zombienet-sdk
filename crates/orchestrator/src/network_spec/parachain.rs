@@ -153,6 +153,14 @@ impl ParachainSpec {
 
                     let runtime_path = config.runtime_path().unwrap().clone();
 
+                    let mut replacements = replacements.clone();
+                    let para_id = if !config.unique_id().is_empty() {
+                        config.unique_id()
+                    } else {
+                        &config.id().to_string()
+                    };
+                    replacements.insert("paraId", para_id);
+
                     let build_with_preset_command = apply_replacements(
                         DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_NAMED_PRESET_COMMAND,
                         &replacements,
@@ -182,6 +190,7 @@ impl ParachainSpec {
                         build_raw_command,
                         list_presets_command,
                         runtime_path,
+                        relay_chain: None,
                     }
                 } else {
                     GenerationStrategy::WithCommand(CommandInContext::new(
@@ -351,6 +360,7 @@ impl ParachainSpec {
     {
         let cloned = self.clone();
         let chain_spec_raw_path = if let Some(chain_spec) = self.chain_spec.as_mut() {
+            chain_spec.set_relay_id(relay_chain_id);
             debug!("parachain chain-spec building!");
             chain_spec.build(ns, scoped_fs).await?;
             debug!("parachain chain-spec built!");

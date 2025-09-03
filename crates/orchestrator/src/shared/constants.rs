@@ -11,16 +11,12 @@ pub const P2P_PORT: u16 = 30333;
 // default command template to build chain-spec
 pub const DEFAULT_CHAIN_SPEC_TPL_COMMAND: &str =
     "{{mainCommand}} build-spec --chain {{chainName}} {{disableBootnodes}}";
-// default command template to build chain-spec using runtime when chain is named.
-// polkadot-parachain chain-spec-builder requires --relay-chain and --para-id to be passed but we override these later anyway,
-// so arbitrary values can be passed here
+// default command template to build chain-spec using runtime when chain is named
 pub const DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_NAMED_PRESET_COMMAND: &str =
-    "{{mainCommand}} chain-spec-builder -c {{outputPath}} create --relay-chain ANY_RELAY_NAME --para-id 9999 --chain-name {{chainName}} --runtime {{runtimePath}} named-preset {{chainName}}";
+    "{{mainCommand}} chain-spec-builder -c {{outputPath}} create --relay-chain {{relayChain}} --para-id {{paraId}} --chain-name {{chainName}} --runtime {{runtimePath}} named-preset {{chainName}}";
 // default command template to build chain-spec using runtime when no name
-// polkadot-parachain chain-spec-builder requires --relay-chain and --para-id to be passed but we override these later anyway,
-// so arbitrary values can be passed here
 pub const DEFAULT_CHAIN_SPEC_TPL_USING_RUNTIME_DEFAULT_COMMAND: &str =
-    "{{mainCommand}} chain-spec-builder  -c {{outputPath}} create --relay-chain ANY_RELAY_NAME --para-id 9999 --chain-name {{chainName}} --runtime {{runtimePath}} default";
+    "{{mainCommand}} chain-spec-builder  -c {{outputPath}} create --relay-chain {{relayChain}} --para-id {{paraId}} --chain-name {{chainName}} --runtime {{runtimePath}} default";
 // default command template to check available presets
 pub const DEFAULT_LIST_PRESETS_TPL_COMMAND: &str =
     "{{mainCommand}} chain-spec-builder list-presets --runtime {{runtimePath}}";

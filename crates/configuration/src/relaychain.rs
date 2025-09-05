@@ -8,7 +8,7 @@ use crate::{
         errors::{ConfigError, FieldError},
         helpers::{merge_errors, merge_errors_vecs},
         macros::states,
-        node::{self, NodeConfig, NodeConfigBuilder},
+        node::{self, GroupNodeConfig, GroupNodeConfigBuilder, NodeConfig, NodeConfigBuilder},
         resources::{Resources, ResourcesBuilder},
         types::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
@@ -40,6 +40,8 @@ pub struct RelaychainConfig {
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<NodeConfig>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    node_groups: Vec<GroupNodeConfig>,
     #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     runtime_genesis_patch: Option<serde_json::Value>,
     // Path or url to override the runtime (:code) in the chain-spec
@@ -123,6 +125,10 @@ impl RelaychainConfig {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
 
+    pub fn group_nodes(&self) -> Vec<&GroupNodeConfig> {
+        self.node_groups.iter().collect::<Vec<&GroupNodeConfig>>()
+    }
+
     pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
         self.nodes = nodes;
     }
@@ -163,6 +169,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 max_nominations: None,
                 runtime_genesis_patch: None,
                 nodes: vec![],
+                node_groups: vec![],
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -445,6 +452,38 @@ impl RelaychainConfigBuilder<WithChain> {
             ),
         }
     }
+
+    pub fn with_group(
+        self,
+        f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
+    ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
+        match f(GroupNodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(group_node) => Self::transition(
+                RelaychainConfig {
+                    node_groups: vec![group_node],
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
@@ -462,6 +501,38 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
             Ok(node) => Self::transition(
                 RelaychainConfig {
                     nodes: [self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    pub fn with_group(
+        self,
+        f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        match f(GroupNodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(group_node) => Self::transition(
+                RelaychainConfig {
+                    node_groups: [self.config.node_groups, vec![group_node]].concat(),
                     ..self.config
                 },
                 self.validation_context,
@@ -758,5 +829,48 @@ mod tests {
 
         assert_eq!(config.chain_spec_command(), Some(CMD_TPL));
         assert!(config.chain_spec_command_is_local());
+    }
+
+    #[test]
+    fn relaychain_with_group_config_should_succeeds_and_returns_a_relaychain_config() {
+        let relaychain_config = RelaychainConfigBuilder::new(Default::default())
+            .with_chain("chain")
+            .with_default_command("command")
+            .with_node(|node| {
+                node.with_name("node")
+                    .with_command("node_command")
+                    .validator(true)
+            })
+            .with_group(|group| {
+                group.with_count(2).with_base_node(|base| {
+                    base.with_name("group_node")
+                        .with_command("some_command")
+                        .with_image("repo:image")
+                        .validator(true)
+                })
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(relaychain_config.chain().as_str(), "chain");
+        assert_eq!(relaychain_config.nodes().len(), 1);
+        assert_eq!(relaychain_config.group_nodes().len(), 1);
+        assert_eq!(relaychain_config.group_nodes().first().unwrap().count, 2);
+        let &node = relaychain_config.nodes().first().unwrap();
+        assert_eq!(node.name(), "node");
+        assert_eq!(node.command().unwrap().as_str(), "node_command");
+
+        let group_nodes = relaychain_config.group_nodes();
+        let group_base_node = group_nodes.first().unwrap();
+        assert_eq!(group_base_node.base_config.name(), "group_node");
+        assert_eq!(
+            group_base_node.base_config.command().unwrap().as_str(),
+            "some_command"
+        );
+        assert_eq!(
+            group_base_node.base_config.image().unwrap().as_str(),
+            "repo:image"
+        );
+        assert!(group_base_node.base_config.is_validator());
     }
 }

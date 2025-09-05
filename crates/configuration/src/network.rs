@@ -20,7 +20,7 @@ use crate::{
         errors::{ConfigError, ValidationError},
         helpers::{generate_unique_node_name_from_names, merge_errors, merge_errors_vecs},
         macros::states,
-        node::NodeConfig,
+        node::{GroupNodeConfig, NodeConfig},
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
     },
     types::ParaId,
@@ -132,6 +132,13 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
+        let group_nodes: Vec<GroupNodeConfig> = network_config
+            .relaychain()
+            .group_nodes()
+            .into_iter()
+            .cloned()
+            .collect();
+
         let mut parachains: Vec<ParachainConfig> =
             network_config.parachains().into_iter().cloned().collect();
 
@@ -145,6 +152,12 @@ impl NetworkConfig {
                 relaychain_default_command.clone().expect(VALIDATION_CHECK),
             )?;
         }
+
+        nodes.extend(
+            group_nodes
+                .into_iter()
+                .flat_map(|node| node.expand_group_configs()),
+        );
 
         // Keep track of node names to ensure uniqueness
         let mut names = HashSet::new();
@@ -232,7 +245,6 @@ impl NetworkConfig {
                 let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
             }
         });
-
         Ok(network_config)
     }
 }

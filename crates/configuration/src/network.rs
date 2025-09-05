@@ -197,16 +197,17 @@ impl NetworkConfig {
 
             let default_args: Vec<Arg> = para.default_args().into_iter().cloned().collect();
 
-            let group_collators: Vec<GroupNodeConfig> = para.group_collators().into_iter().cloned().collect();
+            let group_collators: Vec<GroupNodeConfig> =
+                para.group_collators().into_iter().cloned().collect();
 
             let mut collators: Vec<NodeConfig> = para.collators.clone();
-            
+
             collators.extend(
                 group_collators
                     .into_iter()
                     .flat_map(|node| node.expand_group_configs()),
             );
-            
+
             for collator in collators.iter_mut() {
                 populate_collator_with_defaults(
                     collator,

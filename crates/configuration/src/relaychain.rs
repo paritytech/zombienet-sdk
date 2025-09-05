@@ -520,6 +520,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
         }
     }
 
+    /// Add a new group node using a nested [`GroupNodeConfigBuilder`].
     pub fn with_group(
         self,
         f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,

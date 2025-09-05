@@ -18,8 +18,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Node: {}", node.name());
     });
 
+    let collators = network.parachains()[0].collators();
+    assert_eq!(collators.len(), 3);
+    collators.iter().for_each(|collator| {
+        println!("Collator: {}", collator.name());
+    });
+
     let client = network
-        .get_node("collator01")?
+        .get_node("collator_group-1")?
         .wait_client::<subxt::PolkadotConfig>()
         .await?;
     let mut blocks = client.blocks().subscribe_finalized().await?.take(3);

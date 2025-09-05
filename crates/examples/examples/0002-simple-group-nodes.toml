@@ -41,6 +41,13 @@ cumulus_based = false
   command = "adder-collator"
   args = [ "-lruntime=debug,parachain=trace" ]
 
+  [[parachains.collator_groups]]
+  name = "collator_group"
+  image = "{{COL_IMAGE}}"
+  command = "adder-collator"
+  args = [ "-lruntime=debug,parachain=trace" ]
+  count = 2
+
 [types.Header]
 number = "u64"
 parent_hash = "Hash"

@@ -1,3 +1,10 @@
+//! Example: Small network with parachain and adding nodes/collators.
+//!
+//! This example demonstrates how to:
+//! - Deploy a small relaychain and parachain network
+//! - Add nodes and collators dynamically
+//! - Perform basic assertions and queries on nodes
+
 use std::time::Duration;
 
 use zombienet_sdk::{AddCollatorOptions, AddNodeOptions, NetworkConfigBuilder, NetworkConfigExt};
@@ -31,8 +38,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    // TODO: add check to ensure if unique
-    network.add_node("new1", opts).await?;
+    // Check if node name is unique before adding
+    if network.get_node("new1").is_err() {
+        network.add_node("new1", opts).await?;
+        println!("Node 'new1' added successfully");
+    } else {
+        println!("Node name 'new1' already exists!");
+    }
 
     // Example of some operations that you can do
     // with `nodes` (e.g pause, resume, restart)

@@ -1,3 +1,9 @@
+//! Example: Small network with base directory.
+//!
+//! This example demonstrates how to:
+//! - Specify a custom base directory for the network files
+//! - Deploy the network using Docker containers
+
 use std::path::Path;
 
 use zombienet_sdk::NetworkConfigExt;

@@ -1,3 +1,8 @@
+//! Example: Two parachains with the same ID.
+//!
+//! This example demonstrates how to:
+//! - Deploy two parachains having the same ID
+
 use std::time::Duration;
 
 use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};

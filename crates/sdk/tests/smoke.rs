@@ -46,13 +46,6 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
 
-    // timeout connecting ws
-    let c = network.get_node("collator").unwrap();
-    let r = c
-        .wait_client_with_timeout::<subxt::PolkadotConfig>(1_u32)
-        .await;
-    assert!(r.is_err());
-
     let (_best_block_pass, client) = try_join!(
         alice.wait_metric(BEST_BLOCK_METRIC, |x| x > 5_f64),
         alice.wait_client::<subxt::PolkadotConfig>()
@@ -181,6 +174,14 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await
         .unwrap();
+
+    // timeout connecting ws
+    let collator = network.get_node("collator").unwrap();
+    collator.pause().await.unwrap();
+    let r = collator
+        .wait_client_with_timeout::<subxt::PolkadotConfig>(1_u32)
+        .await;
+    assert!(r.is_err());
 
     // tear down (optional if you don't detach the network)
     // network.destroy().await.unwrap();

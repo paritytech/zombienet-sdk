@@ -222,7 +222,7 @@ where
         )
     })?;
 
-    let mut ip_to_use = LOCALHOST;
+    let ip_to_use = LOCALHOST;
 
     let (rpc_port_external, prometheus_port_external, p2p_external);
     // Create port-forward iff we are  in CI and with k8s provider
@@ -231,7 +231,7 @@ where
         (rpc_port_external, prometheus_port_external, p2p_external) =
             (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);
         collator_full_node_prom_port_external = Some(FULL_NODE_PROMETHEUS_PORT);
-        ip_to_use = running_node.ip().await?;
+        //ip_to_use = running_node.ip().await?;
     } else {
         // Create port-forward iff we are not in CI or provider doesn't use the default ports (native)
         let ports = futures::future::try_join_all(vec![

@@ -10,7 +10,7 @@ use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
@@ -302,6 +302,7 @@ impl NetworkNode {
                 },
                 Err(e) => match e.downcast::<reqwest::Error>() {
                     Ok(io_err) => {
+                        error!("reqwest error: {}", io_err);
                         if !skip_err_while_waiting(&io_err) {
                             return Err(io_err.into());
                         }

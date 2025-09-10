@@ -22,6 +22,11 @@ use crate::{
     ScopedFilesystem,
 };
 
+#[derive(Debug, Deserialize, Default)]
+struct ListPresetsResult {
+    presets: Vec<String>,
+}
+
 // TODO: (javier) move to state
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Context {
@@ -60,6 +65,14 @@ pub enum CommandInContext {
 }
 
 impl CommandInContext {
+    pub(crate) fn new(command: impl Into<String>, is_local: bool) -> Self {
+        if is_local {
+            CommandInContext::Local(command.into())
+        } else {
+            CommandInContext::Remote(command.into())
+        }
+    }
+
     fn cmd(&self) -> &str {
         match self {
             CommandInContext::Local(cmd) | CommandInContext::Remote(cmd) => cmd.as_ref(),
@@ -76,32 +89,56 @@ pub struct ParaGenesisConfig<T: AsRef<Path>> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Strategy used for chainspec generation
+pub enum GenerationStrategy {
+    // Uses asset_location as chainspec source, build_raw command is used if provided chainspec is plain to build the raw version.
+    WithAssetLocation {
+        asset_location: AssetLocation,
+        build_raw_command: CommandInContext,
+    },
+    // Uses the provided command to build the chainspec.
+    WithCommand(CommandInContext),
+    // Uses chain-spec-builder, first we list available presets for a given runtime, if there's a matching preset we use it
+    // otherwise we use the default.
+    WithChainSpecBuilder {
+        build_with_preset_command: CommandInContext,
+        build_default_command: CommandInContext,
+        build_raw_command: CommandInContext,
+        list_presets_command: CommandInContext,
+        runtime_path: AssetLocation,
+        relay_chain: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainSpec {
     // Name of the spec file, most of the times could be the same as the chain_name. (e.g rococo-local)
     chain_spec_name: String,
-    asset_location: Option<AssetLocation>,
     maybe_plain_path: Option<PathBuf>,
     chain_name: Option<String>,
     raw_path: Option<PathBuf>,
-    // The binary to build the chain-spec
-    command: Option<CommandInContext>,
-    // Imgae to use for build the chain-spec
+    // Strategy used for chain-spec generation.
+    generation_strategy: GenerationStrategy,
+    // Image to use for build the chain-spec
     image: Option<String>,
     // Contex of the network (e.g relay or para)
     context: Context,
 }
 
 impl ChainSpec {
-    pub(crate) fn new(chain_spec_name: impl Into<String>, context: Context) -> Self {
+    pub(crate) fn new(
+        chain_spec_name: impl Into<String>,
+        context: Context,
+        generation_strategy: GenerationStrategy,
+    ) -> Self {
         Self {
             chain_spec_name: chain_spec_name.into(),
             chain_name: None,
             maybe_plain_path: None,
-            asset_location: None,
             raw_path: None,
-            command: None,
             image: None,
             context,
+            generation_strategy,
         }
     }
 
@@ -118,24 +155,17 @@ impl ChainSpec {
         self
     }
 
-    pub(crate) fn asset_location(mut self, location: AssetLocation) -> Self {
-        self.asset_location = Some(location);
-        self
-    }
-
-    pub(crate) fn command(mut self, command: impl Into<String>, is_local: bool) -> Self {
-        let cmd = if is_local {
-            CommandInContext::Local(command.into())
-        } else {
-            CommandInContext::Remote(command.into())
-        };
-        self.command = Some(cmd);
-        self
-    }
-
     pub(crate) fn image(mut self, image: Option<String>) -> Self {
         self.image = image;
         self
+    }
+
+    pub(crate) fn set_relay_id(&mut self, relay_id: &str) {
+        if let GenerationStrategy::WithChainSpecBuilder { relay_chain, .. } =
+            &mut self.generation_strategy
+        {
+            relay_chain.replace(relay_id.to_string());
+        }
     }
 
     /// Build the chain-spec
@@ -147,87 +177,206 @@ impl ChainSpec {
     where
         T: FileSystem,
     {
-        // TODO: Move this to state builder.
-        if self.asset_location.is_none() && self.command.is_none() {
-            return Err(GeneratorError::ChainSpecGeneration(
-                "Can not build the chain spec without set the command or asset_location"
-                    .to_string(),
-            ));
-        }
-
         let maybe_plain_spec_path = PathBuf::from(format!("{}-plain.json", self.chain_spec_name));
-        // if we have a path, copy to the base_dir of the ns with the name `<name>-plain.json`
-        if let Some(location) = self.asset_location.as_ref() {
-            match location {
-                AssetLocation::FilePath(path) => {
-                    let file_to_transfer =
-                        TransferedFile::new(path.clone(), maybe_plain_spec_path.clone());
 
-                    scoped_fs
-                        .copy_files(vec![&file_to_transfer])
-                        .await
-                        .map_err(|_| {
-                            GeneratorError::ChainSpecGeneration(format!(
-                                "Error copying file: {file_to_transfer}"
-                            ))
-                        })?;
-                },
-                AssetLocation::Url(url) => {
-                    let res = reqwest::get(url.as_str())
-                        .await
-                        .map_err(|err| ProviderError::DownloadFile(url.to_string(), err.into()))?;
+        match &self.generation_strategy {
+            // if we have a path, copy to the base_dir of the ns with the name `<name>-plain.json`
+            GenerationStrategy::WithAssetLocation { asset_location, .. } => {
+                trace!("building chainspec using GenerationStrategy::WithAssetLocation");
 
-                    let contents: &[u8] = &res.bytes().await.unwrap();
-                    trace!(
-                        "writing content from {} to: {maybe_plain_spec_path:?}",
-                        url.as_str()
+                copy_from_location(scoped_fs, asset_location, maybe_plain_spec_path.clone()).await?
+            },
+            GenerationStrategy::WithCommand(command) => {
+                trace!("building chainspec using GenerationStrategy::WithCommand");
+
+                // we should create the chain-spec using command.
+                let mut replacement_value = String::default();
+                if let Some(chain_name) = self.chain_name.as_ref() {
+                    if !chain_name.is_empty() {
+                        replacement_value.clone_from(chain_name);
+                    }
+                };
+
+                let sanitized_cmd = if replacement_value.is_empty() {
+                    // we need to remove the `--chain` flag
+                    command.cmd().replace("--chain", "")
+                } else {
+                    command.cmd().to_owned()
+                };
+
+                let full_cmd = apply_replacements(
+                    &sanitized_cmd,
+                    &HashMap::from([("chainName", replacement_value.as_str())]),
+                );
+                trace!("full_cmd: {:?}", full_cmd);
+
+                let parts: Vec<&str> = full_cmd.split_whitespace().collect();
+                let Some((cmd, args)) = parts.split_first() else {
+                    return Err(GeneratorError::ChainSpecGeneration(format!(
+                        "Invalid generator command: {full_cmd}"
+                    )));
+                };
+                trace!("cmd: {:?} - args: {:?}", cmd, args);
+
+                let generate_command =
+                    GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
+                let options =
+                    GenerateFilesOptions::new(vec![generate_command.clone()], self.image.clone());
+
+                execute_command(ns, scoped_fs, command, generate_command, options).await?;
+            },
+            GenerationStrategy::WithChainSpecBuilder {
+                build_with_preset_command,
+                build_default_command,
+                list_presets_command,
+                runtime_path,
+                relay_chain,
+                ..
+            } => {
+                trace!("building chainspec using GenerationStrategy::WithChainSpecBuilder");
+
+                let path = PathBuf::from(format!("runtime-{}.wasm", self.chain_spec_name));
+                copy_from_location(scoped_fs, runtime_path, path.clone()).await?;
+
+                let cmd_in_context = if self.chain_name.is_none() {
+                    // if chain name is empty we use the default command
+                    build_default_command
+                } else {
+                    // we list presets and if there's a matching preset we use it, else use the default command
+                    let temp_name = format!(
+                        "temp-runtime-{}-{}",
+                        self.chain_spec_name,
+                        rand::random::<u8>()
                     );
-                    scoped_fs.write(&maybe_plain_spec_path, contents).await?;
-                },
-            }
-        } else {
-            // we should create the chain-spec using command.
-            let mut replacement_value = String::default();
-            if let Some(chain_name) = self.chain_name.as_ref() {
-                if !chain_name.is_empty() {
-                    replacement_value.clone_from(chain_name);
-                }
-            };
 
-            // SAFETY: we ensure that command is some with the first check of the fn
-            // default as empty
-            let sanitized_cmd = if replacement_value.is_empty() {
-                // we need to remove the `--chain` flag
-                self.command.as_ref().unwrap().cmd().replace("--chain", "")
-            } else {
-                self.command.as_ref().unwrap().cmd().to_owned()
-            };
+                    let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
+                        self.build_paths(ns, &path, &temp_name);
 
-            let full_cmd = apply_replacements(
-                &sanitized_cmd,
-                &HashMap::from([("chainName", replacement_value.as_str())]),
-            );
-            trace!("full_cmd: {:?}", full_cmd);
+                    let replacements =
+                        HashMap::from([("runtimePath", runtime_path_in_args.as_str())]);
+                    let list_presets_cmd =
+                        apply_replacements(list_presets_command.cmd(), &replacements);
 
-            let parts: Vec<&str> = full_cmd.split_whitespace().collect();
-            let Some((cmd, args)) = parts.split_first() else {
-                return Err(GeneratorError::ChainSpecGeneration(format!(
-                    "Invalid generator command: {full_cmd}"
-                )));
-            };
-            trace!("cmd: {:?} - args: {:?}", cmd, args);
+                    trace!("list_presets_cmd: {:?}", list_presets_cmd);
 
-            let generate_command =
-                GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
-            if let Some(CommandInContext::Local(_)) = self.command {
-                // local
-                build_locally(generate_command, scoped_fs).await?;
-            } else {
-                // remote
-                let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
-                ns.generate_files(options).await?;
-            }
-        }
+                    let parts: Vec<&str> = list_presets_cmd.split_whitespace().collect();
+                    let Some((cmd, args)) = parts.split_first() else {
+                        return Err(GeneratorError::ChainSpecGeneration(format!(
+                            "Invalid generator command: {list_presets_cmd}"
+                        )));
+                    };
+                    trace!("cmd: {:?} - args: {:?}", cmd, args);
+
+                    let list_presets_local_output_path =
+                        PathBuf::from(format!("list-presets-result-{}", self.chain_spec_name));
+
+                    let generate_command =
+                        GenerateFileCommand::new(cmd, list_presets_local_output_path.clone())
+                            .args(args);
+
+                    let options = GenerateFilesOptions::with_files(
+                        vec![generate_command.clone()],
+                        self.image.clone(),
+                        &[TransferedFile::new(
+                            runtime_path_local.clone(),
+                            runtime_path_in_pod.clone(),
+                        )],
+                    )
+                    .temp_name(&temp_name);
+
+                    execute_command(
+                        ns,
+                        scoped_fs,
+                        list_presets_command,
+                        generate_command,
+                        options,
+                    )
+                    .await?;
+
+                    let list_presets_result = scoped_fs
+                        .read_to_string(list_presets_local_output_path)
+                        .await?;
+
+                    let list_presets_result: ListPresetsResult =
+                        serde_json::from_str(&list_presets_result).unwrap_or_default();
+
+                    trace!("found presets: {list_presets_result:?}");
+
+                    if list_presets_result
+                        .presets
+                        .contains(self.chain_name.as_ref().unwrap())
+                    {
+                        build_with_preset_command
+                    } else {
+                        build_default_command
+                    }
+                };
+
+                let temp_name = format!(
+                    "temp-runtime-{}-{}",
+                    self.chain_spec_name,
+                    rand::random::<u8>()
+                );
+
+                let (runtime_path_local, runtime_path_in_pod, runtime_path_in_args) =
+                    self.build_paths(ns, &path, &temp_name);
+
+                let mut replacement_value = String::default();
+
+                if let Some(chain_name) = self.chain_name.as_ref() {
+                    if !chain_name.is_empty() {
+                        replacement_value.clone_from(chain_name);
+                    }
+                };
+
+                let sanitized_cmd = if replacement_value.is_empty() {
+                    cmd_in_context.cmd().replace("--chain-name", "")
+                } else {
+                    cmd_in_context.cmd().to_owned()
+                };
+
+                // as opposed to build-spec, chain-spec-builder doesn't write the result to stdout automatically,
+                // but we can redirect the output to stdout
+                let output_path = "/dev/stdout";
+                let relay_chain = relay_chain.as_deref().expect(&format!(
+                    "relay chain should be set at this point. {THIS_IS_A_BUG}"
+                ));
+
+                let replacements = HashMap::from([
+                    ("runtimePath", runtime_path_in_args.as_str()),
+                    ("chainName", self.chain_name.as_deref().unwrap()),
+                    ("outputPath", output_path),
+                    ("relayChain", relay_chain),
+                ]);
+
+                let full_cmd = apply_replacements(&sanitized_cmd, &replacements);
+
+                trace!("full_cmd: {:?}", full_cmd);
+
+                let parts: Vec<&str> = full_cmd.split_whitespace().collect();
+                let Some((cmd, args)) = parts.split_first() else {
+                    return Err(GeneratorError::ChainSpecGeneration(format!(
+                        "Invalid generator command: {full_cmd}"
+                    )));
+                };
+
+                trace!("cmd: {:?} - args: {:?}", cmd, args);
+
+                let generate_command =
+                    GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
+                let options = GenerateFilesOptions::with_files(
+                    vec![generate_command.clone()],
+                    self.image.clone(),
+                    &[TransferedFile::new(
+                        runtime_path_local.clone(),
+                        runtime_path_in_pod.clone(),
+                    )],
+                )
+                .temp_name(temp_name);
+
+                execute_command(ns, scoped_fs, cmd_in_context, generate_command, options).await?;
+            },
+        };
 
         if is_raw(maybe_plain_spec_path.clone(), scoped_fs).await? {
             let spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
@@ -266,12 +415,7 @@ impl ChainSpec {
             rand::random::<u8>()
         );
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
-        let cmd = self
-            .command
-            .as_ref()
-            .ok_or(GeneratorError::ChainSpecGeneration(
-                "Invalid command".into(),
-            ))?;
+        let cmd = self.build_raw_command();
         let maybe_plain_path =
             self.maybe_plain_path
                 .as_ref()
@@ -279,28 +423,8 @@ impl ChainSpec {
                     "Invalid plain path".into(),
                 ))?;
 
-        // TODO: we should get the full path from the scoped filesystem
-        let chain_spec_path_local = format!(
-            "{}/{}",
-            ns.base_dir().to_string_lossy(),
-            maybe_plain_path.display()
-        );
-        // Remote path to be injected
-        let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
-        // Path in the context of the node, this can be different in the context of the providers (e.g native)
-        let chain_spec_path_in_args = if matches!(self.command, Some(CommandInContext::Local(_))) {
-            chain_spec_path_local.clone()
-        } else if ns.capabilities().prefix_with_full_path {
-            // In native
-            format!(
-                "{}/{}{}",
-                ns.base_dir().to_string_lossy(),
-                &temp_name,
-                &chain_spec_path_in_pod
-            )
-        } else {
-            chain_spec_path_in_pod.clone()
-        };
+        let (chain_spec_path_local, chain_spec_path_in_pod, chain_spec_path_in_args) =
+            self.build_paths(ns, maybe_plain_path, &temp_name);
 
         let mut full_cmd = apply_replacements(
             cmd.cmd(),
@@ -321,24 +445,24 @@ impl ChainSpec {
         trace!("cmd: {:?} - args: {:?}", cmd, args);
 
         let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
+        let options = GenerateFilesOptions::with_files(
+            vec![generate_command.clone()],
+            self.image.clone(),
+            &[TransferedFile::new(
+                chain_spec_path_local,
+                chain_spec_path_in_pod,
+            )],
+        )
+        .temp_name(temp_name);
 
-        if let Some(CommandInContext::Local(_)) = self.command {
-            // local
-            build_locally(generate_command, scoped_fs).await?;
-        } else {
-            // remote
-            let options = GenerateFilesOptions::with_files(
-                vec![generate_command],
-                self.image.clone(),
-                &[TransferedFile::new(
-                    chain_spec_path_local,
-                    chain_spec_path_in_pod,
-                )],
-            )
-            .temp_name(temp_name);
-            trace!("calling generate_files with options: {:#?}", options);
-            ns.generate_files(options).await?;
-        }
+        execute_command(
+            ns,
+            scoped_fs,
+            self.build_raw_command(),
+            generate_command,
+            options,
+        )
+        .await?;
 
         self.raw_path = Some(raw_spec_path);
 
@@ -398,10 +522,6 @@ impl ChainSpec {
 
     pub fn raw_path(&self) -> Option<&Path> {
         self.raw_path.as_deref()
-    }
-
-    pub fn set_asset_location(&mut self, location: AssetLocation) {
-        self.asset_location = Some(location)
     }
 
     pub async fn read_chain_id<'a, T>(
@@ -752,6 +872,48 @@ impl ChainSpec {
             ))
         }
     }
+
+    fn build_paths(
+        &self,
+        ns: &DynNamespace,
+        path: &Path,
+        temp_name: &str,
+    ) -> (String, String, String) {
+        // TODO: we should get the full path from the scoped filesystem
+        let local_path = format!("{}/{}", ns.base_dir().to_string_lossy(), path.display());
+
+        // Remote path to be injected
+        let path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, path.display());
+
+        // Path in the context of the node, this can be different in the context of the providers (e.g native)
+        let path_in_args = if matches!(self.build_raw_command(), CommandInContext::Local(_)) {
+            local_path.clone()
+        } else if ns.capabilities().prefix_with_full_path {
+            // In native
+            format!(
+                "{}/{}{}",
+                ns.base_dir().to_string_lossy(),
+                &temp_name,
+                &path_in_pod
+            )
+        } else {
+            path_in_pod.clone()
+        };
+
+        (local_path, path_in_pod, path_in_args)
+    }
+
+    fn build_raw_command(&self) -> &CommandInContext {
+        match &self.generation_strategy {
+            GenerationStrategy::WithAssetLocation {
+                build_raw_command, ..
+            } => build_raw_command,
+            GenerationStrategy::WithCommand(build_raw_command) => build_raw_command,
+            GenerationStrategy::WithChainSpecBuilder {
+                build_raw_command, ..
+            } => build_raw_command,
+        }
+    }
 }
 
 type GenesisNodeKey = (String, String, HashMap<String, String>);
@@ -808,6 +970,59 @@ where
     let chain_spec_json: serde_json::Value = serde_json::from_str(&content).unwrap();
 
     Ok(chain_spec_json.pointer("/genesis/raw/top").is_some())
+}
+
+async fn copy_from_location<'a, T>(
+    scoped_fs: &ScopedFilesystem<'a, T>,
+    location: &AssetLocation,
+    destination: PathBuf,
+) -> Result<(), GeneratorError>
+where
+    T: FileSystem,
+{
+    match location {
+        AssetLocation::FilePath(path) => {
+            let file_to_transfer = TransferedFile::new(path.clone(), destination);
+
+            scoped_fs
+                .copy_files(vec![&file_to_transfer])
+                .await
+                .map_err(|_| {
+                    GeneratorError::ChainSpecGeneration(format!(
+                        "Error copying file: {file_to_transfer}"
+                    ))
+                })?;
+            Ok(())
+        },
+        AssetLocation::Url(url) => {
+            let res = reqwest::get(url.as_str())
+                .await
+                .map_err(|err| ProviderError::DownloadFile(url.to_string(), err.into()))?;
+
+            let contents: &[u8] = &res.bytes().await.unwrap();
+            trace!("writing content from {} to: {destination:?}", url.as_str());
+            scoped_fs.write(&destination, contents).await?;
+            Ok(())
+        },
+    }
+}
+
+async fn execute_command<'a, T>(
+    ns: &DynNamespace,
+    scoped_fs: &ScopedFilesystem<'a, T>,
+    command_in_context: &CommandInContext,
+    generate_command: GenerateFileCommand,
+    options: GenerateFilesOptions,
+) -> Result<(), GeneratorError>
+where
+    T: FileSystem,
+{
+    if let CommandInContext::Local(_) = command_in_context {
+        build_locally(generate_command, scoped_fs).await?;
+    } else {
+        ns.generate_files(options).await?;
+    }
+    Ok(())
 }
 
 // Internal Chain-spec customizations

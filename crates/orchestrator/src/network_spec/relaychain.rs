@@ -13,7 +13,7 @@ use support::replacer::apply_replacements;
 use super::node::NodeSpec;
 use crate::{
     errors::OrchestratorError,
-    generators::chain_spec::{ChainSpec, Context},
+    generators::chain_spec::{ChainSpec, CommandInContext, Context, GenerationStrategy},
     shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
 };
 
@@ -87,17 +87,27 @@ impl RelaychainSpec {
             apply_replacements(DEFAULT_CHAIN_SPEC_TPL_COMMAND, &replacements)
         };
 
-        let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay)
-            .set_chain_name(config.chain().as_str())
-            .command(tmpl.as_str(), config.chain_spec_command_is_local())
-            .image(main_image.clone());
-
-        // Add asset location if present
-        let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
-            chain_spec.asset_location(chain_spec_path.clone())
-        } else {
-            chain_spec
+        let generation_strategy = {
+            if let Some(chain_spec_path) = config.chain_spec_path() {
+                GenerationStrategy::WithAssetLocation {
+                    asset_location: chain_spec_path.clone(),
+                    build_raw_command: CommandInContext::new(
+                        tmpl,
+                        config.chain_spec_command_is_local(),
+                    ),
+                }
+            } else {
+                GenerationStrategy::WithCommand(CommandInContext::new(
+                    tmpl,
+                    config.chain_spec_command_is_local(),
+                ))
+            }
         };
+
+        let chain_spec =
+            ChainSpec::new(config.chain().as_str(), Context::Relay, generation_strategy)
+                .set_chain_name(config.chain().as_str())
+                .image(main_image.clone());
 
         // build the `node_specs`
         let chain_context = ChainDefaultContext {

@@ -778,7 +778,7 @@ impl GroupNodeConfigBuilder<Buildable> {
         if self.count == 0 {
             return Err((
                 self.base_config.name().to_string(),
-                vec![anyhow::anyhow!("Count cannot be zero").into()],
+                vec![anyhow::anyhow!("Count cannot be zero")],
             ));
         }
 

@@ -874,4 +874,36 @@ mod tests {
         );
         assert!(group_base_node.base_config.is_validator());
     }
+
+    #[test]
+    fn relaychain_with_group_count_0_config_should_fail() {
+        let relaychain_config = RelaychainConfigBuilder::new(Default::default())
+            .with_chain("chain")
+            .with_default_command("command")
+            .with_node(|node| {
+                node.with_name("node")
+                    .with_command("node_command")
+                    .validator(true)
+            })
+            .with_group(|group| {
+                group.with_count(0).with_base_node(|base| {
+                    base.with_name("group_node")
+                        .with_command("some_command")
+                        .with_image("repo:image")
+                        .validator(true)
+                })
+            })
+            .build();
+
+        let errors: Vec<anyhow::Error> = match relaychain_config {
+            Ok(_) => vec![],
+            Err(errs) => errs,
+        };
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "relaychain.nodes['group_node'].Count cannot be zero"
+        );
+    }
 }

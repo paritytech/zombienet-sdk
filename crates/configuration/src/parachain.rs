@@ -868,7 +868,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     pub fn with_collator_group(
         self,
         f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
-    ) -> Self {
+    ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
         match f(GroupNodeConfigBuilder::new(
             self.default_chain_context(),
             self.validation_context.clone(),
@@ -1584,5 +1584,50 @@ mod tests {
         assert_eq!(base_config2.name(), "collator_group2");
         assert_eq!(base_config2.command().unwrap().as_str(), "group_command2");
         assert!(!base_config2.is_bootnode());
+    }
+
+    #[test]
+    fn parachain_with_group_count_0_config_builder_should_fail() {
+        let parachain_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_chain("mychainname")
+            .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+            .onboard_as_parachain(false)
+            .with_initial_balance(100_000_042)
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .without_default_bootnodes()
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator1")
+                    .with_command("command1")
+                    .bootnode(true)
+            })
+            .with_collator_group(|group| {
+                group.with_count(2).with_base_node(|base| {
+                    base.with_name("collator_group1")
+                        .with_command("group_command1")
+                        .bootnode(true)
+                })
+            })
+            .with_collator_group(|group| {
+                group.with_count(0).with_base_node(|base| {
+                    base.with_name("collator_group2")
+                        .with_command("group_command2")
+                        .bootnode(false)
+                })
+            })
+            .build();
+
+        let errors: Vec<anyhow::Error> = match parachain_config {
+            Ok(_) => vec![],
+            Err(errs) => errs,
+        };
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "parachain[1000].collators['collator_group2'].Count cannot be zero"
+        );
     }
 }

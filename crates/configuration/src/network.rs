@@ -139,6 +139,13 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
+        if let Some(group) = group_nodes.iter().find(|n| n.count == 0) {
+            return Err(anyhow!(
+                "Group node '{}' must have a count greater than 0.",
+                group.base_config.name()
+            ));
+        }
+
         let mut parachains: Vec<ParachainConfig> =
             network_config.parachains().into_iter().cloned().collect();
 
@@ -199,6 +206,13 @@ impl NetworkConfig {
 
             let group_collators: Vec<GroupNodeConfig> =
                 para.group_collators().into_iter().cloned().collect();
+
+            if let Some(group) = group_collators.iter().find(|n| n.count == 0) {
+                return Err(anyhow!(
+                    "Group node '{}' must have a count greater than 0.",
+                    group.base_config.name()
+                ));
+            }
 
             let mut collators: Vec<NodeConfig> = para.collators.clone();
 

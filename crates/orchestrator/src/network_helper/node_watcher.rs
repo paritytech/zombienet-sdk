@@ -90,11 +90,11 @@ impl NodeWatcherHandle {
         Self { sender }
     }
 
-    pub async fn pause(&self) -> Result<(), SendError<WatcherMessage>>{
+    pub async fn pause(&self) -> Result<(), SendError<WatcherMessage>> {
         self.sender.send(WatcherMessage::Pause).await
     }
 
-    pub async fn resume(&self) -> Result<(), SendError<WatcherMessage>>{
+    pub async fn resume(&self) -> Result<(), SendError<WatcherMessage>> {
         self.sender.send(WatcherMessage::Resume).await
     }
 }

@@ -1017,11 +1017,9 @@ fn clear_authorities(
         }
 
         // clear staking but not `validatorCount` if `devStakers` is set
-        if val.get("staking").is_some() {
+        if val.get("staking").is_some() && ctx == &Context::Relay {
             val["staking"]["invulnerables"] = json!([]);
-            if ctx == &Context::Relay {
-                val["staking"]["stakers"] = json!([]);
-            }
+            val["staking"]["stakers"] = json!([]);
 
             if val["staking"]["devStakers"] == json!(null) {
                 val["staking"]["validatorCount"] = json!(0);

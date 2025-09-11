@@ -46,14 +46,14 @@ impl NodeWatcher {
                 Some(msg) = self.receiver.recv() => {
                     self.handle_message(msg);
                 },
-                _ = interval.tick(), if !self.is_paused => {
-                    if self.node.wait_until_is_up(5_u64).await.is_err() {
+                _ = interval.tick() => {
+                    if !self.is_paused  && self.node.wait_until_is_up(5_u64).await.is_err() {
                         let failure_message = format!("Node '{}' was detected as down.", self.node.name());
                         if self.failure_tx.send(failure_message).await.is_err() {
                            warn!("Watcher for node '{}' failed to send failure report.", self.node.name());
                         }
                         break;
-                    }
+                  }
                 }
             }
         }

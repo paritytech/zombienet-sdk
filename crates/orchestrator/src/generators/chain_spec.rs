@@ -510,7 +510,7 @@ impl ChainSpec {
                 }
             }
 
-            clear_authorities(&pointer, &mut chain_spec_json);
+            clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
             let key_type_to_use = if para.is_evm_based {
                 SessionKeyType::Evm
@@ -615,7 +615,7 @@ impl ChainSpec {
             let staking_min = get_staking_min(&pointer, &mut chain_spec_json);
 
             // Clear authorities
-            clear_authorities(&pointer, &mut chain_spec_json);
+            clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
             // add balances
             add_balances(
@@ -992,7 +992,11 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     }
 }
 
-fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json::Value) {
+fn clear_authorities(
+    runtime_config_ptr: &str,
+    chain_spec_json: &mut serde_json::Value,
+    ctx: &Context,
+) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         // clear keys (session, aura, grandpa)
         if val.get("session").is_some() {
@@ -1015,7 +1019,9 @@ fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json:
         // clear staking but not `validatorCount` if `devStakers` is set
         if val.get("staking").is_some() {
             val["staking"]["invulnerables"] = json!([]);
-            val["staking"]["stakers"] = json!([]);
+            if ctx == &Context::Relay {
+                val["staking"]["stakers"] = json!([]);
+            }
 
             if val["staking"]["devStakers"] == json!(null) {
                 val["staking"]["validatorCount"] = json!(0);
@@ -1450,7 +1456,7 @@ mod tests {
         let mut chain_spec_json = chain_spec_with_dev_stakers();
 
         let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
-        clear_authorities(&pointer, &mut chain_spec_json);
+        clear_authorities(&pointer, &mut chain_spec_json, &Context::Relay);
 
         let validator_count = chain_spec_json
             .pointer(&format!("{pointer}/staking/validatorCount"))
@@ -1463,7 +1469,7 @@ mod tests {
         let mut chain_spec_json = chain_spec_with_stake();
 
         let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
-        clear_authorities(&pointer, &mut chain_spec_json);
+        clear_authorities(&pointer, &mut chain_spec_json, &Context::Relay);
 
         let validator_count = chain_spec_json
             .pointer(&format!("{pointer}/staking/validatorCount"))

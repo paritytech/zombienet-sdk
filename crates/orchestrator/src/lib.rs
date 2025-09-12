@@ -45,6 +45,7 @@ use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
+    network_helper::node_watcher::NodeWatcherHandle,
     shared::{constants::DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS, types::RegisterParachainOptions},
     spawner::SpawnNodeCtx,
 };
@@ -476,6 +477,15 @@ where
         scoped_fs
             .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)
             .await?;
+
+        // set up a channel for failure reporting
+        let (failure_tx, failure_rx) = tokio::sync::mpsc::channel(8);
+        for node in network.nodes_iter_mut() {
+            let handle = NodeWatcherHandle::new(node.clone(), failure_tx.clone());
+            node.set_node_watcher_handle(handle);
+        }
+        network.start_failure_rx(failure_rx);
+
         Ok(network)
     }
 }

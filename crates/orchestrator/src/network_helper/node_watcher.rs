@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tokio::sync::mpsc::{self, error::SendError};
 use tracing::{info, warn};
 
@@ -18,10 +20,11 @@ pub(crate) struct NodeWatcherHandle {
 pub(crate) enum WatcherMessage {
     Pause,
     Resume,
+    Destroy(Option<Duration>),
 }
 
 impl NodeWatcher {
-    pub(crate) fn new(
+    fn new(
         receiver: mpsc::Receiver<WatcherMessage>,
         node: NetworkNode,
         failure_tx: mpsc::Sender<String>,
@@ -44,7 +47,7 @@ impl NodeWatcher {
         loop {
             tokio::select! {
                 Some(msg) = self.receiver.recv() => {
-                    self.handle_message(msg);
+                    self.handle_message(msg).await;
                 },
                 _ = interval.tick() => {
                     if !self.is_paused  && self.node.wait_until_is_up(5_u64).await.is_err() {
@@ -60,7 +63,7 @@ impl NodeWatcher {
         info!("Watcher for node '{}' shutting down.", self.node.name());
     }
 
-    fn handle_message(&mut self, msg: WatcherMessage) {
+    async fn handle_message(&mut self, msg: WatcherMessage) {
         match msg {
             WatcherMessage::Pause => {
                 if !self.is_paused {
@@ -74,12 +77,17 @@ impl NodeWatcher {
                     self.is_paused = false;
                 }
             },
+            WatcherMessage::Destroy(duration) => {
+                // sleep for a while to give the node a chance to restart
+                let sleep_duration = duration.unwrap_or_default() + Duration::from_secs(30);
+                tokio::time::sleep(sleep_duration).await;
+            },
         }
     }
 }
 
 impl NodeWatcherHandle {
-    pub fn new(node: NetworkNode, failure_tx: mpsc::Sender<String>) -> Self {
+    pub(crate) fn new(node: NetworkNode, failure_tx: mpsc::Sender<String>) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut node_watcher = NodeWatcher::new(receiver, node, failure_tx);
 
@@ -90,11 +98,18 @@ impl NodeWatcherHandle {
         Self { sender }
     }
 
-    pub async fn pause(&self) -> Result<(), SendError<WatcherMessage>> {
+    pub(crate) async fn pause(&self) -> Result<(), SendError<WatcherMessage>> {
         self.sender.send(WatcherMessage::Pause).await
     }
 
-    pub async fn resume(&self) -> Result<(), SendError<WatcherMessage>> {
+    pub(crate) async fn resume(&self) -> Result<(), SendError<WatcherMessage>> {
         self.sender.send(WatcherMessage::Resume).await
+    }
+
+    pub(crate) async fn restart(
+        &self,
+        after: Option<Duration>,
+    ) -> Result<(), SendError<WatcherMessage>> {
+        self.sender.send(WatcherMessage::Destroy(after)).await
     }
 }

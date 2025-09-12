@@ -14,6 +14,8 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tokio::sync::mpsc::Receiver;
+use tracing::{error, info};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
@@ -76,6 +78,19 @@ impl<T: FileSystem> Network<T> {
             parachains: Default::default(),
             nodes_by_name: Default::default(),
         }
+    }
+
+    pub(crate) fn start_failure_rx(&self, mut failure_rx: Receiver<String>) {
+        let ns = self.ns.clone();
+        tokio::spawn(async move {
+            if let Some(msg) = failure_rx.recv().await {
+                info!("detected unresponsive node: {msg}. tearing the network down...");
+                if let Err(e) = ns.destroy().await {
+                    error!("an error occurred during network teardown: {}", e);
+                }
+                std::process::exit(1);
+            }
+        });
     }
 
     // Pubic API

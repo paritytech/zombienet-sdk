@@ -10,11 +10,14 @@ use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
-use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
+use crate::{
+    network_helper::node_watcher::NodeWatcherHandle, network_spec::node::NodeSpec,
+    tx_helper::client::get_client_from_url,
+};
 
 type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
 
@@ -37,6 +40,8 @@ pub struct NetworkNode {
     pub(crate) prometheus_uri: String,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
+    #[serde(skip)]
+    node_watcher_handle: Option<NodeWatcherHandle>,
 }
 
 /// Result of waiting for a certain number of log lines to appear.
@@ -130,6 +135,7 @@ impl NetworkNode {
             spec,
             multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
+            node_watcher_handle: None,
         }
     }
 
@@ -219,6 +225,12 @@ impl NetworkNode {
     /// actual process (e.g polkadot) with sending `SIGSTOP` signal
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.inner.pause().await?;
+        if let Some(handle) = &self.node_watcher_handle {
+            let _ = handle
+                .pause()
+                .await
+                .map_err(|e| warn!("failed to send message: {e}"));
+        }
         Ok(())
     }
 
@@ -226,12 +238,24 @@ impl NetworkNode {
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
         self.inner.resume().await?;
+        if let Some(handle) = &self.node_watcher_handle {
+            let _ = handle
+                .resume()
+                .await
+                .map_err(|e| warn!("failed to send message: {e}"));
+        }
         Ok(())
     }
 
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
         self.inner.restart(after).await?;
+        if let Some(handle) = &self.node_watcher_handle {
+            let _ = handle
+                .restart(after)
+                .await
+                .map_err(|e| warn!("failed to send message: {e}"));
+        }
         Ok(())
     }
 
@@ -588,6 +612,10 @@ impl NetworkNode {
         self.wait_metric_with_timeout("process_start_time_seconds", |b| b >= 1.0, timeout_secs)
             .await
             .map_err(|err| anyhow::anyhow!("{}: {:?}", self.name(), err))
+    }
+
+    pub(crate) fn set_node_watcher_handle(&mut self, node_watcher_handle: NodeWatcherHandle) {
+        self.node_watcher_handle.replace(node_watcher_handle);
     }
 }
 

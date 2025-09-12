@@ -14,10 +14,13 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tracing::{error, info};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
     generators::chain_spec::ChainSpec,
+    network_helper::node_watcher::NodeWatcherHandle,
     network_spec::{self, NetworkSpec},
     shared::{
         macros,
@@ -38,6 +41,8 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
+    #[serde(skip)]
+    failure_tx: Option<Sender<String>>,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -75,7 +80,21 @@ impl<T: FileSystem> Network<T> {
             initial_spec,
             parachains: Default::default(),
             nodes_by_name: Default::default(),
+            failure_tx: None,
         }
+    }
+
+    pub(crate) fn start_failure_rx(&self, mut failure_rx: Receiver<String>) {
+        let ns = self.ns.clone();
+        tokio::spawn(async move {
+            if let Some(msg) = failure_rx.recv().await {
+                info!("detected unresponsive node: {msg}. tearing the network down...");
+                if let Err(e) = ns.destroy().await {
+                    error!("an error occurred during network teardown: {}", e);
+                }
+                std::process::exit(1);
+            }
+        });
     }
 
     // Pubic API
@@ -185,7 +204,10 @@ impl<T: FileSystem> Network<T> {
             PathBuf::from(format!("/cfg/{}.json", relaychain.chain)),
         )];
 
-        let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+        let mut node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+        if self.initial_spec.global_settings.tear_down_on_failure() {
+            Self::start_node_monitoring_task(&mut node, self.failure_tx.clone()).await;
+        }
 
         // TODO: register the new node as validator in the relaychain
         // STEPS:
@@ -325,7 +347,10 @@ impl<T: FileSystem> Network<T> {
                 .await?,
         );
 
-        let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+        let mut node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+        if self.initial_spec.global_settings.tear_down_on_failure() {
+            Self::start_node_monitoring_task(&mut node, self.failure_tx.clone()).await;
+        }
         parachain.collators.push(node.clone());
         self.add_running_node(node, None);
 
@@ -518,7 +543,10 @@ impl<T: FileSystem> Network<T> {
         let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
         let running_para_id = parachain.para_id;
         self.add_para(parachain);
-        for node in running_nodes {
+        for mut node in running_nodes {
+            if self.initial_spec.global_settings.tear_down_on_failure() {
+                Self::start_node_monitoring_task(&mut node, self.failure_tx.clone()).await;
+            }
             self.add_running_node(node, Some(running_para_id));
         }
 
@@ -711,6 +739,10 @@ impl<T: FileSystem> Network<T> {
         )
     }
 
+    pub(crate) fn set_failure_tx(&mut self, failure_tx: Sender<String>) {
+        self.failure_tx.replace(failure_tx);
+    }
+
     /// Waits given number of seconds until all nodes in the network report that they are
     /// up and running.
     ///
@@ -728,5 +760,15 @@ impl<T: FileSystem> Network<T> {
         futures::future::try_join_all(handles).await?;
 
         Ok(())
+    }
+
+    async fn start_node_monitoring_task(
+        node: &mut NetworkNode,
+        failure_tx: Option<Sender<String>>,
+    ) {
+        if let Some(failure_tx) = &failure_tx {
+            let handle = NodeWatcherHandle::new(node.clone(), failure_tx.clone());
+            node.set_node_watcher_handle(handle);
+        }
     }
 }

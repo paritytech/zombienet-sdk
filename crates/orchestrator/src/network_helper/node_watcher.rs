@@ -26,7 +26,7 @@ pub(crate) struct NodeWatcherHandle {
 pub(crate) enum WatcherMessage {
     Pause,
     Resume,
-    Destroy(Option<Duration>),
+    Restart(Option<Duration>),
 }
 
 impl NodeWatcher {
@@ -88,7 +88,7 @@ impl NodeWatcher {
                     self.is_paused = false;
                 }
             },
-            WatcherMessage::Destroy(duration) => {
+            WatcherMessage::Restart(duration) => {
                 // sleep for a while to give the node a chance to restart
                 let sleep_duration = duration.unwrap_or_default()
                     + Duration::from_secs(DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS);
@@ -122,6 +122,6 @@ impl NodeWatcherHandle {
         &self,
         after: Option<Duration>,
     ) -> Result<(), SendError<WatcherMessage>> {
-        self.sender.send(WatcherMessage::Destroy(after)).await
+        self.sender.send(WatcherMessage::Restart(after)).await
     }
 }

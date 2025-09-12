@@ -182,6 +182,10 @@ impl GroupNodeConfig {
             .take(self.count)
             .collect()
     }
+
+    pub fn base_node_name(&self) -> String {
+        self.base_config.name.clone()
+    }
 }
 
 impl Serialize for GroupNodeConfig {

@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use configuration::{
     shared::{
+        helpers::generate_unique_node_name_from_names,
         resources::Resources,
         types::{Arg, AssetLocation, Chain, Command, Image},
     },
-    RelaychainConfig,
+    NodeConfig, RelaychainConfig,
 };
 use serde::{Deserialize, Serialize};
 use support::replacer::apply_replacements;
@@ -108,13 +109,26 @@ impl RelaychainSpec {
             default_args: config.default_args(),
         };
 
-        let (nodes, mut errs) = config
-            .nodes()
+        let mut nodes: Vec<NodeConfig> = config.nodes().into_iter().cloned().collect();
+        nodes.extend(
+            config
+                .group_nodes()
+                .into_iter()
+                .flat_map(|node| node.expand_group_configs()),
+        );
+
+        let mut names = HashSet::new();
+        let (nodes, mut errs) = nodes
             .iter()
             .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false))
             .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
                 match result {
-                    Ok(node) => nodes.push(node),
+                    Ok(mut node) => {
+                        let unique_name =
+                            generate_unique_node_name_from_names(node.name, &mut names);
+                        node.name = unique_name;
+                        nodes.push(node);
+                    },
                     Err(err) => errs.push(err),
                 }
                 (nodes, errs)

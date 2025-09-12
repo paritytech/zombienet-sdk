@@ -1,9 +1,17 @@
 use futures::stream::StreamExt;
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use zombienet_sdk::{subxt, NetworkConfig, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
+
     let network =
         NetworkConfig::load_from_toml("./crates/examples/examples/0002-simple-group-nodes.toml")
             .expect("errored?")

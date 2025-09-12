@@ -177,6 +177,8 @@ pub struct GroupNodeConfig {
 }
 
 impl GroupNodeConfig {
+    /// Expands the group into individual node configs.
+    /// Each node will have the same base configuration.
     pub fn expand_group_configs(&self) -> Vec<NodeConfig> {
         std::iter::repeat(self.base_config.clone())
             .take(self.count)

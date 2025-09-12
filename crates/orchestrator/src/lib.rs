@@ -478,13 +478,15 @@ where
             .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)
             .await?;
 
-        // set up a channel for failure reporting
-        let (failure_tx, failure_rx) = tokio::sync::mpsc::channel(8);
-        for node in network.nodes_iter_mut() {
-            let handle = NodeWatcherHandle::new(node.clone(), failure_tx.clone());
-            node.set_node_watcher_handle(handle);
+        if network_spec.global_settings.tear_down_on_failure() {
+            // set up a channel for failure reporting
+            let (failure_tx, failure_rx) = tokio::sync::mpsc::channel(8);
+            for node in network.nodes_iter_mut() {
+                let handle = NodeWatcherHandle::new(node.clone(), failure_tx.clone());
+                node.set_node_watcher_handle(handle);
+            }
+            network.start_failure_rx(failure_rx);
         }
-        network.start_failure_rx(failure_rx);
 
         Ok(network)
     }

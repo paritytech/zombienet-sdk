@@ -125,7 +125,7 @@ impl RelaychainConfig {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
 
-    pub fn group_nodes(&self) -> Vec<&GroupNodeConfig> {
+    pub fn group_node_configs(&self) -> Vec<&GroupNodeConfig> {
         self.node_groups.iter().collect::<Vec<&GroupNodeConfig>>()
     }
 
@@ -855,13 +855,13 @@ mod tests {
 
         assert_eq!(relaychain_config.chain().as_str(), "chain");
         assert_eq!(relaychain_config.nodes().len(), 1);
-        assert_eq!(relaychain_config.group_nodes().len(), 1);
-        assert_eq!(relaychain_config.group_nodes().first().unwrap().count, 2);
+        assert_eq!(relaychain_config.group_node_configs().len(), 1);
+        assert_eq!(relaychain_config.group_node_configs().first().unwrap().count, 2);
         let &node = relaychain_config.nodes().first().unwrap();
         assert_eq!(node.name(), "node");
         assert_eq!(node.command().unwrap().as_str(), "node_command");
 
-        let group_nodes = relaychain_config.group_nodes();
+        let group_nodes = relaychain_config.group_node_configs();
         let group_base_node = group_nodes.first().unwrap();
         assert_eq!(group_base_node.base_config.name(), "group_node");
         assert_eq!(

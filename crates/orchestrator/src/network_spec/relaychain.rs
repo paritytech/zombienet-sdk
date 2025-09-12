@@ -112,9 +112,9 @@ impl RelaychainSpec {
         let mut nodes: Vec<NodeConfig> = config.nodes().into_iter().cloned().collect();
         nodes.extend(
             config
-                .group_nodes()
+                .group_node_configs()
                 .into_iter()
-                .flat_map(|node| node.expand_group_configs()),
+                .flat_map(|node_group| node_group.expand_group_configs()),
         );
 
         let mut names = HashSet::new();

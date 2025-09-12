@@ -134,7 +134,7 @@ impl NetworkConfig {
 
         let group_nodes: Vec<GroupNodeConfig> = network_config
             .relaychain()
-            .group_nodes()
+            .group_node_configs()
             .into_iter()
             .cloned()
             .collect();
@@ -204,8 +204,11 @@ impl NetworkConfig {
 
             let default_args: Vec<Arg> = para.default_args().into_iter().cloned().collect();
 
-            let group_collators: Vec<GroupNodeConfig> =
-                para.group_collators().into_iter().cloned().collect();
+            let group_collators: Vec<GroupNodeConfig> = para
+                .group_collators_configs()
+                .into_iter()
+                .cloned()
+                .collect();
 
             if let Some(group) = group_collators.iter().find(|n| n.count == 0) {
                 return Err(anyhow!(

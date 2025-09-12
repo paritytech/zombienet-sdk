@@ -10,7 +10,7 @@ use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 #[cfg(feature = "pjs")]
 use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
@@ -226,7 +226,10 @@ impl NetworkNode {
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.inner.pause().await?;
         if let Some(handle) = &self.node_watcher_handle {
-            handle.pause().await?;
+            let _ = handle
+                .pause()
+                .await
+                .map_err(|e| warn!("failed to send message: {e}"));
         }
         Ok(())
     }
@@ -236,7 +239,10 @@ impl NetworkNode {
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
         self.inner.resume().await?;
         if let Some(handle) = &self.node_watcher_handle {
-            handle.resume().await?;
+            let _ = handle
+                .resume()
+                .await
+                .map_err(|e| warn!("failed to send message: {e}"));
         }
         Ok(())
     }
@@ -245,7 +251,10 @@ impl NetworkNode {
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
         self.inner.restart(after).await?;
         if let Some(handle) = &self.node_watcher_handle {
-            handle.restart(after).await?;
+            let _ = handle
+                .restart(after)
+                .await
+                .map_err(|e| warn!("failed to send message: {e}"));
         }
         Ok(())
     }

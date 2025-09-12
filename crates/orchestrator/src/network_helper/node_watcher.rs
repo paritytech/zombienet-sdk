@@ -72,9 +72,11 @@ impl NodeWatcher {
                             .is_ok();
 
                         if alive {
+                            debug!("Node '{}' is alive.", self.node.name());
                             self.consecutive_failures = 0;
                         } else {
                             self.consecutive_failures += 1;
+                            debug!("Failed to connect to node '{}' {}/{} times", self.node.name(), self.consecutive_failures, self.failure_threshold);
                             if self.consecutive_failures >= self.failure_threshold {
                                 let failure_message = format!("Node '{}' was detected as down.", self.node.name());
                                 if self.failure_tx.send(failure_message).await.is_err() {
@@ -87,7 +89,6 @@ impl NodeWatcher {
                 }
             }
         }
-        debug!("Watcher for node '{}' shutting down.", self.node.name());
     }
 
     async fn handle_message(&mut self, msg: WatcherMessage) {

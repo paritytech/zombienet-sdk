@@ -486,6 +486,7 @@ where
                 node.set_node_watcher_handle(handle);
             }
             network.start_failure_rx(failure_rx);
+            network.set_failure_tx(failure_tx.clone());
         }
 
         Ok(network)

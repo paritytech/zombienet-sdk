@@ -856,7 +856,14 @@ mod tests {
         assert_eq!(relaychain_config.chain().as_str(), "chain");
         assert_eq!(relaychain_config.nodes().len(), 1);
         assert_eq!(relaychain_config.group_node_configs().len(), 1);
-        assert_eq!(relaychain_config.group_node_configs().first().unwrap().count, 2);
+        assert_eq!(
+            relaychain_config
+                .group_node_configs()
+                .first()
+                .unwrap()
+                .count,
+            2
+        );
         let &node = relaychain_config.nodes().first().unwrap();
         assert_eq!(node.name(), "node");
         assert_eq!(node.command().unwrap().as_str(), "node_command");

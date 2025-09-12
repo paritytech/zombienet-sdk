@@ -19,3 +19,5 @@ pub const DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS: u64 = 60;
 pub const DEFAULT_NODE_MONITORING_INTERVAL_SECONDS: u64 = 10;
 // default time to wait before monitoring task considers a node failed
 pub const DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS: u64 = 5;
+// number of consecutive failed liveness checks before reporting a failure
+pub const DEFAULT_NODE_MONITORING_FAILURE_THRESHOLD: usize = 3;

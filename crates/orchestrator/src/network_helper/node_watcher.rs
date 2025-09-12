@@ -1,13 +1,13 @@
 use std::time::Duration;
 
 use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::{
     network::node::NetworkNode,
     shared::constants::{
-        DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS, DEFAULT_NODE_MONITORING_INTERVAL_SECONDS,
-        DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS,
+        DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS, DEFAULT_NODE_MONITORING_FAILURE_THRESHOLD,
+        DEFAULT_NODE_MONITORING_INTERVAL_SECONDS, DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS,
     },
 };
 
@@ -16,6 +16,8 @@ struct NodeWatcher {
     node: NetworkNode,
     is_paused: bool,
     failure_tx: mpsc::Sender<String>,
+    consecutive_failures: usize,
+    failure_threshold: usize,
 }
 
 #[derive(Clone)]
@@ -26,7 +28,7 @@ pub(crate) struct NodeWatcherHandle {
 pub(crate) enum WatcherMessage {
     Pause,
     Resume,
-    Restart(Option<Duration>),
+    Restart { after: Option<Duration> },
 }
 
 impl NodeWatcher {
@@ -40,6 +42,8 @@ impl NodeWatcher {
             node,
             is_paused: false,
             failure_tx,
+            consecutive_failures: 0,
+            failure_threshold: DEFAULT_NODE_MONITORING_FAILURE_THRESHOLD,
         }
     }
 
@@ -61,36 +65,48 @@ impl NodeWatcher {
                     self.handle_message(msg).await;
                 },
                 _ = interval.tick() => {
-                    if !self.is_paused  && self.node.wait_until_is_up(DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS).await.is_err() {
-                        let failure_message = format!("Node '{}' was detected as down.", self.node.name());
-                        if self.failure_tx.send(failure_message).await.is_err() {
-                           warn!("Watcher for node '{}' failed to send failure report.", self.node.name());
+                    if !self.is_paused {
+                        let alive = self.node
+                            .wait_until_is_up(DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS)
+                            .await
+                            .is_ok();
+
+                        if alive {
+                            self.consecutive_failures = 0;
+                        } else {
+                            self.consecutive_failures += 1;
+                            if self.consecutive_failures >= self.failure_threshold {
+                                let failure_message = format!("Node '{}' was detected as down.", self.node.name());
+                                if self.failure_tx.send(failure_message).await.is_err() {
+                                   warn!("Watcher for node '{}' failed to send failure report.", self.node.name());
+                                }
+                                break;
+                            }
                         }
-                        break;
-                  }
+                    }
                 }
             }
         }
-        info!("Watcher for node '{}' shutting down.", self.node.name());
+        debug!("Watcher for node '{}' shutting down.", self.node.name());
     }
 
     async fn handle_message(&mut self, msg: WatcherMessage) {
         match msg {
             WatcherMessage::Pause => {
                 if !self.is_paused {
-                    info!("⏸️ Watcher for node '{}' paused.", self.node.name());
+                    debug!("⏸️ Watcher for node '{}' paused.", self.node.name());
                     self.is_paused = true;
                 }
             },
             WatcherMessage::Resume => {
                 if self.is_paused {
-                    info!("▶️ Watcher for node '{}' resumed.", self.node.name());
+                    debug!("▶️ Watcher for node '{}' resumed.", self.node.name());
                     self.is_paused = false;
                 }
             },
-            WatcherMessage::Restart(duration) => {
+            WatcherMessage::Restart { after } => {
                 // sleep for a while to give the node a chance to restart
-                let sleep_duration = duration.unwrap_or_default()
+                let sleep_duration = after.unwrap_or_default()
                     + Duration::from_secs(DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS);
                 tokio::time::sleep(sleep_duration).await;
             },
@@ -122,6 +138,6 @@ impl NodeWatcherHandle {
         &self,
         after: Option<Duration>,
     ) -> Result<(), SendError<WatcherMessage>> {
-        self.sender.send(WatcherMessage::Restart(after)).await
+        self.sender.send(WatcherMessage::Restart { after }).await
     }
 }

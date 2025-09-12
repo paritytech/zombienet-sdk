@@ -44,5 +44,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[allow(clippy::empty_loop)]
     loop {}
-
 }

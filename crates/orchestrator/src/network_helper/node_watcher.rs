@@ -3,7 +3,13 @@ use std::time::Duration;
 use tokio::sync::mpsc::{self, error::SendError};
 use tracing::{info, warn};
 
-use crate::network::node::NetworkNode;
+use crate::{
+    network::node::NetworkNode,
+    shared::constants::{
+        DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS, DEFAULT_NODE_MONITORING_INTERVAL_SECONDS,
+        DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS,
+    },
+};
 
 struct NodeWatcher {
     receiver: mpsc::Receiver<WatcherMessage>,
@@ -38,11 +44,16 @@ impl NodeWatcher {
     }
 
     async fn run(&mut self) {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(
+            DEFAULT_NODE_MONITORING_INTERVAL_SECONDS,
+        ));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // sleep for a while before watching
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(
+            DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS,
+        ))
+        .await;
 
         loop {
             tokio::select! {
@@ -50,7 +61,7 @@ impl NodeWatcher {
                     self.handle_message(msg).await;
                 },
                 _ = interval.tick() => {
-                    if !self.is_paused  && self.node.wait_until_is_up(5_u64).await.is_err() {
+                    if !self.is_paused  && self.node.wait_until_is_up(DEFAULT_NODE_MONITORING_LIVENESS_TIMEOUT_SECONDS).await.is_err() {
                         let failure_message = format!("Node '{}' was detected as down.", self.node.name());
                         if self.failure_tx.send(failure_message).await.is_err() {
                            warn!("Watcher for node '{}' failed to send failure report.", self.node.name());
@@ -79,7 +90,8 @@ impl NodeWatcher {
             },
             WatcherMessage::Destroy(duration) => {
                 // sleep for a while to give the node a chance to restart
-                let sleep_duration = duration.unwrap_or_default() + Duration::from_secs(30);
+                let sleep_duration = duration.unwrap_or_default()
+                    + Duration::from_secs(DEFAULT_INITIAL_NODE_MONITORING_DELAY_SECONDS);
                 tokio::time::sleep(sleep_duration).await;
             },
         }

@@ -2,19 +2,17 @@
 timeout = 1000
 
 [relaychain]
-default_image = "{{ZOMBIENET_INTEGRATION_TEST_IMAGE}}"
+default_image = "docker.io/parity/polkadot:latest"
 chain = "rococo-local"
 default_command = "polkadot"
 
     [[relaychain.node_groups]]
     name = "group1"
-    image = "docker.io/parity/polkadot:latest"
     validator = true
     count = 3
 
     [[relaychain.node_groups]]
     name = "group2"
-    image = "docker.io/parity/polkadot:latest"
     validator = true
     count = 2
     
@@ -23,18 +21,17 @@ default_command = "polkadot"
 
 [[parachains]]
 id = 100
-addToGenesis = false
 cumulus_based = false
 
   [[parachains.collators]]
   name = "collator01"
-  image = "{{COL_IMAGE}}"
+  image = "paritypr/colander:master-32142045"
   command = "adder-collator"
   args = [ "-lruntime=debug,parachain=trace" ]
 
   [[parachains.collator_groups]]
   name = "collator_group"
-  image = "{{COL_IMAGE}}"
+  image = "paritypr/colander:master-32142045"
   command = "adder-collator"
   args = [ "-lruntime=debug,parachain=trace" ]
   count = 2

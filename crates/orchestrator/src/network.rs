@@ -337,9 +337,35 @@ impl<T: FileSystem> Network<T> {
     /// This allow you to build a new parachain config to be deployed into
     /// the running network.
     pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
-        let used_ports = vec![]; // TODO: generate used ports from the network
+        let used_ports = self
+            .initial_spec
+            .relaychain()
+            .nodes
+            .clone()
+            .into_iter()
+            .chain(
+                self.initial_spec
+                    .parachains_iter()
+                    .flat_map(|para| para.collators.clone()),
+            )
+            .flat_map(|node| {
+                [
+                    node.ws_port.0,
+                    node.rpc_port.0,
+                    node.prometheus_port.0,
+                    node.p2p_port.0,
+                ]
+            })
+            .collect();
+
         let used_nodes_names = self.nodes_by_name.keys().cloned().collect();
-        let used_para_ids = HashMap::new(); // TODO: generate used para ids from the network
+        
+        // need to inverse logic of generate_unique_para_id
+        let used_para_ids = self
+            .parachains
+            .iter()
+            .map(|(id, paras)| (*id, paras.len().saturating_sub(1) as u8))
+            .collect();
 
         let context = ValidationContext {
             used_ports,

@@ -47,7 +47,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zombie-cli-${{ matrix.target }}
+          name: zombie-cli-${{ matrix.os }}-${{ matrix.target }}-${{ github.ref_name }}
           path: dist/*
 
   release:

@@ -44,10 +44,7 @@ use support::{
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
-use crate::{
-    shared::{constants::DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS, types::RegisterParachainOptions},
-    spawner::SpawnNodeCtx,
-};
+use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
 pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
@@ -271,9 +268,9 @@ where
             );
 
             // Wait for all nodes in the current level to be up
-            let waiting_tasks = running_nodes_per_level
-                .iter()
-                .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+            let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+            });
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -310,9 +307,9 @@ where
             );
 
             // Wait for all nodes in the current level to be up
-            let waiting_tasks = running_nodes_per_level
-                .iter()
-                .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+            let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+            });
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -369,9 +366,9 @@ where
                 );
 
                 // Wait for all nodes in the current level to be up
-                let waiting_tasks = running_nodes_per_level
-                    .iter()
-                    .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+                let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                    node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+                });
 
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -407,9 +404,9 @@ where
                 );
 
                 // Wait for all nodes in the current level to be up
-                let waiting_tasks = running_nodes_per_level
-                    .iter()
-                    .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+                let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                    node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+                });
 
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 

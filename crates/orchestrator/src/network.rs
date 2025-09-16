@@ -338,28 +338,20 @@ impl<T: FileSystem> Network<T> {
     /// the running network.
     pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
         let used_ports = self
-            .initial_spec
-            .relaychain()
-            .nodes
-            .clone()
-            .into_iter()
-            .chain(
-                self.initial_spec
-                    .parachains_iter()
-                    .flat_map(|para| para.collators.clone()),
-            )
-            .flat_map(|node| {
+            .nodes_iter()
+            .map(|node| node.spec())
+            .flat_map(|spec| {
                 [
-                    node.ws_port.0,
-                    node.rpc_port.0,
-                    node.prometheus_port.0,
-                    node.p2p_port.0,
+                    spec.ws_port.0,
+                    spec.rpc_port.0,
+                    spec.prometheus_port.0,
+                    spec.p2p_port.0,
                 ]
             })
             .collect();
 
         let used_nodes_names = self.nodes_by_name.keys().cloned().collect();
-        
+
         // need to inverse logic of generate_unique_para_id
         let used_para_ids = self
             .parachains

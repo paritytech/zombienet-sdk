@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
-                .with_group(|g| {
+                .with_node_group(|g| {
                     g.with_count(3)
                         .with_base_node(|b| b.with_name("relay_group"))
                 })

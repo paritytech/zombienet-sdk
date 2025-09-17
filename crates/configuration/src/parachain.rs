@@ -865,6 +865,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         }
     }
 
+    /// Add a new collator group using a nested [`GroupNodeConfigBuilder`].
     pub fn with_collator_group(
         self,
         f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
@@ -932,6 +933,7 @@ impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
         }
     }
 
+    /// Add a new collator group using a nested [`GroupNodeConfigBuilder`].
     pub fn with_collator_group(
         self,
         f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,

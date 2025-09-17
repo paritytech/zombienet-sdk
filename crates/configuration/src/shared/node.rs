@@ -734,7 +734,7 @@ impl GroupNodeConfigBuilder<Initial> {
         }
     }
 
-    // Set the base node config using a closure.
+    /// Set the base node config using a closure.
     pub fn with_base_node(
         mut self,
         f: impl FnOnce(NodeConfigBuilder<Initial>) -> NodeConfigBuilder<Buildable>,

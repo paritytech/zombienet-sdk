@@ -125,6 +125,7 @@ impl RelaychainConfig {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
     }
 
+    /// The group nodes of the relay chain.
     pub fn group_node_configs(&self) -> Vec<&GroupNodeConfig> {
         self.node_groups.iter().collect::<Vec<&GroupNodeConfig>>()
     }
@@ -453,7 +454,8 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
-    pub fn with_group(
+    /// Add a new group node using a nested [`GroupNodeConfigBuilder`].
+    pub fn with_node_group(
         self,
         f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
@@ -521,7 +523,7 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
     }
 
     /// Add a new group node using a nested [`GroupNodeConfigBuilder`].
-    pub fn with_group(
+    pub fn with_node_group(
         self,
         f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
     ) -> Self {
@@ -842,7 +844,7 @@ mod tests {
                     .with_command("node_command")
                     .validator(true)
             })
-            .with_group(|group| {
+            .with_node_group(|group| {
                 group.with_count(2).with_base_node(|base| {
                     base.with_name("group_node")
                         .with_command("some_command")
@@ -892,7 +894,7 @@ mod tests {
                     .with_command("node_command")
                     .validator(true)
             })
-            .with_group(|group| {
+            .with_node_group(|group| {
                 group.with_count(0).with_base_node(|base| {
                     base.with_name("group_node")
                         .with_command("some_command")

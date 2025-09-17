@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Arg","AssetLocation"],"struct":["Chain","ChainDefaultContext","Command","CommandWithCustomArgs","Image","U128","ValidationContext"],"type":["Duration","ParaId","Port"]};

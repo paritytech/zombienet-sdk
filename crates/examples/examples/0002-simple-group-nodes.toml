@@ -1,0 +1,37 @@
+[settings]
+timeout = 1000
+
+[relaychain]
+default_image = "docker.io/parity/polkadot:latest"
+chain = "rococo-local"
+default_command = "polkadot"
+
+    [[relaychain.node_groups]]
+    name = "group1"
+    validator = true
+    count = 3
+
+    [[relaychain.node_groups]]
+    name = "group2"
+    validator = true
+    count = 2
+    
+[[relaychain.nodes]]
+  name = "alice"
+
+[[parachains]]
+id = 100
+cumulus_based = false
+
+  [[parachains.collators]]
+  name = "collator01"
+  image = "paritypr/colander:master-32142045"
+  command = "adder-collator"
+  args = [ "-lruntime=debug,parachain=trace" ]
+
+  [[parachains.collator_groups]]
+  name = "collator_group"
+  image = "paritypr/colander:master-32142045"
+  command = "adder-collator"
+  args = [ "-lruntime=debug,parachain=trace" ]
+  count = 2

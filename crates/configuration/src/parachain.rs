@@ -12,7 +12,7 @@ use crate::{
     shared::{
         errors::{ConfigError, FieldError},
         helpers::{generate_unique_para_id, merge_errors, merge_errors_vecs},
-        node::{self, NodeConfig, NodeConfigBuilder},
+        node::{self, GroupNodeConfig, GroupNodeConfigBuilder, NodeConfig, NodeConfigBuilder},
         resources::{Resources, ResourcesBuilder},
         types::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
@@ -160,6 +160,8 @@ pub struct ParachainConfig {
     // NOTE: if the file also contains multiple collators defined in
     // `[[parachain.collators]], the single configuration will be added to the bottom.
     pub(crate) collator: Option<NodeConfig>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    pub(crate) collator_groups: Vec<GroupNodeConfig>,
 }
 
 impl ParachainConfig {
@@ -288,6 +290,11 @@ impl ParachainConfig {
         cols
     }
 
+    /// The grouped collators of the parachain.
+    pub fn group_collators_configs(&self) -> Vec<&GroupNodeConfig> {
+        self.collator_groups.iter().collect::<Vec<_>>()
+    }
+
     /// The location of a wasm runtime to override in the chain-spec.
     pub fn wasm_override(&self) -> Option<&AssetLocation> {
         self.wasm_override.as_ref()
@@ -353,6 +360,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 no_default_bootnodes: false,
                 collators: vec![],
                 collator: None,
+                collator_groups: vec![],
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -856,6 +864,39 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
             ),
         }
     }
+
+    /// Add a new collator group using a nested [`GroupNodeConfigBuilder`].
+    pub fn with_collator_group(
+        self,
+        f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
+    ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
+        match f(GroupNodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(group) => Self::transition(
+                ParachainConfig {
+                    collator_groups: [self.config.collator_groups, vec![group]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
 }
 
 impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
@@ -873,6 +914,39 @@ impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: [self.config.collators, vec![collator]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new collator group using a nested [`GroupNodeConfigBuilder`].
+    pub fn with_collator_group(
+        self,
+        f: impl FnOnce(GroupNodeConfigBuilder<node::Initial>) -> GroupNodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        match f(GroupNodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(group) => Self::transition(
+                ParachainConfig {
+                    collator_groups: [self.config.collator_groups, vec![group]].concat(),
                     ..self.config
                 },
                 self.validation_context,
@@ -1459,5 +1533,103 @@ mod tests {
 
         assert_eq!(config.chain_spec_command(), Some(CMD_TPL));
         assert!(config.chain_spec_command_is_local());
+    }
+
+    #[test]
+    fn parachain_with_group_config_builder_should_succeeds_and_returns_a_new_parachain_config() {
+        let parachain_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_chain("mychainname")
+            .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+            .onboard_as_parachain(false)
+            .with_initial_balance(100_000_042)
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .without_default_bootnodes()
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator1")
+                    .with_command("command1")
+                    .bootnode(true)
+            })
+            .with_collator_group(|group| {
+                group.with_count(2).with_base_node(|base| {
+                    base.with_name("collator_group1")
+                        .with_command("group_command1")
+                        .bootnode(true)
+                })
+            })
+            .with_collator_group(|group| {
+                group.with_count(3).with_base_node(|base| {
+                    base.with_name("collator_group2")
+                        .with_command("group_command2")
+                        .bootnode(false)
+                })
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(parachain_config.id(), 1000);
+        assert_eq!(parachain_config.collators().len(), 1);
+        assert_eq!(parachain_config.group_collators_configs().len(), 2);
+
+        let group_collator1 = parachain_config.group_collators_configs()[0].clone();
+        assert_eq!(group_collator1.count, 2);
+        let base_config1 = group_collator1.base_config;
+        assert_eq!(base_config1.name(), "collator_group1");
+        assert_eq!(base_config1.command().unwrap().as_str(), "group_command1");
+        assert!(base_config1.is_bootnode());
+
+        let group_collator2 = parachain_config.group_collators_configs()[1].clone();
+        assert_eq!(group_collator2.count, 3);
+        let base_config2 = group_collator2.base_config;
+        assert_eq!(base_config2.name(), "collator_group2");
+        assert_eq!(base_config2.command().unwrap().as_str(), "group_command2");
+        assert!(!base_config2.is_bootnode());
+    }
+
+    #[test]
+    fn parachain_with_group_count_0_config_builder_should_fail() {
+        let parachain_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_chain("mychainname")
+            .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+            .onboard_as_parachain(false)
+            .with_initial_balance(100_000_042)
+            .with_default_image("myrepo:myimage")
+            .with_default_command("default_command")
+            .without_default_bootnodes()
+            .with_collator(|collator| {
+                collator
+                    .with_name("collator1")
+                    .with_command("command1")
+                    .bootnode(true)
+            })
+            .with_collator_group(|group| {
+                group.with_count(2).with_base_node(|base| {
+                    base.with_name("collator_group1")
+                        .with_command("group_command1")
+                        .bootnode(true)
+                })
+            })
+            .with_collator_group(|group| {
+                group.with_count(0).with_base_node(|base| {
+                    base.with_name("collator_group2")
+                        .with_command("group_command2")
+                        .bootnode(false)
+                })
+            })
+            .build();
+
+        let errors: Vec<anyhow::Error> = match parachain_config {
+            Ok(_) => vec![],
+            Err(errs) => errs,
+        };
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors.first().unwrap().to_string(),
+            "parachain[1000].collators['collator_group2'].Count cannot be zero"
+        );
     }
 }

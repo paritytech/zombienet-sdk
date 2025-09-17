@@ -63,7 +63,7 @@ impl From<(&str, &str)> for EnvVar {
 }
 
 /// A node configuration, with fine-grained configuration options.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct NodeConfig {
     pub(crate) name: String,
     pub(crate) image: Option<Image>,
@@ -164,6 +164,36 @@ impl Serialize for NodeConfig {
         }
 
         state.skip_field("chain_context")?;
+        state.end()
+    }
+}
+
+/// A group of nodes configuration
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct GroupNodeConfig {
+    #[serde(flatten)]
+    pub(crate) base_config: NodeConfig,
+    pub(crate) count: usize,
+}
+
+impl GroupNodeConfig {
+    /// Expands the group into individual node configs.
+    /// Each node will have the same base configuration.
+    pub fn expand_group_configs(&self) -> Vec<NodeConfig> {
+        std::iter::repeat(self.base_config.clone())
+            .take(self.count)
+            .collect()
+    }
+}
+
+impl Serialize for GroupNodeConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("GroupNodeConfig", 18)?;
+        state.serialize_field("NodeConfig", &self.base_config)?;
+        state.serialize_field("count", &self.count)?;
         state.end()
     }
 }
@@ -670,6 +700,101 @@ impl NodeConfigBuilder<Buildable> {
     }
 }
 
+/// A group node configuration builder, used to build a [`GroupNodeConfig`] declaratively with fields validation.
+pub struct GroupNodeConfigBuilder<S> {
+    base_config: NodeConfig,
+    count: usize,
+    validation_context: Rc<RefCell<ValidationContext>>,
+    errors: Vec<anyhow::Error>,
+    _state: PhantomData<S>,
+}
+
+impl GroupNodeConfigBuilder<Initial> {
+    pub fn new(
+        chain_context: ChainDefaultContext,
+        validation_context: Rc<RefCell<ValidationContext>>,
+    ) -> Self {
+        let (errors, base_config) = match NodeConfigBuilder::new(
+            chain_context.clone(),
+            validation_context.clone(),
+        )
+        .with_name(" ") // placeholder
+        .build()
+        {
+            Ok(base_config) => (vec![], base_config),
+            Err((_name, errors)) => (errors, NodeConfig::default()),
+        };
+
+        Self {
+            base_config,
+            count: 1,
+            validation_context,
+            errors,
+            _state: PhantomData,
+        }
+    }
+
+    /// Set the base node config using a closure.
+    pub fn with_base_node(
+        mut self,
+        f: impl FnOnce(NodeConfigBuilder<Initial>) -> NodeConfigBuilder<Buildable>,
+    ) -> GroupNodeConfigBuilder<Buildable> {
+        match f(NodeConfigBuilder::new(
+            ChainDefaultContext::default(),
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(node) => {
+                self.base_config = node;
+                GroupNodeConfigBuilder {
+                    base_config: self.base_config,
+                    count: self.count,
+                    validation_context: self.validation_context,
+                    errors: self.errors,
+                    _state: PhantomData,
+                }
+            },
+            Err((_name, errors)) => {
+                self.errors.extend(errors);
+                GroupNodeConfigBuilder {
+                    base_config: self.base_config,
+                    count: self.count,
+                    validation_context: self.validation_context,
+                    errors: self.errors,
+                    _state: PhantomData,
+                }
+            },
+        }
+    }
+
+    /// Set the number of nodes in the group.
+    pub fn with_count(mut self, count: usize) -> Self {
+        self.count = count;
+        self
+    }
+}
+
+impl GroupNodeConfigBuilder<Buildable> {
+    pub fn build(self) -> Result<GroupNodeConfig, (String, Vec<anyhow::Error>)> {
+        if self.count == 0 {
+            return Err((
+                self.base_config.name().to_string(),
+                vec![anyhow::anyhow!("Count cannot be zero")],
+            ));
+        }
+
+        if !self.errors.is_empty() {
+            return Err((self.base_config.name().to_string(), self.errors));
+        }
+
+        Ok(GroupNodeConfig {
+            base_config: self.base_config,
+            count: self.count,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -1021,5 +1146,56 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_eq!(errors.first().unwrap().to_string(), "name: can't be empty");
+    }
+
+    #[test]
+    fn group_default_base_node() {
+        let validation_context = Rc::new(RefCell::new(ValidationContext::default()));
+
+        let group_config =
+            GroupNodeConfigBuilder::new(ChainDefaultContext::default(), validation_context.clone())
+                .with_base_node(|node| node.with_name("validator"))
+                .build()
+                .unwrap();
+
+        // Check group config
+        assert_eq!(group_config.count, 1);
+        assert_eq!(group_config.base_config.name(), "validator");
+    }
+
+    #[test]
+    fn group_custom_base_node() {
+        let validation_context = Rc::new(RefCell::new(ValidationContext::default()));
+        let node_config =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), validation_context.clone())
+                .with_name("node")
+                .with_command("some_command")
+                .with_image("repo:image")
+                .validator(true)
+                .invulnerable(true)
+                .bootnode(true);
+
+        let group_config =
+            GroupNodeConfigBuilder::new(ChainDefaultContext::default(), validation_context.clone())
+                .with_count(5)
+                .with_base_node(|_node| node_config)
+                .build()
+                .unwrap();
+
+        // Check group config
+        assert_eq!(group_config.count, 5);
+
+        assert_eq!(group_config.base_config.name(), "node");
+        assert_eq!(
+            group_config.base_config.command().unwrap().as_str(),
+            "some_command"
+        );
+        assert_eq!(
+            group_config.base_config.image().unwrap().as_str(),
+            "repo:image"
+        );
+        assert!(group_config.base_config.is_validator());
+        assert!(group_config.base_config.is_invulnerable());
+        assert!(group_config.base_config.is_bootnode());
     }
 }

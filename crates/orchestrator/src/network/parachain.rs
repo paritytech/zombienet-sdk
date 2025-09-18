@@ -31,6 +31,7 @@ pub struct Parachain {
     pub(crate) chain_spec_path: Option<PathBuf>,
     pub(crate) collators: Vec<NetworkNode>,
     pub(crate) files_to_inject: Vec<TransferedFile>,
+    pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }
 
 #[async_trait]
@@ -73,6 +74,7 @@ impl Parachain {
             chain_spec_path: None,
             collators: Default::default(),
             files_to_inject: Default::default(),
+            bootnodes_addresses: vec![],
         }
     }
 
@@ -90,6 +92,7 @@ impl Parachain {
             chain_spec_path: Some(chain_spec_path.as_ref().into()),
             collators: Default::default(),
             files_to_inject: Default::default(),
+            bootnodes_addresses: vec![],
         }
     }
 
@@ -101,7 +104,7 @@ impl Parachain {
         let mut para_files_to_inject = files_to_inject.to_owned();
 
         // parachain id is used for the keystore
-        let mut para = if let Some(chain_spec) = para.chain_spec.as_ref() {
+        let mut parachain = if let Some(chain_spec) = para.chain_spec.as_ref() {
             let id = chain_spec.read_chain_id(scoped_fs).await?;
 
             // add the spec to global files to inject
@@ -120,14 +123,16 @@ impl Parachain {
             if let Some(chain_name) = chain_spec.chain_name() {
                 running_para.chain = Some(chain_name.to_string());
             }
+
             running_para
         } else {
             Parachain::new(para.id, &para.unique_id)
         };
 
-        para.files_to_inject = para_files_to_inject;
+        parachain.bootnodes_addresses = para.bootnodes_addresses().into_iter().cloned().collect();
+        parachain.files_to_inject = para_files_to_inject;
 
-        Ok(para)
+        Ok(parachain)
     }
 
     pub async fn register(
@@ -232,6 +237,10 @@ impl Parachain {
     pub fn collators(&self) -> Vec<&NetworkNode> {
         self.collators.iter().collect()
     }
+
+    pub fn bootnodes_addresses(&self) -> Vec<&multiaddr::Multiaddr> {
+        self.bootnodes_addresses.iter().collect()
+    }
 }
 
 #[cfg(test)]
@@ -270,10 +279,13 @@ mod tests {
 
         use crate::network_spec::parachain::ParachainSpec;
 
+        let bootnode_addresses = vec!["/ip4/10.41.122.55/tcp/45421"];
+
         let para_config = ParachainConfigBuilder::new(Default::default())
             .with_id(100)
             .cumulus_based(false)
             .with_default_command("adder-collator")
+            .with_bootnodes_addresses(bootnode_addresses.clone())
             .with_collator(|c| c.with_name("col"))
             .build()
             .unwrap();
@@ -299,5 +311,12 @@ mod tests {
         assert_eq!(para.chain, None);
         // one file should be added.
         assert_eq!(para.files_to_inject.len(), 1);
+        assert_eq!(
+            para.bootnodes_addresses()
+                .iter()
+                .map(|addr| addr.to_string())
+                .collect::<Vec<_>>(),
+            bootnode_addresses
+        );
     }
 }

@@ -707,6 +707,7 @@ mod tests {
             1200
         );
         assert_eq!(network_config.global_settings().node_spawn_timeout(), 240);
+        assert!(!network_config.global_settings().tear_down_on_failure());
     }
 
     #[test]

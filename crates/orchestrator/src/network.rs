@@ -28,6 +28,7 @@ use crate::{
     generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
     shared::{
+        constants::NODE_MONITORING_INTERVAL_SECONDS,
         macros,
         types::{ChainDefaultContext, RegisterParachainOptions},
     },
@@ -763,10 +764,11 @@ impl<T: FileSystem> Network<T> {
     pub(crate) async fn spawn_watching_task(&self) {
         let nodes_to_watch = Arc::clone(&self.nodes_to_watch);
         let ns = Arc::clone(&self.ns);
+        let spawn_timeout = self.initial_spec.global_settings.node_spawn_timeout();
 
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                tokio::time::sleep(Duration::from_secs(NODE_MONITORING_INTERVAL_SECONDS)).await;
 
                 let nodes = {
                     let guard = nodes_to_watch.read().unwrap();
@@ -777,9 +779,10 @@ impl<T: FileSystem> Network<T> {
                         .collect::<Vec<_>>()
                 };
 
-                let all_running =
-                    futures::future::try_join_all(nodes.iter().map(|n| n.wait_until_is_up(10_u64)))
-                        .await;
+                let all_running = futures::future::try_join_all(
+                    nodes.iter().map(|n| n.wait_until_is_up(spawn_timeout)),
+                )
+                .await;
 
                 if let Err(e) = all_running {
                     info!("detected unresponsive node: {e}. tearing the network down...");

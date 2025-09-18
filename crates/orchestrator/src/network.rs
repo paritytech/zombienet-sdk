@@ -3,7 +3,14 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::PathBuf,
+    rc::Rc,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use configuration::{
     para_states::{Initial, Running},
@@ -14,6 +21,7 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tracing::{error, info};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
@@ -38,6 +46,8 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
+    #[serde(skip)]
+    nodes_to_watch: Arc<RwLock<Vec<NetworkNode>>>,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -75,6 +85,7 @@ impl<T: FileSystem> Network<T> {
             initial_spec,
             parachains: Default::default(),
             nodes_by_name: Default::default(),
+            nodes_to_watch: Default::default(),
         }
     }
 
@@ -669,7 +680,8 @@ impl<T: FileSystem> Network<T> {
         }
         // TODO: we should hold a ref to the node in the vec in the future.
         let node_name = node.name.clone();
-        self.nodes_by_name.insert(node_name, node);
+        self.nodes_by_name.insert(node_name, node.clone());
+        self.nodes_to_watch.write().unwrap().push(node);
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {
@@ -746,5 +758,39 @@ impl<T: FileSystem> Network<T> {
         futures::future::try_join_all(handles).await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn spawn_watching_task(&self) {
+        let nodes_to_watch = Arc::clone(&self.nodes_to_watch);
+        let ns = Arc::clone(&self.ns);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+
+                let nodes = {
+                    let guard = nodes_to_watch.read().unwrap();
+                    guard
+                        .iter()
+                        .filter(|n| n.is_running())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                };
+
+                let all_running =
+                    futures::future::try_join_all(nodes.iter().map(|n| n.wait_until_is_up(10_u64)))
+                        .await;
+
+                if let Err(e) = all_running {
+                    info!("detected unresponsive node: {e}. tearing the network down...");
+
+                    if let Err(e) = ns.destroy().await {
+                        error!("an error occurred during network teardown: {}", e);
+                    }
+
+                    std::process::exit(1);
+                }
+            }
+        });
     }
 }

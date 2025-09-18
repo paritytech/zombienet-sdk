@@ -473,6 +473,11 @@ where
         scoped_fs
             .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)
             .await?;
+
+        if network_spec.global_settings.tear_down_on_failure() {
+            network.spawn_watching_task().await;
+        }
+
         Ok(network)
     }
 }

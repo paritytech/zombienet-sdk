@@ -82,6 +82,9 @@ pub struct ParachainSpec {
 
     /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
+
+    /// Bootnodes addresses to use for the parachain nodes
+    pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }
 
 impl ParachainSpec {
@@ -234,6 +237,7 @@ impl ParachainSpec {
             genesis_wasm,
             genesis_overrides: config.genesis_overrides().cloned(),
             collators,
+            bootnodes_addresses: config.bootnodes_addresses().into_iter().cloned().collect(),
         };
 
         Ok(para_spec)
@@ -316,5 +320,10 @@ impl ParachainSpec {
             None
         };
         Ok(chain_spec_raw_path)
+    }
+
+    /// Get the bootnodes addresses for the parachain spec
+    pub(crate) fn bootnodes_addresses(&self) -> Vec<&multiaddr::Multiaddr> {
+        self.bootnodes_addresses.iter().collect()
     }
 }

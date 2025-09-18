@@ -45,11 +45,15 @@ async fn main() -> Result<(), anyhow::Error> {
 
     println!("⚙️  adding parachain to the running network");
 
+    let para_bootnode_addresses =
+        vec!["/ip4/10.41.122.55/tcp/45421", "/ip4/51.144.222.10/tcp/2333"];
+
     let para_config = network
         .para_config_builder()
         .with_id(100)
         //.with_registration_strategy(zombienet_sdk::RegistrationStrategy::Manual)
         .with_default_command("polkadot-parachain")
+        .with_bootnodes_addresses(para_bootnode_addresses.clone())
         .with_collator(|c| c.with_name("col-100-1"))
         .build()
         .map_err(|_e| anyhow!("Building config"))?;
@@ -57,6 +61,18 @@ async fn main() -> Result<(), anyhow::Error> {
     network
         .add_parachain(&para_config, None, Some("new_para_100".to_string()))
         .await?;
+
+    let parachain = network.parachain(100).unwrap();
+
+    assert_eq!(
+        parachain
+            .bootnodes_addresses()
+            .iter()
+            .map(|addr| addr.to_string())
+            .collect::<Vec<_>>(),
+        para_bootnode_addresses,
+        "Bootnodes addresses should match"
+    );
 
     // For now let just loop....
     #[allow(clippy::empty_loop)]

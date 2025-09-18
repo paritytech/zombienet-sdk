@@ -496,7 +496,11 @@ impl<T: FileSystem> Network<T> {
             } else {
                 ZombieRole::Collator
             },
-            bootnodes_addr: &vec![],
+            bootnodes_addr: &para_config
+                .bootnodes_addresses()
+                .iter()
+                .map(|&a| a.to_string())
+                .collect(),
             chain_id: &self.relaychain().chain_id,
             chain: &self.relaychain().chain,
             ns: &self.ns,

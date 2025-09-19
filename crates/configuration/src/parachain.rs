@@ -833,6 +833,8 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+        .validator(true)
+        .with_args(vec!["--collator".into()])
         .build()
         {
             Ok(collator) => Self::transition(
@@ -868,11 +870,48 @@ impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+        .validator(true)
+        .with_args(vec!["--collator".into()])
         .build()
         {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: [self.config.collators, vec![collator]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new full node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a full node (non-validator).
+    pub fn add_node(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        match f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .validator(false)
+        .build()
+        {
+            Ok(node) => Self::transition(
+                ParachainConfig {
+                    collators: [self.config.collators, vec![node]].concat(),
                     ..self.config
                 },
                 self.validation_context,

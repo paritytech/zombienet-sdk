@@ -413,8 +413,9 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
-    /// Add a new node using a nested [`NodeConfigBuilder`].
-    pub fn with_node(
+    /// Add a new validator node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a validator (authority) with the --validator flag.
+    pub fn with_validator(
         self,
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
@@ -422,11 +423,48 @@ impl RelaychainConfigBuilder<WithChain> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+        .validator(true)
+        .with_args(vec!["--validator".into()])
         .build()
         {
             Ok(node) => Self::transition(
                 RelaychainConfig {
-                    nodes: vec![node],
+                    nodes: [self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new full node using a nested [`NodeConfigBuilder`].
+    pub fn add_node(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
+        match f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+        .validator(false)
+        .bootnode(true)
+        .build()
+        {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: [self.config.nodes, vec![node]].concat(),
                     ..self.config
                 },
                 self.validation_context,
@@ -449,7 +487,7 @@ impl RelaychainConfigBuilder<WithChain> {
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
     /// Add a new node using a nested [`NodeConfigBuilder`].
-    pub fn with_node(
+    pub fn add_node(
         self,
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
@@ -457,6 +495,8 @@ impl RelaychainConfigBuilder<WithAtLeastOneNode> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+        .validator(false)
+        .bootnode(true)
         .build()
         {
             Ok(node) => Self::transition(

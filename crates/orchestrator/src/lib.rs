@@ -902,8 +902,8 @@ mod tests {
                 }
 
                 relay
-                    .with_node(|node| node.with_name("alice"))
-                    .with_node(|node| node.with_name("bob"))
+                    .with_validator(|node| node.with_name("alice"))
+                    .with_fullnode(|node| node.with_name("bob"))
             })
             .with_parachain(|p| {
                 p.with_id(2000).cumulus_based(true).with_collator(|n| {

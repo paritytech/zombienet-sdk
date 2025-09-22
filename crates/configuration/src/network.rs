@@ -388,21 +388,22 @@ impl NetworkConfigBuilder<Initial> {
         Self::default()
     }
 
-    /// uses the default options for both the relay chain and the nodes
-    /// the only required fields are the name of the nodes,
+    /// uses the default options for both the relay chain and the validator nodes
+    /// the only required fields are the name of the validator nodes,
     /// and the name of the relay chain ("rococo-local", "polkadot", etc.)
     pub fn with_chain_and_nodes(
         relay_name: &str,
         node_names: Vec<String>,
     ) -> NetworkConfigBuilder<WithRelaychain> {
         let network_config = NetworkConfigBuilder::new().with_relaychain(|relaychain| {
-            let mut relaychain_with_node = relaychain
-                .with_chain(relay_name)
-                .with_node(|node| node.with_name(node_names.first().unwrap_or(&"".to_string())));
+            let mut relaychain_with_node =
+                relaychain.with_chain(relay_name).with_validator(|node| {
+                    node.with_name(node_names.first().unwrap_or(&"".to_string()))
+                });
 
             for node_name in node_names.iter().skip(1) {
                 relaychain_with_node = relaychain_with_node
-                    .with_node(|node_builder| node_builder.with_name(node_name));
+                    .with_validator(|node_builder| node_builder.with_name(node_name));
             }
             relaychain_with_node
         });
@@ -593,11 +594,7 @@ mod tests {
                 relaychain
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
-                    .with_node(|node| {
-                        node.with_name("node")
-                            .with_command("command")
-                            .validator(true)
-                    })
+                    .with_validator(|node| node.with_name("node").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -717,11 +714,7 @@ mod tests {
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
                     .with_default_image("invalid.image")
-                    .with_node(|node| {
-                        node.with_name("node")
-                            .with_command("invalid command")
-                            .validator(true)
-                    })
+                    .with_validator(|node| node.with_name("node").with_command("invalid command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -756,11 +749,7 @@ mod tests {
                 relaychain
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
-                    .with_node(|node| {
-                        node.with_name("node")
-                            .with_command("command")
-                            .validator(true)
-                    })
+                    .with_validator(|node| node.with_name("node").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -797,11 +786,7 @@ mod tests {
                 relaychain
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
-                    .with_node(|node| {
-                        node.with_name("node")
-                            .with_command("command")
-                            .validator(true)
-                    })
+                    .with_validator(|node| node.with_name("node").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -812,7 +797,6 @@ mod tests {
                         collator
                             .with_name("collator1")
                             .with_command("invalid command")
-                            .validator(true)
                     })
             })
             .with_parachain(|parachain| {
@@ -854,11 +838,7 @@ mod tests {
                 relaychain
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
-                    .with_node(|node| {
-                        node.with_name("node")
-                            .with_command("command")
-                            .validator(true)
-                    })
+                    .with_validator(|node| node.with_name("node").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -899,11 +879,7 @@ mod tests {
                 relaychain
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
-                    .with_node(|node| {
-                        node.with_name("node")
-                            .with_command("invalid command")
-                            .validator(true)
-                    })
+                    .with_validator(|node| node.with_name("node").with_command("invalid command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -915,7 +891,6 @@ mod tests {
                             .with_name("collator")
                             .with_command("command")
                             .with_image("invalid.image")
-                            .validator(true)
                     })
             })
             .with_global_settings(|global_settings| global_settings.with_local_ip("127.0.0000.1"))
@@ -946,10 +921,9 @@ mod tests {
                     .with_default_command("polkadot")
                     .with_default_image("docker.io/parity/polkadot:latest")
                     .with_default_args(vec![("-lparachain", "debug").into()])
-                    .with_node(|node| node.with_name("alice").validator(true))
-                    .with_node(|node| {
+                    .with_validator(|node| node.with_name("alice"))
+                    .with_validator(|node| {
                         node.with_name("bob")
-                            .validator(true)
                             .invulnerable(false)
                             .bootnode(true)
                             .with_args(vec![("--database", "paritydb-experimental").into()])
@@ -978,19 +952,13 @@ mod tests {
                             .with_limit_cpu("10Gi")
                             .with_limit_memory("4000M")
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("alice")
                             .with_initial_balance(1_000_000_000)
-                            .validator(true)
                             .bootnode(true)
                             .invulnerable(true)
                     })
-                    .with_node(|node| {
-                        node.with_name("bob")
-                            .validator(true)
-                            .invulnerable(true)
-                            .bootnode(true)
-                    })
+                    .with_validator(|node| node.with_name("bob").invulnerable(true).bootnode(true))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -1004,14 +972,12 @@ mod tests {
                         collator
                             .with_name("john")
                             .bootnode(true)
-                            .validator(true)
                             .invulnerable(true)
                             .with_initial_balance(5_000_000_000)
                     })
-                    .with_collator(|collator| {
+                    .with_fullnode(|collator| {
                         collator
                             .with_name("charles")
-                            .validator(false)
                             .bootnode(true)
                             .invulnerable(true)
                             .with_initial_balance(0)
@@ -1019,7 +985,6 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("frank")
-                            .validator(true)
                             .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
@@ -1034,14 +999,12 @@ mod tests {
                         collator
                             .with_name("mike")
                             .bootnode(true)
-                            .validator(true)
                             .invulnerable(true)
                             .with_initial_balance(5_000_000_000)
                     })
-                    .with_collator(|collator| {
+                    .with_fullnode(|collator| {
                         collator
                             .with_name("georges")
-                            .validator(false)
                             .bootnode(true)
                             .invulnerable(true)
                             .with_initial_balance(0)
@@ -1049,7 +1012,6 @@ mod tests {
                     .with_collator(|collator| {
                         collator
                             .with_name("victor")
-                            .validator(true)
                             .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
@@ -1094,16 +1056,14 @@ mod tests {
                             .with_limit_cpu("10Gi")
                             .with_limit_memory("4000M")
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("alice")
                             .with_initial_balance(1_000_000_000)
-                            .validator(true)
                             .bootnode(true)
                             .invulnerable(true)
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("bob")
-                            .validator(true)
                             .invulnerable(true)
                             .bootnode(true)
                             .with_image("mycustomimage:latest")
@@ -1131,16 +1091,14 @@ mod tests {
                         collator
                             .with_name("john")
                             .bootnode(true)
-                            .validator(true)
                             .invulnerable(true)
                             .with_initial_balance(5_000_000_000)
                             .with_command("my-non-default-command")
                             .with_image("anotherimage:latest")
                     })
-                    .with_collator(|collator| {
+                    .with_fullnode(|collator| {
                         collator
                             .with_name("charles")
-                            .validator(false)
                             .bootnode(true)
                             .invulnerable(true)
                             .with_initial_balance(0)
@@ -1186,18 +1144,16 @@ mod tests {
                     .with_default_command("polkadot")
                     .with_default_image("docker.io/parity/polkadot:latest")
                     .with_default_args(vec![("-lparachain=debug").into()])
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("alice")
                             .validator(true)
                             .invulnerable(true)
-                            .validator(true)
                             .bootnode(false)
                             .with_initial_balance(2000000000000)
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("bob")
                             .with_args(vec![("--database", "paritydb-experimental").into()])
-                            .validator(true)
                             .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(2000000000000)
@@ -1261,8 +1217,8 @@ mod tests {
                 relaychain
                     .with_chain("rococo-local")
                     .with_default_command("polkadot")
-                    .with_node(|node| node.with_name("alice"))
-                    .with_node(|node| node.with_name("bob"))
+                    .with_validator(|node| node.with_name("alice"))
+                    .with_validator(|node| node.with_name("bob"))
             })
             .build()
             .unwrap();
@@ -1291,19 +1247,13 @@ mod tests {
                             .with_limit_cpu("10Gi")
                             .with_limit_memory("4000M")
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("alice")
                             .with_initial_balance(1_000_000_000)
-                            .validator(true)
                             .bootnode(true)
                             .invulnerable(true)
                     })
-                    .with_node(|node| {
-                        node.with_name("bob")
-                            .validator(true)
-                            .invulnerable(true)
-                            .bootnode(true)
-                    })
+                    .with_validator(|node| node.with_name("bob").invulnerable(true).bootnode(true))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -1317,22 +1267,19 @@ mod tests {
                         collator
                             .with_name("john")
                             .bootnode(true)
-                            .validator(true)
                             .invulnerable(true)
                             .with_initial_balance(5_000_000_000)
                     })
-                    .with_collator(|collator| {
+                    .with_fullnode(|collator| {
                         collator
                             .with_name("charles")
                             .bootnode(true)
-                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
                     .with_collator(|collator| {
                         collator
                             .with_name("frank")
-                            .validator(true)
                             .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
@@ -1347,22 +1294,19 @@ mod tests {
                         collator
                             .with_name("mike")
                             .bootnode(true)
-                            .validator(true)
                             .invulnerable(true)
                             .with_initial_balance(5_000_000_000)
                     })
-                    .with_collator(|collator| {
+                    .with_fullnode(|collator| {
                         collator
                             .with_name("georges")
                             .bootnode(true)
-                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
                     .with_collator(|collator| {
                         collator
                             .with_name("victor")
-                            .validator(true)
                             .invulnerable(false)
                             .bootnode(true)
                             .with_initial_balance(1_000_000_000)
@@ -1517,16 +1461,14 @@ mod tests {
                             .with_limit_cpu("10Gi")
                             .with_limit_memory("4000M")
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("alice")
                             .with_initial_balance(1_000_000_000)
-                            .validator(true)
                             .bootnode(true)
                             .invulnerable(true)
                     })
-                    .with_node(|node| {
+                    .with_validator(|node| {
                         node.with_name("bob")
-                            .validator(true)
                             .invulnerable(true)
                             .bootnode(true)
                             .with_image("mycustomimage:latest")
@@ -1560,11 +1502,10 @@ mod tests {
                             .with_command("my-non-default-command")
                             .with_image("anotherimage:latest")
                     })
-                    .with_collator(|collator| {
+                    .with_fullnode(|collator| {
                         collator
                             .with_name("charles")
                             .bootnode(true)
-                            .validator(false)
                             .invulnerable(true)
                             .with_initial_balance(0)
                     })
@@ -1615,6 +1556,9 @@ mod tests {
                         assert_eq!(expected_collator.name(), loaded_collator.name());
                         assert_eq!(expected_collator.command(), loaded_collator.command());
                         assert_eq!(expected_collator.image(), loaded_collator.image());
+
+                        println!("Name {}", expected_collator.name());
+
                         assert_eq!(
                             expected_collator.is_validator(),
                             loaded_collator.is_validator()
@@ -1773,8 +1717,8 @@ mod tests {
                     .with_chain("rococo-local")
                     .with_default_command("polkadot")
                     .with_wasm_override("/some/path/runtime.wasm")
-                    .with_node(|node| node.with_name("alice"))
-                    .with_node(|node| node.with_name("bob"))
+                    .with_validator(|node| node.with_name("alice"))
+                    .with_validator(|node| node.with_name("bob"))
             })
             .with_parachain(|p| {
                 p.with_id(1000)
@@ -1800,7 +1744,7 @@ mod tests {
             .with_relaychain(|relaychain| {
                 relaychain
                     .with_chain("polkadot")
-                    .with_node(|node| node.with_name("node").with_command("command"))
+                    .with_fullnode(|node| node.with_name("node").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -1832,7 +1776,7 @@ mod tests {
             .with_relaychain(|relaychain| {
                 relaychain
                     .with_chain("polkadot")
-                    .with_node(|node| node.with_name("node").with_command("command"))
+                    .with_fullnode(|node| node.with_name("node").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain

@@ -10,8 +10,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
                 .with_default_image("docker.io/parity/polkadot:v1.4.0")
-                .with_node(|node| node.with_name("alice"))
-                .with_node(|node| node.with_name("bob"))
+                .with_validator(|node| node.with_name("alice"))
+                .with_fullnode(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
             p.with_id(2000)
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     ..Default::default()
     // };
 
-    // network.add_node("new1", opts).await?;
+    // network.with_fullnode("new1", opts).await?;
 
     // Example of some operations that you can do
     // with `nodes` (e.g pause, resume, restart)

@@ -12,8 +12,8 @@ pub fn small_network_config(
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
                 .with_default_image("docker.io/parity/polkadot:latest")
-                .with_node(|node| node.with_name("alice"))
-                .with_node(|node| node.with_name("bob"))
+                .with_validator(|node| node.with_name("alice"))
+                .with_fullnode(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
             p.with_id(2000).cumulus_based(true).with_collator(|n| {

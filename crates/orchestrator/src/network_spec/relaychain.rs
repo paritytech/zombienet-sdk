@@ -56,6 +56,9 @@ pub struct RelaychainSpec {
 
     /// Nodes to run.
     pub(crate) nodes: Vec<NodeSpec>,
+
+    /// Raw chain-spec override path/url to use.
+    pub(crate) raw_spec_override: Option<AssetLocation>,
 }
 
 impl RelaychainSpec {
@@ -152,6 +155,7 @@ impl RelaychainSpec {
             max_nominations: config.max_nominations().unwrap_or(24),
             runtime_genesis_patch: config.runtime_genesis_patch().cloned(),
             nodes,
+            raw_spec_override: config.raw_spec_override().cloned(),
         })
     }
 

@@ -396,6 +396,17 @@ impl ChainSpec {
         Ok(())
     }
 
+    pub async fn override_raw_spec<'a, T>(
+        &mut self,
+        _scoped_fs: &ScopedFilesystem<'a, T>,
+        _raw_spec_override: &AssetLocation,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        Ok(())
+    }
+
     pub fn raw_path(&self) -> Option<&Path> {
         self.raw_path.as_deref()
     }

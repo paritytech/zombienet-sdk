@@ -162,6 +162,8 @@ pub struct ParachainConfig {
     pub(crate) collator: Option<NodeConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     pub(crate) collator_groups: Vec<GroupNodeConfig>,
+    // Path or url to a json file to override raw chainspec
+    raw_spec_override: Option<AssetLocation>,
 }
 
 impl ParachainConfig {
@@ -299,6 +301,11 @@ impl ParachainConfig {
     pub fn wasm_override(&self) -> Option<&AssetLocation> {
         self.wasm_override.as_ref()
     }
+
+    /// The location of a file to override raw chain-spec.
+    pub fn raw_spec_override(&self) -> Option<&AssetLocation> {
+        self.raw_spec_override.as_ref()
+    }
 }
 
 pub mod states {
@@ -361,6 +368,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 collators: vec![],
                 collator: None,
                 collator_groups: vec![],
+                raw_spec_override: None,
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -897,6 +905,17 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
             ),
         }
     }
+    /// Set the location of a json to override the raw chain-spec.
+    pub fn with_raw_spec_override(self, location: impl Into<AssetLocation>) -> Self {
+        Self::transition(
+            ParachainConfig {
+                raw_spec_override: Some(location.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
 }
 
 impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
@@ -1011,6 +1030,7 @@ mod tests {
             )
             .with_chain_spec_path("./path/to/chain/spec.json")
             .with_wasm_override("./path/to/override/runtime.wasm")
+            .with_raw_spec_override("./path/to/override/rawspec.json")
             .cumulus_based(false)
             .evm_based(false)
             .with_bootnodes_addresses(vec![
@@ -1125,6 +1145,10 @@ mod tests {
             bootnodes_addresses.iter().collect::<Vec<_>>()
         );
         assert!(!parachain_config.is_evm_based());
+        assert!(matches!(
+            parachain_config.raw_spec_override().unwrap(),
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/rawspec.json"
+        ));
     }
 
     #[test]

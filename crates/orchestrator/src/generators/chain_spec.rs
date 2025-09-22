@@ -398,12 +398,51 @@ impl ChainSpec {
 
     pub async fn override_raw_spec<'a, T>(
         &mut self,
-        _scoped_fs: &ScopedFilesystem<'a, T>,
-        _raw_spec_override: &AssetLocation,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        raw_spec_override: &AssetLocation,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
     {
+        // first ensure we have the raw version of the chain-spec
+        let Some(_) = self.raw_path else {
+            return Err(GeneratorError::OverridingRawSpec(String::from(
+                "Raw path should be set at this point.",
+            )));
+        };
+
+        let (content, _) = self.read_spec(scoped_fs).await?;
+
+        // read raw_spec_override
+        let override_content = raw_spec_override.get_asset().await.map_err(|_| {
+            GeneratorError::OverridingRawSpec(format!(
+                "Can not get asset to override raw chain-spec, asset: {raw_spec_override}"
+            ))
+        })?;
+
+        // convert override_content bytes to json
+        let override_content: serde_json::Value = serde_json::from_slice(&override_content)
+            .map_err(|_| {
+                GeneratorError::OverridingRawSpec(format!(
+                    "Can parse raw_spec_override contents as json, asset: {raw_spec_override}"
+                ))
+            })?;
+
+        // read spec to json value
+        let mut chain_spec_json: serde_json::Value =
+            serde_json::from_str(&content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+
+        // merge overrides with existing spec
+        merge(&mut chain_spec_json, &override_content);
+
+        // save changes
+        let overrided_content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
+        })?;
+        self.write_spec(scoped_fs, overrided_content).await?;
+
         Ok(())
     }
 

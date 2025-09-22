@@ -326,7 +326,9 @@ impl ParachainSpec {
 
             // override raw spec if needed
             if let Some(ref raw_spec_override) = self.raw_spec_override {
-                chain_spec.override_raw_spec(scoped_fs, raw_spec_override).await?;
+                chain_spec
+                    .override_raw_spec(scoped_fs, raw_spec_override)
+                    .await?;
             }
 
             let chain_spec_raw_path =

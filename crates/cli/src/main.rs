@@ -138,7 +138,7 @@ pub fn network_config(
         .collect();
 
     let settings_builder = GlobalSettingsBuilder::new()
-        .with_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
+        .with_raw_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
         .with_network_spawn_timeout(current_settings.network_spawn_timeout())
         .with_node_spawn_timeout(current_settings.node_spawn_timeout());
 

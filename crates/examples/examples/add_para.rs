@@ -50,7 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .with_id(100)
         //.with_registration_strategy(zombienet_sdk::RegistrationStrategy::Manual)
         .with_default_command("polkadot-parachain")
-        .with_bootnodes_addresses(para_bootnode_addresses.clone())
+        .with_raw_bootnodes_addresses(para_bootnode_addresses.clone())
         .with_collator(|c| c.with_name("col-100-1"))
         .build()
         .map_err(|_e| anyhow!("Building config"))?;

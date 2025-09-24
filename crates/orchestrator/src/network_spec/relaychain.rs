@@ -6,8 +6,8 @@ use configuration::{
         resources::Resources,
         types::{Arg, AssetLocation, Chain, Command, Image},
     },
-    NodeConfig, RelaychainConfig,
     types::JsonOverrides,
+    NodeConfig, RelaychainConfig,
 };
 use serde::{Deserialize, Serialize};
 use support::replacer::apply_replacements;

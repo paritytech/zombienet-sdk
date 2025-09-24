@@ -905,8 +905,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
             ),
         }
     }
-    
-    
+
     /// Set the location or inline value of json to override the raw chain-spec.
     pub fn with_raw_spec_override(self, overrides: impl Into<JsonOverrides>) -> Self {
         Self::transition(

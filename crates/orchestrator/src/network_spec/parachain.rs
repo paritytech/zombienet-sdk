@@ -5,9 +5,8 @@ use std::{
 
 use configuration::{
     shared::{helpers::generate_unique_node_name_from_names, resources::Resources},
-    types::{Arg, AssetLocation, Command, Image},
-    NodeConfig, JsonOverrides, ParachainConfig, RegistrationStrategy,
-    shared::resources::Resources,
+    types::{Arg, AssetLocation, Command, Image, JsonOverrides},
+    NodeConfig, ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
 use serde::{Deserialize, Serialize};

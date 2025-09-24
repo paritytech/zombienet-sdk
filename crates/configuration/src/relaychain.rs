@@ -133,7 +133,7 @@ impl RelaychainConfig {
         self.node_groups.iter().collect::<Vec<&GroupNodeConfig>>()
     }
 
-    /// The location of a file to override raw chain-spec.
+    /// The location of a file or inline json to override raw chain-spec.
     pub fn raw_spec_override(&self) -> Option<&JsonOverrides> {
         self.raw_spec_override.as_ref()
     }

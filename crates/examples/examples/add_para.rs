@@ -1,3 +1,10 @@
+//! Example: Dynamically adding a parachain to a running Zombienet network.
+//!
+//! This example demonstrates how to:
+//! - Build and deploy a relaychain and parachain network using Zombienet SDK
+//! - Wait for network startup and finalized blocks
+//! - Add a new parachain to the running network at runtime
+
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -30,6 +37,14 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
 
     println!("🚀🚀🚀🚀 network deployed");
+    println!(
+        "Parachains IDs: {:?}",
+        network
+            .parachains()
+            .iter()
+            .map(|p| p.para_id())
+            .collect::<Vec<_>>()
+    );
 
     let alice = network.get_node("alice")?;
     tokio::time::sleep(Duration::from_secs(10)).await;
@@ -57,6 +72,16 @@ async fn main() -> Result<(), anyhow::Error> {
     network
         .add_parachain(&para_config, None, Some("new_para_100".to_string()))
         .await?;
+
+    println!("✅ parachain added");
+    println!(
+        "Parachains IDs: {:?}",
+        network
+            .parachains()
+            .iter()
+            .map(|p| p.para_id())
+            .collect::<Vec<_>>()
+    );
 
     // For now let just loop....
     #[allow(clippy::empty_loop)]

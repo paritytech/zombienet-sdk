@@ -1,3 +1,11 @@
+//! Example: Manual parachain registration in a running Zombienet network.
+//!
+//! This example demonstrates how to:
+//! - Deploy a relaychain and parachain network
+//! - Wait for finalized blocks
+//! - Register a parachain manually
+//! - Verify parachain block production after registration
+
 use std::time::Duration;
 
 use futures::stream::StreamExt;
@@ -19,7 +27,7 @@ async fn main() -> Result<(), anyhow::Error> {
             p.with_id(2000)
                 .with_registration_strategy(RegistrationStrategy::Manual)
                 .cumulus_based(true)
-                .with_collator(|n| n.with_name("collator").with_command("test-parachain"))
+                .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
         .unwrap()

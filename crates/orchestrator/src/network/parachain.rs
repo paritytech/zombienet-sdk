@@ -285,7 +285,7 @@ mod tests {
             .with_id(100)
             .cumulus_based(false)
             .with_default_command("adder-collator")
-            .with_bootnodes_addresses(bootnode_addresses.clone())
+            .with_raw_bootnodes_addresses(bootnode_addresses.clone())
             .with_collator(|c| c.with_name("col"))
             .build()
             .unwrap();

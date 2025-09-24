@@ -537,7 +537,10 @@ impl NodeConfigBuilder<Buildable> {
     }
 
     /// Set the bootnodes addresses that the node will try to connect to. Override the default.
-    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    ///
+    /// Note: Bootnode address replacements are NOT supported here.
+    /// Only arguments (`args`) support dynamic replacements. Bootnode addresses must be a valid address.
+    pub fn with_raw_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
@@ -814,7 +817,7 @@ mod tests {
                 .bootnode(true)
                 .with_initial_balance(100_000_042)
                 .with_env(vec![("VAR1", "VALUE1"), ("VAR2", "VALUE2")])
-                .with_bootnodes_addresses(vec![
+                .with_raw_bootnodes_addresses(vec![
                     "/ip4/10.41.122.55/tcp/45421",
                     "/ip4/51.144.222.10/tcp/2333",
                 ])
@@ -930,7 +933,7 @@ mod tests {
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
                 .with_name("node")
-                .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+                .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421"])
                 .build()
                 .unwrap_err();
 
@@ -948,7 +951,7 @@ mod tests {
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
                 .with_name("node")
-                .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+                .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
                 .build()
                 .unwrap_err();
 

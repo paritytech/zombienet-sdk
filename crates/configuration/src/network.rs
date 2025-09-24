@@ -1594,9 +1594,6 @@ mod tests {
                         assert_eq!(expected_collator.name(), loaded_collator.name());
                         assert_eq!(expected_collator.command(), loaded_collator.command());
                         assert_eq!(expected_collator.image(), loaded_collator.image());
-
-                        println!("Name {}", expected_collator.name());
-
                         assert_eq!(
                             expected_collator.is_validator(),
                             loaded_collator.is_validator()

@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_default_command("polkadot")
                 .with_default_image("docker.io/parity/polkadot:v1.4.0")
                 .with_validator(|node| node.with_name("alice"))
-                .with_fullnode(|node| node.with_name("bob"))
+                .with_validator(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
             p.with_id(2000)

@@ -931,11 +931,7 @@ mod tests {
         let relaychain_config = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_command("command")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("node_command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("node_command"))
             .with_node_group(|group| {
                 group.with_count(2).with_base_node(|base| {
                     base.with_name("group_node")
@@ -981,11 +977,7 @@ mod tests {
         let relaychain_config = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_command("command")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("node_command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("node_command"))
             .with_node_group(|group| {
                 group.with_count(0).with_base_node(|base| {
                     base.with_name("group_node")

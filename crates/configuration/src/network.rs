@@ -20,7 +20,7 @@ use crate::{
         errors::{ConfigError, ValidationError},
         helpers::{generate_unique_node_name_from_names, merge_errors, merge_errors_vecs},
         macros::states,
-        node::NodeConfig,
+        node::{GroupNodeConfig, NodeConfig},
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
     },
     types::ParaId,
@@ -132,6 +132,20 @@ impl NetworkConfig {
             .cloned()
             .collect();
 
+        let group_nodes: Vec<GroupNodeConfig> = network_config
+            .relaychain()
+            .group_node_configs()
+            .into_iter()
+            .cloned()
+            .collect();
+
+        if let Some(group) = group_nodes.iter().find(|n| n.count == 0) {
+            return Err(anyhow!(
+                "Group node '{}' must have a count greater than 0.",
+                group.base_config.name()
+            ));
+        }
+
         let mut parachains: Vec<ParachainConfig> =
             network_config.parachains().into_iter().cloned().collect();
 
@@ -145,6 +159,12 @@ impl NetworkConfig {
                 relaychain_default_command.clone().expect(VALIDATION_CHECK),
             )?;
         }
+
+        nodes.extend(
+            group_nodes
+                .into_iter()
+                .flat_map(|node| node.expand_group_configs()),
+        );
 
         // Keep track of node names to ensure uniqueness
         let mut names = HashSet::new();
@@ -184,7 +204,26 @@ impl NetworkConfig {
 
             let default_args: Vec<Arg> = para.default_args().into_iter().cloned().collect();
 
+            let group_collators: Vec<GroupNodeConfig> = para
+                .group_collators_configs()
+                .into_iter()
+                .cloned()
+                .collect();
+
+            if let Some(group) = group_collators.iter().find(|n| n.count == 0) {
+                return Err(anyhow!(
+                    "Group node '{}' must have a count greater than 0.",
+                    group.base_config.name()
+                ));
+            }
+
             let mut collators: Vec<NodeConfig> = para.collators.clone();
+
+            collators.extend(
+                group_collators
+                    .into_iter()
+                    .flat_map(|node| node.expand_group_configs()),
+            );
 
             for collator in collators.iter_mut() {
                 populate_collator_with_defaults(
@@ -232,7 +271,6 @@ impl NetworkConfig {
                 let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
             }
         });
-
         Ok(network_config)
     }
 }

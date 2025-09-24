@@ -666,7 +666,7 @@ mod tests {
 
         assert!(matches!(
             relaychain_config.raw_spec_override().unwrap(),
-            JsonOverrides::Json(value) if value.to_string() == serde_json::json!({"some_override_key": "some_override_val"}).to_string()
+            JsonOverrides::Json(value) if *value == serde_json::json!({"some_override_key": "some_override_val"})
         ));
     }
 

@@ -14,6 +14,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
         },
     },
+    types::JsonOverrides,
     utils::{default_command_polkadot, default_relaychain_chain, is_false},
 };
 
@@ -47,8 +48,8 @@ pub struct RelaychainConfig {
     // Path or url to override the runtime (:code) in the chain-spec
     wasm_override: Option<AssetLocation>,
     command: Option<Command>,
-    // Path or url to a json file to override raw chainspec
-    raw_spec_override: Option<AssetLocation>,
+    // Inline json or asset location to override raw chainspec
+    raw_spec_override: Option<JsonOverrides>,
 }
 
 impl RelaychainConfig {
@@ -133,7 +134,7 @@ impl RelaychainConfig {
     }
     
     /// The location of a file to override raw chain-spec.
-    pub fn raw_spec_override(&self) -> Option<&AssetLocation> {
+    pub fn raw_spec_override(&self) -> Option<&JsonOverrides> {
         self.raw_spec_override.as_ref()
     }
 
@@ -495,11 +496,11 @@ impl RelaychainConfigBuilder<WithChain> {
         }
     }
 
-    /// Set the location of a json to override the raw chain-spec.
-    pub fn with_raw_spec_override(self, location: impl Into<AssetLocation>) -> Self {
+    /// Set the location or inline value of a json to override the raw chain-spec.
+    pub fn with_raw_spec_override(self, overrides: impl Into<JsonOverrides>) -> Self {
         Self::transition(
             RelaychainConfig {
-                raw_spec_override: Some(location.into()),
+                raw_spec_override: Some(overrides.into()),
                 ..self.config
             },
             self.validation_context,
@@ -608,7 +609,7 @@ mod tests {
             .with_default_db_snapshot("https://www.urltomysnapshot.com/file.tgz")
             .with_chain_spec_path("./path/to/chain/spec.json")
             .with_wasm_override("./path/to/override/runtime.wasm")
-            .with_raw_spec_override("./path/to/override/rawspec.json")
+            .with_raw_spec_override(serde_json::json!({"some_override_key": "some_override_val"}))
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
@@ -665,7 +666,7 @@ mod tests {
 
         assert!(matches!(
             relaychain_config.raw_spec_override().unwrap(),
-            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/rawspec.json"
+            JsonOverrides::Json(value) if value.to_string() == serde_json::json!({"some_override_key": "some_override_val"}).to_string()
         ));
     }
 

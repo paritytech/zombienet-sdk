@@ -7,6 +7,7 @@ use configuration::{
         types::{Arg, AssetLocation, Chain, Command, Image},
     },
     NodeConfig, RelaychainConfig,
+    types::JsonOverrides,
 };
 use serde::{Deserialize, Serialize};
 use support::replacer::apply_replacements;
@@ -57,8 +58,8 @@ pub struct RelaychainSpec {
     /// Nodes to run.
     pub(crate) nodes: Vec<NodeSpec>,
 
-    /// Raw chain-spec override path/url to use.
-    pub(crate) raw_spec_override: Option<AssetLocation>,
+    /// Raw chain-spec override path, url or inline json to use.
+    pub(crate) raw_spec_override: Option<JsonOverrides>,
 }
 
 impl RelaychainSpec {

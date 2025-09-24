@@ -6,7 +6,8 @@ use std::{
 use configuration::{
     shared::{helpers::generate_unique_node_name_from_names, resources::Resources},
     types::{Arg, AssetLocation, Command, Image},
-    NodeConfig, ParachainConfig, RegistrationStrategy,
+    NodeConfig, JsonOverrides, ParachainConfig, RegistrationStrategy,
+    shared::resources::Resources,
 };
 use provider::DynNamespace;
 use serde::{Deserialize, Serialize};
@@ -86,8 +87,8 @@ pub struct ParachainSpec {
     /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
 
-    /// Raw chain-spec override path/url to use.
-    pub(crate) raw_spec_override: Option<AssetLocation>,
+    /// Raw chain-spec override path, url or inline json to use.
+    pub(crate) raw_spec_override: Option<JsonOverrides>,
 }
 
 impl ParachainSpec {

@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    types::CommandWithCustomArgs,
+    types::{CommandWithCustomArgs, JsonOverrides},
     utils::{default_as_false, default_as_true, default_initial_balance, is_false},
 };
 
@@ -162,8 +162,8 @@ pub struct ParachainConfig {
     pub(crate) collator: Option<NodeConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     pub(crate) collator_groups: Vec<GroupNodeConfig>,
-    // Path or url to a json file to override raw chainspec
-    raw_spec_override: Option<AssetLocation>,
+    // Inline json or asset location to override raw chainspec
+    raw_spec_override: Option<JsonOverrides>,
 }
 
 impl ParachainConfig {
@@ -302,8 +302,8 @@ impl ParachainConfig {
         self.wasm_override.as_ref()
     }
 
-    /// The location of a file to override raw chain-spec.
-    pub fn raw_spec_override(&self) -> Option<&AssetLocation> {
+    /// The location of a file or inline json to override raw chain-spec.
+    pub fn raw_spec_override(&self) -> Option<&JsonOverrides> {
         self.raw_spec_override.as_ref()
     }
 }
@@ -905,11 +905,13 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
             ),
         }
     }
-    /// Set the location of a json to override the raw chain-spec.
-    pub fn with_raw_spec_override(self, location: impl Into<AssetLocation>) -> Self {
+    
+    
+    /// Set the location or inline value of json to override the raw chain-spec.
+    pub fn with_raw_spec_override(self, overrides: impl Into<JsonOverrides>) -> Self {
         Self::transition(
             ParachainConfig {
-                raw_spec_override: Some(location.into()),
+                raw_spec_override: Some(overrides.into()),
                 ..self.config
             },
             self.validation_context,
@@ -1147,7 +1149,7 @@ mod tests {
         assert!(!parachain_config.is_evm_based());
         assert!(matches!(
             parachain_config.raw_spec_override().unwrap(),
-            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/rawspec.json"
+            JsonOverrides::Location(AssetLocation::FilePath(value)) if value.to_str().unwrap() == "./path/to/override/rawspec.json"
         ));
     }
 

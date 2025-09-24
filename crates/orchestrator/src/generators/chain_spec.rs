@@ -4,7 +4,10 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::AssetLocation, HrmpChannelConfig};
+use configuration::{
+    types::{AssetLocation, JsonOverrides},
+    HrmpChannelConfig,
+};
 use provider::{
     constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
@@ -399,7 +402,7 @@ impl ChainSpec {
     pub async fn override_raw_spec<'a, T>(
         &mut self,
         scoped_fs: &ScopedFilesystem<'a, T>,
-        raw_spec_override: &AssetLocation,
+        raw_spec_overrides: &JsonOverrides,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
@@ -413,20 +416,12 @@ impl ChainSpec {
 
         let (content, _) = self.read_spec(scoped_fs).await?;
 
-        // read raw_spec_override
-        let override_content = raw_spec_override.get_asset().await.map_err(|_| {
+        // read overrides to json value
+        let override_content: serde_json::Value = raw_spec_overrides.get().await.map_err(|_| {
             GeneratorError::OverridingRawSpec(format!(
-                "Can not get asset to override raw chain-spec, asset: {raw_spec_override}"
+                "Can not parse raw_spec_override contents as json: {raw_spec_overrides}"
             ))
         })?;
-
-        // convert override_content bytes to json
-        let override_content: serde_json::Value = serde_json::from_slice(&override_content)
-            .map_err(|_| {
-                GeneratorError::OverridingRawSpec(format!(
-                    "Can parse raw_spec_override contents as json, asset: {raw_spec_override}"
-                ))
-            })?;
 
         // read spec to json value
         let mut chain_spec_json: serde_json::Value =

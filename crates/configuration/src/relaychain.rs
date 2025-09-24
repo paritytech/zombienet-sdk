@@ -202,6 +202,16 @@ impl<A> RelaychainConfigBuilder<A> {
             default_args: self.config.default_args.clone(),
         }
     }
+
+    fn create_node_builder<F>(&self, f: F) -> NodeConfigBuilder<node::Buildable>
+    where
+        F: FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    {
+        f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+    }
 }
 
 impl RelaychainConfigBuilder<Initial> {
@@ -421,17 +431,76 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Add a new validator node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a validator (authority) with the --validator flag.
+    pub fn with_validator(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
+        match self.create_node_builder(f).validator(true).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: [self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new full node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a full node (non-validator).
+    pub fn with_fullnode(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
+        match self.create_node_builder(f).validator(false).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: [self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
     /// Add a new node using a nested [`NodeConfigBuilder`].
+    ///
+    /// **Deprecated**: Use [`with_validator`] for validator nodes or [`with_fullnode`] for full nodes instead.
+    #[deprecated(
+        since = "0.4.0",
+        note = "Use `with_validator()` for validator nodes or `with_fullnode()` for full nodes instead"
+    )]
     pub fn with_node(
         self,
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
-        match f(NodeConfigBuilder::new(
-            self.default_chain_context(),
-            self.validation_context.clone(),
-        ))
-        .build()
-        {
+        match self.create_node_builder(f).build() {
             Ok(node) => Self::transition(
                 RelaychainConfig {
                     nodes: vec![node],
@@ -489,17 +558,76 @@ impl RelaychainConfigBuilder<WithChain> {
 }
 
 impl RelaychainConfigBuilder<WithAtLeastOneNode> {
+    /// Add a new validator node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a validator (authority) with the --validator flag.
+    pub fn with_validator(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> RelaychainConfigBuilder<WithAtLeastOneNode> {
+        match self.create_node_builder(f).validator(true).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: [self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new full node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a full node (non-validator).
+    pub fn with_fullnode(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        match self.create_node_builder(f).validator(false).build() {
+            Ok(node) => Self::transition(
+                RelaychainConfig {
+                    nodes: [self.config.nodes, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
     /// Add a new node using a nested [`NodeConfigBuilder`].
+    ///
+    /// **Deprecated**: Use [`with_validator`] for validator nodes or [`with_fullnode`] for full nodes instead.
+    #[deprecated(
+        since = "0.4.0",
+        note = "Use `with_validator()` for validator nodes or `with_fullnode()` for full nodes instead"
+    )]
     pub fn with_node(
         self,
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(
-            self.default_chain_context(),
-            self.validation_context.clone(),
-        ))
-        .build()
-        {
+        match self.create_node_builder(f).build() {
             Ok(node) => Self::transition(
                 RelaychainConfig {
                     nodes: [self.config.nodes, vec![node]].concat(),
@@ -591,12 +719,8 @@ mod tests {
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
             .with_random_nominators_count(42)
             .with_max_nominations(5)
-            .with_node(|node| node.with_name("node1").bootnode(true))
-            .with_node(|node| {
-                node.with_name("node2")
-                    .with_command("command2")
-                    .validator(true)
-            })
+            .with_fullnode(|node| node.with_name("node1").bootnode(true))
+            .with_validator(|node| node.with_name("node2").with_command("command2"))
             .build()
             .unwrap();
 
@@ -647,11 +771,7 @@ mod tests {
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_chain_is_invalid() {
         let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("invalid chain")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("command"))
             .build()
             .unwrap_err();
 
@@ -667,11 +787,7 @@ mod tests {
         let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_command("invalid command")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("command"))
             .build()
             .unwrap_err();
 
@@ -687,11 +803,7 @@ mod tests {
         let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_image("invalid image")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("command"))
             .build()
             .unwrap_err();
 
@@ -712,11 +824,7 @@ mod tests {
                     .with_limit_memory("100m")
                     .with_request_cpu("invalid")
             })
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("command"))
             .build()
             .unwrap_err();
 
@@ -731,11 +839,7 @@ mod tests {
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_first_node_is_invalid() {
         let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("invalid command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("invalid command"))
             .build()
             .unwrap_err();
 
@@ -751,16 +855,8 @@ mod tests {
     ) {
         let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
-            .with_node(|node| {
-                node.with_name("node1")
-                    .with_command("command1")
-                    .validator(true)
-            })
-            .with_node(|node| {
-                node.with_name("node2")
-                    .with_command("invalid command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node1").with_command("command1"))
+            .with_validator(|node| node.with_name("node2").with_command("invalid command"))
             .build()
             .unwrap_err();
 
@@ -782,11 +878,7 @@ mod tests {
                     .with_limit_memory("1Gi")
                     .with_limit_cpu("invalid")
             })
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_image("invalid image")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_image("invalid image"))
             .build()
             .unwrap_err();
 
@@ -809,7 +901,7 @@ mod tests {
             .with_default_image("myrepo:myimage")
             .with_default_command("default_command")
             .with_chain_spec_command(CMD_TPL)
-            .with_node(|node| node.with_name("node1").bootnode(true))
+            .with_fullnode(|node| node.with_name("node1").bootnode(true))
             .build()
             .unwrap();
 
@@ -826,7 +918,7 @@ mod tests {
             .with_default_command("default_command")
             .with_chain_spec_command(CMD_TPL)
             .chain_spec_command_is_local(true)
-            .with_node(|node| node.with_name("node1").bootnode(true))
+            .with_fullnode(|node| node.with_name("node1").bootnode(true))
             .build()
             .unwrap();
 
@@ -839,11 +931,7 @@ mod tests {
         let relaychain_config = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_command("command")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("node_command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("node_command"))
             .with_node_group(|group| {
                 group.with_count(2).with_base_node(|base| {
                     base.with_name("group_node")
@@ -889,11 +977,7 @@ mod tests {
         let relaychain_config = RelaychainConfigBuilder::new(Default::default())
             .with_chain("chain")
             .with_default_command("command")
-            .with_node(|node| {
-                node.with_name("node")
-                    .with_command("node_command")
-                    .validator(true)
-            })
+            .with_validator(|node| node.with_name("node").with_command("node_command"))
             .with_node_group(|group| {
                 group.with_count(0).with_base_node(|base| {
                     base.with_name("group_node")

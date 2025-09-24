@@ -394,6 +394,16 @@ impl<A, C> ParachainConfigBuilder<A, C> {
             default_args: self.config.default_args.clone(),
         }
     }
+
+    fn create_node_builder<F>(&self, f: F) -> NodeConfigBuilder<node::Buildable>
+    where
+        F: FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    {
+        f(NodeConfigBuilder::new(
+            self.default_chain_context(),
+            self.validation_context.clone(),
+        ))
+    }
 }
 
 impl ParachainConfigBuilder<Initial, Bootstrap> {
@@ -837,15 +847,73 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         self,
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
-        match f(NodeConfigBuilder::new(
-            self.default_chain_context(),
-            self.validation_context.clone(),
-        ))
-        .build()
-        {
+        match self.create_node_builder(f).validator(true).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: vec![collator],
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new full node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a full node (non-validator).
+    pub fn with_fullnode(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
+        match self.create_node_builder(f).validator(false).build() {
+            Ok(node) => Self::transition(
+                ParachainConfig {
+                    collators: vec![node],
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new node using a nested [`NodeConfigBuilder`].
+    ///
+    /// **Deprecated**: Use [`with_collator`] for collator nodes or [`with_fullnode`] for full nodes instead.
+    #[deprecated(
+        since = "0.4.0",
+        note = "Use `with_collator()` for collator nodes or `with_fullnode()` for full nodes instead"
+    )]
+    pub fn with_node(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
+        match self.create_node_builder(f).build() {
+            Ok(node) => Self::transition(
+                ParachainConfig {
+                    collators: vec![node],
                     ..self.config
                 },
                 self.validation_context,
@@ -905,15 +973,73 @@ impl<C: Context> ParachainConfigBuilder<WithAtLeastOneCollator, C> {
         self,
         f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
     ) -> Self {
-        match f(NodeConfigBuilder::new(
-            self.default_chain_context(),
-            self.validation_context.clone(),
-        ))
-        .build()
-        {
+        match self.create_node_builder(f).validator(true).build() {
             Ok(collator) => Self::transition(
                 ParachainConfig {
                     collators: [self.config.collators, vec![collator]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new full node using a nested [`NodeConfigBuilder`].
+    /// The node will be configured as a full node (non-validator).
+    pub fn with_fullnode(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        match self.create_node_builder(f).validator(false).build() {
+            Ok(node) => Self::transition(
+                ParachainConfig {
+                    collators: [self.config.collators, vec![node]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Collator(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a new node using a nested [`NodeConfigBuilder`].
+    ///
+    /// **Deprecated**: Use [`with_collator`] for collator nodes or [`with_fullnode`] for full nodes instead.
+    #[deprecated(
+        since = "0.4.0",
+        note = "Use `with_collator()` for collator nodes or `with_fullnode()` for full nodes instead"
+    )]
+    pub fn with_node(
+        self,
+        f: impl FnOnce(NodeConfigBuilder<node::Initial>) -> NodeConfigBuilder<node::Buildable>,
+    ) -> Self {
+        match self.create_node_builder(f).build() {
+            Ok(node) => Self::transition(
+                ParachainConfig {
+                    collators: [self.config.collators, vec![node]].concat(),
                     ..self.config
                 },
                 self.validation_context,

@@ -277,7 +277,7 @@ where
             for node in running_nodes_per_level {
                 // Add the node to the  context and `Network` instance
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                network.add_running_node(node, None);
+                network.add_running_node(node, None).await;
             }
         }
 
@@ -315,7 +315,7 @@ where
 
             for node in running_nodes_per_level {
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                network.add_running_node(node, None);
+                network.add_running_node(node, None).await;
             }
         }
 
@@ -419,7 +419,7 @@ where
             let running_para_id = parachain.para_id;
             network.add_para(parachain);
             for node in running_nodes {
-                network.add_running_node(node, Some(running_para_id));
+                network.add_running_node(node, Some(running_para_id)).await;
             }
         }
 

@@ -3,14 +3,7 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    path::PathBuf,
-    rc::Rc,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use configuration::{
     para_states::{Initial, Running},
@@ -21,6 +14,7 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tokio::sync::RwLock;
 use tracing::{error, warn};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
@@ -214,7 +208,7 @@ impl<T: FileSystem> Network<T> {
             .await?;
 
         // Add node to relaychain data
-        self.add_running_node(node.clone(), None);
+        self.add_running_node(node.clone(), None).await;
 
         Ok(())
     }
@@ -348,7 +342,7 @@ impl<T: FileSystem> Network<T> {
             .await?;
 
         parachain.collators.push(node.clone());
-        self.add_running_node(node, None);
+        self.add_running_node(node, None).await;
 
         Ok(())
     }
@@ -566,7 +560,7 @@ impl<T: FileSystem> Network<T> {
         let running_para_id = parachain.para_id;
         self.add_para(parachain);
         for node in running_nodes {
-            self.add_running_node(node, Some(running_para_id));
+            self.add_running_node(node, Some(running_para_id)).await;
         }
 
         Ok(())
@@ -685,7 +679,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     // Internal API
-    pub(crate) fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
+    pub(crate) async fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
         if let Some(para_id) = para_id {
             if let Some(para) = self.parachains.get_mut(&para_id).and_then(|p| p.get_mut(0)) {
                 para.collators.push(node.clone());
@@ -697,10 +691,10 @@ impl<T: FileSystem> Network<T> {
             self.relay.nodes.push(node.clone());
         }
         // TODO: we should hold a ref to the node in the vec in the future.
+        node.mark_running();
         let node_name = node.name.clone();
         self.nodes_by_name.insert(node_name, node.clone());
-        self.nodes_to_watch.write().unwrap().push(node.clone());
-        node.mark_running();
+        self.nodes_to_watch.write().await.push(node);
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {
@@ -788,19 +782,14 @@ impl<T: FileSystem> Network<T> {
             loop {
                 tokio::time::sleep(Duration::from_secs(NODE_MONITORING_INTERVAL_SECONDS)).await;
 
-                let nodes = {
-                    let guard = nodes_to_watch.read().unwrap();
-                    guard
-                        .iter()
-                        .filter(|n| n.is_running())
-                        .cloned()
-                        .collect::<Vec<_>>()
-                };
+                let all_running = {
+                    let guard = nodes_to_watch.read().await;
 
-                let all_running = futures::future::try_join_all(
-                    nodes.iter().map(|n| n.wait_until_is_up(spawn_timeout)),
-                )
-                .await;
+                    let nodes = guard.iter().filter(|n| n.is_running());
+
+                    futures::future::try_join_all(nodes.map(|n| n.wait_until_is_up(spawn_timeout)))
+                        .await
+                };
 
                 if let Err(e) = all_running {
                     warn!("detected unresponsive node: {e}. tearing the network down...");

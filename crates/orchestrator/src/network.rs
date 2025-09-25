@@ -785,7 +785,7 @@ impl<T: FileSystem> Network<T> {
                 .await;
 
                 if let Err(e) = all_running {
-                    info!("detected unresponsive node: {e}. tearing the network down...");
+                    warn!("detected unresponsive node: {e}. tearing the network down...");
 
                     if let Err(e) = ns.destroy().await {
                         error!("an error occurred during network teardown: {}", e);

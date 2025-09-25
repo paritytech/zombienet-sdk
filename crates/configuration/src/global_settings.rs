@@ -15,7 +15,7 @@ use crate::{
         helpers::{merge_errors, merge_errors_vecs},
         types::Duration,
     },
-    utils::{default_node_spawn_timeout, default_timeout},
+    utils::{default_as_true, default_node_spawn_timeout, default_timeout},
 };
 
 /// Global settings applied to an entire network.
@@ -42,7 +42,7 @@ pub struct GlobalSettings {
     /// Number of concurrent spawning process to launch, None means try to spawn all at the same time.
     spawn_concurrency: Option<usize>,
     /// If enabled, will launch a task to monitor nodes' liveness and tear down the network if there are any.
-    #[serde(default)]
+    #[serde(default = "default_as_true")]
     tear_down_on_failure: bool,
 }
 
@@ -93,7 +93,7 @@ impl Default for GlobalSettings {
             local_ip: Default::default(),
             base_dir: Default::default(),
             spawn_concurrency: Default::default(),
-            tear_down_on_failure: Default::default(),
+            tear_down_on_failure: true,
         }
     }
 }

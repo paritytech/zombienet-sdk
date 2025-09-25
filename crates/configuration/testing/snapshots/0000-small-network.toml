@@ -1,7 +1,7 @@
 [settings]
 timeout = 3600
 node_spawn_timeout = 600
-tear_down_on_failure = false
+tear_down_on_failure = true
 
 [relaychain]
 chain = "rococo-local"

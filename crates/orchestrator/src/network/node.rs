@@ -138,12 +138,16 @@ impl NetworkNode {
             spec,
             multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
-            is_running: Arc::new(AtomicBool::new(true)),
+            is_running: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub(crate) fn is_running(&self) -> bool {
         self.is_running.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn mark_running(&self) {
+        self.is_running.store(true, Ordering::Release);
     }
 
     pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {

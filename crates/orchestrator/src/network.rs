@@ -209,6 +209,10 @@ impl<T: FileSystem> Network<T> {
         //     // tx_helper::validator_actions::register(vec![&node], &running_node.ws_uri, None).await?;
         // }
 
+        // Let's make sure node is up before adding
+        node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
+            .await?;
+
         // Add node to relaychain data
         self.add_running_node(node.clone(), None);
 
@@ -338,6 +342,11 @@ impl<T: FileSystem> Network<T> {
         );
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+
+        // Let's make sure node is up before adding
+        node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
+            .await?;
+
         parachain.collators.push(node.clone());
         self.add_running_node(node, None);
 
@@ -546,6 +555,14 @@ impl<T: FileSystem> Network<T> {
             .map(|node| spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para));
 
         let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
+
+        // Let's make sure nodes are up before adding them
+        let waiting_tasks = running_nodes.iter().map(|node| {
+            node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
+        });
+
+        let _ = futures::future::try_join_all(waiting_tasks).await?;
+
         let running_para_id = parachain.para_id;
         self.add_para(parachain);
         for node in running_nodes {
@@ -682,7 +699,8 @@ impl<T: FileSystem> Network<T> {
         // TODO: we should hold a ref to the node in the vec in the future.
         let node_name = node.name.clone();
         self.nodes_by_name.insert(node_name, node.clone());
-        self.nodes_to_watch.write().unwrap().push(node);
+        self.nodes_to_watch.write().unwrap().push(node.clone());
+        node.mark_running();
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {

@@ -783,14 +783,20 @@ impl<T: FileSystem> Network<T> {
 
                 let all_running = {
                     let guard = nodes_to_watch.read().await;
+                    let nodes = guard.iter().filter(|n| n.is_running()).collect::<Vec<_>>();
 
-                    let nodes = guard.iter().filter(|n| n.is_running());
+                    let all_running =
+                        futures::future::try_join_all(nodes.iter().map(|n| {
+                            n.wait_until_is_up(NODE_MONITORING_FAILURE_THRESHOLD_SECONDS)
+                        }))
+                        .await;
 
-                    futures::future::try_join_all(
-                        nodes
-                            .map(|n| n.wait_until_is_up(NODE_MONITORING_FAILURE_THRESHOLD_SECONDS)),
-                    )
-                    .await
+                    // Re-check `is_running` to make sure we don't kill the network unnecessarily
+                    if nodes.iter().any(|n| !n.is_running()) {
+                        continue;
+                    } else {
+                        all_running
+                    }
                 };
 
                 if let Err(e) = all_running {

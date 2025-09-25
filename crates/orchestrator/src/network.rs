@@ -21,7 +21,7 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
-use tracing::{error, info};
+use tracing::{error, warn};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{

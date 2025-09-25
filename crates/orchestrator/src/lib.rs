@@ -475,7 +475,7 @@ where
             .await?;
 
         if network_spec.global_settings.tear_down_on_failure() {
-            network.spawn_watching_task().await;
+            network.spawn_watching_task();
         }
 
         Ok(network)

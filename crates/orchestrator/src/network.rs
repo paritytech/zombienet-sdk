@@ -22,7 +22,7 @@ use crate::{
     generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
     shared::{
-        constants::NODE_MONITORING_INTERVAL_SECONDS,
+        constants::{NODE_MONITORING_FAILURE_THRESHOLD_SECONDS, NODE_MONITORING_INTERVAL_SECONDS},
         macros,
         types::{ChainDefaultContext, RegisterParachainOptions},
     },
@@ -773,10 +773,9 @@ impl<T: FileSystem> Network<T> {
         Ok(())
     }
 
-    pub(crate) async fn spawn_watching_task(&self) {
+    pub(crate) fn spawn_watching_task(&self) {
         let nodes_to_watch = Arc::clone(&self.nodes_to_watch);
         let ns = Arc::clone(&self.ns);
-        let spawn_timeout = self.initial_spec.global_settings.node_spawn_timeout();
 
         tokio::spawn(async move {
             loop {
@@ -787,8 +786,11 @@ impl<T: FileSystem> Network<T> {
 
                     let nodes = guard.iter().filter(|n| n.is_running());
 
-                    futures::future::try_join_all(nodes.map(|n| n.wait_until_is_up(spawn_timeout)))
-                        .await
+                    futures::future::try_join_all(
+                        nodes
+                            .map(|n| n.wait_until_is_up(NODE_MONITORING_FAILURE_THRESHOLD_SECONDS)),
+                    )
+                    .await
                 };
 
                 if let Err(e) = all_running {

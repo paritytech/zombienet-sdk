@@ -540,6 +540,64 @@ pub struct ChainDefaultContext {
     pub(crate) default_args: Vec<Arg>,
 }
 
+/// Represents a set of JSON overrides for a configuration.
+///
+/// The overrides can be provided as an inline JSON object or loaded from a
+/// separate file via a path or URL.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum JsonOverrides {
+    /// A path or URL pointing to a JSON file containing the overrides.
+    Location(AssetLocation),
+    /// An inline JSON value representing the overrides.
+    Json(serde_json::Value),
+}
+
+impl From<AssetLocation> for JsonOverrides {
+    fn from(value: AssetLocation) -> Self {
+        Self::Location(value)
+    }
+}
+
+impl From<serde_json::Value> for JsonOverrides {
+    fn from(value: serde_json::Value) -> Self {
+        Self::Json(value)
+    }
+}
+
+impl From<&str> for JsonOverrides {
+    fn from(value: &str) -> Self {
+        Self::Location(AssetLocation::from(value))
+    }
+}
+
+impl Display for JsonOverrides {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonOverrides::Location(location) => write!(f, "{location}"),
+            JsonOverrides::Json(json) => write!(f, "{json}"),
+        }
+    }
+}
+
+impl JsonOverrides {
+    pub async fn get(&self) -> Result<serde_json::Value, anyhow::Error> {
+        let contents = match self {
+            Self::Location(location) => serde_json::from_slice(&location.get_asset().await?)
+                .map_err(|err| {
+                    anyhow!(
+                        "Error converting asset to json {} - {}",
+                        location,
+                        err.to_string()
+                    )
+                }),
+            Self::Json(json) => Ok(json.clone()),
+        };
+
+        contents
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -820,5 +878,26 @@ mod tests {
             got.unwrap_err().to_string(),
             "'my command' shouldn't contains whitespace"
         );
+    }
+
+    #[test]
+    fn test_convert_to_json_overrides() {
+        let url: AssetLocation = "https://example.com/overrides.json".into();
+        assert!(matches!(
+            url.into(),
+            JsonOverrides::Location(AssetLocation::Url(_))
+        ));
+
+        let path: AssetLocation = "/path/to/overrides.json".into();
+        assert!(matches!(
+            path.into(),
+            JsonOverrides::Location(AssetLocation::FilePath(_))
+        ));
+
+        let inline = serde_json::json!({ "para_id": 2000});
+        assert!(matches!(
+            inline.into(),
+            JsonOverrides::Json(serde_json::Value::Object(_))
+        ));
     }
 }

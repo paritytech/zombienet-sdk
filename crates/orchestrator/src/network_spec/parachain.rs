@@ -5,7 +5,7 @@ use std::{
 
 use configuration::{
     shared::{helpers::generate_unique_node_name_from_names, resources::Resources},
-    types::{Arg, AssetLocation, Command, Image},
+    types::{Arg, AssetLocation, Command, Image, JsonOverrides},
     NodeConfig, ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
@@ -85,6 +85,9 @@ pub struct ParachainSpec {
 
     /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
+
+    /// Raw chain-spec override path, url or inline json to use.
+    pub(crate) raw_spec_override: Option<JsonOverrides>,
 }
 
 impl ParachainSpec {
@@ -250,6 +253,7 @@ impl ParachainSpec {
             genesis_wasm,
             genesis_overrides: config.genesis_overrides().cloned(),
             collators,
+            raw_spec_override: config.raw_spec_override().cloned(),
         };
 
         Ok(para_spec)
@@ -318,6 +322,13 @@ impl ParachainSpec {
             // override wasm if needed
             if let Some(ref wasm_override) = self.wasm_override {
                 chain_spec.override_code(scoped_fs, wasm_override).await?;
+            }
+
+            // override raw spec if needed
+            if let Some(ref raw_spec_override) = self.raw_spec_override {
+                chain_spec
+                    .override_raw_spec(scoped_fs, raw_spec_override)
+                    .await?;
             }
 
             let chain_spec_raw_path =

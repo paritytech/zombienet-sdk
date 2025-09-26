@@ -4,7 +4,10 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::AssetLocation, HrmpChannelConfig};
+use configuration::{
+    types::{AssetLocation, JsonOverrides},
+    HrmpChannelConfig,
+};
 use provider::{
     constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
@@ -391,6 +394,48 @@ impl ChainSpec {
             GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
         })?;
         // save it
+        self.write_spec(scoped_fs, overrided_content).await?;
+
+        Ok(())
+    }
+
+    pub async fn override_raw_spec<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        raw_spec_overrides: &JsonOverrides,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // first ensure we have the raw version of the chain-spec
+        let Some(_) = self.raw_path else {
+            return Err(GeneratorError::OverridingRawSpec(String::from(
+                "Raw path should be set at this point.",
+            )));
+        };
+
+        let (content, _) = self.read_spec(scoped_fs).await?;
+
+        // read overrides to json value
+        let override_content: serde_json::Value = raw_spec_overrides.get().await.map_err(|_| {
+            GeneratorError::OverridingRawSpec(format!(
+                "Can not parse raw_spec_override contents as json: {raw_spec_overrides}"
+            ))
+        })?;
+
+        // read spec to json value
+        let mut chain_spec_json: serde_json::Value =
+            serde_json::from_str(&content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+
+        // merge overrides with existing spec
+        merge(&mut chain_spec_json, &override_content);
+
+        // save changes
+        let overrided_content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
+        })?;
         self.write_spec(scoped_fs, overrided_content).await?;
 
         Ok(())

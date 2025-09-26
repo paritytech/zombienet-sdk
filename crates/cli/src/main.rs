@@ -140,7 +140,8 @@ pub fn network_config(
     let settings_builder = GlobalSettingsBuilder::new()
         .with_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
         .with_network_spawn_timeout(current_settings.network_spawn_timeout())
-        .with_node_spawn_timeout(current_settings.node_spawn_timeout());
+        .with_node_spawn_timeout(current_settings.node_spawn_timeout())
+        .with_tear_down_on_failure(false);
 
     let settings_builder = if let Some(local_ip) = current_settings.local_ip() {
         settings_builder.with_local_ip(local_ip.to_string().as_str())

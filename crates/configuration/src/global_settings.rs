@@ -15,7 +15,7 @@ use crate::{
         helpers::{merge_errors, merge_errors_vecs},
         types::Duration,
     },
-    utils::{default_node_spawn_timeout, default_timeout},
+    utils::{default_as_true, default_node_spawn_timeout, default_timeout},
 };
 
 /// Global settings applied to an entire network.
@@ -41,6 +41,9 @@ pub struct GlobalSettings {
     base_dir: Option<PathBuf>,
     /// Number of concurrent spawning process to launch, None means try to spawn all at the same time.
     spawn_concurrency: Option<usize>,
+    /// If enabled, will launch a task to monitor nodes' liveness and tear down the network if there are any.
+    #[serde(default = "default_as_true")]
+    tear_down_on_failure: bool,
 }
 
 impl GlobalSettings {
@@ -74,6 +77,11 @@ impl GlobalSettings {
     pub fn spawn_concurrency(&self) -> Option<usize> {
         self.spawn_concurrency
     }
+
+    /// A flag to tear down the network if there are any unresponsive nodes detected.
+    pub fn tear_down_on_failure(&self) -> bool {
+        self.tear_down_on_failure
+    }
 }
 
 impl Default for GlobalSettings {
@@ -85,6 +93,7 @@ impl Default for GlobalSettings {
             local_ip: Default::default(),
             base_dir: Default::default(),
             spawn_concurrency: Default::default(),
+            tear_down_on_failure: true,
         }
     }
 }
@@ -194,6 +203,17 @@ impl GlobalSettingsBuilder {
         )
     }
 
+    /// Set the `tear_down_on_failure` flag
+    pub fn with_tear_down_on_failure(self, tear_down_on_failure: bool) -> Self {
+        Self::transition(
+            GlobalSettings {
+                tear_down_on_failure,
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
     /// Seals the builder and returns a [`GlobalSettings`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<GlobalSettings, Vec<anyhow::Error>> {
         if !self.errors.is_empty() {
@@ -224,6 +244,7 @@ mod tests {
             .with_local_ip("10.0.0.1")
             .with_base_dir("/home/nonroot/mynetwork")
             .with_spawn_concurrency(5)
+            .with_tear_down_on_failure(true)
             .build()
             .unwrap();
 
@@ -249,7 +270,8 @@ mod tests {
             global_settings_config.base_dir().unwrap(),
             Path::new("/home/nonroot/mynetwork")
         );
-        assert_eq!(global_settings_config.spawn_concurrency().unwrap(), 5)
+        assert_eq!(global_settings_config.spawn_concurrency().unwrap(), 5);
+        assert!(global_settings_config.tear_down_on_failure());
     }
 
     #[test]

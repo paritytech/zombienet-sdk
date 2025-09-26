@@ -124,9 +124,10 @@ pub fn network_config(
     concurrency: Option<usize>,
 ) -> NetworkConfig {
     let network_config = NetworkConfig::load_from_toml(config).unwrap();
+    let tear_down_on_failure = network_config.global_settings().tear_down_on_failure();
 
     // nothing to override
-    if base_path.is_none() && concurrency.is_none() {
+    if base_path.is_none() && concurrency.is_none() && !tear_down_on_failure {
         return network_config;
     }
 
@@ -140,7 +141,8 @@ pub fn network_config(
     let settings_builder = GlobalSettingsBuilder::new()
         .with_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
         .with_network_spawn_timeout(current_settings.network_spawn_timeout())
-        .with_node_spawn_timeout(current_settings.node_spawn_timeout());
+        .with_node_spawn_timeout(current_settings.node_spawn_timeout())
+        .with_tear_down_on_failure(false);
 
     let settings_builder = if let Some(local_ip) = current_settings.local_ip() {
         settings_builder.with_local_ip(local_ip.to_string().as_str())
@@ -217,5 +219,6 @@ mod test {
         let n = network_config("./testing/config.toml", Some(overrided), Some(1));
         assert_eq!(n.global_settings().base_dir(), Some(expected.as_path()));
         assert_eq!(n.global_settings().spawn_concurrency(), Some(1));
+        assert!(!n.global_settings().tear_down_on_failure())
     }
 }

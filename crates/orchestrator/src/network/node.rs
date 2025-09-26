@@ -1,4 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::anyhow;
 use fancy_regex::Regex;
@@ -37,6 +43,8 @@ pub struct NetworkNode {
     pub(crate) prometheus_uri: String,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
+    #[serde(skip)]
+    is_running: Arc<AtomicBool>,
 }
 
 /// Result of waiting for a certain number of log lines to appear.
@@ -130,7 +138,16 @@ impl NetworkNode {
             spec,
             multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
+            is_running: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.is_running.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn set_is_running(&self, is_running: bool) {
+        self.is_running.store(is_running, Ordering::Release);
     }
 
     pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
@@ -218,6 +235,7 @@ impl NetworkNode {
     /// Pause the node, this is implemented by pausing the
     /// actual process (e.g polkadot) with sending `SIGSTOP` signal
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
+        self.set_is_running(false);
         self.inner.pause().await?;
         Ok(())
     }
@@ -225,13 +243,16 @@ impl NetworkNode {
     /// Resume the node, this is implemented by resuming the
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
+        self.set_is_running(true);
         self.inner.resume().await?;
         Ok(())
     }
 
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
+        self.set_is_running(false);
         self.inner.restart(after).await?;
+        self.set_is_running(true);
         Ok(())
     }
 

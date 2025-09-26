@@ -146,8 +146,8 @@ impl NetworkNode {
         self.is_running.load(Ordering::Acquire)
     }
 
-    pub(crate) fn mark_running(&self) {
-        self.is_running.store(true, Ordering::Release);
+    pub(crate) fn set_is_running(&self, is_running: bool) {
+        self.is_running.store(is_running, Ordering::Release);
     }
 
     pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
@@ -235,7 +235,7 @@ impl NetworkNode {
     /// Pause the node, this is implemented by pausing the
     /// actual process (e.g polkadot) with sending `SIGSTOP` signal
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
-        self.is_running.store(false, Ordering::Release);
+        self.set_is_running(false);
         self.inner.pause().await?;
         Ok(())
     }
@@ -243,16 +243,16 @@ impl NetworkNode {
     /// Resume the node, this is implemented by resuming the
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
-        self.is_running.store(true, Ordering::Release);
+        self.set_is_running(true);
         self.inner.resume().await?;
         Ok(())
     }
 
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
-        self.is_running.store(false, Ordering::Release);
+        self.set_is_running(false);
         self.inner.restart(after).await?;
-        self.is_running.store(true, Ordering::Release);
+        self.set_is_running(true);
         Ok(())
     }
 

@@ -691,7 +691,7 @@ impl<T: FileSystem> Network<T> {
             self.relay.nodes.push(node.clone());
         }
         // TODO: we should hold a ref to the node in the vec in the future.
-        node.mark_running();
+        node.set_is_running(true);
         let node_name = node.name.clone();
         self.nodes_by_name.insert(node_name, node.clone());
         self.nodes_to_watch.write().await.push(node);

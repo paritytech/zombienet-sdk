@@ -811,7 +811,7 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     }
 
     /// Set the bootnodes addresses the collators will connect to.
-    /// 
+    ///
     /// Note: Bootnode address replacements are NOT supported here.
     /// Only arguments (`args`) support dynamic replacements. Bootnode addresses must be a valid address.
     pub fn with_raw_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self

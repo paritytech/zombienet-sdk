@@ -88,7 +88,7 @@ pub struct ParachainSpec {
 
     /// Raw chain-spec override path, url or inline json to use.
     pub(crate) raw_spec_override: Option<JsonOverrides>,
-    
+
     /// Bootnodes addresses to use for the parachain nodes
     pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }

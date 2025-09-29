@@ -50,14 +50,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_node_spawn_timeout_works_when_env_is_set() {
+    fn default_node_spawn_timeout_works_before_and_after_env_is_set() {
+        assert_eq!(default_node_spawn_timeout(), 600);
         env::set_var(ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS, "123");
         assert_eq!(default_node_spawn_timeout(), 123);
-    }
-
-    #[test]
-    fn default_node_spawn_timeout_falls_back_to_default_when_env_is_not_set() {
-        assert_eq!(default_node_spawn_timeout(), 600);
     }
 
     #[test]

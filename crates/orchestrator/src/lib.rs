@@ -201,6 +201,15 @@ where
                 .await?;
         }
 
+        // override raw spec if needed
+        if let Some(ref raw_spec_override) = network_spec.relaychain.raw_spec_override {
+            network_spec
+                .relaychain
+                .chain_spec
+                .override_raw_spec(&scoped_fs, raw_spec_override)
+                .await?;
+        }
+
         let (bootnodes, relaynodes) =
             split_nodes_by_bootnodes(&network_spec.relaychain.nodes, false);
 

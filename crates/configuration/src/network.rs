@@ -1879,4 +1879,38 @@ mod tests {
             1
         );
     }
+
+    #[test]
+    fn raw_spec_override_in_toml_should_work() {
+        let load_from_toml = NetworkConfig::load_from_toml(
+            "./testing/snapshots/0008-small-network-with-raw-spec-override.toml",
+        )
+        .unwrap();
+
+        let expected = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_raw_spec_override("/some/path/raw_spec_override.json")
+                    .with_node(|node| node.with_name("alice"))
+                    .with_node(|node| node.with_name("bob"))
+            })
+            .with_parachain(|p| {
+                p.with_id(1000)
+                    .with_raw_spec_override("https://some.com/raw_spec_override.json")
+                    .with_collator(|c| c.with_name("john"))
+            })
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            load_from_toml.relaychain().raw_spec_override(),
+            expected.relaychain().raw_spec_override()
+        );
+        assert_eq!(
+            load_from_toml.parachains()[0].raw_spec_override(),
+            expected.parachains()[0].raw_spec_override()
+        );
+    }
 }

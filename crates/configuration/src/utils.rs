@@ -51,13 +51,14 @@ mod tests {
 
     #[test]
     fn default_node_spawn_timeout_works_before_and_after_env_is_set() {
+        // The default should be 600 seconds if the env var is not set
         assert_eq!(default_node_spawn_timeout(), 600);
+
+        // If env var is set to a valid number, it should return that number
         env::set_var(ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS, "123");
         assert_eq!(default_node_spawn_timeout(), 123);
-    }
 
-    #[test]
-    fn default_node_spawn_timeout_falls_back_to_default_when_env_is_not_parsable() {
+        // If env var is set to a NOT valid number, it should return 600
         env::set_var(ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS, "NOT_A_NUMBER");
         assert_eq!(default_node_spawn_timeout(), 600);
     }

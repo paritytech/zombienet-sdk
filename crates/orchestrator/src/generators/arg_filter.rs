@@ -4,13 +4,21 @@ use configuration::types::Arg;
 /// Returns a set of arg names/flags that should be removed from the final command.
 ///
 /// # Examples
-/// - `-:--insecure-validator-i-know-what-i-do` -> removes the flag
-/// - `-:--prometheus-port` -> removes the option
+/// - `-:--insecure-validator-i-know-what-i-do` -> removes `--insecure-validator-i-know-what-i-do`
+/// - `-:insecure-validator` -> removes `--insecure-validator` (normalized)
+/// - `-:--prometheus-port` -> removes `--prometheus-port`
 pub fn parse_removal_args(args: &[Arg]) -> Vec<String> {
     args.iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) if flag.starts_with("-:") => {
-                Some(flag.trim_start_matches("-:").to_string())
+                let mut flag_to_exclude = flag[2..].to_string();
+
+                // Normalize flag format - ensure it starts with --
+                if !flag_to_exclude.starts_with("--") {
+                    flag_to_exclude = format!("--{}", flag_to_exclude);
+                }
+
+                Some(flag_to_exclude)
             },
             _ => None,
         })
@@ -40,7 +48,6 @@ pub fn apply_arg_removals(args: Vec<String>, removals: &[String]) -> Vec<String>
             continue;
         }
 
-        // Check if this arg should be removed
         let should_remove = removals
             .iter()
             .any(|removal| arg == removal || arg.starts_with(&format!("{}=", removal)));

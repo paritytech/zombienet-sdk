@@ -477,6 +477,10 @@ impl de::Visitor<'_> for ArgVisitor {
         if v.starts_with("-l") || v.starts_with("-log") {
             return Ok(Arg::Flag(v.to_string()));
         }
+        // Handle argument removal syntax: -:--flag-name
+        if v.starts_with("-:") {
+            return Ok(Arg::Flag(v.to_string()));
+        }
         let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>\\[[^\\]]*\\]|[^ ]+))?$").unwrap();
 
         let captures = re.captures(v);

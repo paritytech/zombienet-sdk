@@ -123,7 +123,7 @@ pub fn generate_for_cumulus_node(
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
-                if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
+                if flag.starts_with("-:") || FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
                     Some(vec![flag.to_owned()])
@@ -194,7 +194,7 @@ pub fn generate_for_cumulus_node(
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
-                if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
+                if flag.starts_with("-:") || FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
                     Some(vec![flag.to_owned()])
@@ -369,7 +369,7 @@ pub fn generate_for_node(
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
-                if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
+                if flag.starts_with("-:") || FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
                     Some(vec![flag.to_owned()])

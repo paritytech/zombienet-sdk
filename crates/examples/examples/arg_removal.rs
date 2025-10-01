@@ -1,49 +1,75 @@
-use std::time::Duration;
-
-use anyhow::anyhow;
-use zombienet_sdk::NetworkConfigBuilder;
+use futures::stream::StreamExt;
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use zombienet_sdk::{subxt, NetworkConfig, NetworkConfigExt};
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
-    tracing_subscriber::fmt::init();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
 
-    let images = zombienet_sdk::environment::get_images_from_env();
-    let config = NetworkConfigBuilder::new()
-        .with_relaychain(|r| {
-            r.with_chain("rococo-local")
-                .with_default_command("polkadot")
-                .with_default_image(images.polkadot.as_str())
-                .with_validator(|node| node.with_name("alice"))
-                .with_validator(|node| {
-                    node.with_name("bob").with_args(vec![
-                        // Use -: prefix to remove the default insecure validator flag
-                        "-:--insecure-validator-i-know-what-i-do".into(),
-                    ])
-                })
-        })
-        .build()
-        .map_err(|e| {
-            let errs = e
-                .into_iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(" ");
-            anyhow!("config errs: {errs}")
-        })?;
+    let network =
+        NetworkConfig::load_from_toml("./crates/examples/examples/0003-arg-removal.toml")?
+            .spawn_docker()
+            .await?;
 
-    let spawn_fn = zombienet_sdk::environment::get_spawn_fn();
-    let network = spawn_fn(config).await?;
+    println!("🚀🚀🚀🚀 network deployed");
 
-    println!("✅ Network spawned with secure validator 'bob'\n");
+    // Verify network structure
+    let nodes = network.relaychain().nodes();
+    assert_eq!(nodes.len(), 2, "Expected 2 validators in the network");
+    println!("\n✅ Network has {} validators", nodes.len());
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
+    // Get nodes and verify they exist
     let alice = network.get_node("alice")?;
     let bob = network.get_node("bob")?;
 
-    println!("📊 Node Status:");
+    println!("\n📊 Node Status:");
     println!("  - Alice (regular validator): {}", alice.name());
     println!("  - Bob (secure validator): {}", bob.name());
+
+    // Verify arg removal feature: bob should NOT have the insecure validator flag
+    let alice_args = alice.args();
+    let bob_args = bob.args();
+
+    println!("\n🔍 Verifying argument removal feature:");
+    println!("  Alice args count: {}", alice_args.len());
+    println!("  Bob args count: {}", bob_args.len());
+
+    // Alice should have the default insecure validator flag
+    let alice_has_insecure_flag = alice_args
+        .iter()
+        .any(|arg| arg.contains("insecure-validator-i-know-what-i-do"));
+    assert!(
+        alice_has_insecure_flag,
+        "Alice should have the default --insecure-validator-i-know-what-i-do flag"
+    );
+    println!("  ✅ Alice has --insecure-validator-i-know-what-i-do flag (expected)");
+
+    // Bob should NOT have the insecure validator flag (it was removed with -: prefix)
+    let bob_has_insecure_flag = bob_args
+        .iter()
+        .any(|arg| arg.contains("insecure-validator-i-know-what-i-do"));
+    assert!(
+        !bob_has_insecure_flag,
+        "Bob should NOT have the --insecure-validator-i-know-what-i-do flag (it was removed)"
+    );
+    println!(
+        "  ✅ Bob does NOT have --insecure-validator-i-know-what-i-do flag (removed successfully)"
+    );
+
+    let client = alice.wait_client::<subxt::PolkadotConfig>().await?;
+    let mut blocks = client.blocks().subscribe_finalized().await?.take(3);
+
+    println!("\n📦 Finalized blocks:");
+    let block = blocks.next().await;
+    if let Some(block) = block {
+        println!("  Block #{}", block.unwrap().header().number)
+    }
 
     Ok(())
 }

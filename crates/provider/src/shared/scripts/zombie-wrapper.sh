@@ -116,6 +116,19 @@ pause() {
         echo "send -STOP to process $child_pid"
         $KILL -STOP "$child_pid"
         echo "result $?"
+
+        # Wait until the process is actually stopped (state 'T')
+        for i in {1..10}; do
+            local state
+            state=$(awk '{print $3}' /proc/$child_pid/stat 2>/dev/null)
+            if [ "$state" = "T" ]; then
+                echo "Process $child_pid is paused (state: $state)"
+                return
+            fi
+            $SLEEP 0.2
+        done
+
+        echo "Warning: Process $child_pid not paused after SIGSTOP"
     fi
 }
 
@@ -124,9 +137,21 @@ resume() {
         echo "send -CONT to process $child_pid"
         $KILL -CONT "$child_pid"
         echo "result $?"
+
+        # Wait until the process is actually resumed (state not 'T')
+        for i in {1..10}; do
+            local state
+            state=$(awk '{print $3}' /proc/$child_pid/stat 2>/dev/null)
+            if [ "$state" != "T" ] && [ -n "$state" ]; then
+                echo "Process $child_pid is resumed (state: $state)"
+                return
+            fi
+            $SLEEP 0.2
+        done
+
+        echo "Warning: Process $child_pid not resumed after SIGCONT"
     fi
 }
-
 
 # keep listening from the pipe
 while read line <$pipe

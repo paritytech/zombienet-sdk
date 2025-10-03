@@ -3,6 +3,7 @@ pub mod errors;
 pub mod key;
 pub mod para_artifact;
 
+mod arg_filter;
 mod bootnode_addr;
 mod command;
 mod identity;

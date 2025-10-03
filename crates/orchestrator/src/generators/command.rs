@@ -1,6 +1,7 @@
 use configuration::types::Arg;
 use support::constants::THIS_IS_A_BUG;
 
+use super::arg_filter::{apply_arg_removals, parse_removal_args};
 use crate::{network_spec::node::NodeSpec, shared::constants::*};
 
 pub struct GenCmdOptions<'a> {
@@ -122,7 +123,7 @@ pub fn generate_for_cumulus_node(
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
-                if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
+                if flag.starts_with("-:") || FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
                     Some(vec![flag.to_owned()])
@@ -193,7 +194,7 @@ pub fn generate_for_cumulus_node(
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
-                if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
+                if flag.starts_with("-:") || FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
                     Some(vec![flag.to_owned()])
@@ -253,6 +254,9 @@ pub fn generate_for_cumulus_node(
 
     final_args.append(&mut full_node_injected);
     final_args.append(&mut full_node_args_filtered);
+
+    let removals = parse_removal_args(args);
+    final_args = apply_arg_removals(final_args, &removals);
 
     if options.use_wrapper {
         ("/cfg/zombie-wrapper.sh".to_string(), final_args)
@@ -365,7 +369,7 @@ pub fn generate_for_node(
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
-                if FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
+                if flag.starts_with("-:") || FLAGS_ADDED_BY_US.contains(&flag.as_str()) {
                     None
                 } else {
                     Some(vec![flag.to_owned()])
@@ -415,6 +419,9 @@ pub fn generate_for_node(
     if let Some(ref subcommand) = node.subcommand {
         final_args.insert(1, subcommand.as_str().to_string());
     }
+
+    let removals = parse_removal_args(args);
+    final_args = apply_arg_removals(final_args, &removals);
 
     if options.use_wrapper {
         ("/cfg/zombie-wrapper.sh".to_string(), final_args)
@@ -601,5 +608,27 @@ mod tests {
         assert_eq!(program.as_str(), "polkadot");
 
         assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
+    }
+
+    #[test]
+    fn test_arg_removal_removes_insecure_validator_flag() {
+        let mut node = get_node_spec(false);
+        node.args
+            .push(Arg::Flag("-:--insecure-validator-i-know-what-i-do".into()));
+        node.is_validator = true;
+        node.available_args_output = Some("--insecure-validator-i-know-what-i-do".to_string());
+
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: true,
+            ..GenCmdOptions::default()
+        };
+
+        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        assert_eq!(program.as_str(), "polkadot");
+        assert!(args.iter().any(|arg| arg == "--validator"));
+        assert!(!args
+            .iter()
+            .any(|arg| arg == "--insecure-validator-i-know-what-i-do"));
     }
 }

@@ -62,7 +62,6 @@ libsecp256k1 = { version = "0.7.1", default-features = false }
 pjs-rs = { version = "0.1.4", default-features = false }
 flate2 = "1.0"
 fancy-regex = "0.14.0"
-# staging-chain-spec-builder = "14.0.0"
 sc-chain-spec = "46.0.0"
 
 # Zombienet workspace crates:

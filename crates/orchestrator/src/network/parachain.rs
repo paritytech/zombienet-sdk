@@ -45,10 +45,7 @@ impl ChainUpgrade for Parachain {
             {
                 node
             } else {
-                return Err(anyhow!(
-                    "Node: {} is not part of the set of nodes",
-                    node_name
-                ));
+                return Err(anyhow!("Node: {node_name} is not part of the set of nodes"));
             }
         } else {
             // take the first node

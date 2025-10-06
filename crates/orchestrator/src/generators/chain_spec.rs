@@ -195,7 +195,7 @@ impl ChainSpec {
         // if asset_location is some, then copy the asset to the `base_dir` of the ns with the name `<name>-plain.json`
         if let Some(location) = self.asset_location.as_ref() {
             let maybe_plain_spec_full_path = scoped_fs.full_path(maybe_plain_spec_path.as_path());
-            let _ = location
+            location
                 .dump_asset(maybe_plain_spec_full_path)
                 .await
                 .map_err(|e| {
@@ -211,7 +211,7 @@ impl ChainSpec {
             // First dump the runtime into the ns scoped fs, since we want to easily reproduce
             let runtime_file_name = PathBuf::from(format!("{}-runtime.wasm", self.chain_spec_name));
             let runtime_path_ns = scoped_fs.full_path(runtime_file_name.as_path());
-            let _ = runtime
+            runtime
                 .location
                 .dump_asset(runtime_path_ns)
                 .await
@@ -245,7 +245,7 @@ impl ChainSpec {
 
             trace!("presets: {:?} - preset to use: {:?}", presets, preset);
             let builder = if let Some(preset) = preset {
-                GenericChainSpec::<()>::builder(&runtime_code[..], Default::default())
+                GenericChainSpec::<()>::builder(&runtime_code[..], ())
                     .with_genesis_config_preset_name(preset)
             } else {
                 // default config
@@ -255,7 +255,7 @@ impl ChainSpec {
                     ))
                 })?;
 
-                GenericChainSpec::<()>::builder(&runtime_code[..], Default::default())
+                GenericChainSpec::<()>::builder(&runtime_code[..], ())
                     .with_genesis_config(default_config)
             };
 
@@ -270,7 +270,7 @@ impl ChainSpec {
             };
 
             let builder = if let Some(chain_name) = self.chain_name.as_ref() {
-                builder.with_name(&chain_name)
+                builder.with_name(chain_name)
             } else {
                 builder
             };
@@ -407,7 +407,7 @@ impl ChainSpec {
         self.raw_path = Some(raw_spec_path);
         self.write_spec(scoped_fs, contents).await?;
 
-        return Ok(());
+        Ok(())
     }
 
     /// Override the :code in chain-spec raw version
@@ -941,10 +941,9 @@ where
             "/paras/paras"
         };
 
-        let paras = val.pointer_mut(paras_pointer).ok_or(anyhow!(
-            "paras pointer should be valid {:?} ",
-            paras_pointer
-        ))?;
+        let paras = val
+            .pointer_mut(paras_pointer)
+            .ok_or(anyhow!("paras pointer should be valid {paras_pointer:?} "))?;
         let paras_vec = paras
             .as_array_mut()
             .ok_or(anyhow!("paras should be an array"))?;
@@ -1000,7 +999,7 @@ fn percolate_overrides<'a>(
     let top_level_key = top_level
         .keys()
         .next()
-        .ok_or_else(|| anyhow!("Invalid override value: {:?}", overrides))?;
+        .ok_or_else(|| anyhow!("Invalid override value: {overrides:?}"))?;
     trace!("top_level_key: {top_level_key}");
     let index = pointer_parts.iter().position(|x| *x == top_level_key);
     let Some(i) = index else {
@@ -1021,7 +1020,7 @@ fn percolate_overrides<'a>(
     };
     let overrides_to_use = overrides
         .pointer(&p)
-        .ok_or_else(|| anyhow!("Invalid override value: {:?}", overrides))?;
+        .ok_or_else(|| anyhow!("Invalid override value: {overrides:?}"))?;
     Ok(overrides_to_use)
 }
 
@@ -1038,7 +1037,7 @@ fn construct_runtime_pointer_from_overrides(
             let k = top_level
                 .keys()
                 .next()
-                .ok_or_else(|| anyhow!("Invalid override value: {:?}", overrides))?;
+                .ok_or_else(|| anyhow!("Invalid override value: {overrides:?}"))?;
             match k.as_str() {
                 "runtimeGenesisConfigPatch" | "runtime" | "runtimeGenesis" => {
                     return Ok(("/genesis").into())

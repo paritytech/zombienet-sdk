@@ -331,11 +331,7 @@ impl AssetLocation {
         let contents = match self {
             AssetLocation::Url(location) => {
                 let res = reqwest::get(location.as_ref()).await.map_err(|err| {
-                    anyhow!(
-                        "Error dowinloding asset from url {} - {}",
-                        location,
-                        err.to_string()
-                    )
+                    anyhow!("Error dowinloding asset from url {location} - {err}")
                 })?;
 
                 res.bytes().await.unwrap().into()
@@ -345,7 +341,7 @@ impl AssetLocation {
                     anyhow!(
                         "Error reading asset from path {} - {}",
                         filepath.to_string_lossy(),
-                        err.to_string()
+                        err
                     )
                 })?
             },
@@ -621,13 +617,7 @@ impl JsonOverrides {
     pub async fn get(&self) -> Result<serde_json::Value, anyhow::Error> {
         let contents = match self {
             Self::Location(location) => serde_json::from_slice(&location.get_asset().await?)
-                .map_err(|err| {
-                    anyhow!(
-                        "Error converting asset to json {} - {}",
-                        location,
-                        err.to_string()
-                    )
-                }),
+                .map_err(|err| anyhow!("Error converting asset to json {location} - {err}")),
             Self::Json(json) => Ok(json.clone()),
         };
 

@@ -115,7 +115,7 @@ async fn main() -> Result<(), anyhow::Error> {
 }
 
 fn display_node_crash(e: anyhow::Error) -> anyhow::Error {
-    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {}", e.to_string())
+    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {e}")
 }
 
 pub fn network_config(

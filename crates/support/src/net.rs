@@ -19,7 +19,7 @@ pub async fn wait_ws_ready(url: &str) -> Result<()> {
     let mut parsed = Url::from_str(url)?;
     parsed
         .set_scheme("http")
-        .map_err(|_| anyhow::anyhow!("Can not set the scheme, {}", THIS_IS_A_BUG))?;
+        .map_err(|_| anyhow::anyhow!("Can not set the scheme, {THIS_IS_A_BUG}"))?;
 
     let http_client = reqwest::Client::new();
     loop {

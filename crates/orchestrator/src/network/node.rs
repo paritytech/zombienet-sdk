@@ -210,11 +210,11 @@ impl NetworkNode {
         debug!("wait_client ws_uri: {}", self.ws_uri());
         wait_ws_ready(self.ws_uri())
             .await
-            .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {}", e))?;
+            .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {e}"))?;
 
         self.try_client()
             .await
-            .map_err(|e| anyhow!("Can't create a subxt client, err: {}", e))
+            .map_err(|e| anyhow!("Can't create a subxt client, err: {e}"))
     }
 
     /// Wait until get the [online client](subxt::client::OnlineClient) for the node with a defined timeout
@@ -365,7 +365,7 @@ impl NetworkNode {
         if let Ok(inner_res) = res {
             match inner_res {
                 Ok(_) => Ok(()),
-                Err(e) => Err(anyhow!("Error waiting for metric: {}", e)),
+                Err(e) => Err(anyhow!("Error waiting for metric: {e}")),
             }
         } else {
             // timeout

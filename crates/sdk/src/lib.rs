@@ -8,8 +8,7 @@ pub use orchestrator::pjs_helper::PjsResult;
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{node::NetworkNode, Network},
-    AddCollatorOptions, AddNodeOptions, Orchestrator,
-    sc_chain_spec
+    sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
 
 // Helpers used for interact with the network

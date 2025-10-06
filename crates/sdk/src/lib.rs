@@ -9,6 +9,7 @@ pub use orchestrator::{
     errors::OrchestratorError,
     network::{node::NetworkNode, Network},
     AddCollatorOptions, AddNodeOptions, Orchestrator,
+    sc_chain_spec
 };
 
 // Helpers used for interact with the network

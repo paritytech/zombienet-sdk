@@ -278,7 +278,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let para_spec = ParachainSpec::from_config(&para_config).unwrap();
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "rococo-local".try_into().unwrap()).unwrap();
         let fs = support::fs::in_memory::InMemoryFileSystem::new(HashMap::default());
         let scoped_fs = ScopedFilesystem {
             fs: &fs,

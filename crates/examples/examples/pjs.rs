@@ -1,7 +1,11 @@
+#[cfg(feature = "pjs")]
 use futures::stream::StreamExt;
+#[cfg(feature = "pjs")]
 use serde_json::json;
+#[cfg(feature = "pjs")]
 use zombienet_sdk::{subxt, NetworkConfigBuilder, NetworkConfigExt};
 
+#[cfg(feature = "pjs")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
@@ -56,3 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(not(feature = "pjs"))]
+fn main() {}

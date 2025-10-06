@@ -14,6 +14,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 use support::constants::{INFAILABLE, SHOULD_COMPILE, THIS_IS_A_BUG};
+use tokio::fs;
 use url::Url;
 
 use super::{errors::ConversionError, resources::Resources};
@@ -325,6 +326,7 @@ impl Display for AssetLocation {
 }
 
 impl AssetLocation {
+    /// Get the current asset (from file or url) and return the content
     pub async fn get_asset(&self) -> Result<Vec<u8>, anyhow::Error> {
         let contents = match self {
             AssetLocation::Url(location) => {
@@ -350,6 +352,13 @@ impl AssetLocation {
         };
 
         Ok(contents)
+    }
+
+    /// Write asset (from file or url) to the destination path.
+    pub async fn dump_asset(&self, dst_path: impl Into<PathBuf>) -> Result<(), anyhow::Error> {
+        let contents = self.get_asset().await?;
+        fs::write(dst_path.into(), contents).await?;
+        Ok(())
     }
 }
 
@@ -542,6 +551,30 @@ pub struct ChainDefaultContext {
     pub(crate) default_db_snapshot: Option<AssetLocation>,
     #[serde(default)]
     pub(crate) default_args: Vec<Arg>,
+}
+
+/// Represent a runtime (.wasm) asset location and an
+/// optional preset to use for chain-spec generation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChainSpecRuntime {
+    pub location: AssetLocation,
+    pub preset: Option<String>,
+}
+
+impl ChainSpecRuntime {
+    pub fn new(location: AssetLocation) -> Self {
+        ChainSpecRuntime {
+            location,
+            preset: None,
+        }
+    }
+
+    pub fn with_preset(location: AssetLocation, preset: impl Into<String>) -> Self {
+        ChainSpecRuntime {
+            location,
+            preset: Some(preset.into()),
+        }
+    }
 }
 
 /// Represents a set of JSON overrides for a configuration.

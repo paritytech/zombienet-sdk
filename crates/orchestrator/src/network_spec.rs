@@ -43,7 +43,7 @@ impl NetworkSpec {
 
         // TODO: move to `fold` or map+fold
         for para_config in network_config.parachains() {
-            match ParachainSpec::from_config(para_config) {
+            match ParachainSpec::from_config(para_config, relaychain.chain.clone()) {
                 Ok(para) => parachains.push(para),
                 Err(err) => errs.push(err),
             }

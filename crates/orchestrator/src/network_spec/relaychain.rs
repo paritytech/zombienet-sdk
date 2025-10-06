@@ -104,6 +104,13 @@ impl RelaychainSpec {
             chain_spec
         };
 
+        // add chain-spec runtime  if present
+        let chain_spec = if let Some(chain_spec_runtime) = config.chain_spec_runtime() {
+            chain_spec.runtime(chain_spec_runtime.clone())
+        } else {
+            chain_spec
+        };
+
         // build the `node_specs`
         let chain_context = ChainDefaultContext {
             default_command: config.default_command(),

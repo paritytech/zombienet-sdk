@@ -3,7 +3,7 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use configuration::{
     para_states::{Initial, Running},
@@ -14,12 +14,15 @@ use configuration::{
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::Serialize;
 use support::fs::FileSystem;
+use tokio::sync::RwLock;
+use tracing::{error, warn};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
     generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
     shared::{
+        constants::{NODE_MONITORING_FAILURE_THRESHOLD_SECONDS, NODE_MONITORING_INTERVAL_SECONDS},
         macros,
         types::{ChainDefaultContext, RegisterParachainOptions},
     },
@@ -38,6 +41,8 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip)]
     nodes_by_name: HashMap<String, NetworkNode>,
+    #[serde(skip)]
+    nodes_to_watch: Arc<RwLock<Vec<NetworkNode>>>,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -75,6 +80,7 @@ impl<T: FileSystem> Network<T> {
             initial_spec,
             parachains: Default::default(),
             nodes_by_name: Default::default(),
+            nodes_to_watch: Default::default(),
         }
     }
 
@@ -197,8 +203,12 @@ impl<T: FileSystem> Network<T> {
         //     // tx_helper::validator_actions::register(vec![&node], &running_node.ws_uri, None).await?;
         // }
 
+        // Let's make sure node is up before adding
+        node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
+            .await?;
+
         // Add node to relaychain data
-        self.add_running_node(node.clone(), None);
+        self.add_running_node(node.clone(), None).await;
 
         Ok(())
     }
@@ -326,8 +336,13 @@ impl<T: FileSystem> Network<T> {
         );
 
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
+
+        // Let's make sure node is up before adding
+        node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
+            .await?;
+
         parachain.collators.push(node.clone());
-        self.add_running_node(node, None);
+        self.add_running_node(node, None).await;
 
         Ok(())
     }
@@ -337,9 +352,27 @@ impl<T: FileSystem> Network<T> {
     /// This allow you to build a new parachain config to be deployed into
     /// the running network.
     pub fn para_config_builder(&self) -> ParachainConfigBuilder<Initial, Running> {
-        let used_ports = vec![]; // TODO: generate used ports from the network
+        let used_ports = self
+            .nodes_iter()
+            .map(|node| node.spec())
+            .flat_map(|spec| {
+                [
+                    spec.ws_port.0,
+                    spec.rpc_port.0,
+                    spec.prometheus_port.0,
+                    spec.p2p_port.0,
+                ]
+            })
+            .collect();
+
         let used_nodes_names = self.nodes_by_name.keys().cloned().collect();
-        let used_para_ids = HashMap::new(); // TODO: generate used para ids from the network
+
+        // need to inverse logic of generate_unique_para_id
+        let used_para_ids = self
+            .parachains
+            .iter()
+            .map(|(id, paras)| (*id, paras.len().saturating_sub(1) as u8))
+            .collect();
 
         let context = ValidationContext {
             used_ports,
@@ -516,10 +549,18 @@ impl<T: FileSystem> Network<T> {
             .map(|node| spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para));
 
         let running_nodes = futures::future::try_join_all(spawning_tasks).await?;
+
+        // Let's make sure nodes are up before adding them
+        let waiting_tasks = running_nodes.iter().map(|node| {
+            node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
+        });
+
+        let _ = futures::future::try_join_all(waiting_tasks).await?;
+
         let running_para_id = parachain.para_id;
         self.add_para(parachain);
         for node in running_nodes {
-            self.add_running_node(node, Some(running_para_id));
+            self.add_running_node(node, Some(running_para_id)).await;
         }
 
         Ok(())
@@ -638,7 +679,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     // Internal API
-    pub(crate) fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
+    pub(crate) async fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
         if let Some(para_id) = para_id {
             if let Some(para) = self.parachains.get_mut(&para_id).and_then(|p| p.get_mut(0)) {
                 para.collators.push(node.clone());
@@ -650,8 +691,10 @@ impl<T: FileSystem> Network<T> {
             self.relay.nodes.push(node.clone());
         }
         // TODO: we should hold a ref to the node in the vec in the future.
+        node.set_is_running(true);
         let node_name = node.name.clone();
-        self.nodes_by_name.insert(node_name, node);
+        self.nodes_by_name.insert(node_name, node.clone());
+        self.nodes_to_watch.write().await.push(node);
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {
@@ -728,5 +771,44 @@ impl<T: FileSystem> Network<T> {
         futures::future::try_join_all(handles).await?;
 
         Ok(())
+    }
+
+    pub(crate) fn spawn_watching_task(&self) {
+        let nodes_to_watch = Arc::clone(&self.nodes_to_watch);
+        let ns = Arc::clone(&self.ns);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(NODE_MONITORING_INTERVAL_SECONDS)).await;
+
+                let all_running = {
+                    let guard = nodes_to_watch.read().await;
+                    let nodes = guard.iter().filter(|n| n.is_running()).collect::<Vec<_>>();
+
+                    let all_running =
+                        futures::future::try_join_all(nodes.iter().map(|n| {
+                            n.wait_until_is_up(NODE_MONITORING_FAILURE_THRESHOLD_SECONDS)
+                        }))
+                        .await;
+
+                    // Re-check `is_running` to make sure we don't kill the network unnecessarily
+                    if nodes.iter().any(|n| !n.is_running()) {
+                        continue;
+                    } else {
+                        all_running
+                    }
+                };
+
+                if let Err(e) = all_running {
+                    warn!("\n\t🧟 One of the nodes crashed: {e}. tearing the network down...");
+
+                    if let Err(e) = ns.destroy().await {
+                        error!("an error occurred during network teardown: {}", e);
+                    }
+
+                    std::process::exit(1);
+                }
+            }
+        });
     }
 }

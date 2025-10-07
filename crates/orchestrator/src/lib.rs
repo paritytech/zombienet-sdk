@@ -44,10 +44,7 @@ use support::{
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
-use crate::{
-    shared::{constants::DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS, types::RegisterParachainOptions},
-    spawner::SpawnNodeCtx,
-};
+use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
 pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
@@ -204,6 +201,15 @@ where
                 .await?;
         }
 
+        // override raw spec if needed
+        if let Some(ref raw_spec_override) = network_spec.relaychain.raw_spec_override {
+            network_spec
+                .relaychain
+                .chain_spec
+                .override_raw_spec(&scoped_fs, raw_spec_override)
+                .await?;
+        }
+
         let (bootnodes, relaynodes) =
             split_nodes_by_bootnodes(&network_spec.relaychain.nodes, false);
 
@@ -271,16 +277,16 @@ where
             );
 
             // Wait for all nodes in the current level to be up
-            let waiting_tasks = running_nodes_per_level
-                .iter()
-                .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+            let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+            });
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;
 
             for node in running_nodes_per_level {
                 // Add the node to the  context and `Network` instance
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                network.add_running_node(node, None);
+                network.add_running_node(node, None).await;
             }
         }
 
@@ -310,15 +316,15 @@ where
             );
 
             // Wait for all nodes in the current level to be up
-            let waiting_tasks = running_nodes_per_level
-                .iter()
-                .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+            let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+            });
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;
 
             for node in running_nodes_per_level {
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                network.add_running_node(node, None);
+                network.add_running_node(node, None).await;
             }
         }
 
@@ -369,9 +375,9 @@ where
                 );
 
                 // Wait for all nodes in the current level to be up
-                let waiting_tasks = running_nodes_per_level
-                    .iter()
-                    .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+                let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                    node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+                });
 
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -407,9 +413,9 @@ where
                 );
 
                 // Wait for all nodes in the current level to be up
-                let waiting_tasks = running_nodes_per_level
-                    .iter()
-                    .map(|node| node.wait_until_is_up(DEFAULT_NODE_SPAWN_TIMEOUT_SECONDS));
+                let waiting_tasks = running_nodes_per_level.iter().map(|node| {
+                    node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+                });
 
                 let _ = futures::future::try_join_all(waiting_tasks).await?;
 
@@ -422,7 +428,7 @@ where
             let running_para_id = parachain.para_id;
             network.add_para(parachain);
             for node in running_nodes {
-                network.add_running_node(node, Some(running_para_id));
+                network.add_running_node(node, Some(running_para_id)).await;
             }
         }
 
@@ -476,6 +482,11 @@ where
         scoped_fs
             .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)
             .await?;
+
+        if network_spec.global_settings.tear_down_on_failure() {
+            network.spawn_watching_task();
+        }
+
         Ok(network)
     }
 }
@@ -905,8 +916,8 @@ mod tests {
                 }
 
                 relay
-                    .with_node(|node| node.with_name("alice"))
-                    .with_node(|node| node.with_name("bob"))
+                    .with_validator(|node| node.with_name("alice"))
+                    .with_validator(|node| node.with_name("bob"))
             })
             .with_parachain(|p| {
                 p.with_id(2000).cumulus_based(true).with_collator(|n| {

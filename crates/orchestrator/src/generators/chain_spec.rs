@@ -4,7 +4,10 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::AssetLocation, HrmpChannelConfig};
+use configuration::{
+    types::{AssetLocation, JsonOverrides},
+    HrmpChannelConfig,
+};
 use provider::{
     constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
@@ -396,6 +399,48 @@ impl ChainSpec {
         Ok(())
     }
 
+    pub async fn override_raw_spec<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        raw_spec_overrides: &JsonOverrides,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // first ensure we have the raw version of the chain-spec
+        let Some(_) = self.raw_path else {
+            return Err(GeneratorError::OverridingRawSpec(String::from(
+                "Raw path should be set at this point.",
+            )));
+        };
+
+        let (content, _) = self.read_spec(scoped_fs).await?;
+
+        // read overrides to json value
+        let override_content: serde_json::Value = raw_spec_overrides.get().await.map_err(|_| {
+            GeneratorError::OverridingRawSpec(format!(
+                "Can not parse raw_spec_override contents as json: {raw_spec_overrides}"
+            ))
+        })?;
+
+        // read spec to json value
+        let mut chain_spec_json: serde_json::Value =
+            serde_json::from_str(&content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+
+        // merge overrides with existing spec
+        merge(&mut chain_spec_json, &override_content);
+
+        // save changes
+        let overrided_content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
+        })?;
+        self.write_spec(scoped_fs, overrided_content).await?;
+
+        Ok(())
+    }
+
     pub fn raw_path(&self) -> Option<&Path> {
         self.raw_path.as_deref()
     }
@@ -510,7 +555,7 @@ impl ChainSpec {
                 }
             }
 
-            clear_authorities(&pointer, &mut chain_spec_json);
+            clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
             let key_type_to_use = if para.is_evm_based {
                 SessionKeyType::Evm
@@ -615,7 +660,7 @@ impl ChainSpec {
             let staking_min = get_staking_min(&pointer, &mut chain_spec_json);
 
             // Clear authorities
-            clear_authorities(&pointer, &mut chain_spec_json);
+            clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
             // add balances
             add_balances(
@@ -992,7 +1037,11 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     }
 }
 
-fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json::Value) {
+fn clear_authorities(
+    runtime_config_ptr: &str,
+    chain_spec_json: &mut serde_json::Value,
+    ctx: &Context,
+) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         // clear keys (session, aura, grandpa)
         if val.get("session").is_some() {
@@ -1013,7 +1062,7 @@ fn clear_authorities(runtime_config_ptr: &str, chain_spec_json: &mut serde_json:
         }
 
         // clear staking but not `validatorCount` if `devStakers` is set
-        if val.get("staking").is_some() {
+        if val.get("staking").is_some() && ctx == &Context::Relay {
             val["staking"]["invulnerables"] = json!([]);
             val["staking"]["stakers"] = json!([]);
 
@@ -1450,7 +1499,7 @@ mod tests {
         let mut chain_spec_json = chain_spec_with_dev_stakers();
 
         let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
-        clear_authorities(&pointer, &mut chain_spec_json);
+        clear_authorities(&pointer, &mut chain_spec_json, &Context::Relay);
 
         let validator_count = chain_spec_json
             .pointer(&format!("{pointer}/staking/validatorCount"))
@@ -1463,7 +1512,7 @@ mod tests {
         let mut chain_spec_json = chain_spec_with_stake();
 
         let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
-        clear_authorities(&pointer, &mut chain_spec_json);
+        clear_authorities(&pointer, &mut chain_spec_json, &Context::Relay);
 
         let validator_count = chain_spec_json
             .pointer(&format!("{pointer}/staking/validatorCount"))

@@ -1,0 +1,17 @@
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+raw_spec_override = "/some/path/raw_spec_override.json"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 1000
+raw_spec_override = "https://some.com/raw_spec_override.json"
+
+[parachains.collator]
+name = "john"

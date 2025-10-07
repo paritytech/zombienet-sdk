@@ -483,7 +483,7 @@ where
         self.docker_client
             .container_exec(
                 &self.container_name,
-                vec!["echo", "pause", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo pause > /tmp/zombiepipe"],
                 None,
                 None,
             )
@@ -503,7 +503,7 @@ where
         self.docker_client
             .container_exec(
                 &self.container_name,
-                vec!["echo", "resume", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo resume > /tmp/zombiepipe"],
                 None,
                 None,
             )
@@ -527,7 +527,7 @@ where
         self.docker_client
             .container_exec(
                 &self.container_name,
-                vec!["echo", "restart", ">", "/tmp/zombiepipe"],
+                vec!["sh", "-c", "echo restart > /tmp/zombiepipe"],
                 None,
                 None,
             )

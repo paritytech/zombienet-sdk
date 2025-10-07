@@ -1,9 +1,12 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use configuration::{
-    shared::resources::Resources,
-    types::{Arg, AssetLocation, Command, Image},
-    ParachainConfig, RegistrationStrategy,
+    shared::{helpers::generate_unique_node_name_from_names, resources::Resources},
+    types::{Arg, AssetLocation, Command, Image, JsonOverrides},
+    NodeConfig, ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
 use serde::{Deserialize, Serialize};
@@ -82,6 +85,9 @@ pub struct ParachainSpec {
 
     /// Collators to spawn
     pub(crate) collators: Vec<NodeSpec>,
+
+    /// Raw chain-spec override path, url or inline json to use.
+    pub(crate) raw_spec_override: Option<JsonOverrides>,
 }
 
 impl ParachainSpec {
@@ -163,13 +169,26 @@ impl ParachainSpec {
         // We want to track the errors for all the nodes and report them ones
         let mut errs: Vec<OrchestratorError> = Default::default();
         let mut collators: Vec<NodeSpec> = Default::default();
-        config.collators().iter().for_each(|node_config| {
-            match NodeSpec::from_config(node_config, &chain_context, true) {
-                Ok(node) => collators.push(node),
+
+        let mut nodes: Vec<NodeConfig> = config.collators().into_iter().cloned().collect();
+        nodes.extend(
+            config
+                .group_collators_configs()
+                .into_iter()
+                .flat_map(|node_group| node_group.expand_group_configs()),
+        );
+
+        let mut names = HashSet::new();
+        for node_config in nodes {
+            match NodeSpec::from_config(&node_config, &chain_context, true) {
+                Ok(mut node) => {
+                    let unique_name = generate_unique_node_name_from_names(node.name, &mut names);
+                    node.name = unique_name;
+                    collators.push(node)
+                },
                 Err(err) => errs.push(err),
             }
-        });
-
+        }
         let genesis_state = if let Some(path) = config.genesis_state_path() {
             ParaArtifact::new(
                 ParaArtifactType::State,
@@ -234,6 +253,7 @@ impl ParachainSpec {
             genesis_wasm,
             genesis_overrides: config.genesis_overrides().cloned(),
             collators,
+            raw_spec_override: config.raw_spec_override().cloned(),
         };
 
         Ok(para_spec)
@@ -302,6 +322,13 @@ impl ParachainSpec {
             // override wasm if needed
             if let Some(ref wasm_override) = self.wasm_override {
                 chain_spec.override_code(scoped_fs, wasm_override).await?;
+            }
+
+            // override raw spec if needed
+            if let Some(ref raw_spec_override) = self.raw_spec_override {
+                chain_spec
+                    .override_raw_spec(scoped_fs, raw_spec_override)
+                    .await?;
             }
 
             let chain_spec_raw_path =

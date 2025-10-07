@@ -495,7 +495,7 @@ impl KubernetesClient {
                         }
                     }
                 });
-                
+
                 trace!("finished forwarder process for local port: {local_port}, peer: {peer}");
             }
         });

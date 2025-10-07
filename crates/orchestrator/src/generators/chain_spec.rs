@@ -366,6 +366,7 @@ impl ChainSpec {
 
         // expected raw path
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
+        self.raw_path = Some(raw_spec_path.clone());
 
         if self.runtime.is_some() && self.asset_location.is_none() {
             // chain-spec created using the runtime
@@ -409,7 +410,6 @@ impl ChainSpec {
                 contents
             };
 
-            self.raw_path = Some(raw_spec_path);
             self.write_spec(scoped_fs, contents).await?;
         } else {
             // fallback to use _cmd_ for raw creation
@@ -418,7 +418,7 @@ impl ChainSpec {
                 self.chain_spec_name,
                 rand::random::<u8>()
             );
-            let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
+
             let cmd = self
                 .command
                 .as_ref()
@@ -475,7 +475,7 @@ impl ChainSpec {
             };
             trace!("cmd: {:?} - args: {:?}", cmd, args);
 
-            let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
+            let generate_command = GenerateFileCommand::new(cmd, raw_spec_path).args(args);
 
             if let Some(CommandInContext::Local(_)) = self.command {
                 // local

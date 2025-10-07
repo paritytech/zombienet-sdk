@@ -1,10 +1,3 @@
-//! Example: Dynamically adding a parachain to a running Zombienet network.
-//!
-//! This example demonstrates how to:
-//! - Build and deploy a relaychain and parachain network using Zombienet SDK
-//! - Wait for network startup and finalized blocks
-//! - Add a new parachain to the running network at runtime
-
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -25,10 +18,8 @@ async fn main() -> Result<(), anyhow::Error> {
             p.with_id(2000).cumulus_based(true).with_collator(
                 |n| {
                     n.with_name("collator")
-                    // TODO: check how we can clean
                     .with_command("polkadot-parachain")
-                }, // .with_command("test-parachain")
-                   // .with_image("docker.io/paritypr/test-parachain:c90f9713b5bc73a9620b2e72b226b4d11e018190")
+                }, 
             )
         })
         .build()

@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let network =
-        NetworkConfig::load_from_toml("./crates/examples/examples/0003-arg-removal.toml")?
+        NetworkConfig::load_from_toml("./crates/examples/examples/configs/arg-removal.toml")?
             .spawn_docker()
             .await?;
 

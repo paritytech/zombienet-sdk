@@ -1,11 +1,3 @@
-//! Example: Manual parachain registration in a running Zombienet network.
-//!
-//! This example demonstrates how to:
-//! - Deploy a relaychain and parachain network
-//! - Wait for finalized blocks
-//! - Register a parachain manually
-//! - Verify parachain block production after registration
-
 use std::time::Duration;
 
 use futures::stream::StreamExt;
@@ -15,7 +7,6 @@ use zombienet_sdk::{subxt, NetworkConfigBuilder, NetworkConfigExt, RegistrationS
 async fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt::init();
 
-    // let images = zombienet_sdk::environment::get_images_from_env();
     let mut network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")

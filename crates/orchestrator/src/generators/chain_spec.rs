@@ -9,7 +9,9 @@ use configuration::{
     HrmpChannelConfig,
 };
 use provider::{
-    constants::NODE_CONFIG_DIR, types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile}, DynNamespace, ProviderError
+    constants::NODE_CONFIG_DIR,
+    types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
+    DynNamespace, ProviderError,
 };
 use sc_chain_spec::{GenericChainSpec, GenesisConfigBuilderRuntimeCaller};
 use serde::{Deserialize, Serialize};
@@ -377,7 +379,6 @@ impl ChainSpec {
                 ))
             })?;
 
-
             let contents = chain_spec.as_json(true).map_err(|e| {
                 GeneratorError::ChainSpecGeneration(format!(
                     "getting chain-spec as json should work, err: {e}"
@@ -389,8 +390,8 @@ impl ChainSpec {
                 para_id: _,
             } = &self.context
             {
-                let mut contents_json: serde_json::Value =
-                    serde_json::from_str(&contents).map_err(|e| {
+                let mut contents_json: serde_json::Value = serde_json::from_str(&contents)
+                    .map_err(|e| {
                         GeneratorError::ChainSpecGeneration(format!(
                             "getting chain-spec as json should work, err: {e}"
                         ))
@@ -438,21 +439,23 @@ impl ChainSpec {
                 maybe_plain_path.display()
             );
             // Remote path to be injected
-            let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
+            let chain_spec_path_in_pod =
+                format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
             // Path in the context of the node, this can be different in the context of the providers (e.g native)
-            let chain_spec_path_in_args = if matches!(self.command, Some(CommandInContext::Local(_))) {
-                chain_spec_path_local.clone()
-            } else if ns.capabilities().prefix_with_full_path {
-                // In native
-                format!(
-                    "{}/{}{}",
-                    ns.base_dir().to_string_lossy(),
-                    &temp_name,
-                    &chain_spec_path_in_pod
-                )
-            } else {
-                chain_spec_path_in_pod.clone()
-            };
+            let chain_spec_path_in_args =
+                if matches!(self.command, Some(CommandInContext::Local(_))) {
+                    chain_spec_path_local.clone()
+                } else if ns.capabilities().prefix_with_full_path {
+                    // In native
+                    format!(
+                        "{}/{}{}",
+                        ns.base_dir().to_string_lossy(),
+                        &temp_name,
+                        &chain_spec_path_in_pod
+                    )
+                } else {
+                    chain_spec_path_in_pod.clone()
+                };
 
             let mut full_cmd = apply_replacements(
                 cmd.cmd(),

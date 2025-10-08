@@ -50,6 +50,14 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: Illustrates how to start a network, create a database snapshot, and then launch a new network from that snapshot to speed up initialization.
     *   **Run**: `cargo run --example db_snapshot`
 
+*   **`chain_spec_generation`**
+    *   **Description**: Shows how to generate a chain spec dynamically when launching a network by providing a `chain_spec_command`.
+    *   **Run**: `cargo run --example chain_spec_generation`
+
+*   **`raw_spec_override`**
+    *   **Description**: Demonstrates how to override fields in the relay chain's raw chain spec (such as the chain name or bootNodes) using the SDK's `.with_raw_spec_override()` method.
+    *   **Run**: `cargo run --example raw_spec_override`
+
 ### Parachain Lifecycle
 
 *   **`small_network_with_para`**

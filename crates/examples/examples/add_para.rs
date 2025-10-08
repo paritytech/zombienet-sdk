@@ -15,12 +15,9 @@ async fn main() -> Result<(), anyhow::Error> {
                 .with_validator(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
-            p.with_id(2000).cumulus_based(true).with_collator(
-                |n| {
-                    n.with_name("collator")
-                    .with_command("polkadot-parachain")
-                }, 
-            )
+            p.with_id(2000)
+                .cumulus_based(true)
+                .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
         .unwrap()

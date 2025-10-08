@@ -41,11 +41,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀🚀🚀🚀 network deployed");
 
     let nodes = network.relaychain().nodes();
+    assert_eq!(nodes.len(), 3);
     nodes.iter().for_each(|node| {
         println!("Relay node: {}", node.name());
     });
 
     let collators = network.parachains()[0].collators();
+    assert_eq!(collators.len(), 5);
     collators.iter().for_each(|collator| {
         println!("Collator: {}", collator.name());
     });

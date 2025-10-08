@@ -58,6 +58,10 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: Demonstrates how to override fields in the relay chain's raw chain spec (such as the chain name or bootNodes) using the SDK's `.with_raw_spec_override()` method.
     *   **Run**: `cargo run --example raw_spec_override`
 
+*   **`genesis_override`**
+    *   **Description**: Shows how to override the genesis configuration (such as balances) for a parachain using `.with_genesis_overrides()`, and verifies the change by querying the balance with Polkadot.js.
+    *   **Run**: `cargo run --example genesis_override`
+
 ### Parachain Lifecycle
 
 *   **`small_network_with_para`**

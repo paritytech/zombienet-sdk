@@ -36,6 +36,10 @@ async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 libsecp256k1 = { workspace = true  }
 fancy-regex = { workspace = true }
+# staging-chain-spec-builder = { workspace = true }
+# parity-scale-codec = { version = "3.7.5", features = ["derive"] }
+# sc-chain-spec = {workspace = true, default-features = false}
+sc-chain-spec = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }

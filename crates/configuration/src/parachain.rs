@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    types::{CommandWithCustomArgs, JsonOverrides},
+    types::{ChainSpecRuntime, CommandWithCustomArgs, JsonOverrides},
     utils::{default_as_false, default_as_true, default_initial_balance, is_false},
 };
 
@@ -131,7 +131,11 @@ pub struct ParachainConfig {
     genesis_wasm_generator: Option<Command>,
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<CommandWithCustomArgs>,
+    /// chain-spec to use (location can be url or file path)
     chain_spec_path: Option<AssetLocation>,
+    /// runtime to use for generating the chain-spec.
+    /// Location can be url or file path and an optional preset
+    chain_spec_runtime: Option<ChainSpecRuntime>,
     // Path or url to override the runtime (:code) in the chain-spec
     wasm_override: Option<AssetLocation>,
     // Full _template_ command, will be rendered using [tera]
@@ -306,6 +310,11 @@ impl ParachainConfig {
     pub fn raw_spec_override(&self) -> Option<&JsonOverrides> {
         self.raw_spec_override.as_ref()
     }
+
+    /// The location of runtime to use by chain-spec builder lib (from `sc-chain-spec` crate)
+    pub fn chain_spec_runtime(&self) -> Option<&ChainSpecRuntime> {
+        self.chain_spec_runtime.as_ref()
+    }
 }
 
 pub mod states {
@@ -358,6 +367,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 genesis_state_generator: None,
                 genesis_overrides: None,
                 chain_spec_path: None,
+                chain_spec_runtime: None,
                 chain_spec_command: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote by default
@@ -762,6 +772,29 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Set the runtime path to use for generating the chain-spec and an optiona preset.
+    /// If the preset is not set, we will try to match [`local_testnet`, `development`, `dev`]
+    /// with the available ones and fallback to the default configuration as last option.
+    pub fn with_chain_spec_runtime(
+        self,
+        location: impl Into<AssetLocation>,
+        preset: Option<&str>,
+    ) -> Self {
+        let chain_spec_runtime = if let Some(preset) = preset {
+            ChainSpecRuntime::with_preset(location.into(), preset.to_string())
+        } else {
+            ChainSpecRuntime::new(location.into())
+        };
+        Self::transition(
+            ParachainConfig {
+                chain_spec_runtime: Some(chain_spec_runtime),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the location of a wasm to override the chain-spec.
     pub fn with_wasm_override(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
@@ -1156,6 +1189,7 @@ mod tests {
                 "undying-collator export-genesis-state --pov-size=10000 --pvf-complexity=1",
             )
             .with_chain_spec_path("./path/to/chain/spec.json")
+            .with_chain_spec_runtime("./path/to/runtime.wasm", Some("dev"))
             .with_wasm_override("./path/to/override/runtime.wasm")
             .with_raw_spec_override("./path/to/override/rawspec.json")
             .cumulus_based(false)
@@ -1222,6 +1256,19 @@ mod tests {
             parachain_config.wasm_override().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/runtime.wasm"
         ));
+        assert!(matches!(
+            &parachain_config.chain_spec_runtime().unwrap().location,
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/runtime.wasm"
+        ));
+        assert_eq!(
+            parachain_config
+                .chain_spec_runtime()
+                .unwrap()
+                .preset
+                .as_deref(),
+            Some("dev")
+        );
+
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(
             parachain_config.default_args(),

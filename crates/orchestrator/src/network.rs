@@ -423,8 +423,6 @@ impl<T: FileSystem> Network<T> {
         custom_relaychain_spec: Option<PathBuf>,
         custom_parchain_fs_prefix: Option<String>,
     ) -> Result<(), anyhow::Error> {
-        // build
-        let mut para_spec = network_spec::parachain::ParachainSpec::from_config(para_config)?;
         let base_dir = self.ns.base_dir().to_string_lossy().to_string();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
@@ -450,6 +448,11 @@ impl<T: FileSystem> Network<T> {
             ));
             self.relay.chain_id.clone()
         };
+
+        let mut para_spec = network_spec::parachain::ParachainSpec::from_config(
+            para_config,
+            relay_chain_id.as_str().try_into()?,
+        )?;
 
         let chain_spec_raw_path = para_spec
             .build_chain_spec(&relay_chain_id, &self.ns, &scoped_fs)

@@ -667,9 +667,8 @@ where
             }
         }
 
-        if last_err.is_some() {
-            // SECURITY: should be some.
-            return Err(last_err.unwrap());
+        if let Some(last_err) = last_err {
+            return Err(last_err);
         }
 
         let _ = self

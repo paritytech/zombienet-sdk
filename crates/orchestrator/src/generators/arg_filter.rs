@@ -15,7 +15,7 @@ pub fn parse_removal_args(args: &[Arg]) -> Vec<String> {
 
                 // Normalize flag format - ensure it starts with --
                 if !flag_to_exclude.starts_with("--") {
-                    flag_to_exclude = format!("--{}", flag_to_exclude);
+                    flag_to_exclude = format!("--{flag_to_exclude}");
                 }
 
                 Some(flag_to_exclude)
@@ -50,7 +50,7 @@ pub fn apply_arg_removals(args: Vec<String>, removals: &[String]) -> Vec<String>
 
         let should_remove = removals
             .iter()
-            .any(|removal| arg == removal || arg.starts_with(&format!("{}=", removal)));
+            .any(|removal| arg == removal || arg.starts_with(&format!("{removal}=")));
 
         if should_remove {
             // Only skip next if this looks like an option (starts with --) and next arg doesn't start with --

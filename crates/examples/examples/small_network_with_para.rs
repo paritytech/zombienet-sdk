@@ -15,7 +15,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_parachain(|p| {
             p.with_id(100)
                 .cumulus_based(true)
-                //.with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
                 .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
@@ -31,11 +30,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    // TODO: add check to ensure if unique
-    network.add_node("new1", opts).await?;
-
-    // Example of some operations that you can do
-    // with `nodes` (e.g pause, resume, restart)
+    // Check if node name is unique before adding
+    if network.get_node("new1").is_err() {
+        network.add_node("new1", opts).await?;
+        println!("Node 'new1' added successfully");
+    } else {
+        println!("Node name 'new1' already exists!");
+    }
 
     tokio::time::sleep(Duration::from_secs(12)).await;
 
@@ -49,13 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Role is {role}");
 
     // pause the node
-    // node.pause().await?;
-    // println!("node new1 paused!");
+    node.pause().await?;
+    println!("node new1 paused!");
 
-    // tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
-    // node.resume().await?;
-    // println!("node new1 resumed!");
+    // resume the node
+    node.resume().await?;
+    println!("node new1 resumed!");
 
     let col_opts = AddCollatorOptions {
         command: Some("polkadot-parachain".try_into()?),

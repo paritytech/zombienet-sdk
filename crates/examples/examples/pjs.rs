@@ -1,3 +1,11 @@
+//! Example: Using Polkadot JS scripts with Zombienet SDK.
+//!
+//! This example demonstrates how to:
+//! - Build and deploy a relaychain and parachain network
+//! - Wait for finalized blocks
+//! - Execute pjs code against a running node
+//! - Run external Polkadot JS scripts (see `pjs_transfer.js`) for custom logic such as asset transfers
+
 use futures::stream::StreamExt;
 use serde_json::json;
 use zombienet_sdk::{subxt, NetworkConfigBuilder, NetworkConfigExt};

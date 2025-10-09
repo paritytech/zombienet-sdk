@@ -7,7 +7,6 @@ use zombienet_sdk::{subxt, NetworkConfigBuilder, NetworkConfigExt, RegistrationS
 async fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt::init();
 
-    // let images = zombienet_sdk::environment::get_images_from_env();
     let mut network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
@@ -19,7 +18,7 @@ async fn main() -> Result<(), anyhow::Error> {
             p.with_id(2000)
                 .with_registration_strategy(RegistrationStrategy::Manual)
                 .cumulus_based(true)
-                .with_collator(|n| n.with_name("collator").with_command("test-parachain"))
+                .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
         .unwrap()

@@ -1,0 +1,22 @@
+[settings]
+timeout = 1000
+
+[relaychain]
+default_image = "{{ZOMBIENET_INTEGRATION_TEST_IMAGE}}"
+chain = "rococo-local"
+command = "polkadot"
+
+  [[relaychain.nodes]]
+  name = "alice"
+  args = [ "--alice", "-lruntime=debug,parachain=trace" ]
+
+[[parachains]]
+id = 100
+addToGenesis = false
+cumulus_based = false
+wasm_override = "path/to/wasm/file/runtime.wasm" # This need to be a valid path to a wasm file to spawn the network
+
+  [[parachains.collators]]
+  name = "collator01"
+  args = [ "-lruntime=debug,parachain=trace" ]
+

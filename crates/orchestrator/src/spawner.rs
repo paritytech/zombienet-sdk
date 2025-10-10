@@ -195,7 +195,8 @@ where
         .injected_files(files_to_inject)
         .created_paths(created_paths)
         .db_snapshot(node.db_snapshot.clone())
-        .port_mapping(HashMap::from(ports));
+        .port_mapping(HashMap::from(ports))
+        .node_log_path(node.node_log_path.clone());
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())

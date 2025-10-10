@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use configuration::shared::{
     node::{EnvVar, NodeConfig},
     resources::Resources,
@@ -117,6 +119,9 @@ pub struct NodeSpec {
     pub(crate) full_node_p2p_port: Option<ParkedPort>,
     /// Prometheus port to use by full node if this is the case
     pub(crate) full_node_prometheus_port: Option<ParkedPort>,
+
+    /// Optionally specify a log path for the node
+    pub(crate) node_log_path: Option<PathBuf>,
 }
 
 impl NodeSpec {
@@ -205,6 +210,7 @@ impl NodeSpec {
             p2p_port: generators::generate_node_port(node_config.p2p_port())?,
             full_node_p2p_port,
             full_node_prometheus_port,
+            node_log_path: node_config.node_log_path().cloned(),
         })
     }
 
@@ -294,6 +300,7 @@ impl NodeSpec {
             p2p_port: generators::generate_node_port(options.p2p_port)?,
             full_node_p2p_port,
             full_node_prometheus_port,
+            node_log_path: None,
         })
     }
 

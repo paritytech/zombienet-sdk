@@ -137,6 +137,7 @@ where
             created_paths: &options.created_paths,
             db_snapshot: options.db_snapshot.as_ref(),
             filesystem: &self.filesystem,
+            node_log_path: options.node_log_path.as_ref(),
         })
         .await?;
 

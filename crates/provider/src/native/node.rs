@@ -53,6 +53,7 @@ where
     pub(super) created_paths: &'a [PathBuf],
     pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) filesystem: &'a FS,
+    pub(super) node_log_path: Option<&'a PathBuf>,
 }
 
 pub(super) struct NativeNode<FS>
@@ -97,7 +98,10 @@ where
         let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
         let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
         let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
-        let log_path = base_dir.join(format!("{}.log", options.name));
+        let log_path = options
+            .node_log_path
+            .cloned()
+            .unwrap_or_else(|| base_dir.join(format!("{}.log", options.name)));
 
         trace!("creating dirs {:?}", config_dir);
         try_join!(
@@ -405,11 +409,7 @@ where
     }
 
     fn log_cmd(&self) -> String {
-        format!(
-            "tail -f {}/{}.log",
-            self.base_dir().to_string_lossy(),
-            self.name()
-        )
+        format!("tail -f {}", self.log_path().to_string_lossy())
     }
 
     fn path_in_node(&self, file: &Path) -> PathBuf {

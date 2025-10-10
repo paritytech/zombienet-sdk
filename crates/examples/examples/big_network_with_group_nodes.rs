@@ -25,12 +25,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .cumulus_based(true)
                 .with_default_command("polkadot-parachain")
                 .with_collator_group(|g| {
-                    g.with_count(3)
+                    g.with_count(2)
                         .with_base_node(|b| b.with_name("para_group"))
                 })
                 .with_collator_group(|f| {
-                    f.with_count(2)
-                        .with_base_node(|b| b.with_name("para_group-2"))
+                    f.with_count(3).with_base_node(|b| {
+                        b.with_name("para_group-2")
+                            .with_log_path("/tmp/para_group_2.log")
+                    })
                 })
         })
         .build()

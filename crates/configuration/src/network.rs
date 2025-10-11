@@ -882,7 +882,7 @@ mod tests {
             .with_global_settings(|global_settings| {
                 global_settings
                     .with_local_ip("127.0.0000.1")
-                    .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+                    .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421"])
             })
             .build()
             .unwrap_err();

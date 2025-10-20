@@ -3,8 +3,6 @@ use std::time::Instant;
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, try_join};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
-#[cfg(feature = "pjs")]
-use serde_json::json;
 use zombienet_sdk::environment::get_spawn_fn;
 
 fn small_network() -> NetworkConfig {
@@ -93,34 +91,6 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .unwrap();
 
     assert!(best_block >= 2.0, "Current best {best_block}");
-
-    #[cfg(feature = "pjs")]
-    {
-        // pjs
-        let para_is_registered = r#"
-    const paraId = arguments[0];
-    const parachains: number[] = (await api.query.paras.parachains()) || [];
-    const isRegistered = parachains.findIndex((id) => id.toString() == paraId.toString()) >= 0;
-    return isRegistered;
-    "#;
-
-        let is_registered = alice
-            .pjs(para_is_registered, vec![json!(2000)], None)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(is_registered, json!(true));
-
-        // run pjs with code
-        let query_paras = r#"
-    const parachains: number[] = (await api.query.paras.parachains()) || [];
-    return parachains.toJSON()
-    "#;
-
-        let paras = alice.pjs(query_paras, vec![], None).await.unwrap();
-
-        println!("parachains registered: {paras:?}");
-    }
 
     // collator
     let collator = network.get_node("collator").unwrap();

@@ -28,7 +28,6 @@ subxt = { workspace = true }
 subxt-signer = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
-pjs-rs = { workspace = true, optional = true }
 uuid = { workspace = true }
 regex = { workspace = true }
 glob-match = { workspace = true }
@@ -48,5 +47,3 @@ toml = { workspace = true }
 async-trait = { workspace = true }
 lazy_static = { workspace = true }
 
-[features]
-pjs = ["dep:pjs-rs"]

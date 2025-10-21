@@ -81,7 +81,7 @@ jobs:
         with:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
-            /tmp/zombie*/logs/*
+            /tmp/zombie
   #
   #
   native-integration-test-smoke:
@@ -126,4 +126,4 @@ jobs:
         with:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
-            /tmp/zombie*/logs/*
+            /tmp/zombie/

@@ -50,6 +50,8 @@ pub struct SpawnNodeOptions {
     /// Could be a local or remote asset
     pub db_snapshot: Option<AssetLocation>,
     pub port_mapping: Option<HashMap<Port, Port>>,
+    /// Optionally specify a log path for the node
+    pub node_log_path: Option<PathBuf>,
 }
 
 impl SpawnNodeOptions {
@@ -68,6 +70,7 @@ impl SpawnNodeOptions {
             created_paths: vec![],
             db_snapshot: None,
             port_mapping: None,
+            node_log_path: None,
         }
     }
 
@@ -132,6 +135,11 @@ impl SpawnNodeOptions {
 
     pub fn port_mapping(mut self, ports: HashMap<Port, Port>) -> Self {
         self.port_mapping = Some(ports);
+        self
+    }
+
+    pub fn node_log_path(mut self, path: Option<PathBuf>) -> Self {
+        self.node_log_path = path;
         self
     }
 }

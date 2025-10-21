@@ -844,7 +844,10 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     }
 
     /// Set the bootnodes addresses the collators will connect to.
-    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    ///
+    /// Note: Bootnode address replacements are NOT supported here.
+    /// Only arguments (`args`) support dynamic replacements. Bootnode addresses must be a valid address.
+    pub fn with_raw_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
@@ -1194,7 +1197,7 @@ mod tests {
             .with_raw_spec_override("./path/to/override/rawspec.json")
             .cumulus_based(false)
             .evm_based(false)
-            .with_bootnodes_addresses(vec![
+            .with_raw_bootnodes_addresses(vec![
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
@@ -1490,7 +1493,7 @@ mod tests {
         let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .with_collator(|collator| {
                 collator
                     .with_name("collator")
@@ -1566,7 +1569,7 @@ mod tests {
         let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .with_collator(|collator| {
                 collator
                     .with_name("collator1")

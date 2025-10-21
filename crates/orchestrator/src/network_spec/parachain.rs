@@ -88,6 +88,9 @@ pub struct ParachainSpec {
 
     /// Raw chain-spec override path, url or inline json to use.
     pub(crate) raw_spec_override: Option<JsonOverrides>,
+
+    /// Bootnodes addresses to use for the parachain nodes
+    pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }
 
 impl ParachainSpec {
@@ -278,6 +281,7 @@ impl ParachainSpec {
             genesis_overrides: config.genesis_overrides().cloned(),
             collators,
             raw_spec_override: config.raw_spec_override().cloned(),
+            bootnodes_addresses: config.bootnodes_addresses().into_iter().cloned().collect(),
         };
 
         Ok(para_spec)
@@ -369,5 +373,10 @@ impl ParachainSpec {
             None
         };
         Ok(chain_spec_raw_path)
+    }
+
+    /// Get the bootnodes addresses for the parachain spec
+    pub(crate) fn bootnodes_addresses(&self) -> Vec<&multiaddr::Multiaddr> {
+        self.bootnodes_addresses.iter().collect()
     }
 }

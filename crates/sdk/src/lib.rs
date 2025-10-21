@@ -3,8 +3,6 @@ pub use configuration::{
     GlobalSettings, GlobalSettingsBuilder, NetworkConfig, NetworkConfigBuilder,
     RegistrationStrategy, WithRelaychain,
 };
-#[cfg(feature = "pjs")]
-pub use orchestrator::pjs_helper::PjsResult;
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{node::NetworkNode, Network},

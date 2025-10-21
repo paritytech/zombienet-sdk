@@ -8,8 +8,6 @@ pub mod network_helper;
 pub mod tx_helper;
 
 mod network_spec;
-#[cfg(feature = "pjs")]
-pub mod pjs_helper;
 pub mod shared;
 mod spawner;
 
@@ -902,8 +900,6 @@ pub enum ZombieRole {
 // re-exports
 pub use network::{AddCollatorOptions, AddNodeOptions};
 pub use network_helper::metrics;
-#[cfg(feature = "pjs")]
-pub use pjs_helper::PjsResult;
 pub use sc_chain_spec;
 
 #[cfg(test)]

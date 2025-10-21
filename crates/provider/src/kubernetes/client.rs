@@ -17,7 +17,11 @@ use kube::{
 };
 use serde::de::DeserializeOwned;
 use support::constants::THIS_IS_A_BUG;
-use tokio::{io::AsyncRead, net::TcpListener, task::JoinHandle};
+use tokio::{
+    io::{AsyncRead, ErrorKind},
+    net::TcpListener,
+    task::JoinHandle,
+};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, trace};
 
@@ -369,8 +373,6 @@ impl KubernetesClient {
         Ok(service)
     }
 
-    // TODO: remove `unwrap` and add logic to handle panic in spawned task.
-    // We should try to recreate the port-fw at least a couple of times before give up.
     pub(super) async fn create_pod_port_forward(
         &self,
         namespace: &str,
@@ -389,34 +391,116 @@ impl KubernetesClient {
         let local_port = bind.local_addr().map_err(|err| Error(err.into()))?.port();
         let name = name.to_string();
 
-        Ok((
-            local_port,
-            tokio::spawn(async move {
-                loop {
-                    let (mut client_conn, _) = bind.accept().await.unwrap();
-                    let peer = client_conn.peer_addr().unwrap();
-                    trace!("new connection on local_port: {local_port}, peer: {peer}");
-                    let (name, pods) = (name.clone(), pods.clone());
+        const MAX_FAILURES: usize = 5;
+        let monitor_handle = tokio::spawn(async move {
+            let mut consecutive_failures = 0;
+            loop {
+                let (mut client_conn, _) = match bind.accept().await {
+                    Ok(conn) => {
+                        consecutive_failures = 0;
+                        conn
+                    },
+                    Err(e) => {
+                        if consecutive_failures < MAX_FAILURES {
+                            trace!("Port-forward accept error: {e:?}, retrying in 1s");
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            consecutive_failures += 1;
+                            continue;
+                        } else {
+                            trace!("Port-forward accept failed too many times, giving up");
+                            break;
+                        }
+                    },
+                };
 
-                    tokio::spawn(async move {
-                        let mut forwarder = pods.portforward(&name, &[remote_port]).await.unwrap();
-                        trace!("forwarder created for local_port: {local_port}, peer: {peer}");
-                        let mut upstream_conn = forwarder.take_stream(remote_port).unwrap();
+                let peer = match client_conn.peer_addr() {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        trace!("Failed to get peer address: {e:?}");
+                        break;
+                    },
+                };
 
-                        tokio::io::copy_bidirectional(&mut client_conn, &mut upstream_conn)
+                trace!("new connection on local_port: {local_port}, peer: {peer}");
+                let (name, pods) = (name.clone(), pods.clone());
+
+                tokio::spawn(async move {
+                    loop {
+                        // Try to establish port-forward
+                        let mut forwarder = match pods.portforward(&name, &[remote_port]).await {
+                            Ok(f) => {
+                                consecutive_failures = 0;
+                                f
+                            },
+                            Err(e) => {
+                                consecutive_failures += 1;
+                                if consecutive_failures < MAX_FAILURES {
+                                    trace!("portforward failed to establish ({}/{}): {e:?}, retrying in 1s", 
+                                       consecutive_failures, MAX_FAILURES);
+                                    tokio::time::sleep(Duration::from_secs(1)).await;
+                                    continue;
+                                } else {
+                                    trace!("portforward failed to establish after {} attempts: {e:?}, closing connection", 
+                                       consecutive_failures);
+                                    break;
+                                }
+                            },
+                        };
+
+                        let mut upstream_conn = match forwarder.take_stream(remote_port) {
+                            Some(s) => s,
+                            None => {
+                                trace!("Failed to take stream for remote_port: {remote_port}, retrying in 1s");
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                continue;
+                            },
+                        };
+
+                        match tokio::io::copy_bidirectional(&mut client_conn, &mut upstream_conn)
                             .await
-                            .unwrap();
+                        {
+                            Ok((_n1, _n2)) => {
+                                // EOF reached, close connection
+                                trace!("copy_bidirectional finished (EOF), closing connection");
 
-                        drop(upstream_conn);
+                                drop(upstream_conn);
+                                let _ = forwarder.join().await;
 
-                        forwarder.join().await.unwrap();
-                        trace!(
-                            "finished forwarder process for local port: {local_port}, peer: {peer}"
-                        );
-                    });
-                }
-            }),
-        ))
+                                break;
+                            },
+                            Err(e) => {
+                                let kind = e.kind();
+                                match kind {
+                                    ErrorKind::ConnectionReset
+                                    | ErrorKind::ConnectionAborted
+                                    | ErrorKind::ConnectionRefused
+                                    | ErrorKind::TimedOut => {
+                                        consecutive_failures += 1;
+                                        if consecutive_failures < MAX_FAILURES {
+                                            trace!("Network error ({kind:?}): {e:?}, retrying port-forward for this connection");
+                                            tokio::time::sleep(Duration::from_secs(1)).await;
+                                            continue;
+                                        } else {
+                                            trace!("portforward failed to establish after {} attempts: {e:?}, closing connection", 
+                                       consecutive_failures);
+                                            break;
+                                        }
+                                    },
+                                    _ => {
+                                        trace!("Non-network error ({kind:?}): {e:?}, closing connection");
+                                        break;
+                                    },
+                                }
+                            },
+                        }
+                    }
+                });
+
+                trace!("finished forwarder process for local port: {local_port}, peer: {peer}");
+            }
+        });
+
+        Ok((local_port, monitor_handle))
     }
 
     /// Create resources from yamls in `static-configs` directory

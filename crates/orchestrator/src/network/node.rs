@@ -18,8 +18,6 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
-#[cfg(feature = "pjs")]
-use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
 use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
 type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
@@ -516,48 +514,6 @@ impl NetworkNode {
         } else {
             Ok(LogLineCount::TargetFailed(q))
         }
-    }
-
-    // TODO: impl
-    // wait_event_count
-    // wait_event_count_with_timeout
-
-    #[cfg(feature = "pjs")]
-    /// Execute js/ts code inside [pjs_rs] custom runtime.
-    ///
-    /// The code will be run in a wrapper similar to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs(
-        &self,
-        code: impl AsRef<str>,
-        args: Vec<serde_json::Value>,
-        user_types: Option<serde_json::Value>,
-    ) -> Result<PjsResult, anyhow::Error> {
-        let code = pjs_build_template(self.ws_uri(), code.as_ref(), args, user_types);
-        tracing::trace!("Code to execute: {code}");
-        let value = match pjs_exec(code)? {
-            ReturnValue::Deserialized(val) => Ok(val),
-            ReturnValue::CantDeserialize(msg) => Err(msg),
-        };
-
-        Ok(value)
-    }
-
-    #[cfg(feature = "pjs")]
-    /// Execute js/ts file  inside [pjs_rs] custom runtime.
-    ///
-    /// The content of the file will be run in a wrapper similar to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs_file(
-        &self,
-        file: impl AsRef<std::path::Path>,
-        args: Vec<serde_json::Value>,
-        user_types: Option<serde_json::Value>,
-    ) -> Result<PjsResult, anyhow::Error> {
-        let content = std::fs::read_to_string(file)?;
-        self.pjs(content, args, user_types).await
     }
 
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {

@@ -44,10 +44,10 @@ pest_derive = "2.7"
 rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
-sp-core = "36.0.1"
+sp-core = "38.1.0"
 libp2p = "0.54.1"
-subxt = "0.43.0"
-subxt-signer = { version = "0.43.0", features = ["subxt"] }
+subxt = "0.44.0"
+subxt-signer = { version = "0.44.0", features = ["subxt"] }
 tracing = "0.1.35"
 kube = "0.87.1"
 k8s-openapi = "0.20.0"
@@ -61,6 +61,7 @@ glob-match = "0.2.1"
 libsecp256k1 = { version = "0.7.1", default-features = false }
 flate2 = "1.0"
 fancy-regex = "0.14.0"
+sc-chain-spec = "46.0.0"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.3.13", path = "crates/support" }

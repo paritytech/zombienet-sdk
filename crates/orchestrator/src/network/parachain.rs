@@ -45,10 +45,7 @@ impl ChainUpgrade for Parachain {
             {
                 node
             } else {
-                return Err(anyhow!(
-                    "Node: {} is not part of the set of nodes",
-                    node_name
-                ));
+                return Err(anyhow!("Node: {node_name} is not part of the set of nodes"));
             }
         } else {
             // take the first node
@@ -278,7 +275,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let para_spec = ParachainSpec::from_config(&para_config).unwrap();
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "rococo-local".try_into().unwrap()).unwrap();
         let fs = support::fs::in_memory::InMemoryFileSystem::new(HashMap::default());
         let scoped_fs = ScopedFilesystem {
             fs: &fs,

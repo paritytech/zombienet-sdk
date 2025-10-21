@@ -6,7 +6,7 @@ pub use configuration::{
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{node::NetworkNode, Network},
-    AddCollatorOptions, AddNodeOptions, Orchestrator,
+    sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
 
 // Helpers used for interact with the network

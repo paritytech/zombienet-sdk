@@ -187,7 +187,7 @@ where
         network_spec
             .relaychain
             .chain_spec
-            .build_raw(&ns, &scoped_fs)
+            .build_raw(&ns, &scoped_fs, None)
             .await?;
 
         // override wasm if needed
@@ -815,6 +815,18 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
         Ok(())
     }
 
+    async fn read(&self, file: impl AsRef<Path>) -> Result<Vec<u8>, FileSystemError> {
+        let file = file.as_ref();
+
+        let full_path = if file.is_absolute() {
+            file.to_owned()
+        } else {
+            PathBuf::from(format!("{}/{}", self.base_dir, file.to_string_lossy()))
+        };
+        let content = self.fs.read(full_path).await?;
+        Ok(content)
+    }
+
     async fn read_to_string(&self, file: impl AsRef<Path>) -> Result<String, FileSystemError> {
         let file = file.as_ref();
 
@@ -860,6 +872,19 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
 
         self.fs.write(full_path, contents).await
     }
+
+    /// Get the full_path in the scoped FS
+    fn full_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        let path = path.as_ref();
+
+        let full_path = if path.is_absolute() {
+            path.to_owned()
+        } else {
+            PathBuf::from(format!("{}/{}", self.base_dir, path.to_string_lossy()))
+        };
+
+        full_path
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -875,6 +900,7 @@ pub enum ZombieRole {
 // re-exports
 pub use network::{AddCollatorOptions, AddNodeOptions};
 pub use network_helper::metrics;
+pub use sc_chain_spec;
 
 #[cfg(test)]
 mod tests {

@@ -311,7 +311,7 @@ impl KubernetesClient {
                     },
                     // due to other unknown reason
                     Some(ref reason) => Err(Error::from(anyhow!(
-                        format!("unhandled reason while exec for {name}: {reason}, stderr: {stderr}, status: {:?}", status)
+                        format!("unhandled reason while exec for {name}: {reason}, stderr: {stderr}, status: {status:?}")
                     ))),
                     None => {
                         panic!("command had status but no reason was present, this is a bug")

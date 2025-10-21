@@ -1,5 +1,8 @@
-use std::time::{Duration, Instant};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};

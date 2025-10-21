@@ -1,6 +1,5 @@
 use std::{
     fs,
-    path::Path,
     time::{Duration, Instant},
 };
 
@@ -67,18 +66,25 @@ pub enum Commands {
         spawn_opts: SpawnOptions,
     },
     Reproduce {
-        /// Repository name (e.g. polkadot, cumulus, substrate)
-        repo: String,
-        /// CI job id to reproduce
-        job_id: String,
+        /// Repository name (e.g. zombienet-sdk) - only needed if downloading from GitHub
+        #[arg(required_unless_present = "archive_file")]
+        repo: Option<String>,
+        /// CI run id to reproduce - only needed if downloading from GitHub
+        #[arg(required_unless_present = "archive_file")]
+        run_id: Option<String>,
         #[arg(
-            short = 'n',
-            long = "network",
-            help = "Path to network config file (if not specified, will download from GitHub artifacts)"
+            short = 'a',
+            long = "archive",
+            help = "Path to local nextest archive file (.tar.zst)",
+            conflicts_with_all = ["repo", "run_id"]
         )]
-        network_file: Option<String>,
-        #[command(flatten)]
-        spawn_opts: SpawnOptions,
+        archive_file: Option<String>,
+        #[arg(
+            short = 't',
+            long = "test",
+            help = "Specific test to run (if not specified, will run all tests in archive)"
+        )]
+        test_filter: Option<String>,
     },
 }
 
@@ -109,10 +115,10 @@ async fn main() -> Result<(), anyhow::Error> {
         },
         Commands::Reproduce {
             repo,
-            job_id,
-            network_file,
-            spawn_opts,
-        } => reproduce(repo, job_id, network_file, spawn_opts, now).await,
+            run_id,
+            archive_file,
+            test_filter,
+        } => reproduce(repo, run_id, archive_file, test_filter).await,
     }
 }
 
@@ -154,106 +160,65 @@ async fn spawn_network(
 }
 
 async fn reproduce(
-    repo: String,
-    job_id: String,
-    network_file: Option<String>,
-    spawn_opt: SpawnOptions,
-    start_time: Instant,
+    repo: Option<String>,
+    run_id: Option<String>,
+    archive_file: Option<String>,
+    test_filter: Option<String>,
 ) -> Result<(), anyhow::Error> {
-    println!("\nℹ️  Reproduce - reproducing CI job locally");
-    println!("   Repository: paritytech/{}", repo);
-    println!("   Job ID: {}\n", job_id);
-
-    let network_config_path = match network_file {
-        Some(path) => validate_network_file(path)?,
-        None => download_and_extract_network_config(&repo, &job_id)?,
+    let archives = match archive_file {
+        Some(path) => vec![validate_archive_path(&path)?],
+        None => {
+            let repo = repo.expect("repo is required when not using --archive");
+            let run_id = run_id.expect("run_id is required when not using --archive");
+            download_nextest_archives(&repo, &run_id, test_filter.as_deref())?
+        },
     };
 
-    println!("✓ Found network config: {}", network_config_path);
-    println!(
-        "  Spawning network with {} provider...\n",
-        spawn_opt.provider
-    );
-
-    spawn_network(
-        network_config_path,
-        spawn_opt.provider,
-        spawn_opt.base_path,
-        spawn_opt.spawn_concurrency,
-        spawn_opt.node_verifier,
-        start_time,
-    )
-    .await
+    run_all_nextest_archives(&archives)
 }
 
-fn validate_network_file(path: String) -> Result<String, anyhow::Error> {
-    if !Path::new(&path).exists() {
-        anyhow::bail!("Network file does not exist: {}", path);
+fn validate_archive_path(path: &str) -> Result<String, anyhow::Error> {
+    if !fs::metadata(path)?.is_file() {
+        anyhow::bail!("Archive file does not exist: {}", path);
     }
-    println!("✓ Using provided network file: {}\n", path);
-    Ok(path)
+    Ok(path.to_string())
 }
 
-fn download_and_extract_network_config(repo: &str, job_id: &str) -> Result<String, anyhow::Error> {
-    let artifacts_dir = prepare_artifacts_directory(job_id)?;
-    let artifacts_path = artifacts_dir.to_string_lossy().to_string();
-
-    println!("⬇️  Downloading artifacts using GitHub CLI...");
-    download_artifacts_with_gh(repo, job_id, &artifacts_path)?;
-    println!("✓ Artifacts downloaded to: {}\n", artifacts_path);
-
-    find_zombie_json(&artifacts_path, repo, job_id)
-}
-
-fn prepare_artifacts_directory(job_id: &str) -> Result<std::path::PathBuf, anyhow::Error> {
-    let temp_dir = std::env::temp_dir().join(format!("zombienet-reproduce-{}", job_id));
-
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir)?;
-    }
-
-    fs::create_dir_all(&temp_dir)?;
-    Ok(temp_dir)
-}
-
-fn find_zombie_json(
-    artifacts_path: &str,
-    repo: &str,
-    job_id: &str,
-) -> Result<String, anyhow::Error> {
-    fs::read_dir(artifacts_path)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .find(|path| {
-            path.is_file()
-                && path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.eq_ignore_ascii_case("zombie.json"))
-        })
-        .map(|path| path.to_string_lossy().to_string())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not find 'zombie.json' in artifacts at: {}\n\
-                Verify that run ID {} in paritytech/{} has zombienet artifacts.\n\
-                Or specify a network file directly: zombie-cli reproduce {} {} -n /path/to/network.toml",
-                artifacts_path, job_id, repo, repo, job_id
-            )
-        })
-}
-
-fn download_artifacts_with_gh(
+fn download_nextest_archives(
     repo: &str,
     run_id: &str,
-    output_dir: &str,
-) -> Result<(), anyhow::Error> {
+    test_filter: Option<&str>,
+) -> Result<Vec<String>, anyhow::Error> {
+    let temp_dir = std::path::PathBuf::from(format!("/tmp/zombienet-reproduce-{}", run_id));
+    if !temp_dir.exists() {
+        fs::create_dir_all(&temp_dir)?;
+    }
+
+    let pattern = match test_filter {
+        Some(filter) => format!("*{}*", filter),
+        None => "*zombienet-artifacts*".to_string(),
+    };
+
+    println!(
+        "⬇️  Downloading nextest archive from GitHub run ID {} in repo paritytech/{}...",
+        run_id, repo
+    );
+    if let Some(filter) = test_filter {
+        println!("   Using filter pattern: *{}*", filter);
+    }
+
     let output = std::process::Command::new("gh")
-        .arg("run")
-        .arg("download")
-        .arg(run_id)
-        .arg("--repo")
-        .arg(format!("paritytech/{}", repo))
-        .arg("--dir")
-        .arg(output_dir)
+        .args([
+            "run",
+            "download",
+            run_id,
+            "--repo",
+            &format!("paritytech/{}", repo),
+            "--pattern",
+            &pattern,
+            "--dir",
+        ])
+        .arg(&temp_dir)
         .output()
         .map_err(|e| {
             anyhow::anyhow!(
@@ -263,16 +228,206 @@ fn download_artifacts_with_gh(
         })?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
         anyhow::bail!(
             "Failed to download artifacts.\n{}{}\nCheck GitHub CLI setup and permissions.",
-            stdout,
-            stderr
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 
+    extract_and_find_archives(&temp_dir, run_id, repo)
+}
+
+fn extract_and_find_archives(
+    dir: &std::path::Path,
+    run_id: &str,
+    repo: &str,
+) -> Result<Vec<String>, anyhow::Error> {
+    println!("📦 Extracting downloaded artifacts...");
+
+    // First, extract all zip files
+    for entry in fs::read_dir(dir)?.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("zip") {
+            println!(
+                "  Extracting: {}",
+                path.file_name().unwrap().to_string_lossy()
+            );
+            let output = std::process::Command::new("unzip")
+                .args(["-q", "-o"])
+                .arg(&path)
+                .arg("-d")
+                .arg(dir)
+                .output()?;
+
+            if !output.status.success() {
+                eprintln!(
+                    "Warning: Failed to extract zip archive: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+    }
+
+    // Then, recursively search for .tar files and extract them
+    extract_tar_files(dir)?;
+
+    // Finally, find all .tar.zst files
+    let archives = find_all_archives(dir)?;
+
+    if archives.is_empty() {
+        anyhow::bail!(
+            "Could not find any nextest archives (.tar.zst) after extraction.\nVerify that run ID {} in paritytech/{} has nextest test archives.",
+            run_id, repo
+        );
+    }
+
+    println!("\n✓ Found {} nextest archive(s):", archives.len());
+    for (i, archive) in archives.iter().enumerate() {
+        let filename = std::path::Path::new(archive)
+            .file_name()
+            .unwrap()
+            .to_string_lossy();
+        println!("  {}. {}", i + 1, filename);
+    }
+    println!();
+
+    Ok(archives)
+}
+
+fn run_all_nextest_archives(archives: &[String]) -> Result<(), anyhow::Error> {
+    let workspace_path = get_workspace_path()?;
+
+    for (i, archive_path) in archives.iter().enumerate() {
+        println!("═══════════════════════════════════════════════════════════════");
+        println!("Running archive {}/{}", i + 1, archives.len());
+        println!("═══════════════════════════════════════════════════════════════\n");
+
+        let archive_abs_path = std::path::PathBuf::from(archive_path)
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("Failed to resolve archive path: {}", e))?;
+
+        let archive_name = archive_abs_path.file_name().unwrap().to_string_lossy();
+
+        println!("🚀 Running tests from: {}", archive_name);
+
+        let inner_cmd = build_nextest_command();
+        let mut cmd = build_docker_command(&archive_abs_path, &workspace_path, &inner_cmd);
+
+        let status = cmd
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()
+            .map_err(|e| anyhow::anyhow!("Failed to execute docker command: {}\nMake sure Docker is installed and running.", e))?;
+
+        if !status.success() {
+            eprintln!(
+                "\n❌ Tests from {} failed with exit code: {:?}\n",
+                archive_name,
+                status.code()
+            );
+        } else {
+            println!("\n✅ Tests from {} completed successfully\n", archive_name);
+        }
+    }
+
     Ok(())
+}
+
+fn extract_tar_files(dir: &std::path::Path) -> Result<(), anyhow::Error> {
+    for entry in fs::read_dir(dir)?.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("tar") {
+            println!(
+                "  Extracting tar: {}",
+                path.file_name().unwrap().to_string_lossy()
+            );
+            let output = std::process::Command::new("tar")
+                .args(["-xf"])
+                .arg(&path)
+                .arg("-C")
+                .arg(dir)
+                .output()?;
+
+            if !output.status.success() {
+                eprintln!(
+                    "Warning: Failed to extract tar archive: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        } else if path.is_dir() {
+            // Recursively extract tar files in subdirectories
+            extract_tar_files(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn find_all_archives(dir: &std::path::Path) -> Result<Vec<String>, anyhow::Error> {
+    let mut archives = Vec::new();
+
+    for entry in fs::read_dir(dir)?.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
+                if ext == "zst" && path.to_string_lossy().ends_with(".tar.zst") {
+                    archives.push(path.to_string_lossy().to_string());
+                }
+            }
+        } else if path.is_dir() {
+            // Recursively search subdirectories
+            archives.extend(find_all_archives(&path)?);
+        }
+    }
+
+    Ok(archives)
+}
+
+fn get_workspace_path() -> Result<String, anyhow::Error> {
+    std::env::var("POLKADOT_SDK_PATH").map_err(|_| {
+        anyhow::anyhow!(
+            "POLKADOT_SDK_PATH environment variable is not set. \
+            Please set it to the path of the polkadot-sdk workspace."
+        )
+    })
+}
+
+fn build_nextest_command() -> String {
+    "export PATH=/workspace/target/release:$PATH && \
+        cd /workspace && \
+        cargo nextest run \
+        --archive-file /archive.tar.zst \
+        --workspace-remap /workspace \
+        --no-capture; \
+        echo ''; \
+        echo '=== Tests completed ==='"
+        .to_string()
+}
+
+fn build_docker_command(
+    archive_path: &std::path::Path,
+    workspace_path: &str,
+    inner_cmd: &str,
+) -> std::process::Command {
+    let mut cmd = std::process::Command::new("docker");
+    cmd.args([
+        "run",
+        "-it",
+        "--rm",
+        "-v",
+        &format!("{}:/archive.tar.zst:ro", archive_path.display()),
+        "-v",
+        &format!("{}:/workspace", workspace_path),
+        "-e",
+        "ZOMBIE_PROVIDER=native",
+        "-e",
+        "RUST_LOG=info",
+        "docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118",
+        "bash",
+        "-c",
+        inner_cmd,
+    ]);
+    cmd
 }
 
 fn display_node_crash(e: anyhow::Error) -> anyhow::Error {

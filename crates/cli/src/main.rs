@@ -82,10 +82,13 @@ pub enum Commands {
         archive_file: Option<String>,
         #[arg(
             short = 't',
-            long = "test",
-            help = "Specific test to run (if not specified, will run all tests in archive)"
+            long = "artifact-pattern",
+            help = "Specific artifact pattern to run (if not specified, will run all tests in archive)"
         )]
-        test_filter: Option<String>,
+        artifact_pattern: Option<String>,
+        /// Arguments to pass after -- to cargo nextest run (e.g. test names, filters)
+        #[arg(last = true, trailing_var_arg = true)]
+        test_filter: Vec<String>,
     },
 }
 
@@ -118,13 +121,15 @@ async fn main() -> Result<(), anyhow::Error> {
             repo,
             run_id,
             archive_file,
+            artifact_pattern,
             test_filter,
         } => {
             ReproduceConfig {
                 repo,
                 run_id,
                 archive_file,
-                test_filter,
+                artifact_pattern,
+                test_filter: if test_filter.is_empty() { None } else { Some(test_filter) },
             }
             .execute()
             .await

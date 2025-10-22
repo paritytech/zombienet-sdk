@@ -29,7 +29,8 @@ pub struct ReproduceConfig {
     pub repo: Option<String>,
     pub run_id: Option<String>,
     pub archive_file: Option<String>,
-    pub test_filter: Option<String>,
+    pub artifact_pattern: Option<String>,
+    pub test_filter: Option<Vec<String>>,
 }
 
 impl ReproduceConfig {
@@ -49,7 +50,7 @@ impl ReproduceConfig {
                     .context("run_id is required when not using --archive")?;
 
                 let downloader =
-                    ArtifactDownloader::new(&repo, &run_id, self.test_filter.as_deref());
+                    ArtifactDownloader::new(&repo, &run_id, self.artifact_pattern.as_deref());
                 let temp_dir = downloader.create_temp_dir()?;
                 let binaries_dir = downloader.create_binaries_dir()?;
 
@@ -71,7 +72,7 @@ impl ReproduceConfig {
             .as_ref()
             .map(|downloader| downloader.get_binaries_dir());
 
-        TestRunner::new(archives, binaries_dir).run_all()
+        TestRunner::new(archives, binaries_dir, self.test_filter).run_all()
     }
 }
 
@@ -103,15 +104,15 @@ fn validate_archive_path(path: &str, require_extension: &str) -> Result<PathBuf>
 struct ArtifactDownloader {
     repo: String,
     run_id: String,
-    test_filter: Option<String>,
+    artifact_pattern: Option<String>,
 }
 
 impl ArtifactDownloader {
-    fn new(repo: &str, run_id: &str, test_filter: Option<&str>) -> Self {
+    fn new(repo: &str, run_id: &str, artifact_pattern: Option<&str>) -> Self {
         Self {
             repo: repo.to_string(),
             run_id: run_id.to_string(),
-            test_filter: test_filter.map(|s| s.to_string()),
+            artifact_pattern: artifact_pattern.map(|s| s.to_string()),
         }
     }
 
@@ -151,7 +152,7 @@ impl ArtifactDownloader {
 
     fn download_artifacts(&self, temp_dir: &Path) -> Result<()> {
         let pattern = self
-            .test_filter
+            .artifact_pattern
             .as_ref()
             .map(|f| format!("*{}*", f))
             .unwrap_or_else(|| DEFAULT_ARTIFACT_PATTERN.to_string());
@@ -160,7 +161,7 @@ impl ArtifactDownloader {
             "⬇️  Downloading nextest archive from GitHub run ID {} in repo paritytech/{}...",
             self.run_id, self.repo
         );
-        if let Some(filter) = &self.test_filter {
+        if let Some(filter) = &self.artifact_pattern {
             println!("   Using filter pattern: *{}*", filter);
         }
 
@@ -499,13 +500,15 @@ fn find_archives_recursive(dir: &Path) -> Result<Vec<String>> {
 struct TestRunner {
     archives: Vec<PathBuf>,
     binaries_dir: Option<PathBuf>,
+    test_filter: Option<Vec<String>>,
 }
 
 impl TestRunner {
-    fn new(archives: Vec<PathBuf>, binaries_dir: Option<PathBuf>) -> Self {
+    fn new(archives: Vec<PathBuf>, binaries_dir: Option<PathBuf>, test_filter: Option<Vec<String>>) -> Self {
         Self {
             archives,
             binaries_dir,
+            test_filter,
         }
     }
 
@@ -514,7 +517,7 @@ impl TestRunner {
 
         for (i, archive_path) in self.archives.iter().enumerate() {
             self.print_archive_header(i + 1, self.archives.len());
-            self.run_single_archive(archive_path, &workspace_path)?;
+            self.run_single_archive(archive_path, &workspace_path, self.test_filter.as_ref())?;
         }
 
         Ok(())
@@ -526,11 +529,11 @@ impl TestRunner {
         println!("═══════════════════════════════════════════════════════════════\n");
     }
 
-    fn run_single_archive(&self, archive_path: &Path, workspace_path: &str) -> Result<()> {
+    fn run_single_archive(&self, archive_path: &Path, workspace_path: &str, test_filter: Option<&Vec<String>>) -> Result<()> {
         let archive_name = archive_path.file_name().unwrap().to_string_lossy();
         println!("🚀 Running tests from: {}", archive_name);
 
-        let inner_cmd = build_nextest_command(self.binaries_dir.as_ref());
+        let inner_cmd = build_nextest_command(self.binaries_dir.as_ref(), test_filter);
         let mut cmd = build_docker_command(
             archive_path,
             workspace_path,
@@ -568,14 +571,14 @@ fn get_workspace_path() -> Result<String> {
     )
 }
 
-fn build_nextest_command(binaries_dir: Option<&PathBuf>) -> String {
+fn build_nextest_command(binaries_dir: Option<&PathBuf>, test_filter: Option<&Vec<String>>) -> String {
     let path_export = if binaries_dir.is_some() {
         format!("export PATH={}:$PATH && ", DOCKER_BINARIES_PATH)
     } else {
         "export PATH=/workspace/target/release:$PATH && ".to_string()
     };
 
-    format!(
+    let mut cmd = format!(
         "{}\
         echo $PATH && \
         cd {} && \
@@ -588,7 +591,17 @@ fn build_nextest_command(binaries_dir: Option<&PathBuf>) -> String {
         DOCKER_WORKSPACE_MOUNT_PATH,
         DOCKER_ARCHIVE_MOUNT_PATH,
         DOCKER_WORKSPACE_MOUNT_PATH
-    )
+    );
+
+    // Add test filter args after --
+    if let Some(args) = test_filter {
+        if !args.is_empty() {
+            cmd.push_str(" -- ");
+            cmd.push_str(&args.join(" "));
+        }
+    }
+
+    cmd
 }
 
 fn build_docker_command(

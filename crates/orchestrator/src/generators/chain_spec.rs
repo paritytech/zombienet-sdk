@@ -193,20 +193,52 @@ impl ChainSpec {
 
         let maybe_plain_spec_path = PathBuf::from(format!("{}-plain.json", self.chain_spec_name));
 
-        // if asset_location is some, then copy the asset to the `base_dir` of the ns with the name `<name>-plain.json`
-        if let Some(location) = self.asset_location.as_ref() {
-            let maybe_plain_spec_full_path = scoped_fs.full_path(maybe_plain_spec_path.as_path());
-            location
-                .dump_asset(maybe_plain_spec_full_path)
-                .await
-                .map_err(|e| {
-                    GeneratorError::ChainSpecGeneration(format!(
-                        "Error {e} dumping location {location:?}"
-                    ))
-                })?;
+        if let Some(command) = self.command.as_ref() {
+            trace!("Creating chain-spec with command");
+            // we should create the chain-spec using command.
+            let mut replacement_value = String::default();
+            if let Some(chain_name) = self.chain_name.as_ref() {
+                if !chain_name.is_empty() {
+                    replacement_value.clone_from(chain_name);
+                }
+            };
+
+            // SAFETY: we ensure that command is some with the first check of the fn
+            // default as empty
+            let sanitized_cmd = if replacement_value.is_empty() {
+                // we need to remove the `--chain` flag
+                command.cmd().replace("--chain", "")
+            } else {
+                command.cmd().to_owned()
+            };
+
+            let full_cmd = apply_replacements(
+                &sanitized_cmd,
+                &HashMap::from([("chainName", replacement_value.as_str())]),
+            );
+            trace!("full_cmd: {:?}", full_cmd);
+
+            let parts: Vec<&str> = full_cmd.split_whitespace().collect();
+            let Some((cmd, args)) = parts.split_first() else {
+                return Err(GeneratorError::ChainSpecGeneration(format!(
+                    "Invalid generator command: {full_cmd}"
+                )));
+            };
+            trace!("cmd: {:?} - args: {:?}", cmd, args);
+
+            let generate_command =
+                GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
+            if let CommandInContext::Local(_) = command {
+                // local
+                build_locally(generate_command, scoped_fs).await?;
+            } else {
+                // remote
+                let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
+                ns.generate_files(options).await?;
+            }
         } else if let Some(runtime) = self.runtime.as_ref() {
             trace!(
-                "Creating chain-spec with runtime from localtion: {}",
+                "Creating chain-spec with runtime from location: {}",
                 runtime.location
             );
             // First dump the runtime into the ns scoped fs, since we want to easily reproduce
@@ -285,49 +317,19 @@ impl ChainSpec {
             })?;
 
             scoped_fs.write(&maybe_plain_spec_path, contents).await?;
-        } else {
-            trace!("Creating chain-spec with command");
-            // we should create the chain-spec using command.
-            let mut replacement_value = String::default();
-            if let Some(chain_name) = self.chain_name.as_ref() {
-                if !chain_name.is_empty() {
-                    replacement_value.clone_from(chain_name);
-                }
-            };
+        }
 
-            // SAFETY: we ensure that command is some with the first check of the fn
-            // default as empty
-            let sanitized_cmd = if replacement_value.is_empty() {
-                // we need to remove the `--chain` flag
-                self.command.as_ref().unwrap().cmd().replace("--chain", "")
-            } else {
-                self.command.as_ref().unwrap().cmd().to_owned()
-            };
-
-            let full_cmd = apply_replacements(
-                &sanitized_cmd,
-                &HashMap::from([("chainName", replacement_value.as_str())]),
-            );
-            trace!("full_cmd: {:?}", full_cmd);
-
-            let parts: Vec<&str> = full_cmd.split_whitespace().collect();
-            let Some((cmd, args)) = parts.split_first() else {
-                return Err(GeneratorError::ChainSpecGeneration(format!(
-                    "Invalid generator command: {full_cmd}"
-                )));
-            };
-            trace!("cmd: {:?} - args: {:?}", cmd, args);
-
-            let generate_command =
-                GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
-            if let Some(CommandInContext::Local(_)) = self.command {
-                // local
-                build_locally(generate_command, scoped_fs).await?;
-            } else {
-                // remote
-                let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
-                ns.generate_files(options).await?;
-            }
+        // if asset_location is some, then copy the asset to the `base_dir` of the ns with the name `<name>-plain.json`
+        if let Some(location) = self.asset_location.as_ref() {
+            let maybe_plain_spec_full_path = scoped_fs.full_path(maybe_plain_spec_path.as_path());
+            location
+                .dump_asset(maybe_plain_spec_full_path)
+                .await
+                .map_err(|e| {
+                    GeneratorError::ChainSpecGeneration(format!(
+                        "Error {e} dumping location {location:?}"
+                    ))
+                })?;
         }
 
         // check if the _generated_ spec is in raw mode.
@@ -1560,6 +1562,8 @@ mod tests {
     use std::fs;
 
     use configuration::HrmpChannelConfigBuilder;
+    use provider::{NativeProvider, Provider};
+    use support::fs::local::LocalFileSystem;
 
     use super::*;
     use crate::{generators, shared::types::NodeAccounts};
@@ -1961,5 +1965,38 @@ mod tests {
 
         let node_key = get_node_keys(&node, SessionKeyType::default(), true);
         assert_eq!(node_key.2["aura"], node.accounts.accounts["ed"].address);
+    }
+
+    #[tokio::test]
+    async fn command_then_asset_location_works() {
+        // setup provider and filesystem
+        let fs = LocalFileSystem::default();
+        let provider = NativeProvider::new(fs.clone());
+        let ns = provider.create_namespace().await.unwrap();
+
+        let base_dir_str = ns.base_dir().to_string_lossy().to_string();
+        let scoped_fs = ScopedFilesystem::new(&fs, &base_dir_str);
+
+        // We'll generate a compact JSON with an id via the command
+        let chain_name = "cmd-asset-e2e";
+        let cmd_json = r#"{"id":"from-cmd"}"#;
+        // Use a simple program with one argument so split_whitespace works correctly
+        let command_str = format!("printf {}", cmd_json);
+
+        // The asset_location will point to the same file that the command generates
+        let output_plain_path = ns.base_dir().join(format!("{}-plain.json", chain_name));
+        let asset_location: AssetLocation = output_plain_path.clone().into();
+
+        let mut chainspec = ChainSpec::new(chain_name, Context::Relay)
+            .command(command_str, true)
+            .asset_location(asset_location);
+
+        chainspec.build(&ns, &scoped_fs).await.unwrap();
+
+        // Ensure the resulting plain spec exists and contains the id from the command
+        let final_plain_path = ns.base_dir().join(format!("{}-plain.json", chain_name));
+        let contents = std::fs::read_to_string(final_plain_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(json.get("id").and_then(|v| v.as_str()), Some("from-cmd"));
     }
 }

@@ -129,7 +129,11 @@ async fn main() -> Result<(), anyhow::Error> {
                 run_id,
                 archive_file,
                 artifact_pattern,
-                test_filter: if test_filter.is_empty() { None } else { Some(test_filter) },
+                test_filter: if test_filter.is_empty() {
+                    None
+                } else {
+                    Some(test_filter)
+                },
             }
             .execute()
             .await

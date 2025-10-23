@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -117,7 +118,7 @@ impl ArtifactDownloader {
     }
 
     fn create_temp_dir(&self) -> Result<std::path::PathBuf> {
-        let temp_dir = std::path::PathBuf::from(format!("{}{}", TEMP_DIR_PREFIX, self.run_id));
+        let temp_dir = self.get_temp_dir();
 
         // Remove existing temp directory to avoid conflicts with artifacts
         if temp_dir.exists() {
@@ -128,9 +129,12 @@ impl ArtifactDownloader {
         Ok(temp_dir)
     }
 
+    fn get_temp_dir(&self) -> PathBuf {
+        PathBuf::from(format!("{}{}", TEMP_DIR_PREFIX, self.run_id))
+    }
+
     fn create_binaries_dir(&self) -> Result<std::path::PathBuf> {
-        let binaries_dir =
-            std::path::PathBuf::from(format!("{}{}", BINARIES_DIR_PREFIX, self.run_id));
+        let binaries_dir = self.get_binaries_dir();
 
         // Create directory if it doesn't exist, but don't remove if it does
         if !binaries_dir.exists() {
@@ -210,25 +214,20 @@ impl ArtifactDownloader {
 
         // Create a marker file to track which artifacts have been processed
         let marker_file = binaries_dir.join(".downloaded");
-        let mut processed_artifacts: Vec<String> = if marker_file.exists() {
-            fs::read_to_string(&marker_file)
-                .unwrap_or_default()
-                .lines()
-                .map(String::from)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let processed_artifacts = Self::load_processed_artifacts(&marker_file)?;
+
+        let processed_set: HashSet<&str> = processed_artifacts.iter().map(String::as_str).collect();
+
+        let mut newly_processed = Vec::new();
 
         for artifact in binary_artifacts {
-            let artifact_name = format!("{}*", artifact);
-
             // Check if this artifact was already processed
-            if processed_artifacts.contains(&artifact.to_string()) {
-                println!("  ✓ Skipping {} (already downloaded)", artifact_name);
+            if processed_set.contains(artifact) {
+                println!("  ✓ Skipping {}* (already downloaded)", artifact);
                 continue;
             }
 
+            let artifact_name = format!("{}*", artifact);
             println!("  Downloading: {}", artifact_name);
 
             // Download to a temporary subdirectory first
@@ -268,14 +267,29 @@ impl ArtifactDownloader {
             fs::remove_dir_all(&temp_download_dir)?;
 
             // Mark this artifact as processed
-            processed_artifacts.push(artifact.to_string());
+            newly_processed.push(artifact.to_string());
         }
 
-        // Update the marker file
-        fs::write(&marker_file, processed_artifacts.join("\n"))?;
+        // Only write if we processed new artifacts
+        if !newly_processed.is_empty() {
+            let mut all_processed = processed_artifacts;
+            all_processed.extend(newly_processed);
+            fs::write(&marker_file, all_processed.join("\n"))?;
+        }
 
         println!("✅ Binary artifacts ready in {}", binaries_dir.display());
         Ok(())
+    }
+
+    fn load_processed_artifacts(marker_file: &Path) -> Result<Vec<String>> {
+        if marker_file.exists() {
+            Ok(fs::read_to_string(marker_file)?
+                .lines()
+                .map(String::from)
+                .collect())
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     fn extract_and_move_binaries(&self, source_dir: &Path, dest_dir: &Path) -> Result<()> {
@@ -291,7 +305,7 @@ impl ArtifactDownloader {
                 for tar_entry in fs::read_dir(&path)?.filter_map(Result::ok) {
                     let tar_path = tar_entry.path();
                     if tar_path.is_file()
-                        && tar_path.extension().and_then(|ext| ext.to_str()) == Some("tar")
+                        && tar_path.extension().and_then(|ext| ext.to_str()) == Some(TAR_EXTENSION)
                     {
                         println!(
                             "  Extracting: {}",
@@ -357,47 +371,52 @@ impl ArtifactDownloader {
         }
     }
 }
+
 fn move_binaries_from_dir(src_dir: &Path, dest_dir: &Path) -> Result<()> {
-    for entry in fs::read_dir(src_dir)?.filter_map(Result::ok) {
+    let entries: Vec<_> = fs::read_dir(src_dir)?.filter_map(Result::ok).collect();
+
+    for entry in entries {
         let path = entry.path();
-        if path.is_file() {
-            // Skip non-binary files (zip files and files with extensions)
-            if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
-                // Skip files with extensions - binaries typically have no extension
-                if !ext.is_empty() {
-                    continue;
-                }
-            }
 
-            let filename = path.file_name().unwrap();
-            let dest = dest_dir.join(filename);
-
-            // Skip if already exists in destination
-            if dest.exists() {
-                println!("  ✓ Binary already exists: {}", filename.to_string_lossy());
-                continue;
-            }
-
-            // Copy the binary to the destination (don't remove source)
-            fs::copy(&path, &dest).with_context(|| {
-                format!("Failed to copy {} to {}", path.display(), dest.display())
-            })?;
-
-            // Make executable
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = fs::metadata(&dest)?.permissions();
-                perms.set_mode(0o755);
-                fs::set_permissions(&dest, perms)?;
-            }
-
-            println!("  ✓ Copied: {}", filename.to_string_lossy());
+        if path.is_file() && should_copy_binary(&path, dest_dir) {
+            copy_and_make_executable(&path, dest_dir)?;
         } else if path.is_dir() {
-            // Recursively move from subdirectories
             move_binaries_from_dir(&path, dest_dir)?;
         }
     }
+    Ok(())
+}
+
+fn should_copy_binary(path: &Path, dest_dir: &Path) -> bool {
+    // Skip files with extensions, binaries typically have no extension
+    if path.extension().is_some() {
+        return false;
+    }
+
+    let filename = path.file_name().unwrap();
+    let dest = dest_dir.join(filename);
+
+    !dest.exists()
+}
+
+fn copy_and_make_executable(src: &Path, dest_dir: &Path) -> Result<()> {
+    let filename = src.file_name().unwrap();
+    let dest = dest_dir.join(filename);
+
+    // Copy the binary to the destination
+    fs::copy(src, &dest)
+        .with_context(|| format!("Failed to copy {} to {}", src.display(), dest.display()))?;
+
+    // Make executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&dest)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&dest, perms)?;
+    }
+
+    println!("  ✓ Copied: {}", filename.to_string_lossy());
     Ok(())
 }
 
@@ -413,26 +432,32 @@ impl ArchiveExtractor {
     }
 
     fn extract_zip_files(self) -> Result<Self> {
-        for entry in fs::read_dir(&self.dir)?.filter_map(Result::ok) {
-            let path = entry.path();
-            if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("zip") {
-                println!(
-                    "  Extracting: {}",
-                    path.file_name().unwrap().to_string_lossy()
-                );
-                let output = Command::new("unzip")
-                    .args(["-q", "-o"])
-                    .arg(&path)
-                    .arg("-d")
-                    .arg(&self.dir)
-                    .output()?;
+        let entries: Vec<_> = fs::read_dir(&self.dir)?
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                let path = entry.path();
+                path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("zip")
+            })
+            .collect();
 
-                if !output.status.success() {
-                    eprintln!(
-                        "Warning: Failed to extract zip archive: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
+        for entry in entries {
+            let path = entry.path();
+            println!(
+                "  Extracting: {}",
+                path.file_name().unwrap().to_string_lossy()
+            );
+            let output = Command::new("unzip")
+                .args(["-q", "-o"])
+                .arg(&path)
+                .arg("-d")
+                .arg(&self.dir)
+                .output()?;
+
+            if !output.status.success() {
+                eprintln!(
+                    "Warning: Failed to extract zip archive: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
         }
         Ok(self)
@@ -444,7 +469,9 @@ impl ArchiveExtractor {
     }
 
     fn find_nextest_archives(&self) -> Result<Vec<String>> {
-        find_archives_recursive(&self.dir)
+        let mut archives = Vec::new();
+        find_archives_recursive_impl(&self.dir, &mut archives)?;
+        Ok(archives)
     }
 }
 
@@ -476,9 +503,7 @@ fn extract_tar_files_recursive(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn find_archives_recursive(dir: &Path) -> Result<Vec<String>> {
-    let mut archives = Vec::new();
-
+fn find_archives_recursive_impl(dir: &Path, archives: &mut Vec<String>) -> Result<()> {
     for entry in fs::read_dir(dir)?.filter_map(Result::ok) {
         let path = entry.path();
         if path.is_file() {
@@ -486,15 +511,14 @@ fn find_archives_recursive(dir: &Path) -> Result<Vec<String>> {
                 if ext == ZST_EXTENSION
                     && path.to_string_lossy().ends_with(NEXTEST_ARCHIVE_EXTENSION)
                 {
-                    archives.push(path.to_string_lossy().to_string());
+                    archives.push(path.to_string_lossy().into_owned());
                 }
             }
         } else if path.is_dir() {
-            archives.extend(find_archives_recursive(&path)?);
+            find_archives_recursive_impl(&path, archives)?;
         }
     }
-
-    Ok(archives)
+    Ok(())
 }
 
 struct TestRunner {
@@ -504,7 +528,11 @@ struct TestRunner {
 }
 
 impl TestRunner {
-    fn new(archives: Vec<PathBuf>, binaries_dir: Option<PathBuf>, test_filter: Option<Vec<String>>) -> Self {
+    fn new(
+        archives: Vec<PathBuf>,
+        binaries_dir: Option<PathBuf>,
+        test_filter: Option<Vec<String>>,
+    ) -> Self {
         Self {
             archives,
             binaries_dir,
@@ -529,7 +557,12 @@ impl TestRunner {
         println!("═══════════════════════════════════════════════════════════════\n");
     }
 
-    fn run_single_archive(&self, archive_path: &Path, workspace_path: &str, test_filter: Option<&Vec<String>>) -> Result<()> {
+    fn run_single_archive(
+        &self,
+        archive_path: &Path,
+        workspace_path: &str,
+        test_filter: Option<&Vec<String>>,
+    ) -> Result<()> {
         let archive_name = archive_path.file_name().unwrap().to_string_lossy();
         println!("🚀 Running tests from: {}", archive_name);
 
@@ -571,27 +604,27 @@ fn get_workspace_path() -> Result<String> {
     )
 }
 
-fn build_nextest_command(binaries_dir: Option<&PathBuf>, test_filter: Option<&Vec<String>>) -> String {
-    let path_export = if binaries_dir.is_some() {
-        format!("export PATH={}:$PATH && ", DOCKER_BINARIES_PATH)
-    } else {
-        "export PATH=/workspace/target/release:$PATH && ".to_string()
-    };
+fn build_nextest_command(
+    binaries_dir: Option<&PathBuf>,
+    test_filter: Option<&Vec<String>>,
+) -> String {
+    let mut cmd = String::with_capacity(256);
 
-    let mut cmd = format!(
-        "{}\
-        echo $PATH && \
-        cd {} && \
-        cargo nextest run \
-        --archive-file {} \
-        --workspace-remap {} \
-        --retries 0 \
-        --no-capture",
-        path_export,
-        DOCKER_WORKSPACE_MOUNT_PATH,
-        DOCKER_ARCHIVE_MOUNT_PATH,
-        DOCKER_WORKSPACE_MOUNT_PATH
-    );
+    if binaries_dir.is_some() {
+        cmd.push_str("export PATH=");
+        cmd.push_str(DOCKER_BINARIES_PATH);
+        cmd.push_str(":$PATH && ");
+    } else {
+        cmd.push_str("export PATH=/workspace/target/release:$PATH && ");
+    }
+
+    cmd.push_str("echo $PATH && cd ");
+    cmd.push_str(DOCKER_WORKSPACE_MOUNT_PATH);
+    cmd.push_str(" && cargo nextest run --archive-file ");
+    cmd.push_str(DOCKER_ARCHIVE_MOUNT_PATH);
+    cmd.push_str(" --workspace-remap ");
+    cmd.push_str(DOCKER_WORKSPACE_MOUNT_PATH);
+    cmd.push_str(" --retries 0 --no-capture");
 
     // Add test filter args after --
     if let Some(args) = test_filter {
@@ -724,11 +757,12 @@ mod tests {
         fs::write(&archive2, b"test").unwrap();
         fs::write(&not_archive, b"test").unwrap();
 
-        let result = find_archives_recursive(&temp_dir).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(result.iter().any(|p| p.contains("test1.tar.zst")));
-        assert!(result.iter().any(|p| p.contains("test2.tar.zst")));
-        assert!(!result.iter().any(|p| p.contains("test.txt")));
+        let mut archives = Vec::new();
+        find_archives_recursive_impl(&temp_dir, &mut archives).unwrap();
+        assert_eq!(archives.len(), 2);
+        assert!(archives.iter().any(|p| p.contains("test1.tar.zst")));
+        assert!(archives.iter().any(|p| p.contains("test2.tar.zst")));
+        assert!(!archives.iter().any(|p| p.contains("test.txt")));
     }
 
     #[test]
@@ -743,10 +777,11 @@ mod tests {
         fs::write(&archive1, b"test").unwrap();
         fs::write(&archive2, b"test").unwrap();
 
-        let result = find_archives_recursive(&temp_dir).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(result.iter().any(|p| p.contains("root.tar.zst")));
-        assert!(result.iter().any(|p| p.contains("nested.tar.zst")));
+        let mut archives = Vec::new();
+        find_archives_recursive_impl(&temp_dir, &mut archives).unwrap();
+        assert_eq!(archives.len(), 2);
+        assert!(archives.iter().any(|p| p.contains("root.tar.zst")));
+        assert!(archives.iter().any(|p| p.contains("nested.tar.zst")));
     }
 
     #[test]
@@ -760,9 +795,10 @@ mod tests {
         fs::write(&valid_archive, b"test").unwrap();
         fs::write(&invalid_archive, b"test").unwrap();
 
-        let result = find_archives_recursive(&temp_dir).unwrap();
-        assert_eq!(result.len(), 1);
-        assert!(result.iter().any(|p| p.contains("valid.tar.zst")));
-        assert!(!result.iter().any(|p| p.contains("invalid.zst")));
+        let mut archives = Vec::new();
+        find_archives_recursive_impl(&temp_dir, &mut archives).unwrap();
+        assert_eq!(archives.len(), 1);
+        assert!(archives.iter().any(|p| p.contains("valid.tar.zst")));
+        assert!(!archives.iter().any(|p| p.contains("invalid.zst")));
     }
 }

@@ -366,13 +366,17 @@ impl ChainSpec {
 
         // expected raw path
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
-        self.raw_path = Some(raw_spec_path.clone());
 
         if self.runtime.is_some() && self.asset_location.is_none() {
             // chain-spec created using the runtime
             // we ca proceed with the sc-chain-spec logic
             // read plain spec
             let (json_content, _) = self.read_spec(scoped_fs).await?;
+
+            // This should be assigned after calling read_spec, otherwise it will try to read
+            // from raw_path which does not exist yet.
+            self.raw_path = Some(raw_spec_path.clone());
+
             let json_bytes: Vec<u8> = json_content.as_bytes().into();
             let chain_spec = GenericChainSpec::<()>::from_json_bytes(json_bytes).map_err(|e| {
                 GeneratorError::ChainSpecGeneration(format!(
@@ -412,6 +416,8 @@ impl ChainSpec {
 
             self.write_spec(scoped_fs, contents).await?;
         } else {
+            self.raw_path = Some(raw_spec_path.clone());
+
             // fallback to use _cmd_ for raw creation
             let temp_name = format!(
                 "temp-build-raw-{}-{}",

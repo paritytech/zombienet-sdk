@@ -1,3 +1,60 @@
+//! # Zombienet Reproduce Module
+//!
+//! This module powers the `zombienet reproduce` CLI command, which allows you to reproduce
+//! test runs from GitHub Actions artifacts in a local, Dockerized environment.
+//!
+//! ## How to Use (CLI)
+//!
+//! The most common way to use this functionality is via the CLI:
+//!
+//! ```sh
+//! zombienet reproduce --repo <repo> --run-id <run_id>
+//! ```
+//!
+//! - `--repo <repo>`: The GitHub repository name (e.g. `zombienet`)
+//! - `--run-id <run_id>`: The GitHub Actions run ID to fetch artifacts from
+//! - `--archive <path>`: (Optional) Use a local nextest archive instead of downloading from GitHub
+//! - `--artifact-pattern <pattern>`: (Optional) Filter artifact downloads by pattern
+//! - `--test-filter <args>`: (Optional) Pass test filters to nextest (e.g. `--test-filter my_test`)
+//!
+//! **Example: Download and run tests from a CI run**
+//!
+//! ```sh
+//! POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
+//! zombienet reproduce zombienet 123456789
+//! ```
+//!
+//! **Example: Run tests from a local archive**
+//!
+//! ```sh
+//! POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
+//! zombienet reproduce --archive /tmp/artifacts/my-archive.tar.zst
+//! ```
+//!
+//! **Example: Download only artifacts matching a pattern**
+//!
+//! ```sh
+//! zombienet reproduce zombienet 123456789 -p ray
+//! ```
+//!
+//! **Example: Run only specific tests**
+//!
+//! ```sh
+//! zombienet reproduce zombienet 123456789 -- --test-filter my_test
+//! ```
+//!
+//! ## Requirements
+//!
+//! - Docker must be installed and running
+//! - GitHub CLI (`gh`) must be installed and authenticated
+//! - The `POLKADOT_SDK_PATH` environment variable must point to your polkadot-sdk workspace
+//!
+//! ## What it does
+//!
+//! - Downloads nextest test archives and (optionally) binary artifacts from GitHub Actions
+//! - Extracts and prepares them for deterministic local test runs
+//! - Runs the tests inside a Docker container matching the CI environment
+
 use std::{
     collections::HashSet,
     fs,
@@ -700,7 +757,10 @@ mod tests {
         assert!(result.is_ok());
         let canonical = result.unwrap();
 
-        assert_eq!(canonical.extension().and_then(|e| e.to_str()), Some("zst"));
+        assert_eq!(
+            canonical.extension().and_then(|e| e.to_str()),
+            Some(ZST_EXTENSION)
+        );
         assert!(canonical
             .file_name()
             .unwrap()

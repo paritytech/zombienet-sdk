@@ -81,7 +81,7 @@ pub enum Commands {
         )]
         archive_file: Option<String>,
         #[arg(
-            short = 't',
+            short = 'p',
             long = "artifact-pattern",
             help = "Specific artifact pattern to run (if not specified, will run all tests in archive)"
         )]

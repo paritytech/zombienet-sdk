@@ -21,6 +21,7 @@ fn small_network() -> NetworkConfig {
                     .with_image("docker.io/parity/polkadot-parachain:1.7.0")
             })
         })
+        .with_global_settings(|s| s.with_base_dir("/tmp/zombie/"))
         .build()
         .unwrap()
 }

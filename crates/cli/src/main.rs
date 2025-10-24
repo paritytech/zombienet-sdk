@@ -86,6 +86,13 @@ pub enum Commands {
             help = "Specific artifact pattern to run (if not specified, will run all tests in archive)"
         )]
         artifact_pattern: Option<String>,
+        /// Test names or patterns to skip (can be specified multiple times)
+        #[arg(
+            short = 's',
+            long = "skip",
+            help = "Skip tests matching this pattern (can be specified multiple times)"
+        )]
+        skip_tests: Vec<String>,
         /// Arguments to pass after -- to cargo nextest run (e.g. test names, filters)
         #[arg(last = true, trailing_var_arg = true)]
         test_filter: Vec<String>,
@@ -122,6 +129,7 @@ async fn main() -> Result<(), anyhow::Error> {
             run_id,
             archive_file,
             artifact_pattern,
+            skip_tests,
             test_filter,
         } => {
             ReproduceConfig {
@@ -129,6 +137,11 @@ async fn main() -> Result<(), anyhow::Error> {
                 run_id,
                 archive_file,
                 artifact_pattern,
+                skip_tests: if skip_tests.is_empty() {
+                    None
+                } else {
+                    Some(skip_tests)
+                },
                 test_filter: if test_filter.is_empty() {
                     None
                 } else {

@@ -88,6 +88,7 @@ pub struct ReproduceConfig {
     pub run_id: Option<String>,
     pub archive_file: Option<String>,
     pub artifact_pattern: Option<String>,
+    pub skip_tests: Option<Vec<String>>,
     pub test_filter: Option<Vec<String>>,
 }
 
@@ -130,7 +131,7 @@ impl ReproduceConfig {
             .as_ref()
             .map(|downloader| downloader.get_binaries_dir());
 
-        TestRunner::new(archives, binaries_dir, self.test_filter).run_all()
+        TestRunner::new(archives, binaries_dir, self.skip_tests, self.test_filter).run_all()
     }
 }
 
@@ -262,6 +263,7 @@ impl ArtifactDownloader {
             "build-linux-stable-cumulus",
             "build-linux-stable-ray",
             "build-linux-stable-alexggh",
+            "build-linux-stable-lexnv",
             "build-test-parachain",
             "build-test-collators",
             "build-malus",
@@ -581,6 +583,7 @@ fn find_archives_recursive_impl(dir: &Path, archives: &mut Vec<String>) -> Resul
 struct TestRunner {
     archives: Vec<PathBuf>,
     binaries_dir: Option<PathBuf>,
+    skip_tests: Option<Vec<String>>,
     test_filter: Option<Vec<String>>,
 }
 
@@ -588,11 +591,13 @@ impl TestRunner {
     fn new(
         archives: Vec<PathBuf>,
         binaries_dir: Option<PathBuf>,
+        skip_tests: Option<Vec<String>>,
         test_filter: Option<Vec<String>>,
     ) -> Self {
         Self {
             archives,
             binaries_dir,
+            skip_tests,
             test_filter,
         }
     }
@@ -602,7 +607,12 @@ impl TestRunner {
 
         for (i, archive_path) in self.archives.iter().enumerate() {
             self.print_archive_header(i + 1, self.archives.len());
-            self.run_single_archive(archive_path, &workspace_path, self.test_filter.as_ref())?;
+            self.run_single_archive(
+                archive_path,
+                &workspace_path,
+                self.skip_tests.as_ref(),
+                self.test_filter.as_ref(),
+            )?;
         }
 
         Ok(())
@@ -618,12 +628,13 @@ impl TestRunner {
         &self,
         archive_path: &Path,
         workspace_path: &str,
+        skip_tests: Option<&Vec<String>>,
         test_filter: Option<&Vec<String>>,
     ) -> Result<()> {
         let archive_name = archive_path.file_name().unwrap().to_string_lossy();
         println!("🚀 Running tests from: {}", archive_name);
 
-        let inner_cmd = build_nextest_command(self.binaries_dir.as_ref(), test_filter);
+        let inner_cmd = build_nextest_command(self.binaries_dir.as_ref(), skip_tests, test_filter);
         let mut cmd = build_docker_command(
             archive_path,
             workspace_path,
@@ -663,6 +674,7 @@ fn get_workspace_path() -> Result<String> {
 
 fn build_nextest_command(
     binaries_dir: Option<&PathBuf>,
+    skip_tests: Option<&Vec<String>>,
     test_filter: Option<&Vec<String>>,
 ) -> String {
     let mut cmd = String::with_capacity(256);
@@ -683,11 +695,24 @@ fn build_nextest_command(
     cmd.push_str(DOCKER_WORKSPACE_MOUNT_PATH);
     cmd.push_str(" --retries 0 --no-capture");
 
-    // Add test filter args after --
-    if let Some(args) = test_filter {
-        if !args.is_empty() {
-            cmd.push_str(" -- ");
-            cmd.push_str(&args.join(" "));
+    // Add skip and test filter args after --
+    if skip_tests.is_some() || test_filter.is_some() {
+        cmd.push_str(" --");
+
+        // Add skip arguments first
+        if let Some(skips) = skip_tests {
+            for skip in skips {
+                cmd.push_str(" --skip ");
+                cmd.push_str(skip);
+            }
+        }
+
+        // Add test filter args
+        if let Some(args) = test_filter {
+            if !args.is_empty() {
+                cmd.push(' ');
+                cmd.push_str(&args.join(" "));
+            }
         }
     }
 

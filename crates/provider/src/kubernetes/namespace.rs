@@ -500,17 +500,40 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            match temp_node
+            let gen_result = temp_node
                 .run_command(RunCommandOptions { program, args, env })
-                .await?
-            {
-                Ok(contents) => self
-                    .filesystem
-                    .write(local_output_full_path, contents)
-                    .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-            };
+                .await?;
+
+            // If an expected_path is provided, read the file contents from inside the pod
+            if let Some(expected_path) = options.expected_path.as_ref() {
+                match temp_node
+                    .run_command(
+                        RunCommandOptions::new("cat")
+                            .args(vec![expected_path.to_string_lossy().to_string()]),
+                    )
+                    .await?
+                {
+                    Ok(contents) => self
+                        .filesystem
+                        .write(local_output_full_path, contents)
+                        .await
+                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!(format!(
+                        "failed reading expected_path {}: {}",
+                        expected_path.display(),
+                        msg
+                    ))))?,
+                };
+            } else {
+                match gen_result {
+                    Ok(contents) => self
+                        .filesystem
+                        .write(local_output_full_path, contents)
+                        .await
+                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
+                };
+            }
         }
 
         temp_node.destroy().await

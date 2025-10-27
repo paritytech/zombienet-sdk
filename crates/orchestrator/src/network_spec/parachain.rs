@@ -163,7 +163,11 @@ impl ParachainSpec {
             };
 
             let chain_spec = chain_spec_builder
-                .command(tmpl.as_str(), config.chain_spec_command_is_local())
+                .command(
+                    tmpl.as_str(),
+                    config.chain_spec_command_is_local(),
+                    config.chain_spec_command_output_path(),
+                )
                 .image(main_image.clone());
 
             let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {

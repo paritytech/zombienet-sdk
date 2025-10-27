@@ -145,6 +145,9 @@ pub struct ParachainConfig {
     // Does the chain_spec_command needs to be run locally
     #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
+    // Path to the file where the `chain_spec_command` will write the chain-spec into.
+    // Defaults to /dev/stdout.
+    chain_spec_command_output_path: Option<String>,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
     #[serde(rename = "evm_based", default = "default_as_false")]
@@ -266,6 +269,12 @@ impl ParachainConfig {
         self.chain_spec_command_is_local
     }
 
+    /// The file where the `chain_spec_command` will write the chain-spec into.
+    /// Defaults to /dev/stdout.
+    pub fn chain_spec_command_output_path(&self) -> Option<&str> {
+        self.chain_spec_command_output_path.as_deref()
+    }
+
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
@@ -369,6 +378,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 chain_spec_path: None,
                 chain_spec_runtime: None,
                 chain_spec_command: None,
+                chain_spec_command_output_path: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote by default
                 is_cumulus_based: true,

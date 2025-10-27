@@ -190,18 +190,43 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            match temp_node
+            // Run the generation command first
+            let gen_result = temp_node
                 .run_command(RunCommandOptions { program, args, env })
                 .await
-                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
-            {
-                Ok(contents) => self
-                    .filesystem
-                    .write(local_output_full_path, contents)
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?;
+
+            if let Some(expected_path) = options.expected_path.as_ref() {
+                // If an expected_path is provided, read that file from the temp node
+                match temp_node
+                    .run_command(
+                        RunCommandOptions::new("cat")
+                            .args(vec![expected_path.to_string_lossy().to_string()]),
+                    )
                     .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-            };
+                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
+                {
+                    Ok(contents) => self
+                        .filesystem
+                        .write(local_output_full_path, contents)
+                        .await
+                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!(format!(
+                        "failed reading expected_path {}: {}",
+                        expected_path.display(),
+                        msg
+                    ))))?,
+                };
+            } else {
+                match gen_result {
+                    Ok(contents) => self
+                        .filesystem
+                        .write(local_output_full_path, contents)
+                        .await
+                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
+                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
+                };
+            }
         }
 
         temp_node.destroy().await
@@ -232,5 +257,92 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use support::fs::local::LocalFileSystem;
+
+    use super::*;
+    use crate::{
+        types::{GenerateFileCommand, GenerateFilesOptions},
+        NativeProvider, Provider,
+    };
+
+    fn unique_temp_dir() -> PathBuf {
+        let mut base = std::env::temp_dir();
+        base.push(format!("znet_native_ns_test_{}", uuid::Uuid::new_v4()));
+        base
+    }
+
+    #[tokio::test]
+    async fn generate_files_uses_expected_path_when_provided() {
+        let fs = LocalFileSystem;
+        let provider = NativeProvider::new(fs.clone());
+        let base_dir = unique_temp_dir();
+        // Namespace builder will create directory if needed
+        let ns = provider
+            .create_namespace_with_base_dir(&base_dir)
+            .await
+            .expect("namespace should be created");
+
+        // Create a unique on-host path that the native node will write to
+        let expected_path =
+            std::env::temp_dir().join(format!("znet_expected_{}.json", uuid::Uuid::new_v4()));
+
+        // Command will write JSON into expected_path; stdout will be something else to ensure we don't read it
+        let program = "bash".to_string();
+        let script = format!(
+            "echo -n '{{\"hello\":\"world\"}}' > {} && echo should_not_be_used",
+            expected_path.to_string_lossy()
+        );
+        let args: Vec<String> = vec!["-lc".into(), script];
+
+        let out_name = PathBuf::from("result_expected.json");
+        let cmd = GenerateFileCommand::new(program, out_name.clone()).args(args);
+        let options = GenerateFilesOptions::new(vec![cmd], None, Some(expected_path.clone()));
+
+        ns.generate_files(options)
+            .await
+            .expect("generation should succeed");
+
+        // Read produced file from namespace base_dir
+        let produced_path = base_dir.join(out_name);
+        let produced = fs
+            .read_to_string(&produced_path)
+            .await
+            .expect("should read produced file");
+        assert_eq!(produced, "{\"hello\":\"world\"}");
+    }
+
+    #[tokio::test]
+    async fn generate_files_uses_stdout_when_expected_path_absent() {
+        let fs = LocalFileSystem;
+        let provider = NativeProvider::new(fs.clone());
+        let base_dir = unique_temp_dir();
+        let ns = provider
+            .create_namespace_with_base_dir(&base_dir)
+            .await
+            .expect("namespace should be created");
+
+        // Command prints to stdout only
+        let program = "bash".to_string();
+        let args: Vec<String> = vec!["-lc".into(), "echo -n 42".into()];
+
+        let out_name = PathBuf::from("result_stdout.txt");
+        let cmd = GenerateFileCommand::new(program, out_name.clone()).args(args);
+        let options = GenerateFilesOptions::new(vec![cmd], None, None);
+
+        ns.generate_files(options)
+            .await
+            .expect("generation should succeed");
+
+        let produced_path = base_dir.join(out_name);
+        let produced = fs
+            .read_to_string(&produced_path)
+            .await
+            .expect("should read produced file");
+        assert_eq!(produced, "42");
     }
 }

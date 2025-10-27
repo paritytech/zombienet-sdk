@@ -195,10 +195,11 @@ pub struct GenerateFilesOptions {
     pub injected_files: Vec<TransferedFile>,
     // Allow to control the name of the node used to create the files.
     pub temp_name: Option<String>,
+    pub expected_path: Option<PathBuf>,
 }
 
 impl GenerateFilesOptions {
-    pub fn new<I>(commands: I, image: Option<String>) -> Self
+    pub fn new<I>(commands: I, image: Option<String>, expected_path: Option<PathBuf>) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
@@ -207,6 +208,7 @@ impl GenerateFilesOptions {
             injected_files: vec![],
             image,
             temp_name: None,
+            expected_path,
         }
     }
 
@@ -214,6 +216,7 @@ impl GenerateFilesOptions {
         commands: I,
         image: Option<String>,
         injected_files: &[TransferedFile],
+        expected_path: Option<PathBuf>,
     ) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
@@ -223,6 +226,7 @@ impl GenerateFilesOptions {
             injected_files: injected_files.into(),
             image,
             temp_name: None,
+            expected_path,
         }
     }
 

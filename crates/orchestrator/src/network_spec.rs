@@ -178,6 +178,7 @@ impl NetworkSpec {
                     format!("{}/genesis-state", para.unique_id),
                     &ns,
                     scoped_fs,
+                    None,
                 )
                 .await?;
             debug!("parachain genesis state built!");
@@ -187,6 +188,7 @@ impl NetworkSpec {
                     format!("{}/genesis-wasm", para.unique_id),
                     &ns,
                     scoped_fs,
+                    None,
                 )
                 .await?;
             debug!("parachain genesis wasm built!");

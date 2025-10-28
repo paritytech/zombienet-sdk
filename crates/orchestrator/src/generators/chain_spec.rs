@@ -162,7 +162,7 @@ impl ChainSpec {
         is_local: bool,
         expected_path: Option<&str>,
     ) -> Self {
-        let maybe_expected_path = expected_path.map(|p| PathBuf::from(p));
+        let maybe_expected_path = expected_path.map(PathBuf::from);
         let cmd = if is_local {
             CommandInContext::Local(command.into(), maybe_expected_path)
         } else {

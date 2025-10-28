@@ -997,7 +997,7 @@ where
 
     if result.status.success() {
         let raw_output = if let Some(output_path) = maybe_output {
-            std::fs::read(output_path).map_err(|err| {
+            tokio::fs::read(output_path).await.map_err(|err| {
                 GeneratorError::ChainSpecGeneration(format!(
                     "Error reading output file at {}: {}",
                     output_path.display(),

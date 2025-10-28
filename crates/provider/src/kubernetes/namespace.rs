@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use k8s_openapi::{
     api::core::v1::{
@@ -22,7 +21,7 @@ use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
-    shared::helpers::running_in_ci,
+    shared::helpers::{extract_execution_result, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -500,40 +499,16 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            let gen_result = temp_node
-                .run_command(RunCommandOptions { program, args, env })
-                .await?;
-
-            // If an expected_path is provided, read the file contents from inside the pod
-            if let Some(expected_path) = options.expected_path.as_ref() {
-                match temp_node
-                    .run_command(
-                        RunCommandOptions::new("cat")
-                            .args(vec![expected_path.to_string_lossy().to_string()]),
-                    )
-                    .await?
-                {
-                    Ok(contents) => self
-                        .filesystem
-                        .write(local_output_full_path, contents)
-                        .await
-                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!(format!(
-                        "failed reading expected_path {}: {}",
-                        expected_path.display(),
-                        msg
-                    ))))?,
-                };
-            } else {
-                match gen_result {
-                    Ok(contents) => self
-                        .filesystem
-                        .write(local_output_full_path, contents)
-                        .await
-                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-                };
-            }
+            let contents = extract_execution_result(
+                &temp_node,
+                RunCommandOptions { program, args, env },
+                options.expected_path.as_ref(),
+            )
+            .await?;
+            self.filesystem
+                .write(local_output_full_path, contents)
+                .await
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?;
         }
 
         temp_node.destroy().await

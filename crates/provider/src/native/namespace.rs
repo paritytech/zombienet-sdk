@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
@@ -14,6 +13,7 @@ use uuid::Uuid;
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
+    shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -190,43 +190,16 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            // Run the generation command first
-            let gen_result = temp_node
-                .run_command(RunCommandOptions { program, args, env })
+            let contents = extract_execution_result(
+                &temp_node,
+                RunCommandOptions { program, args, env },
+                options.expected_path.as_ref(),
+            )
+            .await?;
+            self.filesystem
+                .write(local_output_full_path, contents)
                 .await
                 .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?;
-
-            if let Some(expected_path) = options.expected_path.as_ref() {
-                // If an expected_path is provided, read that file from the temp node
-                match temp_node
-                    .run_command(
-                        RunCommandOptions::new("cat")
-                            .args(vec![expected_path.to_string_lossy().to_string()]),
-                    )
-                    .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
-                {
-                    Ok(contents) => self
-                        .filesystem
-                        .write(local_output_full_path, contents)
-                        .await
-                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!(format!(
-                        "failed reading expected_path {}: {}",
-                        expected_path.display(),
-                        msg
-                    ))))?,
-                };
-            } else {
-                match gen_result {
-                    Ok(contents) => self
-                        .filesystem
-                        .write(local_output_full_path, contents)
-                        .await
-                        .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                    Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-                };
-            }
         }
 
         temp_node.destroy().await

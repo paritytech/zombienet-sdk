@@ -248,7 +248,12 @@ impl ChainSpec {
             //     check the [`DEFAULT_PRESETS_TO_CHECK`] in order to find one valid
             // - If we can't find any valid preset use the `default config` from the runtime
 
-            let preset = DEFAULT_PRESETS_TO_CHECK
+            let preset_to_check = if let Some(preset) = &runtime.preset {
+                [vec![preset.as_str()], DEFAULT_PRESETS_TO_CHECK.to_vec()].concat()
+            } else {
+                DEFAULT_PRESETS_TO_CHECK.to_vec()
+            };
+            let preset = preset_to_check
                 .iter()
                 .find(|preset| presets.iter().any(|item| item == *preset));
 
@@ -270,10 +275,10 @@ impl ChainSpec {
 
             let builder = if let Context::Para {
                 relay_chain: _,
-                para_id,
+                para_id: _,
             } = &self.context
             {
-                builder.with_id(&para_id.to_string())
+                builder.with_id(self.chain_spec_name())
             } else {
                 builder
             };
@@ -374,6 +379,7 @@ impl ChainSpec {
     where
         T: FileSystem,
     {
+        warn!("Building raw version from {:?}", self);
         // raw path already set, no more work to do here...
         let None = self.raw_path else {
             return Ok(());
@@ -381,7 +387,6 @@ impl ChainSpec {
 
         // expected raw path
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
-        self.raw_path = Some(raw_spec_path.clone());
 
         if self.runtime.is_some() && self.asset_location.is_none() {
             // chain-spec created using the runtime
@@ -403,7 +408,7 @@ impl ChainSpec {
 
             let contents = if let Context::Para {
                 relay_chain: _,
-                para_id: _,
+                para_id,
             } = &self.context
             {
                 let mut contents_json: serde_json::Value = serde_json::from_str(&contents)
@@ -412,8 +417,13 @@ impl ChainSpec {
                             "getting chain-spec as json should work, err: {e}"
                         ))
                     })?;
+
                 if contents_json["relay_chain"].is_null() {
                     contents_json["relay_chain"] = json!(relay_chain_id);
+                }
+
+                if contents_json["para_id"].is_null() {
+                    contents_json["para_id"] = json!(para_id);
                 }
 
                 serde_json::to_string_pretty(&contents_json).map_err(|e| {
@@ -425,6 +435,7 @@ impl ChainSpec {
                 contents
             };
 
+            self.raw_path = Some(raw_spec_path.clone());
             self.write_spec(scoped_fs, contents).await?;
         } else {
             // fallback to use _cmd_ for raw creation
@@ -490,7 +501,7 @@ impl ChainSpec {
             };
             trace!("cmd: {:?} - args: {:?}", cmd, args);
 
-            let generate_command = GenerateFileCommand::new(cmd, raw_spec_path).args(args);
+            let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
 
             if let Some(cmd) = &self.command {
                 match cmd {
@@ -513,6 +524,7 @@ impl ChainSpec {
                     },
                 }
             }
+            self.raw_path = Some(raw_spec_path);
         }
 
         Ok(())

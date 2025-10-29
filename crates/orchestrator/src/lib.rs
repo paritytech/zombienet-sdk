@@ -223,6 +223,7 @@ where
             bootnodes_addr: &vec![],
             wait_ready: false,
             nodes_by_name: json!({}),
+            global_settings: &network_spec.global_settings,
         };
 
         let global_files_to_inject = vec![TransferedFile::new(

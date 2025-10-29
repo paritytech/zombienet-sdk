@@ -41,6 +41,7 @@ pub struct RelaychainConfig {
     chain_spec_runtime: Option<ChainSpecRuntime>,
     #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
+    chain_spec_command_output_path: Option<String>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -105,6 +106,12 @@ impl RelaychainConfig {
     /// Does the chain_spec_command needs to be run locally
     pub fn chain_spec_command_is_local(&self) -> bool {
         self.chain_spec_command_is_local
+    }
+
+    /// The file where the `chain_spec_command` will write the chain-spec into.
+    /// Defaults to /dev/stdout.
+    pub fn chain_spec_command_output_path(&self) -> Option<&str> {
+        self.chain_spec_command_output_path.as_deref()
     }
 
     /// The non-default command used for nodes.
@@ -181,6 +188,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_args: vec![],
                 chain_spec_path: None,
                 chain_spec_command: None,
+                chain_spec_command_output_path: None,
                 chain_spec_runtime: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote cmd by default

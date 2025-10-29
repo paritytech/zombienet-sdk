@@ -476,6 +476,7 @@ impl<T: FileSystem> Network<T> {
                 format!("{}/genesis-state", &para_path_prefix),
                 &self.ns,
                 &scoped_fs,
+                None,
             )
             .await?;
         para_spec
@@ -485,6 +486,7 @@ impl<T: FileSystem> Network<T> {
                 format!("{}/para_spec-wasm", &para_path_prefix),
                 &self.ns,
                 &scoped_fs,
+                None,
             )
             .await?;
 

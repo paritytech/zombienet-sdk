@@ -63,16 +63,18 @@ impl Default for SessionKeyType {
     }
 }
 
+type MaybeExpectedPath = Option<PathBuf>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CommandInContext {
-    Local(String),
-    Remote(String),
+    Local(String, MaybeExpectedPath),
+    Remote(String, MaybeExpectedPath),
 }
 
 impl CommandInContext {
     fn cmd(&self) -> &str {
         match self {
-            CommandInContext::Local(cmd) | CommandInContext::Remote(cmd) => cmd.as_ref(),
+            CommandInContext::Local(cmd, _) | CommandInContext::Remote(cmd, _) => cmd.as_ref(),
         }
     }
 }
@@ -154,11 +156,17 @@ impl ChainSpec {
         self
     }
 
-    pub(crate) fn command(mut self, command: impl Into<String>, is_local: bool) -> Self {
+    pub(crate) fn command(
+        mut self,
+        command: impl Into<String>,
+        is_local: bool,
+        expected_path: Option<&str>,
+    ) -> Self {
+        let maybe_expected_path = expected_path.map(PathBuf::from);
         let cmd = if is_local {
-            CommandInContext::Local(command.into())
+            CommandInContext::Local(command.into(), maybe_expected_path)
         } else {
-            CommandInContext::Remote(command.into())
+            CommandInContext::Remote(command.into(), maybe_expected_path)
         };
         self.command = Some(cmd);
         self
@@ -325,13 +333,20 @@ impl ChainSpec {
 
             let generate_command =
                 GenerateFileCommand::new(cmd, maybe_plain_spec_path.clone()).args(args);
-            if let Some(CommandInContext::Local(_)) = self.command {
-                // local
-                build_locally(generate_command, scoped_fs).await?;
-            } else {
-                // remote
-                let options = GenerateFilesOptions::new(vec![generate_command], self.image.clone());
-                ns.generate_files(options).await?;
+            if let Some(cmd) = &self.command {
+                match cmd {
+                    CommandInContext::Local(_, expected_path) => {
+                        build_locally(generate_command, scoped_fs, expected_path.as_deref()).await?
+                    },
+                    CommandInContext::Remote(_, expected_path) => {
+                        let options = GenerateFilesOptions::new(
+                            vec![generate_command],
+                            self.image.clone(),
+                            expected_path.clone(),
+                        );
+                        ns.generate_files(options).await?;
+                    },
+                }
             }
         }
 
@@ -454,7 +469,7 @@ impl ChainSpec {
                 format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
             // Path in the context of the node, this can be different in the context of the providers (e.g native)
             let chain_spec_path_in_args =
-                if matches!(self.command, Some(CommandInContext::Local(_))) {
+                if matches!(self.command, Some(CommandInContext::Local(_, _))) {
                     chain_spec_path_local.clone()
                 } else if ns.capabilities().prefix_with_full_path {
                     // In native
@@ -488,22 +503,26 @@ impl ChainSpec {
 
             let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
 
-            if let Some(CommandInContext::Local(_)) = self.command {
-                // local
-                build_locally(generate_command, scoped_fs).await?;
-            } else {
-                // remote
-                let options = GenerateFilesOptions::with_files(
-                    vec![generate_command],
-                    self.image.clone(),
-                    &[TransferedFile::new(
-                        chain_spec_path_local,
-                        chain_spec_path_in_pod,
-                    )],
-                )
-                .temp_name(temp_name);
-                trace!("calling generate_files with options: {:#?}", options);
-                ns.generate_files(options).await?;
+            if let Some(cmd) = &self.command {
+                match cmd {
+                    CommandInContext::Local(_, expected_path) => {
+                        build_locally(generate_command, scoped_fs, expected_path.as_deref()).await?
+                    },
+                    CommandInContext::Remote(_, expected_path) => {
+                        let options = GenerateFilesOptions::with_files(
+                            vec![generate_command],
+                            self.image.clone(),
+                            &[TransferedFile::new(
+                                chain_spec_path_local,
+                                chain_spec_path_in_pod,
+                            )],
+                            expected_path.clone(),
+                        )
+                        .temp_name(temp_name);
+                        trace!("calling generate_files with options: {:#?}", options);
+                        ns.generate_files(options).await?;
+                    },
+                }
             }
             self.raw_path = Some(raw_spec_path);
         }
@@ -967,6 +986,7 @@ type GenesisNodeKey = (String, String, HashMap<String, String>);
 async fn build_locally<'a, T>(
     generate_command: GenerateFileCommand,
     scoped_fs: &ScopedFilesystem<'a, T>,
+    maybe_output: Option<&Path>,
 ) -> Result<(), GeneratorError>
 where
     T: FileSystem,
@@ -988,10 +1008,21 @@ where
         })?;
 
     if result.status.success() {
+        let raw_output = if let Some(output_path) = maybe_output {
+            tokio::fs::read(output_path).await.map_err(|err| {
+                GeneratorError::ChainSpecGeneration(format!(
+                    "Error reading output file at {}: {}",
+                    output_path.display(),
+                    err
+                ))
+            })?
+        } else {
+            result.stdout
+        };
         scoped_fs
             .write(
                 generate_command.local_output_path,
-                String::from_utf8_lossy(&result.stdout).to_string(),
+                String::from_utf8_lossy(&raw_output).to_string(),
             )
             .await?;
         Ok(())

@@ -94,7 +94,11 @@ impl RelaychainSpec {
 
         let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay)
             .set_chain_name(config.chain().as_str())
-            .command(tmpl.as_str(), config.chain_spec_command_is_local())
+            .command(
+                tmpl.as_str(),
+                config.chain_spec_command_is_local(),
+                config.chain_spec_command(),
+            )
             .image(main_image.clone());
 
         // Add asset location if present

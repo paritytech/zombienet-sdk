@@ -995,7 +995,6 @@ where
 
     let result = Command::new(generate_command.program.clone())
         .args(generate_command.args.clone())
-        .current_dir(scoped_fs.base_dir)
         .output()
         .await
         .map_err(|err| {

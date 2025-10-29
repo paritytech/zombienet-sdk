@@ -18,10 +18,10 @@ async fn rococo_local_with_omni_node_and_wasm_runtime() {
         })
         .with_parachain(|parachain| {
             parachain
-                .with_id(2000).cumulus_based(true)
+                .with_id(100).cumulus_based(true)
                 .with_chain("asset-hub-rococo-local")
                 .with_default_command("polkadot-omni-node")
-                .with_default_image("docker.io/parity/polkadot-parachain:latest")
+                .with_default_image("docker.io/parity/polkadot-omni-node:latest")
                 .with_chain_spec_runtime("https://github.com/polkadot-fellows/runtimes/releases/download/v1.9.2/asset-hub-polkadot_runtime-v1009002.compact.compressed.wasm", None                )
                 .with_collator(|collator| collator.with_name("omni-collator-1"))
                 .with_collator(|collator| collator.with_name("omni-collator-2"))

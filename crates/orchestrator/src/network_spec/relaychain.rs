@@ -97,7 +97,7 @@ impl RelaychainSpec {
             .command(
                 tmpl.as_str(),
                 config.chain_spec_command_is_local(),
-                config.chain_spec_command(),
+                config.chain_spec_command_output_path(),
             )
             .image(main_image.clone());
 

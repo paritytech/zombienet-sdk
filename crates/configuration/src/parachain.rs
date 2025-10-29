@@ -829,6 +829,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Set the output path for the chain-spec command.
+    pub fn with_chain_spec_command_output_path(self, output_path: &str) -> Self {
+        Self::transition(
+            ParachainConfig {
+                chain_spec_command_output_path: Some(output_path.to_string()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set whether the parachain is based on cumulus (true in a majority of case, except adder or undying collators).
     pub fn cumulus_based(self, choice: bool) -> Self {
         Self::transition(

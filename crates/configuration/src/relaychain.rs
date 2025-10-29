@@ -446,6 +446,18 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the output path for the chain-spec command.
+    pub fn with_chain_spec_command_output_path(self, output_path: &str) -> Self {
+        Self::transition(
+            RelaychainConfig {
+                chain_spec_command_output_path: Some(output_path.to_string()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the number of `random nominators` to create for chains using staking, this is used in tandem with `max_nominations` to simulate the amount of nominators and nominations.
     pub fn with_random_nominators_count(self, random_nominators_count: u32) -> Self {
         Self::transition(

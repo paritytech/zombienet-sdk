@@ -5,7 +5,7 @@ const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn polkadot_local_with_chain_spec_runtime() {
-    tracing_subscriber::fmt::init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let config = NetworkConfigBuilder::new()
         .with_relaychain(|relaychain| {

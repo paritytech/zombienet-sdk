@@ -205,7 +205,8 @@ where
             .unwrap();
 
         if let Ok(_) = std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT") {
-            let _ = fs::remove_file(full_path).await;
+            let res = fs::remove_file(&full_path).await;
+            trace!("removing {}, result {:?}", full_path, res);
         }
 
         Ok(())

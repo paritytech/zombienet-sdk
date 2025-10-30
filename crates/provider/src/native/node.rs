@@ -20,6 +20,7 @@ use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
 use tokio::{
+    fs,
     io::{AsyncRead, AsyncReadExt, BufReader},
     process::{Child, ChildStderr, ChildStdout, Command},
     sync::{
@@ -196,12 +197,17 @@ where
             self.get_db_snapshot(db_snapshot, &full_path).await?;
         }
 
-        let contents = self.filesystem.read(full_path).await.unwrap();
+        let contents = self.filesystem.read(&full_path).await.unwrap();
         let gz = GzDecoder::new(&contents[..]);
         let mut archive = Archive::new(gz);
         archive
             .unpack(self.base_dir.to_string_lossy().as_ref())
             .unwrap();
+
+        if std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT").is_ok() {
+            let res = fs::remove_file(&full_path).await;
+            trace!("removing {}, result {:?}", full_path, res);
+        }
 
         Ok(())
     }

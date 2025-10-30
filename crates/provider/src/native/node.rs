@@ -204,7 +204,7 @@ where
             .unpack(self.base_dir.to_string_lossy().as_ref())
             .unwrap();
 
-        if let Ok(_) = std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT") {
+        if std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT").is_ok() {
             let res = fs::remove_file(&full_path).await;
             trace!("removing {}, result {:?}", full_path, res);
         }

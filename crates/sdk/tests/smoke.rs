@@ -27,7 +27,8 @@ fn small_network() -> NetworkConfig {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ci_k8s_basic_functionalities_should_works() {
-    tracing_subscriber::fmt::init();
+    let _ = tracing_subscriber::fmt::try_init();
+
     const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
     let now = Instant::now();
 

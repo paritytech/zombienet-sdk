@@ -12,6 +12,7 @@ fn small_network() -> NetworkConfig {
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
         })
+        .with_global_settings(|s| s.with_base_dir("/tmp/zombie/"))
         .build()
         .unwrap()
 }

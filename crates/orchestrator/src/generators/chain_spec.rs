@@ -47,20 +47,15 @@ enum KeyType {
     Grandpa,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum SessionKeyType {
     // Default derivarion (e.g `//`)
+    #[default]
     Default,
     // Stash detivarion (e.g `//<name>/stash`)
     Stash,
     // EVM session type
     Evm,
-}
-
-impl Default for SessionKeyType {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 type MaybeExpectedPath = Option<PathBuf>;

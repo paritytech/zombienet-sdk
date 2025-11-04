@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 
 use super::namespace::NativeNamespace;
 use crate::{
-    types::ProviderCapabilities, DynNamespace, Provider, ProviderError, ProviderNamespace,
+    DynNamespace, Provider, ProviderError, ProviderNamespace, shared::helpers::extract_namespace_info, types::ProviderCapabilities
 };
 
 const PROVIDER_NAME: &str = "native";
@@ -118,8 +118,24 @@ where
 
     async fn create_namespace_from_json(
         &self,
-        _json_value: &serde_json::Value,
+        json_value: &serde_json::Value,
     ) -> Result<DynNamespace, ProviderError> {
-        todo!()
+        let (base_dir, name) = extract_namespace_info(json_value)?;
+
+        let namespace = NativeNamespace::attach_to_live(
+            &self.weak,
+            &self.capabilities,
+            &self.filesystem,
+            &base_dir,
+            &name
+        )
+        .await?;
+
+        self.namespaces
+            .write()
+            .await
+            .insert(namespace.name().to_string(), namespace.clone());
+
+        Ok(namespace)
     }
 }

@@ -73,6 +73,26 @@ where
             nodes: RwLock::new(HashMap::new()),
         }))
     }
+
+    pub(super) async fn attach_to_live(
+        provider: &Weak<NativeProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        Ok(Arc::new_cyclic(|weak| NativeNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_string(),
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            nodes: RwLock::new(HashMap::new()),
+        }))
+    }
 }
 
 #[async_trait]

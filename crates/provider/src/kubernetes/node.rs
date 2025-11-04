@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
+use serde::Serialize;
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -50,10 +51,12 @@ where
 
 type FwdInfo = (u16, JoinHandle<()>);
 
+#[derive(Serialize)]
 pub(super) struct KubernetesNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
+    #[serde(skip)]
     namespace: Weak<KubernetesNamespace<FS>>,
     name: String,
     image: String,
@@ -67,9 +70,13 @@ where
     relay_data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
+    #[serde(skip)]
     k8s_client: KubernetesClient,
+    #[serde(skip)]
     http_client: reqwest::Client,
+    #[serde(skip)]
     filesystem: FS,
+    #[serde(skip)]
     port_fwds: RwLock<HashMap<u16, FwdInfo>>,
 }
 

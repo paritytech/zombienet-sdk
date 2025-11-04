@@ -10,6 +10,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::AssetLocation;
 use futures::future::try_join_all;
+use serde::Serialize;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{time::sleep, try_join};
 use tracing::debug;
@@ -43,10 +44,12 @@ where
     pub(super) port_mapping: &'a HashMap<Port, Port>,
 }
 
+#[derive(Serialize)]
 pub struct DockerNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
+    #[serde(skip)]
     namespace: Weak<DockerNamespace<FS>>,
     name: String,
     image: String,
@@ -59,10 +62,12 @@ where
     relay_data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
+    #[serde(skip)]
     docker_client: DockerClient,
     container_name: String,
     port_mapping: HashMap<Port, Port>,
     #[allow(dead_code)]
+    #[serde(skip)]
     filesystem: FS,
 }
 

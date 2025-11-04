@@ -16,6 +16,7 @@ use nix::{
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
+use serde::{Serialize, Serializer};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
@@ -57,10 +58,14 @@ where
     pub(super) node_log_path: Option<&'a PathBuf>,
 }
 
+pub type ProcessInfo = (Child, Pid);
+
+#[derive(Serialize)]
 pub(super) struct NativeNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
+    #[serde(skip)]
     namespace: Weak<NativeNamespace<FS>>,
     name: String,
     program: String,
@@ -72,10 +77,15 @@ where
     relay_data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
-    process: RwLock<Option<Child>>,
+    #[serde(serialize_with = "serialize_process_info")]
+    process: RwLock<Option<ProcessInfo>>,
+    #[serde(skip)]
     stdout_reading_task: RwLock<Option<JoinHandle<()>>>,
+    #[serde(skip)]
     stderr_reading_task: RwLock<Option<JoinHandle<()>>>,
+    #[serde(skip)]
     log_writing_task: RwLock<Option<JoinHandle<()>>>,
+    #[serde(skip)]
     filesystem: FS,
 }
 
@@ -262,7 +272,13 @@ where
             .take()
             .expect(&format!("infaillible, stderr is piped {THIS_IS_A_BUG}"));
 
-        self.process.write().await.replace(process);
+        let pid = Pid::from_raw(
+            process
+                .id()
+                .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?
+                as i32,
+        );
+        self.process.write().await.replace((process, pid));
 
         Ok((stdout, stderr))
     }
@@ -325,15 +341,15 @@ where
     }
 
     async fn process_id(&self) -> Result<Pid, ProviderError> {
-        let raw_pid = self
+        let pid = self
             .process
             .read()
             .await
             .as_ref()
-            .and_then(|process| process.id())
+            .map(|process| process.1)
             .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?;
 
-        Ok(Pid::from_raw(raw_pid as i32))
+        Ok(pid)
     }
 
     pub(crate) async fn abort(&self) -> anyhow::Result<()> {
@@ -363,6 +379,7 @@ where
             .await
             .take()
             .ok_or_else(|| anyhow!("no process was attached for the node"))?
+            .0
             .kill()
             .await?;
 
@@ -600,4 +617,18 @@ where
 
         Ok(())
     }
+}
+
+fn serialize_process_info<S>(
+    process_info: &RwLock<Option<ProcessInfo>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let pid = process_info
+        .blocking_read()
+        .as_ref()
+        .map(|(_, pid)| pid.as_raw());
+    pid.serialize(serializer)
 }

@@ -165,7 +165,7 @@ pub trait ProviderNamespace {
 pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 
 #[async_trait]
-pub trait ProviderNode {
+pub trait ProviderNode: erased_serde::Serialize {
     fn name(&self) -> &str;
 
     fn args(&self) -> Vec<&str>;

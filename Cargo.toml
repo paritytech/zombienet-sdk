@@ -62,6 +62,7 @@ libsecp256k1 = { version = "0.7.1", default-features = false }
 flate2 = "1.0"
 fancy-regex = "0.14.0"
 sc-chain-spec = "46.0.0"
+erased-serde = "0.4"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.4.2", path = "crates/support" }

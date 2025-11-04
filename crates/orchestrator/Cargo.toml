@@ -39,6 +39,7 @@ fancy-regex = { workspace = true }
 # parity-scale-codec = { version = "3.7.5", features = ["derive"] }
 # sc-chain-spec = {workspace = true, default-features = false}
 sc-chain-spec = { workspace = true }
+erased-serde = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }

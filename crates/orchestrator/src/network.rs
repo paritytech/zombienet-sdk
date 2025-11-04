@@ -58,12 +58,14 @@ impl<T: FileSystem> std::fmt::Debug for Network<T> {
 }
 
 macros::create_add_options!(AddNodeOptions {
-    chain_spec: Option<PathBuf>
+    chain_spec: Option<PathBuf>,
+    session_key: Option<String>
 });
 
 macros::create_add_options!(AddCollatorOptions {
     chain_spec: Option<PathBuf>,
-    chain_spec_relay: Option<PathBuf>
+    chain_spec_relay: Option<PathBuf>,
+    session_key: Option<String>
 });
 
 impl<T: FileSystem> Network<T> {
@@ -161,6 +163,7 @@ impl<T: FileSystem> Network<T> {
             &name,
             options.into(),
             &chain_context,
+            false,
             false,
         )?;
 
@@ -328,8 +331,13 @@ impl<T: FileSystem> Network<T> {
             ));
         }
 
-        let mut node_spec =
-            network_spec::node::NodeSpec::from_ad_hoc(name, options.into(), &chain_context, true)?;
+        let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
+            name,
+            options.into(),
+            &chain_context,
+            true,
+            spec.is_evm_based,
+        )?;
 
         node_spec.available_args_output = Some(
             self.initial_spec

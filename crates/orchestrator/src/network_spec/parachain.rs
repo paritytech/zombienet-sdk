@@ -211,7 +211,7 @@ impl ParachainSpec {
 
         let mut names = HashSet::new();
         for node_config in nodes {
-            match NodeSpec::from_config(&node_config, &chain_context, true) {
+            match NodeSpec::from_config(&node_config, &chain_context, true, config.is_evm_based()) {
                 Ok(mut node) => {
                     let unique_name = generate_unique_node_name_from_names(node.name, &mut names);
                     node.name = unique_name;

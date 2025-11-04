@@ -16,12 +16,14 @@ use crate::{
     network::AddNodeOptions,
     shared::{
         macros,
-        types::{ChainDefaultContext, NodeAccounts, ParkedPort},
+        types::{ChainDefaultContext, NodeAccount, NodeAccounts, ParkedPort},
     },
     AddCollatorOptions,
 };
 
-macros::create_add_options!(AddNodeSpecOpts {});
+macros::create_add_options!(AddNodeSpecOpts {
+     session_key: Option<String>
+});
 
 macro_rules! impl_from_for_add_node_opts {
     ($struct:ident) => {
@@ -37,6 +39,7 @@ macro_rules! impl_from_for_add_node_opts {
                     rpc_port: value.rpc_port,
                     prometheus_port: value.prometheus_port,
                     p2p_port: value.p2p_port,
+                    session_key: value.session_key,
                 }
             }
         }
@@ -129,6 +132,7 @@ impl NodeSpec {
         node_config: &NodeConfig,
         chain_context: &ChainDefaultContext,
         full_node_present: bool,
+        evm_based: bool,
     ) -> Result<Self, OrchestratorError> {
         // Check first if the image is set at node level, then try with the default
         let image = node_config.image().or(chain_context.default_image).cloned();
@@ -164,7 +168,15 @@ impl NodeSpec {
         let mut name = node_config.name().to_string();
         let seed = format!("//{}{name}", name.remove(0).to_uppercase());
         let accounts = generators::generate_node_keys(&seed)?;
-        let accounts = NodeAccounts { seed, accounts };
+        let mut accounts = NodeAccounts { seed, accounts };
+
+        if evm_based {
+            if let Some(session_key) = node_config.session_key() {
+                accounts
+                    .accounts
+                    .insert("eth".into(), NodeAccount::new(session_key, session_key));
+            }
+        }
 
         let db_snapshot = match (node_config.db_snapshot(), chain_context.default_db_snapshot) {
             (Some(db_snapshot), _) => Some(db_snapshot),
@@ -219,6 +231,7 @@ impl NodeSpec {
         options: AddNodeSpecOpts,
         chain_context: &ChainDefaultContext,
         full_node_present: bool,
+        evm_based: bool,
     ) -> Result<Self, OrchestratorError> {
         // Check first if the image is set at node level, then try with the default
         let image = if let Some(img) = options.image {
@@ -262,7 +275,15 @@ impl NodeSpec {
             name_capitalized.remove(0).to_uppercase()
         );
         let accounts = generators::generate_node_keys(&seed)?;
-        let accounts = NodeAccounts { seed, accounts };
+        let mut accounts = NodeAccounts { seed, accounts };
+
+        if evm_based {
+            if let Some(session_key) = options.session_key.as_ref() {
+                accounts
+                    .accounts
+                    .insert("eth".into(), NodeAccount::new(session_key, session_key));
+            }
+        }
 
         let (full_node_p2p_port, full_node_prometheus_port) = if full_node_present {
             (

@@ -92,6 +92,8 @@ pub struct NodeConfig {
     p2p_cert_hash: Option<String>,
     pub(crate) db_snapshot: Option<AssetLocation>,
     #[serde(default)]
+    session_key: Option<String>,
+    #[serde(default)]
     // used to skip serialization of fields with defaults to avoid duplication
     pub(crate) chain_context: ChainDefaultContext,
     pub(crate) node_log_path: Option<PathBuf>,
@@ -157,6 +159,12 @@ impl Serialize for NodeConfig {
         state.serialize_field("prometheus_port", &self.prometheus_port)?;
         state.serialize_field("p2p_port", &self.p2p_port)?;
         state.serialize_field("p2p_cert_hash", &self.p2p_cert_hash)?;
+
+        if let Some(session_key) = &self.session_key {
+            state.serialize_field("session_key", session_key)?;
+        } else {
+            state.skip_field("session_key")?;
+        }
 
         if self.db_snapshot == self.chain_context.default_db_snapshot {
             state.skip_field("db_snapshot")?;
@@ -324,6 +332,11 @@ impl NodeConfig {
     pub fn node_log_path(&self) -> Option<&PathBuf> {
         self.node_log_path.as_ref()
     }
+
+    /// Custom session key to use for the node
+    pub fn session_key(&self) -> Option<&str> {
+        self.session_key.as_deref()
+    }
 }
 
 /// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
@@ -356,6 +369,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 p2p_port: None,
                 p2p_cert_hash: None,
                 db_snapshot: None,
+                session_key: None,
                 chain_context: Default::default(),
                 node_log_path: None,
             },
@@ -538,6 +552,17 @@ impl NodeConfigBuilder<Buildable> {
         Self::transition(
             NodeConfig {
                 is_bootnode: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    pub fn with_session_key(self, session_key: impl Into<String>) -> Self {
+        Self::transition(
+            NodeConfig {
+                session_key: Some(session_key.into()),
                 ..self.config
             },
             self.validation_context,
@@ -859,6 +884,7 @@ mod tests {
                 .validator(true)
                 .invulnerable(true)
                 .bootnode(true)
+                .with_session_key("0x0123456789abcdef0123456789abcdef01234567")
                 .with_initial_balance(100_000_042)
                 .with_env(vec![("VAR1", "VALUE1"), ("VAR2", "VALUE2")])
                 .with_raw_bootnodes_addresses(vec![
@@ -891,6 +917,10 @@ mod tests {
         assert!(node_config.is_validator());
         assert!(node_config.is_invulnerable());
         assert!(node_config.is_bootnode());
+        assert_eq!(
+            node_config.session_key(),
+            Some("0x0123456789abcdef0123456789abcdef01234567")
+        );
         assert_eq!(node_config.initial_balance(), 100_000_042);
         let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
         assert_eq!(node_config.env(), env.iter().collect::<Vec<_>>());

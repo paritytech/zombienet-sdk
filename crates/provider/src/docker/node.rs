@@ -49,7 +49,7 @@ where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub fn from_serializable(
-        serializable: &'a SerializableDockerNodeOptions,
+        serializable: &'a DeserializableDockerNodeOptions,
         namespace: &'a Weak<DockerNamespace<FS>>,
         namespace_base_dir: &'a PathBuf,
         docker_client: &'a DockerClient,
@@ -74,7 +74,7 @@ where
 }
 
 #[derive(Deserialize)]
-pub(super) struct SerializableDockerNodeOptions {
+pub(super) struct DeserializableDockerNodeOptions {
     pub(super) name: String,
     pub(super) image: Option<String>,
     pub(super) program: String,

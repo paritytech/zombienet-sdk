@@ -54,7 +54,7 @@ where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub(super) fn from_serializable(
-        serializable: &'a SerializableKubernetesNodeOptions,
+        serializable: &'a DeserializableKubernetesNodeOptions,
         namespace: &'a Weak<KubernetesNamespace<FS>>,
         namespace_base_dir: &'a PathBuf,
         k8s_client: &'a KubernetesClient,
@@ -78,7 +78,7 @@ where
 }
 
 #[derive(Deserialize)]
-pub(super) struct SerializableKubernetesNodeOptions {
+pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) name: String,
     pub(super) image: Option<String>,
     pub(super) program: String,

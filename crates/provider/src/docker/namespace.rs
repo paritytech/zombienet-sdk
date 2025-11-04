@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     constants::NAMESPACE_PREFIX,
-    docker::node::{DockerNodeOptions, SerializableDockerNodeOptions},
+    docker::node::{DockerNodeOptions, DeserializableDockerNodeOptions},
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -331,7 +331,7 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        let serializable: SerializableDockerNodeOptions =
+        let serializable: DeserializableDockerNodeOptions =
             serde_json::from_value(json_value.clone())
                 .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
         let options = DockerNodeOptions::from_serializable(

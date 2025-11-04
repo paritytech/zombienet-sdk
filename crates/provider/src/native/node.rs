@@ -63,7 +63,7 @@ where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
     pub(super) fn from_serializable(
-        serializable: &'a SerializableNativeNodeOptions,
+        serializable: &'a DeserializableNativeNodeOptions,
         namespace: &'a Weak<NativeNamespace<FS>>,
         namespace_base_dir: &'a PathBuf,
         filesystem: &'a FS,
@@ -85,7 +85,7 @@ where
 }
 
 #[derive(Deserialize)]
-pub(super) struct SerializableNativeNodeOptions {
+pub(super) struct DeserializableNativeNodeOptions {
     pub name: String,
     pub program: String,
     pub args: Vec<String>,

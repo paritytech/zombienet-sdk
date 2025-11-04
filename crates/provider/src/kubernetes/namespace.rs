@@ -20,7 +20,7 @@ use uuid::Uuid;
 use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
-    kubernetes::node::{KubernetesNodeOptions, SerializableKubernetesNodeOptions},
+    kubernetes::node::{KubernetesNodeOptions, DeserializableKubernetesNodeOptions},
     shared::helpers::{extract_execution_result, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -466,7 +466,7 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        let serializable: SerializableKubernetesNodeOptions =
+        let serializable: DeserializableKubernetesNodeOptions =
             serde_json::from_value(json_value.clone())
                 .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
         let options = KubernetesNodeOptions::from_serializable(

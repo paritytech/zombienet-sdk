@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
-    native::node::SerializableNativeNodeOptions,
+    native::node::DeserializableNativeNodeOptions,
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -154,7 +154,7 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        let serializable: SerializableNativeNodeOptions =
+        let serializable: DeserializableNativeNodeOptions =
             serde_json::from_value(json_value.clone())
                 .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
         let options = NativeNodeOptions::from_serializable(

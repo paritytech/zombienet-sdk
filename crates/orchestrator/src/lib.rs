@@ -109,12 +109,14 @@ where
             .create_namespace_from_json(&zombie_json)
             .await?;
 
-        let (relay, initial_spec) = recreate_relaychain_from_json(&zombie_json, ns.clone()).await?;
+        let (relay, initial_spec) =
+            recreate_relaychain_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
 
         let mut network =
             Network::new_with_relay(relay, ns.clone(), self.filesystem.clone(), initial_spec);
 
-        let parachains_map = recreate_parachains_from_json(&zombie_json, ns.clone()).await?;
+        let parachains_map =
+            recreate_parachains_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
         network.set_parachains(parachains_map);
 
         Ok(network)
@@ -523,16 +525,27 @@ where
 async fn recreate_network_nodes_from_json(
     nodes_json: &serde_json::Value,
     ns: DynNamespace,
+    provider_name: &str,
 ) -> Result<Vec<NetworkNode>, OrchestratorError> {
-    let raw_nodes: Vec<RawNetworkNode> =
-        serde_json::from_value(nodes_json.clone()).map_err(|_| {
-            OrchestratorError::InvariantError(
-                "Invalid `nodes` field in relay zombie.json, expected array",
-            )
-        })?;
+    let raw_nodes: Vec<RawNetworkNode> = serde_json::from_value(nodes_json.clone())?;
 
     let mut nodes = Vec::with_capacity(raw_nodes.len());
     for raw in raw_nodes {
+        // validate provider tag
+        let provider_tag = raw
+            .inner
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                OrchestratorError::InvalidConfig("Missing `provider` in inner node JSON".into())
+            })?;
+
+        if provider_tag != provider_name {
+            return Err(OrchestratorError::InvalidConfigForProvider(
+                provider_name.to_string(),
+                provider_tag.to_string(),
+            ));
+        }
         let inner = ns.spawn_node_from_json(&raw.inner).await?;
         let relay_node = NetworkNode::new(
             raw.name,
@@ -551,32 +564,30 @@ async fn recreate_network_nodes_from_json(
 async fn recreate_relaychain_from_json(
     zombie_json: &serde_json::Value,
     ns: DynNamespace,
+    provider_name: &str,
 ) -> Result<(Relaychain, NetworkSpec), OrchestratorError> {
     // Extract and deserialize the relay section
     let relay_json = zombie_json
         .get("relay")
-        .ok_or(OrchestratorError::InvariantError(
-            "Missing `relay` field in zombie.json",
+        .ok_or(OrchestratorError::InvalidConfig(
+            "Missing `relay` field in zombie.json".into(),
         ))?
         .clone();
 
-    let mut relay_raw: RawRelaychain = serde_json::from_value(relay_json)
-        .map_err(|_| OrchestratorError::InvariantError("Invalid `relay` field in zombie.json"))?;
+    let mut relay_raw: RawRelaychain = serde_json::from_value(relay_json)?;
 
     let initial_spec: NetworkSpec = serde_json::from_value(
         zombie_json
             .get("initial_spec")
-            .ok_or(OrchestratorError::InvariantError(
-                "Missing `initial_spec` field in zombie.json",
+            .ok_or(OrchestratorError::InvalidConfig(
+                "Missing `initial_spec` field in zombie.json".into(),
             ))?
             .clone(),
-    )
-    .map_err(|_| {
-        OrchestratorError::InvariantError("Invalid `initial_spec` field in zombie.json")
-    })?;
+    )?;
 
     // Populate relay nodes
-    let nodes = recreate_network_nodes_from_json(&relay_raw.nodes, ns.clone()).await?;
+    let nodes =
+        recreate_network_nodes_from_json(&relay_raw.nodes, ns.clone(), provider_name).await?;
     relay_raw.inner.nodes = nodes;
 
     Ok((relay_raw.inner, initial_spec))
@@ -585,20 +596,16 @@ async fn recreate_relaychain_from_json(
 async fn recreate_parachains_from_json(
     zombie_json: &serde_json::Value,
     ns: DynNamespace,
+    provider_name: &str,
 ) -> Result<HashMap<u32, Vec<Parachain>>, OrchestratorError> {
     let paras_json = zombie_json
         .get("parachains")
-        .ok_or(OrchestratorError::InvariantError(
-            "Missing `parachains` field in zombie.json",
+        .ok_or(OrchestratorError::InvalidConfig(
+            "Missing `parachains` field in zombie.json".into(),
         ))?
         .clone();
 
-    let raw_paras: HashMap<u32, Vec<RawParachain>> =
-        serde_json::from_value(paras_json).map_err(|_| {
-            OrchestratorError::InvariantError(
-                "Invalid `parachains` field in zombie.json, expected { id: [parachains...] }",
-            )
-        })?;
+    let raw_paras: HashMap<u32, Vec<RawParachain>> = serde_json::from_value(paras_json)?;
 
     let mut parachains_map = HashMap::new();
 
@@ -608,7 +615,8 @@ async fn recreate_parachains_from_json(
         for raw_para in parachain_entries {
             let mut para = raw_para.inner;
             para.collators =
-                recreate_network_nodes_from_json(&raw_para.collators, ns.clone()).await?;
+                recreate_network_nodes_from_json(&raw_para.collators, ns.clone(), provider_name)
+                    .await?;
             parsed_vec.push(para);
         }
 

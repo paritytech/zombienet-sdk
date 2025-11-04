@@ -105,6 +105,35 @@ where
         Ok(namespace)
     }
 
+    pub(super) async fn attach_to_live(
+        provider: &Weak<KubernetesProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        k8s_client: &KubernetesClient,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        let namespace = Arc::new_cyclic(|weak| KubernetesNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_owned(),
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            k8s_client: k8s_client.clone(),
+            file_server_port: RwLock::new(None),
+            file_server_fw_task: RwLock::new(None),
+            nodes: RwLock::new(HashMap::new()),
+            delete_on_drop: Arc::new(Mutex::new(true)),
+        });
+
+        // TODO: file_server related things
+
+        Ok(namespace)
+    }
+
     async fn initialize(&self) -> Result<(), ProviderError> {
         // Initialize the namespace IFF
         // we are not in CI or we don't have the env `ZOMBIE_NAMESPACE` set

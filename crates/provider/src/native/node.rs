@@ -78,7 +78,9 @@ where
     scripts_dir: PathBuf,
     log_path: PathBuf,
     #[serde(serialize_with = "serialize_process_info")]
-    process: RwLock<Option<ProcessInfo>>,
+    // using RwLock from std to serialize properly, generally using sync locks is ok in async code as long as they
+    // are not held across await points
+    process: std::sync::RwLock<Option<ProcessInfo>>,
     #[serde(skip)]
     stdout_reading_task: RwLock<Option<JoinHandle<()>>>,
     #[serde(skip)]
@@ -135,7 +137,7 @@ where
             relay_data_dir,
             scripts_dir,
             log_path,
-            process: RwLock::new(None),
+            process: std::sync::RwLock::new(None),
             stdout_reading_task: RwLock::new(None),
             stderr_reading_task: RwLock::new(None),
             log_writing_task: RwLock::new(None),
@@ -278,7 +280,7 @@ where
                 .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?
                 as i32,
         );
-        self.process.write().await.replace((process, pid));
+        self.process.write().unwrap().replace((process, pid));
 
         Ok((stdout, stderr))
     }
@@ -340,11 +342,11 @@ where
         })
     }
 
-    async fn process_id(&self) -> Result<Pid, ProviderError> {
+    fn process_id(&self) -> Result<Pid, ProviderError> {
         let pid = self
             .process
             .read()
-            .await
+            .unwrap()
             .as_ref()
             .map(|process| process.1)
             .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?;
@@ -374,14 +376,14 @@ where
             .ok_or_else(|| anyhow!("no stderr reading task was attached for the node"))?
             .abort();
 
-        self.process
-            .write()
-            .await
-            .take()
-            .ok_or_else(|| anyhow!("no process was attached for the node"))?
-            .0
-            .kill()
-            .await?;
+        let mut process = {
+            let mut guard = self.process.write().unwrap();
+            guard
+                .take()
+                .ok_or_else(|| anyhow!("no process was attached for the node"))?
+        };
+
+        process.0.kill().await?;
 
         Ok(())
     }
@@ -570,7 +572,7 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
-        let process_id = self.process_id().await?;
+        let process_id = self.process_id()?;
 
         kill(process_id, Signal::SIGSTOP)
             .map_err(|err| ProviderError::PauseNodeFailed(self.name.clone(), err.into()))?;
@@ -579,7 +581,7 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
-        let process_id = self.process_id().await?;
+        let process_id = self.process_id()?;
 
         nix::sys::signal::kill(process_id, Signal::SIGCONT)
             .map_err(|err| ProviderError::ResumeNodeFailed(self.name.clone(), err.into()))?;
@@ -620,14 +622,15 @@ where
 }
 
 fn serialize_process_info<S>(
-    process_info: &RwLock<Option<ProcessInfo>>,
+    process_info: &std::sync::RwLock<Option<ProcessInfo>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     let pid = process_info
-        .blocking_read()
+        .read()
+        .unwrap()
         .as_ref()
         .map(|(_, pid)| pid.as_raw());
     pid.serialize(serializer)

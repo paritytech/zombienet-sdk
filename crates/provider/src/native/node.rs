@@ -32,7 +32,7 @@ use tokio::{
     time::sleep,
     try_join,
 };
-use tracing::trace;
+use tracing::{trace, warn};
 
 use super::namespace::NativeNamespace;
 use crate::{
@@ -590,6 +590,9 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        warn!(
+            "If you're using this method on `attached` network, this will currently lead to bugs!"
+        );
         if let Some(duration) = after {
             sleep(duration).await;
         }

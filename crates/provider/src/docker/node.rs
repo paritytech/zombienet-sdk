@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::AssetLocation;
 use futures::future::try_join_all;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{time::sleep, try_join};
 use tracing::debug;
@@ -42,6 +42,48 @@ where
     pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
     pub(super) port_mapping: &'a HashMap<Port, Port>,
+}
+
+impl<'a, FS> DockerNodeOptions<'a, FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub fn from_serializable(
+        serializable: &'a SerializableDockerNodeOptions,
+        namespace: &'a Weak<DockerNamespace<FS>>,
+        namespace_base_dir: &'a PathBuf,
+        docker_client: &'a DockerClient,
+        filesystem: &'a FS,
+    ) -> Self {
+        DockerNodeOptions {
+            namespace,
+            namespace_base_dir,
+            name: &serializable.name,
+            image: serializable.image.as_ref(),
+            program: &serializable.program,
+            args: &serializable.args,
+            env: &serializable.env,
+            startup_files: &serializable.startup_files,
+            db_snapshot: serializable.db_snapshot.as_ref(),
+            docker_client,
+            container_name: serializable.container_name.clone(),
+            filesystem,
+            port_mapping: &serializable.port_mapping,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct SerializableDockerNodeOptions {
+    pub(super) name: String,
+    pub(super) image: Option<String>,
+    pub(super) program: String,
+    pub(super) args: Vec<String>,
+    pub(super) env: Vec<(String, String)>,
+    pub(super) startup_files: Vec<TransferedFile>,
+    pub(super) db_snapshot: Option<AssetLocation>,
+    pub(super) container_name: String,
+    pub(super) port_mapping: HashMap<Port, Port>,
 }
 
 #[derive(Serialize)]
@@ -130,6 +172,48 @@ where
         node.initialize_startup_files(options.startup_files).await?;
 
         node.start().await?;
+
+        Ok(node)
+    }
+
+    pub(super) async fn attach_to_live(
+        options: DockerNodeOptions<'_, FS>,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let image = options.image.ok_or_else(|| {
+            ProviderError::MissingNodeInfo(options.name.to_string(), "missing image".to_string())
+        })?;
+
+        let filesystem = options.filesystem.clone();
+
+        let base_dir =
+            PathBuf::from_iter([options.namespace_base_dir, &PathBuf::from(options.name)]);
+        filesystem.create_dir_all(&base_dir).await?;
+
+        let base_dir_raw = base_dir.to_string_lossy();
+        let config_dir = PathBuf::from(format!("{base_dir_raw}{NODE_CONFIG_DIR}"));
+        let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
+        let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
+        let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
+        let log_path = base_dir.join("node.log");
+
+        let node = Arc::new(DockerNode {
+            namespace: options.namespace.clone(),
+            name: options.name.to_string(),
+            image: image.to_string(),
+            program: options.program.to_string(),
+            args: options.args.to_vec(),
+            env: options.env.to_vec(),
+            base_dir,
+            config_dir,
+            data_dir,
+            relay_data_dir,
+            scripts_dir,
+            log_path,
+            filesystem: filesystem.clone(),
+            docker_client: options.docker_client.clone(),
+            container_name: options.container_name,
+            port_mapping: options.port_mapping.clone(),
+        });
 
         Ok(node)
     }

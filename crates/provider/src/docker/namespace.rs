@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     constants::NAMESPACE_PREFIX,
-    docker::node::DockerNodeOptions,
+    docker::node::{DockerNodeOptions, SerializableDockerNodeOptions},
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -318,6 +318,31 @@ where
             port_mapping: options.port_mapping.as_ref().unwrap_or(&HashMap::default()),
         })
         .await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
+
+        Ok(node)
+    }
+
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError> {
+        let serializable: SerializableDockerNodeOptions =
+            serde_json::from_value(json_value.clone())
+                .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
+        let options = DockerNodeOptions::from_serializable(
+            &serializable,
+            &self.weak,
+            &self.base_dir,
+            &self.docker_client,
+            &self.filesystem,
+        );
+
+        let node = DockerNode::attach_to_live(options).await?;
 
         self.nodes
             .write()

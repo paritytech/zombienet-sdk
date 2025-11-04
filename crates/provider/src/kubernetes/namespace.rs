@@ -462,6 +462,13 @@ where
         Ok(node)
     }
 
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError> {
+        todo!()
+    }
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
         debug!("generate files options {options:#?}");
 

@@ -155,6 +155,11 @@ pub trait ProviderNamespace {
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError>;
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;

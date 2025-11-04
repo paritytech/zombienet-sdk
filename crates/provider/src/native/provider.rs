@@ -10,7 +10,8 @@ use tokio::sync::RwLock;
 
 use super::namespace::NativeNamespace;
 use crate::{
-    DynNamespace, Provider, ProviderError, ProviderNamespace, shared::helpers::extract_namespace_info, types::ProviderCapabilities
+    shared::helpers::extract_namespace_info, types::ProviderCapabilities, DynNamespace, Provider,
+    ProviderError, ProviderNamespace,
 };
 
 const PROVIDER_NAME: &str = "native";
@@ -127,7 +128,7 @@ where
             &self.capabilities,
             &self.filesystem,
             &base_dir,
-            &name
+            &name,
         )
         .await?;
 

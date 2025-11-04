@@ -79,7 +79,7 @@ where
         capabilities: &ProviderCapabilities,
         filesystem: &FS,
         custom_base_dir: &Path,
-        name: &str
+        name: &str,
     ) -> Result<Arc<Self>, ProviderError> {
         let base_dir = custom_base_dir.to_path_buf();
 

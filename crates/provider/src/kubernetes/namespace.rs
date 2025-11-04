@@ -111,7 +111,7 @@ where
         k8s_client: &KubernetesClient,
         filesystem: &FS,
         custom_base_dir: &Path,
-        name: &str
+        name: &str,
     ) -> Result<Arc<Self>, ProviderError> {
         let base_dir = custom_base_dir.to_path_buf();
 

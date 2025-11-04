@@ -10,7 +10,8 @@ use tokio::sync::RwLock;
 
 use super::{client::KubernetesClient, namespace::KubernetesNamespace};
 use crate::{
-    DynNamespace, Provider, ProviderError, ProviderNamespace, shared::helpers::extract_namespace_info, types::ProviderCapabilities
+    shared::helpers::extract_namespace_info, types::ProviderCapabilities, DynNamespace, Provider,
+    ProviderError, ProviderNamespace,
 };
 
 const PROVIDER_NAME: &str = "k8s";
@@ -130,7 +131,7 @@ where
             &self.k8s_client,
             &self.filesystem,
             &base_dir,
-            &name
+            &name,
         )
         .await?;
 

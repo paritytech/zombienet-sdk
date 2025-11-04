@@ -89,6 +89,31 @@ where
         Ok(namespace)
     }
 
+    pub(super) async fn attach_to_live(
+        provider: &Weak<DockerProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        docker_client: &DockerClient,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        let namespace = Arc::new_cyclic(|weak| DockerNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_owned(),
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            docker_client: docker_client.clone(),
+            nodes: RwLock::new(HashMap::new()),
+            delete_on_drop: Arc::new(Mutex::new(false)),
+        });
+
+        Ok(namespace)
+    }
+
     async fn initialize(&self) -> Result<(), ProviderError> {
         // let ns_scripts_shared =  PathBuf::from_iter([&self.base_dir, &PathBuf::from("shared-scripts")]);
         // self.filesystem.create_dir(&ns_scripts_shared).await?;

@@ -22,7 +22,7 @@ use crate::{
 };
 
 macros::create_add_options!(AddNodeSpecOpts {
-     session_key: Option<String>
+     override_eth_key: Option<String>
 });
 
 macro_rules! impl_from_for_add_node_opts {
@@ -39,7 +39,7 @@ macro_rules! impl_from_for_add_node_opts {
                     rpc_port: value.rpc_port,
                     prometheus_port: value.prometheus_port,
                     p2p_port: value.p2p_port,
-                    session_key: value.session_key,
+                    override_eth_key: value.override_eth_key,
                 }
             }
         }
@@ -171,7 +171,7 @@ impl NodeSpec {
         let mut accounts = NodeAccounts { seed, accounts };
 
         if evm_based {
-            if let Some(session_key) = node_config.session_key() {
+            if let Some(session_key) = node_config.override_eth_key() {
                 accounts
                     .accounts
                     .insert("eth".into(), NodeAccount::new(session_key, session_key));
@@ -278,7 +278,7 @@ impl NodeSpec {
         let mut accounts = NodeAccounts { seed, accounts };
 
         if evm_based {
-            if let Some(session_key) = options.session_key.as_ref() {
+            if let Some(session_key) = options.override_eth_key.as_ref() {
                 accounts
                     .accounts
                     .insert("eth".into(), NodeAccount::new(session_key, session_key));

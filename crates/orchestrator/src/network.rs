@@ -59,13 +59,13 @@ impl<T: FileSystem> std::fmt::Debug for Network<T> {
 
 macros::create_add_options!(AddNodeOptions {
     chain_spec: Option<PathBuf>,
-    session_key: Option<String>
+    override_eth_key: Option<String>
 });
 
 macros::create_add_options!(AddCollatorOptions {
     chain_spec: Option<PathBuf>,
     chain_spec_relay: Option<PathBuf>,
-    session_key: Option<String>
+    override_eth_key: Option<String>
 });
 
 impl<T: FileSystem> Network<T> {

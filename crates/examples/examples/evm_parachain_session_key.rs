@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     collator
                         .with_name("evm-collator")
                         .with_command("polkadot-parachain")
-                        .with_session_key("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                        .with_override_eth_key("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                         .with_image("docker.io/parity/polkadot-parachain:latest")
                 })
         })

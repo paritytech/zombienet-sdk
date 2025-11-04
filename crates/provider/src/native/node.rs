@@ -63,8 +63,8 @@ impl<'a, FS> NativeNodeOptions<'a, FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
-    pub(super) fn from_serializable(
-        serializable: &'a DeserializableNativeNodeOptions,
+    pub(super) fn from_deserializable(
+        deserializable: &'a DeserializableNativeNodeOptions,
         namespace: &'a Weak<NativeNamespace<FS>>,
         namespace_base_dir: &'a PathBuf,
         filesystem: &'a FS,
@@ -72,15 +72,15 @@ where
         NativeNodeOptions {
             namespace,
             namespace_base_dir,
-            name: &serializable.name,
-            program: &serializable.program,
-            args: &serializable.args,
-            env: &serializable.env,
-            startup_files: &serializable.startup_files,
-            created_paths: &serializable.created_paths,
-            db_snapshot: serializable.db_snapshot.as_ref(),
+            name: &deserializable.name,
+            program: &deserializable.program,
+            args: &deserializable.args,
+            env: &deserializable.env,
+            startup_files: &deserializable.startup_files,
+            created_paths: &deserializable.created_paths,
+            db_snapshot: deserializable.db_snapshot.as_ref(),
             filesystem,
-            node_log_path: serializable.node_log_path.as_ref(),
+            node_log_path: deserializable.node_log_path.as_ref(),
         }
     }
 }

@@ -49,8 +49,8 @@ impl<'a, FS> DockerNodeOptions<'a, FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
-    pub fn from_serializable(
-        serializable: &'a DeserializableDockerNodeOptions,
+    pub fn from_deserializable(
+        deserializable: &'a DeserializableDockerNodeOptions,
         namespace: &'a Weak<DockerNamespace<FS>>,
         namespace_base_dir: &'a PathBuf,
         docker_client: &'a DockerClient,
@@ -59,17 +59,17 @@ where
         DockerNodeOptions {
             namespace,
             namespace_base_dir,
-            name: &serializable.name,
-            image: serializable.image.as_ref(),
-            program: &serializable.program,
-            args: &serializable.args,
-            env: &serializable.env,
-            startup_files: &serializable.startup_files,
-            db_snapshot: serializable.db_snapshot.as_ref(),
+            name: &deserializable.name,
+            image: deserializable.image.as_ref(),
+            program: &deserializable.program,
+            args: &deserializable.args,
+            env: &deserializable.env,
+            startup_files: &deserializable.startup_files,
+            db_snapshot: deserializable.db_snapshot.as_ref(),
             docker_client,
-            container_name: serializable.container_name.clone(),
+            container_name: deserializable.container_name.clone(),
             filesystem,
-            port_mapping: &serializable.port_mapping,
+            port_mapping: &deserializable.port_mapping,
         }
     }
 }

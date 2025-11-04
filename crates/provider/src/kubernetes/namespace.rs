@@ -495,11 +495,11 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        let serializable: DeserializableKubernetesNodeOptions =
+        let deserializable: DeserializableKubernetesNodeOptions =
             serde_json::from_value(json_value.clone())
                 .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
-        let options = KubernetesNodeOptions::from_serializable(
-            &serializable,
+        let options = KubernetesNodeOptions::from_deserializable(
+            &deserializable,
             &self.weak,
             &self.base_dir,
             &self.k8s_client,

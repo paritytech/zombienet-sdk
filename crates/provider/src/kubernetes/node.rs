@@ -54,8 +54,8 @@ impl<'a, FS> KubernetesNodeOptions<'a, FS>
 where
     FS: FileSystem + Send + Sync + Clone + 'static,
 {
-    pub(super) fn from_serializable(
-        serializable: &'a DeserializableKubernetesNodeOptions,
+    pub(super) fn from_deserializable(
+        deserializable: &'a DeserializableKubernetesNodeOptions,
         namespace: &'a Weak<KubernetesNamespace<FS>>,
         namespace_base_dir: &'a PathBuf,
         k8s_client: &'a KubernetesClient,
@@ -64,14 +64,14 @@ where
         KubernetesNodeOptions {
             namespace,
             namespace_base_dir,
-            name: &serializable.name,
-            image: serializable.image.as_ref(),
-            program: &serializable.program,
-            args: &serializable.args,
-            env: &serializable.env,
-            startup_files: &serializable.startup_files,
-            resources: serializable.resources.as_ref(),
-            db_snapshot: serializable.db_snapshot.as_ref(),
+            name: &deserializable.name,
+            image: deserializable.image.as_ref(),
+            program: &deserializable.program,
+            args: &deserializable.args,
+            env: &deserializable.env,
+            startup_files: &deserializable.startup_files,
+            resources: deserializable.resources.as_ref(),
+            db_snapshot: deserializable.db_snapshot.as_ref(),
             k8s_client,
             filesystem,
         }

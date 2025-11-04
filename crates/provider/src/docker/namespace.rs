@@ -356,11 +356,11 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        let serializable: DeserializableDockerNodeOptions =
+        let deserializable: DeserializableDockerNodeOptions =
             serde_json::from_value(json_value.clone())
                 .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
-        let options = DockerNodeOptions::from_serializable(
-            &serializable,
+        let options = DockerNodeOptions::from_deserializable(
+            &deserializable,
             &self.weak,
             &self.base_dir,
             &self.docker_client,

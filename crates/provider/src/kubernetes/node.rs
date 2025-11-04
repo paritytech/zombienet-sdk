@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -47,6 +47,46 @@ where
     pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
+}
+
+impl<'a, FS> KubernetesNodeOptions<'a, FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub(super) fn from_serializable(
+        serializable: &'a SerializableKubernetesNodeOptions,
+        namespace: &'a Weak<KubernetesNamespace<FS>>,
+        namespace_base_dir: &'a PathBuf,
+        k8s_client: &'a KubernetesClient,
+        filesystem: &'a FS,
+    ) -> KubernetesNodeOptions<'a, FS> {
+        KubernetesNodeOptions {
+            namespace,
+            namespace_base_dir,
+            name: &serializable.name,
+            image: serializable.image.as_ref(),
+            program: &serializable.program,
+            args: &serializable.args,
+            env: &serializable.env,
+            startup_files: &serializable.startup_files,
+            resources: serializable.resources.as_ref(),
+            db_snapshot: serializable.db_snapshot.as_ref(),
+            k8s_client,
+            filesystem,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct SerializableKubernetesNodeOptions {
+    pub(super) name: String,
+    pub(super) image: Option<String>,
+    pub(super) program: String,
+    pub(super) args: Vec<String>,
+    pub(super) env: Vec<(String, String)>,
+    pub(super) startup_files: Vec<TransferedFile>,
+    pub(super) db_snapshot: Option<AssetLocation>,
+    pub(super) resources: Option<Resources>,
 }
 
 type FwdInfo = (u16, JoinHandle<()>);
@@ -140,6 +180,49 @@ where
         node.initialize_startup_files(options.startup_files).await?;
 
         node.start().await?;
+
+        Ok(node)
+    }
+
+    pub(super) async fn attach_to_live(
+        options: KubernetesNodeOptions<'_, FS>,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let image = options.image.ok_or_else(|| {
+            ProviderError::MissingNodeInfo(options.name.to_string(), "missing image".to_string())
+        })?;
+
+        let filesystem = options.filesystem.clone();
+
+        let base_dir =
+            PathBuf::from_iter([options.namespace_base_dir, &PathBuf::from(options.name)]);
+        filesystem.create_dir_all(&base_dir).await?;
+
+        let base_dir_raw = base_dir.to_string_lossy();
+        let config_dir = PathBuf::from(format!("{base_dir_raw}{NODE_CONFIG_DIR}"));
+        let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
+        let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
+        let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
+        let log_path = base_dir.join("node.log");
+
+        let node = Arc::new(KubernetesNode {
+            namespace: options.namespace.clone(),
+            name: options.name.to_string(),
+            image: image.to_string(),
+            program: options.program.to_string(),
+            args: options.args.to_vec(),
+            env: options.env.to_vec(),
+            resources: options.resources.cloned(),
+            base_dir,
+            config_dir,
+            data_dir,
+            relay_data_dir,
+            scripts_dir,
+            log_path,
+            filesystem: filesystem.clone(),
+            k8s_client: options.k8s_client.clone(),
+            http_client: reqwest::Client::new(),
+            port_fwds: Default::default(),
+        });
 
         Ok(node)
     }

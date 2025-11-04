@@ -19,14 +19,10 @@ use uuid::Uuid;
 
 use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
-    constants::NAMESPACE_PREFIX,
-    kubernetes::node::KubernetesNodeOptions,
-    shared::helpers::{extract_execution_result, running_in_ci},
-    types::{
+    DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode, constants::NAMESPACE_PREFIX, kubernetes::node::{KubernetesNodeOptions, SerializableKubernetesNodeOptions}, shared::helpers::{extract_execution_result, running_in_ci}, types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
-    },
-    DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
+    }
 };
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";
@@ -466,7 +462,25 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        todo!()
+        let serializable: SerializableKubernetesNodeOptions =
+            serde_json::from_value(json_value.clone())
+                .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
+        let options = KubernetesNodeOptions::from_serializable(
+            &serializable,
+            &self.weak,
+            &self.base_dir,
+            &self.k8s_client,
+            &self.filesystem,
+        );
+
+        let node = KubernetesNode::attach_to_live(options).await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
+
+        Ok(node)
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {

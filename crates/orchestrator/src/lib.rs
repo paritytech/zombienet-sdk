@@ -28,8 +28,9 @@ pub use network_spec::NetworkSpec;
 use network_spec::{node::NodeSpec, parachain::ParachainSpec};
 use provider::{
     types::{ProviderCapabilities, TransferedFile},
-    DynProvider,
+    DynNamespace, DynProvider,
 };
+use serde::Deserializer;
 use serde_json::json;
 use support::{
     constants::{
@@ -42,7 +43,11 @@ use support::{
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
-use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
+use crate::{
+    network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
+    shared::types::RegisterParachainOptions,
+    spawner::SpawnNodeCtx,
+};
 pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
@@ -90,6 +95,29 @@ where
         .await
         .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout));
         res?
+    }
+
+    pub async fn attach_to_live(
+        &self,
+        zombie_json_path: &Path,
+    ) -> Result<Network<T>, OrchestratorError> {
+        let zombie_json_content = self.filesystem.read_to_string(zombie_json_path).await?;
+        let zombie_json: serde_json::Value = serde_json::from_str(&zombie_json_content)?;
+
+        let ns: DynNamespace = self
+            .provider
+            .create_namespace_from_json(&zombie_json)
+            .await?;
+
+        let (relay, initial_spec) = recreate_relaychain_from_json(&zombie_json, ns.clone()).await?;
+
+        let mut network =
+            Network::new_with_relay(relay, ns.clone(), self.filesystem.clone(), initial_spec);
+
+        let parachains_map = recreate_parachains_from_json(&zombie_json, ns.clone()).await?;
+        network.set_parachains(parachains_map);
+
+        Ok(network)
     }
 
     async fn spawn_inner(
@@ -492,6 +520,104 @@ where
 
 // Helpers
 
+async fn recreate_network_nodes_from_json(
+    nodes_json: &serde_json::Value,
+    ns: DynNamespace,
+) -> Result<Vec<NetworkNode>, OrchestratorError> {
+    let raw_nodes: Vec<RawNetworkNode> =
+        serde_json::from_value(nodes_json.clone()).map_err(|_| {
+            OrchestratorError::InvariantError(
+                "Invalid `nodes` field in relay zombie.json, expected array",
+            )
+        })?;
+
+    let mut nodes = Vec::with_capacity(raw_nodes.len());
+    for raw in raw_nodes {
+        let inner = ns.spawn_node_from_json(&raw.inner).await?;
+        let relay_node = NetworkNode::new(
+            raw.name,
+            raw.ws_uri,
+            raw.prometheus_uri,
+            raw.multiaddr,
+            raw.spec,
+            inner,
+        );
+        nodes.push(relay_node);
+    }
+
+    Ok(nodes)
+}
+
+async fn recreate_relaychain_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+) -> Result<(Relaychain, NetworkSpec), OrchestratorError> {
+    // Extract and deserialize the relay section
+    let relay_json = zombie_json
+        .get("relay")
+        .ok_or(OrchestratorError::InvariantError(
+            "Missing `relay` field in zombie.json",
+        ))?
+        .clone();
+
+    let mut relay_raw: RawRelaychain = serde_json::from_value(relay_json)
+        .map_err(|_| OrchestratorError::InvariantError("Invalid `relay` field in zombie.json"))?;
+
+    let initial_spec: NetworkSpec = serde_json::from_value(
+        zombie_json
+            .get("initial_spec")
+            .ok_or(OrchestratorError::InvariantError(
+                "Missing `initial_spec` field in zombie.json",
+            ))?
+            .clone(),
+    )
+    .map_err(|_| {
+        OrchestratorError::InvariantError("Invalid `initial_spec` field in zombie.json")
+    })?;
+
+    // Populate relay nodes
+    let nodes = recreate_network_nodes_from_json(&relay_raw.nodes, ns.clone()).await?;
+    relay_raw.inner.nodes = nodes;
+
+    Ok((relay_raw.inner, initial_spec))
+}
+
+async fn recreate_parachains_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+) -> Result<HashMap<u32, Vec<Parachain>>, OrchestratorError> {
+    let paras_json = zombie_json
+        .get("parachains")
+        .ok_or(OrchestratorError::InvariantError(
+            "Missing `parachains` field in zombie.json",
+        ))?
+        .clone();
+
+    let raw_paras: HashMap<u32, Vec<RawParachain>> =
+        serde_json::from_value(paras_json).map_err(|_| {
+            OrchestratorError::InvariantError(
+                "Invalid `parachains` field in zombie.json, expected { id: [parachains...] }",
+            )
+        })?;
+
+    let mut parachains_map = HashMap::new();
+
+    for (id, parachain_entries) in raw_paras {
+        let mut parsed_vec = Vec::with_capacity(parachain_entries.len());
+
+        for raw_para in parachain_entries {
+            let mut para = raw_para.inner;
+            para.collators =
+                recreate_network_nodes_from_json(&raw_para.collators, ns.clone()).await?;
+            parsed_vec.push(para);
+        }
+
+        parachains_map.insert(id, parsed_vec);
+    }
+
+    Ok(parachains_map)
+}
+
 // Split the node list depending if it's bootnode or not
 // NOTE: if there isn't a bootnode declared we use the first one
 fn split_nodes_by_bootnodes(
@@ -886,6 +1012,13 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
 
         full_path
     }
+}
+
+pub fn empty_vec<'de, D, T>(_deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Vec::new())
 }
 
 #[derive(Clone, Debug)]

@@ -823,4 +823,8 @@ impl<T: FileSystem> Network<T> {
             }
         });
     }
+
+    pub(crate) fn set_parachains(&mut self, parachains: HashMap<u32, Vec<Parachain>>) {
+        self.parachains = parachains;
+    }
 }

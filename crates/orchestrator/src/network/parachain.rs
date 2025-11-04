@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -6,7 +7,7 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use provider::types::TransferedFile;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, net::wait_ws_ready};
@@ -14,13 +15,14 @@ use tracing::info;
 
 use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
 use crate::{
+    empty_vec,
     network_spec::parachain::ParachainSpec,
     shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
     tx_helper::client::get_client_from_url,
     ScopedFilesystem,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,
@@ -29,10 +31,21 @@ pub struct Parachain {
     pub(crate) unique_id: String,
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,
+    #[serde(default, deserialize_with = "empty_vec")]
     pub(crate) collators: Vec<NetworkNode>,
     pub(crate) files_to_inject: Vec<TransferedFile>,
     pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RawParachain {
+    #[serde(flatten)]
+    pub(crate) inner: Parachain,
+    pub(crate) collators: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RawParachainsMap(pub(crate) HashMap<u32, Vec<RawParachain>>);
 
 #[async_trait]
 impl ChainUpgrade for Parachain {

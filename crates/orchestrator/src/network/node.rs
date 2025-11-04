@@ -11,7 +11,7 @@ use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::DynNode;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
@@ -43,6 +43,16 @@ pub struct NetworkNode {
     metrics_cache: Arc<RwLock<MetricMap>>,
     #[serde(skip)]
     is_running: Arc<AtomicBool>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RawNetworkNode {
+    pub(crate) name: String,
+    pub(crate) ws_uri: String,
+    pub(crate) prometheus_uri: String,
+    pub(crate) multiaddr: String,
+    pub(crate) spec: NodeSpec,
+    pub(crate) inner: serde_json::Value,
 }
 
 /// Result of waiting for a certain number of log lines to appear.

@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     constants::NAMESPACE_PREFIX,
-    docker::node::{DockerNodeOptions, DeserializableDockerNodeOptions},
+    docker::node::{DeserializableDockerNodeOptions, DockerNodeOptions},
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,

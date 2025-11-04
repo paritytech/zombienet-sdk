@@ -20,7 +20,7 @@ use uuid::Uuid;
 use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
-    kubernetes::node::{KubernetesNodeOptions, DeserializableKubernetesNodeOptions},
+    kubernetes::node::{DeserializableKubernetesNodeOptions, KubernetesNodeOptions},
     shared::helpers::{extract_execution_result, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,

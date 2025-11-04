@@ -117,4 +117,11 @@ where
 
         Ok(namespace)
     }
+
+    async fn create_namespace_from_json(
+        &self,
+        _json_value: &serde_json::Value,
+    ) -> Result<DynNamespace, ProviderError> {
+        todo!()
+    }
 }

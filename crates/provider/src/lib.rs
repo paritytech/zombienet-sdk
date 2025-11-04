@@ -124,6 +124,11 @@ pub trait Provider {
         &self,
         base_dir: &Path,
     ) -> Result<DynNamespace, ProviderError>;
+
+    async fn create_namespace_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNamespace, ProviderError>;
 }
 
 pub type DynProvider = Arc<dyn Provider + Send + Sync>;

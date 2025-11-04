@@ -13,6 +13,7 @@ use uuid::Uuid;
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
+    native::node::SerializableNativeNodeOptions,
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -153,7 +154,29 @@ where
         &self,
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
-        todo!()
+        let serializable: SerializableNativeNodeOptions =
+            serde_json::from_value(json_value.clone())
+                .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
+        let options = NativeNodeOptions::from_serializable(
+            &serializable,
+            &self.weak,
+            &self.base_dir,
+            &self.filesystem,
+        );
+
+        let pid = json_value
+            .get("process")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| ProviderError::InvalidConfig("Missing pid field".to_string()))?
+            as i32;
+        let node = NativeNode::attach_to_live(options, pid).await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
+
+        Ok(node)
     }
 
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {

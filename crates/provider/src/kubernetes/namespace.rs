@@ -19,10 +19,14 @@ use uuid::Uuid;
 
 use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
-    DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode, constants::NAMESPACE_PREFIX, kubernetes::node::{KubernetesNodeOptions, SerializableKubernetesNodeOptions}, shared::helpers::{extract_execution_result, running_in_ci}, types::{
+    constants::NAMESPACE_PREFIX,
+    kubernetes::node::{KubernetesNodeOptions, SerializableKubernetesNodeOptions},
+    shared::helpers::{extract_execution_result, running_in_ci},
+    types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
-    }
+    },
+    DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
 
 const FILE_SERVER_IMAGE: &str = "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/zombienet-file-server:latest";

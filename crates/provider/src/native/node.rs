@@ -16,7 +16,7 @@ use nix::{
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
@@ -56,6 +56,44 @@ where
     pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) filesystem: &'a FS,
     pub(super) node_log_path: Option<&'a PathBuf>,
+}
+
+impl<'a, FS> NativeNodeOptions<'a, FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub(super) fn from_serializable(
+        serializable: &'a SerializableNativeNodeOptions,
+        namespace: &'a Weak<NativeNamespace<FS>>,
+        namespace_base_dir: &'a PathBuf,
+        filesystem: &'a FS,
+    ) -> NativeNodeOptions<'a, FS> {
+        NativeNodeOptions {
+            namespace,
+            namespace_base_dir,
+            name: &serializable.name,
+            program: &serializable.program,
+            args: &serializable.args,
+            env: &serializable.env,
+            startup_files: &serializable.startup_files,
+            created_paths: &serializable.created_paths,
+            db_snapshot: serializable.db_snapshot.as_ref(),
+            filesystem,
+            node_log_path: serializable.node_log_path.as_ref(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct SerializableNativeNodeOptions {
+    pub name: String,
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub startup_files: Vec<TransferedFile>,
+    pub created_paths: Vec<PathBuf>,
+    pub db_snapshot: Option<AssetLocation>,
+    pub node_log_path: Option<PathBuf>,
 }
 
 pub type ProcessInfo = (Child, Pid);
@@ -154,6 +192,52 @@ where
         let (stdout, stderr) = node.initialize_process().await?;
 
         node.initialize_log_writing(stdout, stderr).await;
+
+        Ok(node)
+    }
+
+    pub(super) async fn attach_to_live(
+        options: NativeNodeOptions<'_, FS>,
+        _pid: i32,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let filesystem = options.filesystem.clone();
+
+        let base_dir =
+            PathBuf::from_iter([options.namespace_base_dir, &PathBuf::from(options.name)]);
+        trace!("creating base_dir {:?}", base_dir);
+        options.filesystem.create_dir_all(&base_dir).await?;
+        trace!("created base_dir {:?}", base_dir);
+
+        let base_dir_raw = base_dir.to_string_lossy();
+        let config_dir = PathBuf::from(format!("{base_dir_raw}{NODE_CONFIG_DIR}"));
+        let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
+        let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
+        let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
+        let log_path = options
+            .node_log_path
+            .cloned()
+            .unwrap_or_else(|| base_dir.join(format!("{}.log", options.name)));
+
+        let node = Arc::new(NativeNode {
+            namespace: options.namespace.clone(),
+            name: options.name.to_string(),
+            program: options.program.to_string(),
+            args: options.args.to_vec(),
+            env: options.env.to_vec(),
+            base_dir,
+            config_dir,
+            data_dir,
+            relay_data_dir,
+            scripts_dir,
+            log_path,
+            process: std::sync::RwLock::new(None),
+            stdout_reading_task: RwLock::new(None),
+            stderr_reading_task: RwLock::new(None),
+            log_writing_task: RwLock::new(None),
+            filesystem: filesystem.clone(),
+        });
+
+        // let (stdout, stderr) = node.initialize_process().await?; do smthiing with pid etc
 
         Ok(node)
     }

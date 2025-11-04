@@ -14,7 +14,7 @@ use crate::{
     ProviderError, ProviderNamespace,
 };
 
-const PROVIDER_NAME: &str = "native";
+pub const PROVIDER_NAME: &str = "native";
 
 pub struct NativeProvider<FS>
 where

@@ -27,6 +27,7 @@ use crate::{
         NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
         PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
     },
+    kubernetes,
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -118,6 +119,7 @@ where
     filesystem: FS,
     #[serde(skip)]
     port_fwds: RwLock<HashMap<u16, FwdInfo>>,
+    provider_tag: String,
 }
 
 impl<FS> KubernetesNode<FS>
@@ -169,6 +171,7 @@ where
             k8s_client: options.k8s_client.clone(),
             http_client: reqwest::Client::new(),
             port_fwds: Default::default(),
+            provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
         node.initialize_k8s().await?;
@@ -222,6 +225,7 @@ where
             k8s_client: options.k8s_client.clone(),
             http_client: reqwest::Client::new(),
             port_fwds: Default::default(),
+            provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
         Ok(node)

@@ -14,7 +14,7 @@ use crate::{
     ProviderError, ProviderNamespace,
 };
 
-const PROVIDER_NAME: &str = "k8s";
+pub const PROVIDER_NAME: &str = "k8s";
 
 pub struct KubernetesProvider<FS>
 where

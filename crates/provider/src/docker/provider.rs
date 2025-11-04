@@ -14,7 +14,7 @@ use crate::{
     ProviderError, ProviderNamespace,
 };
 
-const PROVIDER_NAME: &str = "docker";
+pub const PROVIDER_NAME: &str = "docker";
 
 pub struct DockerProvider<FS>
 where

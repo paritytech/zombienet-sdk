@@ -37,6 +37,7 @@ use tracing::{trace, warn};
 use super::namespace::NativeNamespace;
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    native,
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -127,6 +128,7 @@ where
     log_writing_task: RwLock<Option<JoinHandle<()>>>,
     #[serde(skip)]
     filesystem: FS,
+    provider_tag: String,
 }
 
 impl<FS> NativeNode<FS>
@@ -180,6 +182,7 @@ where
             stderr_reading_task: RwLock::new(None),
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
+            provider_tag: native::provider::PROVIDER_NAME.to_string(),
         });
 
         node.initialize_startup_paths(options.created_paths).await?;
@@ -235,6 +238,7 @@ where
             stderr_reading_task: RwLock::new(None),
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
+            provider_tag: native::provider::PROVIDER_NAME.to_string(),
         });
 
         // let (stdout, stderr) = node.initialize_process().await?; do smthiing with pid etc

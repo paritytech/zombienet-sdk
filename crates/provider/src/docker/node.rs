@@ -21,6 +21,7 @@ use super::{
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    docker,
     types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions, TransferedFile},
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -111,6 +112,7 @@ where
     #[allow(dead_code)]
     #[serde(skip)]
     filesystem: FS,
+    provider_tag: String,
 }
 
 impl<FS> DockerNode<FS>
@@ -161,6 +163,7 @@ where
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
             port_mapping: options.port_mapping.clone(),
+            provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
         node.initialize_docker().await?;
@@ -213,6 +216,7 @@ where
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
             port_mapping: options.port_mapping.clone(),
+            provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
         Ok(node)

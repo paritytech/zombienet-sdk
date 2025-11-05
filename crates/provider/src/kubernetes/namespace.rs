@@ -129,7 +129,7 @@ where
             delete_on_drop: Arc::new(Mutex::new(false)),
         });
 
-        // TODO: file_server related things
+        // TODO: need to bind file servver port & other file_server related things
 
         Ok(namespace)
     }

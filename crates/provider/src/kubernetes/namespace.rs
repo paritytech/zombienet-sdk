@@ -129,7 +129,7 @@ where
             delete_on_drop: Arc::new(Mutex::new(false)),
         });
 
-        // TODO: need to bind file servver port & other file_server related things
+        namespace.setup_file_server_port_fwd("fileserver").await?;
 
         Ok(namespace)
     }
@@ -318,6 +318,12 @@ where
             .write(service_dest_path, serialized_service_manifest)
             .await?;
 
+        self.setup_file_server_port_fwd(&name).await?;
+
+        Ok(())
+    }
+
+    async fn setup_file_server_port_fwd(&self, name: &str) -> Result<(), ProviderError> {
         let (port, task) = self
             .k8s_client
             .create_pod_port_forward(&self.name, &name, 0, 80)

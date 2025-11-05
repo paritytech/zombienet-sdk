@@ -76,9 +76,9 @@ where
             program: &deserializable.program,
             args: &deserializable.args,
             env: &deserializable.env,
-            startup_files: &deserializable.startup_files,
-            created_paths: &deserializable.created_paths,
-            db_snapshot: deserializable.db_snapshot.as_ref(),
+            startup_files: &[],
+            created_paths: &[],
+            db_snapshot: None,
             filesystem,
             node_log_path: deserializable.node_log_path.as_ref(),
         }
@@ -91,9 +91,6 @@ pub(super) struct DeserializableNativeNodeOptions {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
-    pub startup_files: Vec<TransferedFile>,
-    pub created_paths: Vec<PathBuf>,
-    pub db_snapshot: Option<AssetLocation>,
     pub node_log_path: Option<PathBuf>,
 }
 

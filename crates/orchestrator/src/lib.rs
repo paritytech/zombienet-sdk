@@ -101,23 +101,42 @@ where
         &self,
         zombie_json_path: &Path,
     ) -> Result<Network<T>, OrchestratorError> {
+        info!("attaching to live network...");
+        info!("reading zombie.json from {:?}", zombie_json_path);
+
         let zombie_json_content = self.filesystem.read_to_string(zombie_json_path).await?;
         let zombie_json: serde_json::Value = serde_json::from_str(&zombie_json_content)?;
 
+        info!("recreating namespace...");
         let ns: DynNamespace = self
             .provider
             .create_namespace_from_json(&zombie_json)
             .await?;
 
+        info!("recreating relaychain...");
         let (relay, initial_spec) =
             recreate_relaychain_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
+        let relay_nodes = relay.nodes.clone();
 
         let mut network =
             Network::new_with_relay(relay, ns.clone(), self.filesystem.clone(), initial_spec);
 
+        for node in relay_nodes {
+            network.insert_node(node);
+        }
+
+        info!("recreating parachains...");
         let parachains_map =
             recreate_parachains_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
+        let para_nodes = parachains_map
+            .values()
+            .flat_map(|paras| paras.iter().flat_map(|para| para.collators.clone()))
+            .collect::<Vec<NetworkNode>>();
+
         network.set_parachains(parachains_map);
+        for node in para_nodes {
+            network.insert_node(node);
+        }
 
         Ok(network)
     }
@@ -534,10 +553,10 @@ async fn recreate_network_nodes_from_json(
         // validate provider tag
         let provider_tag = raw
             .inner
-            .get("provider")
+            .get("provider_tag")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                OrchestratorError::InvalidConfig("Missing `provider` in inner node JSON".into())
+                OrchestratorError::InvalidConfig("Missing `provider_tag` in inner node JSON".into())
             })?;
 
         if provider_tag != provider_name {
@@ -566,7 +585,6 @@ async fn recreate_relaychain_from_json(
     ns: DynNamespace,
     provider_name: &str,
 ) -> Result<(Relaychain, NetworkSpec), OrchestratorError> {
-    // Extract and deserialize the relay section
     let relay_json = zombie_json
         .get("relay")
         .ok_or(OrchestratorError::InvalidConfig(

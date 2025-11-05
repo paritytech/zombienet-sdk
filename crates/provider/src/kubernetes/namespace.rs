@@ -126,7 +126,7 @@ where
             file_server_port: RwLock::new(None),
             file_server_fw_task: RwLock::new(None),
             nodes: RwLock::new(HashMap::new()),
-            delete_on_drop: Arc::new(Mutex::new(true)),
+            delete_on_drop: Arc::new(Mutex::new(false)),
         });
 
         // TODO: file_server related things

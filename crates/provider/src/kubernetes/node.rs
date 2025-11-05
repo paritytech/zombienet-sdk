@@ -69,9 +69,9 @@ where
             program: &deserializable.program,
             args: &deserializable.args,
             env: &deserializable.env,
-            startup_files: &deserializable.startup_files,
+            startup_files: &[],
             resources: deserializable.resources.as_ref(),
-            db_snapshot: deserializable.db_snapshot.as_ref(),
+            db_snapshot: None,
             k8s_client,
             filesystem,
         }
@@ -85,8 +85,6 @@ pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) program: String,
     pub(super) args: Vec<String>,
     pub(super) env: Vec<(String, String)>,
-    pub(super) startup_files: Vec<TransferedFile>,
-    pub(super) db_snapshot: Option<AssetLocation>,
     pub(super) resources: Option<Resources>,
 }
 

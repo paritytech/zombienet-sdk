@@ -175,8 +175,7 @@ where
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
         let deserializable: DeserializableNativeNodeOptions =
-            serde_json::from_value(json_value.clone())
-                .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
+            serde_json::from_value(json_value.clone())?;
         let options = NativeNodeOptions::from_deserializable(
             &deserializable,
             &self.weak,

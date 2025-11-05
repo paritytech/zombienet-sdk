@@ -326,7 +326,7 @@ where
     async fn setup_file_server_port_fwd(&self, name: &str) -> Result<(), ProviderError> {
         let (port, task) = self
             .k8s_client
-            .create_pod_port_forward(&self.name, &name, 0, 80)
+            .create_pod_port_forward(&self.name, name, 0, 80)
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
@@ -502,8 +502,7 @@ where
         json_value: &serde_json::Value,
     ) -> Result<DynNode, ProviderError> {
         let deserializable: DeserializableKubernetesNodeOptions =
-            serde_json::from_value(json_value.clone())
-                .map_err(|_err| ProviderError::InvalidConfig("".to_string()))?; // TODO: improve error
+            serde_json::from_value(json_value.clone())?;
         let options = KubernetesNodeOptions::from_deserializable(
             &deserializable,
             &self.weak,

@@ -54,6 +54,7 @@ pub trait AttachToLive {
     /// # Example:
     /// ```rust
     /// # use zombienet_sdk::{AttachToLive, AttachToLiveNetwork};
+    /// # use std::path::PathBuf;
     /// # async fn example() -> Result<(), zombienet_sdk::OrchestratorError> {
     /// let zombie_json_path = PathBuf::from("some/path/zombie.json");
     /// let network = AttachToLiveNetwork::attach_native(&zombie_json_path).await?;

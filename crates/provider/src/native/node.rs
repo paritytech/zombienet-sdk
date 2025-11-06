@@ -657,6 +657,9 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
+        warn!(
+            "If you're using this method on `attached` network, this will currently lead to bugs!"
+        );
         let process_id = self.process_id()?;
 
         kill(process_id, Signal::SIGSTOP)
@@ -666,6 +669,9 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
+        warn!(
+            "If you're using this method on `attached` network, this will currently lead to bugs!"
+        );
         let process_id = self.process_id()?;
 
         nix::sys::signal::kill(process_id, Signal::SIGCONT)

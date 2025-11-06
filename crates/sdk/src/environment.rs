@@ -1,7 +1,10 @@
 //! Helpers functions to get configuration (e.g. Provider and images) from the env vars
-use std::{env, future::Future, pin::Pin};
+use std::{env, future::Future, path::PathBuf, pin::Pin};
 
-use crate::{LocalFileSystem, Network, NetworkConfig, NetworkConfigExt, OrchestratorError};
+use crate::{
+    AttachToLive, AttachToLiveNetwork, LocalFileSystem, Network, NetworkConfig, NetworkConfigExt,
+    OrchestratorError,
+};
 
 const DEFAULT_POLKADOT_IMAGE: &str = "docker.io/parity/polkadot:latest";
 const DEFAULT_CUMULUS_IMAGE: &str = "docker.io/parity/polkadot-parachain:latest";
@@ -59,5 +62,17 @@ pub fn get_spawn_fn() -> fn(NetworkConfig) -> Pin<Box<dyn Future<Output = SpawnR
         Provider::Native => NetworkConfigExt::spawn_native,
         Provider::K8s => NetworkConfigExt::spawn_k8s,
         Provider::Docker => NetworkConfigExt::spawn_docker,
+    }
+}
+
+pub type AttachResult = Result<Network<LocalFileSystem>, OrchestratorError>;
+
+pub fn get_attach_fn() -> fn(PathBuf) -> Pin<Box<dyn Future<Output = AttachResult> + Send>> {
+    let provider = get_provider_from_env();
+
+    match provider {
+        Provider::Native => AttachToLiveNetwork::attach_native,
+        Provider::K8s => AttachToLiveNetwork::attach_k8s,
+        Provider::Docker => AttachToLiveNetwork::attach_docker,
     }
 }

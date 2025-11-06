@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 pub use configuration::{
@@ -55,19 +55,19 @@ pub trait AttachToLive {
     /// ```rust
     /// # use zombienet_sdk::{AttachToLive, AttachToLiveNetwork};
     /// # async fn example() -> Result<(), zombienet_sdk::OrchestratorError> {
-    /// let zombie_json_path = Path::new("some/path/zombie.json");
+    /// let zombie_json_path = PathBuf::from("some/path/zombie.json");
     /// let network = AttachToLiveNetwork::attach_native(&zombie_json_path).await?;
     /// # Ok(())
     /// # }
     /// ```
     async fn attach_native(
-        zombie_json_path: &Path,
+        zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError>;
     async fn attach_k8s(
-        zombie_json_path: &Path,
+        zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError>;
     async fn attach_docker(
-        zombie_json_path: &Path,
+        zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError>;
 }
 
@@ -100,7 +100,7 @@ pub struct AttachToLiveNetwork;
 #[async_trait]
 impl AttachToLive for AttachToLiveNetwork {
     async fn attach_native(
-        zombie_json_path: &Path,
+        zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError> {
         let filesystem = LocalFileSystem;
         let provider = NativeProvider::new(filesystem.clone());
@@ -109,7 +109,7 @@ impl AttachToLive for AttachToLiveNetwork {
     }
 
     async fn attach_k8s(
-        zombie_json_path: &Path,
+        zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError> {
         let filesystem = LocalFileSystem;
         let provider = KubernetesProvider::new(filesystem.clone()).await;
@@ -118,7 +118,7 @@ impl AttachToLive for AttachToLiveNetwork {
     }
 
     async fn attach_docker(
-        zombie_json_path: &Path,
+        zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError> {
         let filesystem = LocalFileSystem;
         let provider = DockerProvider::new(filesystem.clone()).await;

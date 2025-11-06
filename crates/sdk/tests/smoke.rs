@@ -1,9 +1,9 @@
-use std::time::Instant;
+use std::{path::PathBuf, time::Instant};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, try_join};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
-use zombienet_sdk::environment::get_spawn_fn;
+use zombienet_sdk::environment::{get_attach_fn, get_spawn_fn};
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
@@ -21,6 +21,7 @@ fn small_network() -> NetworkConfig {
                     .with_image("docker.io/parity/polkadot-parachain:1.7.0")
             })
         })
+        .with_global_settings(|g| g.with_base_dir(PathBuf::from("/tmp/zombie-1")))
         .build()
         .unwrap()
 }
@@ -34,12 +35,17 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let config = small_network();
     let spawn_fn = get_spawn_fn();
 
-    let mut network = spawn_fn(config).await.unwrap();
-    // Optionally detach the network
-    // network.detach().await;
+    let network = spawn_fn(config).await.unwrap();
 
     let elapsed = now.elapsed();
     println!("🚀🚀🚀🚀 network deployed in {elapsed:.2?}");
+
+    // detach and attach to running
+    network.detach().await;
+    drop(network);
+    let attach_fn = get_attach_fn();
+    let zombie_path = PathBuf::from("/tmp/zombie-1/zombie.json");
+    let mut network = attach_fn(zombie_path).await.unwrap();
 
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
@@ -154,5 +160,5 @@ async fn ci_k8s_basic_functionalities_should_works() {
     assert!(r.is_err());
 
     // tear down (optional if you don't detach the network)
-    // network.destroy().await.unwrap();
+    network.destroy().await.unwrap();
 }

@@ -192,7 +192,7 @@ async fn spawn_network(
 }
 
 fn display_node_crash(e: anyhow::Error) -> anyhow::Error {
-    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {}", e.to_string())
+    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {e}")
 }
 
 pub fn network_config(
@@ -216,7 +216,7 @@ pub fn network_config(
         .collect();
 
     let settings_builder = GlobalSettingsBuilder::new()
-        .with_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
+        .with_raw_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
         .with_network_spawn_timeout(current_settings.network_spawn_timeout())
         .with_node_spawn_timeout(current_settings.node_spawn_timeout())
         .with_tear_down_on_failure(false);

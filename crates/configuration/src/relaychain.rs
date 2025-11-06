@@ -14,7 +14,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
         },
     },
-    types::JsonOverrides,
+    types::{ChainSpecRuntime, JsonOverrides},
     utils::{default_command_polkadot, default_relaychain_chain, is_false},
 };
 
@@ -30,13 +30,18 @@ pub struct RelaychainConfig {
     default_db_snapshot: Option<AssetLocation>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
+    /// chain-spec to use (location can be url or file path)
     chain_spec_path: Option<AssetLocation>,
-    // Full _template_ command, will be rendered (using custom token replacements)
-    // and executed for generate the chain-spec.
-    // available tokens {{chainName}} / {{disableBootnodes}}
+    /// Full _template_ command, will be rendered (using custom token replacements)
+    /// and executed for generate the chain-spec.
+    /// available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
+    /// runtime to use for generating the chain-spec.
+    /// Location can be url or file path and an optional preset
+    chain_spec_runtime: Option<ChainSpecRuntime>,
     #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
+    chain_spec_command_output_path: Option<String>,
     random_nominators_count: Option<u32>,
     max_nominations: Option<u8>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -103,6 +108,12 @@ impl RelaychainConfig {
         self.chain_spec_command_is_local
     }
 
+    /// The file where the `chain_spec_command` will write the chain-spec into.
+    /// Defaults to /dev/stdout.
+    pub fn chain_spec_command_output_path(&self) -> Option<&str> {
+        self.chain_spec_command_output_path.as_deref()
+    }
+
     /// The non-default command used for nodes.
     pub fn command(&self) -> Option<&Command> {
         self.command.as_ref()
@@ -138,8 +149,14 @@ impl RelaychainConfig {
         self.raw_spec_override.as_ref()
     }
 
+    /// Set the nodes to build
     pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
         self.nodes = nodes;
+    }
+
+    /// The location of runtime to use by chain-spec builder lib (from `sc-chain-spec` crate)
+    pub fn chain_spec_runtime(&self) -> Option<&ChainSpecRuntime> {
+        self.chain_spec_runtime.as_ref()
     }
 }
 
@@ -171,6 +188,8 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_args: vec![],
                 chain_spec_path: None,
                 chain_spec_command: None,
+                chain_spec_command_output_path: None,
+                chain_spec_runtime: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote cmd by default
                 command: None,
@@ -392,11 +411,46 @@ impl RelaychainConfigBuilder<WithChain> {
         )
     }
 
+    /// Set the runtime path to use for generating the chain-spec and an optiona preset.
+    /// If the preset is not set, we will try to match [`local_testnet`, `development`, `dev`]
+    /// with the available ones and fallback to the default configuration as last option.
+    pub fn with_chain_spec_runtime(
+        self,
+        location: impl Into<AssetLocation>,
+        preset: Option<&str>,
+    ) -> Self {
+        let chain_spec_runtime = if let Some(preset) = preset {
+            ChainSpecRuntime::with_preset(location.into(), preset.to_string())
+        } else {
+            ChainSpecRuntime::new(location.into())
+        };
+        Self::transition(
+            RelaychainConfig {
+                chain_spec_runtime: Some(chain_spec_runtime),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set if the chain-spec command needs to be run locally or not (false by default)
     pub fn chain_spec_command_is_local(self, choice: bool) -> Self {
         Self::transition(
             RelaychainConfig {
                 chain_spec_command_is_local: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the output path for the chain-spec command.
+    pub fn with_chain_spec_command_output_path(self, output_path: &str) -> Self {
+        Self::transition(
+            RelaychainConfig {
+                chain_spec_command_output_path: Some(output_path.to_string()),
                 ..self.config
             },
             self.validation_context,
@@ -736,6 +790,7 @@ mod tests {
             })
             .with_default_db_snapshot("https://www.urltomysnapshot.com/file.tgz")
             .with_chain_spec_path("./path/to/chain/spec.json")
+            .with_chain_spec_runtime("./path/to/runtime.wasm", Some("local_testnet"))
             .with_wasm_override("./path/to/override/runtime.wasm")
             .with_raw_spec_override(serde_json::json!({"some_override_key": "some_override_val"}))
             .with_default_args(vec![("--arg1", "value1").into(), "--option2".into()])
@@ -776,6 +831,18 @@ mod tests {
             relaychain_config.chain_spec_path().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/chain/spec.json"
         ));
+        assert!(matches!(
+            &relaychain_config.chain_spec_runtime().unwrap().location,
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/runtime.wasm"
+        ));
+        assert_eq!(
+            relaychain_config
+                .chain_spec_runtime()
+                .unwrap()
+                .preset
+                .as_deref(),
+            Some("local_testnet")
+        );
         assert!(matches!(
             relaychain_config.wasm_override().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/runtime.wasm"

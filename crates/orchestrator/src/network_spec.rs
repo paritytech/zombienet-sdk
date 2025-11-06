@@ -43,7 +43,7 @@ impl NetworkSpec {
 
         // TODO: move to `fold` or map+fold
         for para_config in network_config.parachains() {
-            match ParachainSpec::from_config(para_config) {
+            match ParachainSpec::from_config(para_config, relaychain.chain.clone()) {
                 Ok(para) => parachains.push(para),
                 Err(err) => errs.push(err),
             }
@@ -178,6 +178,7 @@ impl NetworkSpec {
                     format!("{}/genesis-state", para.unique_id),
                     &ns,
                     scoped_fs,
+                    None,
                 )
                 .await?;
             debug!("parachain genesis state built!");
@@ -187,6 +188,7 @@ impl NetworkSpec {
                     format!("{}/genesis-wasm", para.unique_id),
                     &ns,
                     scoped_fs,
+                    None,
                 )
                 .await?;
             debug!("parachain genesis wasm built!");

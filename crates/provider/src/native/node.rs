@@ -20,6 +20,7 @@ use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
 use tokio::{
+    fs,
     io::{AsyncRead, AsyncReadExt, BufReader},
     process::{Child, ChildStderr, ChildStdout, Command},
     sync::{
@@ -53,6 +54,7 @@ where
     pub(super) created_paths: &'a [PathBuf],
     pub(super) db_snapshot: Option<&'a AssetLocation>,
     pub(super) filesystem: &'a FS,
+    pub(super) node_log_path: Option<&'a PathBuf>,
 }
 
 pub(super) struct NativeNode<FS>
@@ -97,7 +99,10 @@ where
         let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
         let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
         let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
-        let log_path = base_dir.join(format!("{}.log", options.name));
+        let log_path = options
+            .node_log_path
+            .cloned()
+            .unwrap_or_else(|| base_dir.join(format!("{}.log", options.name)));
 
         trace!("creating dirs {:?}", config_dir);
         try_join!(
@@ -192,12 +197,17 @@ where
             self.get_db_snapshot(db_snapshot, &full_path).await?;
         }
 
-        let contents = self.filesystem.read(full_path).await.unwrap();
+        let contents = self.filesystem.read(&full_path).await.unwrap();
         let gz = GzDecoder::new(&contents[..]);
         let mut archive = Archive::new(gz);
         archive
             .unpack(self.base_dir.to_string_lossy().as_ref())
             .unwrap();
+
+        if std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT").is_ok() {
+            let res = fs::remove_file(&full_path).await;
+            trace!("removing {}, result {:?}", full_path, res);
+        }
 
         Ok(())
     }
@@ -405,11 +415,7 @@ where
     }
 
     fn log_cmd(&self) -> String {
-        format!(
-            "tail -f {}/{}.log",
-            self.base_dir().to_string_lossy(),
-            self.name()
-        )
+        format!("tail -f {}", self.log_path().to_string_lossy())
     }
 
     fn path_in_node(&self, file: &Path) -> PathBuf {

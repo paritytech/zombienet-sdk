@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
+use configuration::GlobalSettings;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
     shared::helpers::running_in_ci,
@@ -43,6 +44,8 @@ pub struct SpawnNodeCtx<'a, T: FileSystem> {
     pub(crate) wait_ready: bool,
     /// A json representation of the running nodes with their names as 'key'
     pub(crate) nodes_by_name: serde_json::Value,
+    /// A ref to the global settings
+    pub(crate) global_settings: &'a GlobalSettings,
 }
 
 pub async fn spawn_node<'a, T>(
@@ -195,7 +198,8 @@ where
         .injected_files(files_to_inject)
         .created_paths(created_paths)
         .db_snapshot(node.db_snapshot.clone())
-        .port_mapping(HashMap::from(ports));
+        .port_mapping(HashMap::from(ports))
+        .node_log_path(node.node_log_path.clone());
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())
@@ -222,10 +226,14 @@ where
         )
     })?;
 
-    let mut ip_to_use = LOCALHOST;
+    let mut ip_to_use = if let Some(local_ip) = ctx.global_settings.local_ip() {
+        *local_ip
+    } else {
+        LOCALHOST
+    };
 
     let (rpc_port_external, prometheus_port_external, p2p_external);
-    // Create port-forward iff we are  in CI and with k8s provider
+
     if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
         // running kubernets in ci require to use ip and default port
         (rpc_port_external, prometheus_port_external, p2p_external) =

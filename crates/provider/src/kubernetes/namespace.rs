@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use k8s_openapi::{
     api::core::v1::{
@@ -22,7 +21,7 @@ use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::node::KubernetesNodeOptions,
-    shared::helpers::running_in_ci,
+    shared::helpers::{extract_execution_result, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -500,17 +499,16 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            match temp_node
-                .run_command(RunCommandOptions { program, args, env })
-                .await?
-            {
-                Ok(contents) => self
-                    .filesystem
-                    .write(local_output_full_path, contents)
-                    .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-            };
+            let contents = extract_execution_result(
+                &temp_node,
+                RunCommandOptions { program, args, env },
+                options.expected_path.as_ref(),
+            )
+            .await?;
+            self.filesystem
+                .write(local_output_full_path, contents)
+                .await
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?;
         }
 
         temp_node.destroy().await

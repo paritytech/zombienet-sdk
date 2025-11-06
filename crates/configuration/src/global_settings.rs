@@ -116,7 +116,10 @@ impl GlobalSettingsBuilder {
     }
 
     /// Set the external bootnode address.
-    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    ///
+    /// Note: Bootnode address replacements are NOT supported here.
+    /// Only arguments (`args`) support dynamic replacements. Bootnode addresses must be a valid address.
+    pub fn with_raw_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
@@ -235,7 +238,7 @@ mod tests {
     #[test]
     fn global_settings_config_builder_should_succeeds_and_returns_a_global_settings_config() {
         let global_settings_config = GlobalSettingsBuilder::new()
-            .with_bootnodes_addresses(vec![
+            .with_raw_bootnodes_addresses(vec![
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
@@ -277,7 +280,7 @@ mod tests {
     #[test]
     fn global_settings_config_builder_should_succeeds_when_node_spawn_timeout_is_missing() {
         let global_settings_config = GlobalSettingsBuilder::new()
-            .with_bootnodes_addresses(vec![
+            .with_raw_bootnodes_addresses(vec![
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
@@ -310,7 +313,7 @@ mod tests {
     fn global_settings_builder_should_fails_and_returns_an_error_if_one_bootnode_address_is_invalid(
     ) {
         let errors = GlobalSettingsBuilder::new()
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421"])
             .build()
             .unwrap_err();
 
@@ -325,7 +328,7 @@ mod tests {
     fn global_settings_builder_should_fails_and_returns_multiple_errors_if_multiple_bootnodes_addresses_are_invalid(
     ) {
         let errors = GlobalSettingsBuilder::new()
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .build()
             .unwrap_err();
 
@@ -358,7 +361,7 @@ mod tests {
     fn global_settings_builder_should_fails_and_returns_multiple_errors_if_multiple_fields_are_invalid(
     ) {
         let errors = GlobalSettingsBuilder::new()
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .with_local_ip("invalid")
             .build()
             .unwrap_err();

@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
                 .with_validator(|node| node.with_name("alice"))
-                .with_validator(|node| node.with_name("bob"))
+                .with_validator(|node| node.with_name("bob").with_log_path("/tmp/bob.log"))
         })
         .with_parachain(|p| {
             p.with_id(100)

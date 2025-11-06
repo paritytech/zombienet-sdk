@@ -184,6 +184,7 @@ impl<T: FileSystem> Network<T> {
             bootnodes_addr: &vec![],
             wait_ready: true,
             nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
+            global_settings: &self.initial_spec.global_settings,
         };
 
         let global_files_to_inject = vec![TransferedFile::new(
@@ -290,6 +291,7 @@ impl<T: FileSystem> Network<T> {
             bootnodes_addr: &vec![],
             wait_ready: true,
             nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
+            global_settings: &self.initial_spec.global_settings,
         };
 
         let relaychain_spec_path = if let Some(chain_spec_custom_path) = &options.chain_spec_relay {
@@ -423,8 +425,6 @@ impl<T: FileSystem> Network<T> {
         custom_relaychain_spec: Option<PathBuf>,
         custom_parchain_fs_prefix: Option<String>,
     ) -> Result<(), anyhow::Error> {
-        // build
-        let mut para_spec = network_spec::parachain::ParachainSpec::from_config(para_config)?;
         let base_dir = self.ns.base_dir().to_string_lossy().to_string();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
@@ -451,6 +451,11 @@ impl<T: FileSystem> Network<T> {
             self.relay.chain_id.clone()
         };
 
+        let mut para_spec = network_spec::parachain::ParachainSpec::from_config(
+            para_config,
+            relay_chain_id.as_str().try_into()?,
+        )?;
+
         let chain_spec_raw_path = para_spec
             .build_chain_spec(&relay_chain_id, &self.ns, &scoped_fs)
             .await?;
@@ -471,6 +476,7 @@ impl<T: FileSystem> Network<T> {
                 format!("{}/genesis-state", &para_path_prefix),
                 &self.ns,
                 &scoped_fs,
+                None,
             )
             .await?;
         para_spec
@@ -480,6 +486,7 @@ impl<T: FileSystem> Network<T> {
                 format!("{}/para_spec-wasm", &para_path_prefix),
                 &self.ns,
                 &scoped_fs,
+                None,
             )
             .await?;
 
@@ -496,13 +503,18 @@ impl<T: FileSystem> Network<T> {
             } else {
                 ZombieRole::Collator
             },
-            bootnodes_addr: &vec![],
+            bootnodes_addr: &para_config
+                .bootnodes_addresses()
+                .iter()
+                .map(|&a| a.to_string())
+                .collect(),
             chain_id: &self.relaychain().chain_id,
             chain: &self.relaychain().chain,
             ns: &self.ns,
             scoped_fs: &scoped_fs,
             wait_ready: false,
             nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
+            global_settings: &self.initial_spec.global_settings,
         };
 
         // Register the parachain to the running network

@@ -64,6 +64,7 @@ impl ParaArtifact {
         artifact_path: impl AsRef<Path>,
         ns: &DynNamespace,
         scoped_fs: &ScopedFilesystem<'a, T>,
+        maybe_output_path: Option<PathBuf>,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
@@ -153,6 +154,7 @@ impl ParaArtifact {
             vec![generate_command],
             self.image.clone(),
             &files_to_inject,
+            maybe_output_path,
         )
         .temp_name(temp_name);
         ns.generate_files(options).await?;

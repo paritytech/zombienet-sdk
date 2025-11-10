@@ -91,6 +91,10 @@ pub struct NodeConfig {
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
     pub(crate) db_snapshot: Option<AssetLocation>,
+    /// Optional override for the automatically generated EVM (eth) session key.
+    /// When set, override the auto-generated key so the seed will not be part of the resulting zombie.json
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    override_eth_key: Option<String>,
     #[serde(default)]
     // used to skip serialization of fields with defaults to avoid duplication
     pub(crate) chain_context: ChainDefaultContext,
@@ -159,6 +163,7 @@ impl Serialize for NodeConfig {
         state.serialize_field("prometheus_port", &self.prometheus_port)?;
         state.serialize_field("p2p_port", &self.p2p_port)?;
         state.serialize_field("p2p_cert_hash", &self.p2p_cert_hash)?;
+        state.serialize_field("override_eth_key", &self.override_eth_key)?;
 
         if self.db_snapshot == self.chain_context.default_db_snapshot {
             state.skip_field("db_snapshot")?;
@@ -336,6 +341,10 @@ impl NodeConfig {
     /// Keystore path
     pub fn keystore_path(&self) -> Option<&PathBuf> {
         self.keystore_path.as_ref()
+      
+    /// Override EVM session key to use for the node
+    pub fn override_eth_key(&self) -> Option<&str> {
+        self.override_eth_key.as_deref()
     }
 }
 
@@ -369,6 +378,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 p2p_port: None,
                 p2p_cert_hash: None,
                 db_snapshot: None,
+                override_eth_key: None,
                 chain_context: Default::default(),
                 node_log_path: None,
                 keystore_path: None,
@@ -552,6 +562,18 @@ impl NodeConfigBuilder<Buildable> {
         Self::transition(
             NodeConfig {
                 is_bootnode: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Override the EVM session key to use for the node
+    pub fn with_override_eth_key(self, session_key: impl Into<String>) -> Self {
+        Self::transition(
+            NodeConfig {
+                override_eth_key: Some(session_key.into()),
                 ..self.config
             },
             self.validation_context,
@@ -885,6 +907,7 @@ mod tests {
                 .validator(true)
                 .invulnerable(true)
                 .bootnode(true)
+                .with_override_eth_key("0x0123456789abcdef0123456789abcdef01234567")
                 .with_initial_balance(100_000_042)
                 .with_env(vec![("VAR1", "VALUE1"), ("VAR2", "VALUE2")])
                 .with_raw_bootnodes_addresses(vec![
@@ -918,6 +941,10 @@ mod tests {
         assert!(node_config.is_validator());
         assert!(node_config.is_invulnerable());
         assert!(node_config.is_bootnode());
+        assert_eq!(
+            node_config.override_eth_key(),
+            Some("0x0123456789abcdef0123456789abcdef01234567")
+        );
         assert_eq!(node_config.initial_balance(), 100_000_042);
         let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
         assert_eq!(node_config.env(), env.iter().collect::<Vec<_>>());

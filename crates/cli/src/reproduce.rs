@@ -8,7 +8,7 @@
 //! The most common way to use this functionality is via the CLI:
 //!
 //! ```sh
-//! zombienet reproduce --repo <repo> --run-id <run_id>
+//! zombie-cli reproduce --repo <repo> --run-id <run_id>
 //! ```
 //!
 //! - `--repo <repo>`: The GitHub repository name (e.g. `zombienet`)
@@ -21,7 +21,7 @@
 //!
 //! ```sh
 //! POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
-//! zombienet reproduce zombienet 123456789
+//! zombie-cli reproduce zombienet 123456789
 //! ```
 //!
 //! **Example: Run tests from a local archive**

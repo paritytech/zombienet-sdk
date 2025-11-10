@@ -10,6 +10,7 @@ pub mod tx_helper;
 mod network_spec;
 pub mod shared;
 mod spawner;
+mod utils;
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -30,7 +31,6 @@ use provider::{
     types::{ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
 };
-use serde::Deserializer;
 use serde_json::json;
 use support::{
     constants::{
@@ -1038,13 +1038,6 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
 
         full_path
     }
-}
-
-pub fn empty_vec<'de, D, T>(_deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(Vec::new())
 }
 
 #[derive(Clone, Debug)]

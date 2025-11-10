@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::node::NetworkNode;
 use crate::{
-    empty_vec, network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions,
+    network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions,
+    utils::default_as_empty_vec,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -14,7 +15,7 @@ pub struct Relaychain {
     pub(crate) chain: String,
     pub(crate) chain_id: String,
     pub(crate) chain_spec_path: PathBuf,
-    #[serde(default, deserialize_with = "empty_vec")]
+    #[serde(default, deserialize_with = "default_as_empty_vec")]
     pub(crate) nodes: Vec<NetworkNode>,
 }
 

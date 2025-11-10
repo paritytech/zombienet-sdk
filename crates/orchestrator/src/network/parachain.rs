@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -15,10 +14,10 @@ use tracing::info;
 
 use super::{chain_upgrade::ChainUpgrade, node::NetworkNode};
 use crate::{
-    empty_vec,
     network_spec::parachain::ParachainSpec,
     shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
     tx_helper::client::get_client_from_url,
+    utils::default_as_empty_vec,
     ScopedFilesystem,
 };
 
@@ -31,7 +30,7 @@ pub struct Parachain {
     pub(crate) unique_id: String,
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,
-    #[serde(default, deserialize_with = "empty_vec")]
+    #[serde(default, deserialize_with = "default_as_empty_vec")]
     pub(crate) collators: Vec<NetworkNode>,
     pub(crate) files_to_inject: Vec<TransferedFile>,
     pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
@@ -43,9 +42,6 @@ pub(crate) struct RawParachain {
     pub(crate) inner: Parachain,
     pub(crate) collators: serde_json::Value,
 }
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct RawParachainsMap(pub(crate) HashMap<u32, Vec<RawParachain>>);
 
 #[async_trait]
 impl ChainUpgrade for Parachain {

@@ -70,7 +70,7 @@ const ZST_EXTENSION: &str = "zst";
 
 const DEFAULT_ARTIFACT_PATTERN: &str = "*zombienet-artifacts*";
 
-const DOCKER_IMAGE: &str =
+const DEFAULT_DOCKER_IMAGE: &str =
     "docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118";
 const DOCKER_ARCHIVE_MOUNT_PATH: &str = "/archive.tar.zst";
 const DOCKER_WORKSPACE_MOUNT_PATH: &str = "/workspace";
@@ -735,6 +735,10 @@ fn build_docker_command(
         DOCKER_ARCHIVE_MOUNT_PATH
     );
     let workspace_mount = format!("{}:{}", workspace_path, DOCKER_WORKSPACE_MOUNT_PATH);
+    let docker_image = get_docker_image(workspace_path).unwrap_or_else(|e| {
+        eprintln!("Warning: {}", e);
+        DEFAULT_DOCKER_IMAGE.to_string()
+    });
 
     let mut args = vec![
         "run",
@@ -758,7 +762,7 @@ fn build_docker_command(
         ENV_ZOMBIE_PROVIDER,
         "-e",
         ENV_RUST_LOG,
-        DOCKER_IMAGE,
+        &docker_image,
         "bash",
         "-c",
         inner_cmd,
@@ -766,6 +770,28 @@ fn build_docker_command(
 
     cmd.args(args);
     cmd
+}
+
+fn get_docker_image(workspace_path: &str) -> Result<String> {
+    let env_path = Path::new(workspace_path).join(".github/env");
+    let content = fs::read_to_string(&env_path).with_context(|| {
+        format!(
+            "Failed to read Docker image from {}. Expected a line like IMAGE=\"<image>\".",
+            env_path.display()
+        )
+    })?;
+
+    if let Some(image) = content.lines().find_map(|line| {
+        line.strip_prefix("IMAGE=\"")
+            .map(|rest| rest.trim_end_matches('"'))
+    }) {
+        Ok(image.to_string())
+    } else {
+        anyhow::bail!(
+            "\"IMAGE\" not found in {}. Expected a line like IMAGE=\"<image>\".",
+            env_path.display()
+        );
+    }
 }
 
 #[cfg(test)]

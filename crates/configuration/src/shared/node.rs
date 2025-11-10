@@ -95,6 +95,8 @@ pub struct NodeConfig {
     // used to skip serialization of fields with defaults to avoid duplication
     pub(crate) chain_context: ChainDefaultContext,
     pub(crate) node_log_path: Option<PathBuf>,
+    // optional node keystore path override
+    keystore_path: Option<PathBuf>,
 }
 
 impl Serialize for NodeConfig {
@@ -168,6 +170,12 @@ impl Serialize for NodeConfig {
             state.skip_field("node_log_path")?;
         } else {
             state.serialize_field("node_log_path", &self.node_log_path)?;
+        }
+
+        if self.node_log_path.is_none() {
+            state.skip_field("keystore_path")?;
+        } else {
+            state.serialize_field("keystore_path", &self.keystore_path)?;
         }
 
         state.skip_field("chain_context")?;
@@ -324,6 +332,11 @@ impl NodeConfig {
     pub fn node_log_path(&self) -> Option<&PathBuf> {
         self.node_log_path.as_ref()
     }
+
+    /// Keystore path
+    pub fn keystore_path(&self) -> Option<&PathBuf> {
+        self.keystore_path.as_ref()
+    }
 }
 
 /// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
@@ -358,6 +371,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 db_snapshot: None,
                 chain_context: Default::default(),
                 node_log_path: None,
+                keystore_path: None,
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -737,6 +751,18 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the keystore path override.
+    pub fn with_keystore_path(self, keystore_path: impl Into<PathBuf>) -> Self {
+        Self::transition(
+            NodeConfig {
+                keystore_path: Some(keystore_path.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Seals the builder and returns a [`NodeConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NodeConfig, (String, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
@@ -880,6 +906,7 @@ mod tests {
                     "ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f",
                 )
                 .with_db_snapshot("/tmp/mysnapshot")
+                .with_keystore_path("/tmp/mykeystore")
                 .build()
                 .unwrap();
 
@@ -917,6 +944,10 @@ mod tests {
         );
         assert!(matches!(
             node_config.db_snapshot().unwrap(), AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
+        ));
+        assert!(matches!(
+            node_config.keystore_path().unwrap().to_str().unwrap(),
+            "/tmp/mykeystore"
         ));
     }
 

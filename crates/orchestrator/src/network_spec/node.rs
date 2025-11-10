@@ -122,6 +122,9 @@ pub struct NodeSpec {
 
     /// Optionally specify a log path for the node
     pub(crate) node_log_path: Option<PathBuf>,
+
+    /// Optionally specify a keystore path for the node
+    pub(crate) keystore_path: Option<PathBuf>,
 }
 
 impl NodeSpec {
@@ -211,6 +214,7 @@ impl NodeSpec {
             full_node_p2p_port,
             full_node_prometheus_port,
             node_log_path: node_config.node_log_path().cloned(),
+            keystore_path: node_config.keystore_path().cloned(),
         })
     }
 
@@ -301,6 +305,7 @@ impl NodeSpec {
             full_node_p2p_port,
             full_node_prometheus_port,
             node_log_path: None,
+            keystore_path: None,
         })
     }
 

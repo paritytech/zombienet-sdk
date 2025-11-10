@@ -341,7 +341,8 @@ impl NodeConfig {
     /// Keystore path
     pub fn keystore_path(&self) -> Option<&PathBuf> {
         self.keystore_path.as_ref()
-      
+    }
+
     /// Override EVM session key to use for the node
     pub fn override_eth_key(&self) -> Option<&str> {
         self.override_eth_key.as_deref()

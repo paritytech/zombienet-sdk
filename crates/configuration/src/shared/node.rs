@@ -177,7 +177,7 @@ impl Serialize for NodeConfig {
             state.serialize_field("node_log_path", &self.node_log_path)?;
         }
 
-        if self.node_log_path.is_none() {
+        if self.keystore_path.is_none() {
             state.skip_field("keystore_path")?;
         } else {
             state.serialize_field("keystore_path", &self.keystore_path)?;

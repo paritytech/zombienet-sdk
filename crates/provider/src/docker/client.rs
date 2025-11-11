@@ -530,7 +530,7 @@ impl DockerClient {
     }
 
     pub(crate) async fn container_logs(&self, container_name: &str) -> Result<String> {
-        let output = Command::new("docker")
+        let output = Command::new(self.client_binary())
             .args(["logs", "-t", container_name])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

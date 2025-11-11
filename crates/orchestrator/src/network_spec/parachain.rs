@@ -349,7 +349,7 @@ impl ParachainSpec {
                 .await?;
             debug!("parachain chain-spec customized!");
             chain_spec
-                .build_raw(ns, scoped_fs, Some(relay_chain_id.try_into()?))
+                .build_raw(scoped_fs, Some(relay_chain_id.try_into()?))
                 .await?;
             debug!("parachain chain-spec raw built!");
 

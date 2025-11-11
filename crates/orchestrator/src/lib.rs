@@ -187,7 +187,7 @@ where
         network_spec
             .relaychain
             .chain_spec
-            .build_raw(&ns, &scoped_fs, None)
+            .build_raw(&scoped_fs, None)
             .await?;
 
         // override wasm if needed

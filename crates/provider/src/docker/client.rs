@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, process::Stdio};
 
 use anyhow::anyhow;
 use futures::future::try_join_all;
@@ -527,6 +527,41 @@ impl DockerClient {
         }
 
         Ok(containers)
+    }
+
+    pub(crate) async fn container_logs(&self, container_name: &str) -> Result<String> {
+        let output = Command::new("docker")
+            .args(["logs", "-t", container_name])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|err| {
+                Error::from(anyhow!(
+                    "error while getting logs for pod {container_name}: {err}"
+                ))
+            })?;
+
+        if !output.status.success() {
+            return Err(anyhow!(
+                "Failed to get logs for container '{name}': {err}",
+                name = container_name,
+                err = String::from_utf8_lossy(&output.stderr)
+            )
+            .into());
+        }
+
+        // most useful logs are in stderr so we need to merge both
+        let mut lines: Vec<_> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .chain(String::from_utf8_lossy(&output.stderr).lines())
+            .map(|s| s.to_string())
+            .collect();
+
+        // sort by prefix (should be timestamp)
+        lines.sort_by_key(|line| line.split_whitespace().next().unwrap_or("").to_string());
+
+        Ok(lines.join("\n"))
     }
 
     fn apply_cmd_options(cmd: &mut Command, options: &ContainerRunOptions) {

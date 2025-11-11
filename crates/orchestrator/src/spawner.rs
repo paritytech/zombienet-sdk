@@ -89,6 +89,10 @@ where
             ctx.chain_id
         };
 
+        let keystore_path = node.keystore_path.clone().unwrap_or(PathBuf::from(format!(
+            "/data/chains/{remote_keystore_chain_id}/keystore",
+        )));
+
         for key_filename in key_filenames {
             let f = TransferedFile::new(
                 PathBuf::from(format!(
@@ -97,17 +101,11 @@ where
                     node_files_path,
                     key_filename.to_string_lossy()
                 )),
-                PathBuf::from(format!(
-                    "/data/chains/{}/keystore/{}",
-                    remote_keystore_chain_id,
-                    key_filename.to_string_lossy()
-                )),
+                keystore_path.join(key_filename),
             );
             files_to_inject.push(f);
         }
-        created_paths.push(PathBuf::from(format!(
-            "/data/chains/{remote_keystore_chain_id}/keystore"
-        )));
+        created_paths.push(keystore_path);
     }
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);

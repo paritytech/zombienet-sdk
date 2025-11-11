@@ -265,6 +265,7 @@ impl ArtifactDownloader {
             "build-linux-stable-alexggh",
             "build-linux-stable-lexnv",
             "build-linux-stable-skuenrt",
+            "build-linux-stable-gh",
             "build-linux-substrate-skuenrt",
             "build-test-parachain",
             "build-test-collators",

@@ -1,14 +1,19 @@
 use std::path::PathBuf;
-
-use anyhow::Ok;
+use std::env;
 use futures::stream::StreamExt;
 use zombienet_sdk::{subxt, AttachToLive, AttachToLiveNetwork};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    // there must be a live network running with zombie.json under this path
-    let zombie_json_path = PathBuf::from("/tmp/zombie-1/zombie.json");
+
+    let zombie_json_path = if let Ok(zombie_json_path) = env::var("ZOMBIE_JSON_PATH") {
+        PathBuf::from(&zombie_json_path)
+    } else {
+        // there must be a live network running with zombie.json under this path
+        PathBuf::from("/tmp/zombie-1/zombie.json")
+    };
+
     let network = AttachToLiveNetwork::attach_native(zombie_json_path).await?;
 
     let alice = network.get_node("alice").unwrap();

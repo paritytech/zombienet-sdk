@@ -1,5 +1,5 @@
-use std::path::PathBuf;
-use std::env;
+use std::{env, path::PathBuf};
+
 use futures::stream::StreamExt;
 use zombienet_sdk::{subxt, AttachToLive, AttachToLiveNetwork};
 

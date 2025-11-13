@@ -9,7 +9,6 @@ use configuration::{
     HrmpChannelConfig,
 };
 use provider::{
-    constants::NODE_CONFIG_DIR,
     types::{GenerateFileCommand, GenerateFilesOptions, TransferedFile},
     DynNamespace, ProviderError,
 };

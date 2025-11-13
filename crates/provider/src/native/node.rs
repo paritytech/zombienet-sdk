@@ -32,7 +32,7 @@ use tokio::{
     time::sleep,
     try_join,
 };
-use tracing::{trace, warn};
+use tracing::trace;
 
 use super::namespace::NativeNamespace;
 use crate::{
@@ -126,6 +126,8 @@ where
     #[serde(skip)]
     filesystem: FS,
     provider_tag: String,
+    #[serde(skip)]
+    is_recreated: bool,
 }
 
 impl<FS> NativeNode<FS>
@@ -180,6 +182,7 @@ where
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
             provider_tag: native::provider::PROVIDER_NAME.to_string(),
+            is_recreated: false,
         });
 
         node.initialize_startup_paths(options.created_paths).await?;
@@ -236,9 +239,10 @@ where
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
             provider_tag: native::provider::PROVIDER_NAME.to_string(),
+            is_recreated: true,
         });
 
-        // let (stdout, stderr) = node.initialize_process().await?; do smthiing with pid etc
+        // TODO: let (stdout, stderr) = node.initialize_process().await?; do something with pid etc
 
         Ok(node)
     }
@@ -440,6 +444,10 @@ where
     }
 
     pub(crate) async fn abort(&self) -> anyhow::Result<()> {
+        if self.is_recreated {
+            return Err(anyhow!("Cannot abort a recreated/attached node"));
+        }
+
         self.log_writing_task
             .write()
             .await
@@ -657,9 +665,13 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
-        warn!(
-            "If you're using this method on `attached` network, this will currently lead to bugs!"
-        );
+        if self.is_recreated {
+            return Err(ProviderError::PauseNodeFailed(
+                self.name.clone(),
+                anyhow!("Cannot pause a recreated/attached node"),
+            ));
+        }
+
         let process_id = self.process_id()?;
 
         kill(process_id, Signal::SIGSTOP)
@@ -669,9 +681,13 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
-        warn!(
-            "If you're using this method on `attached` network, this will currently lead to bugs!"
-        );
+        if self.is_recreated {
+            return Err(ProviderError::ResumeNodeFailed(
+                self.name.clone(),
+                anyhow!("Cannot resume a recreated/attached node"),
+            ));
+        }
+
         let process_id = self.process_id()?;
 
         nix::sys::signal::kill(process_id, Signal::SIGCONT)
@@ -681,9 +697,13 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
-        warn!(
-            "If you're using this method on `attached` network, this will currently lead to bugs!"
-        );
+        if self.is_recreated {
+            return Err(ProviderError::RestartNodeFailed(
+                self.name.clone(),
+                anyhow!("Cannot restart a recreated/attached node"),
+            ));
+        }
+
         if let Some(duration) = after {
             sleep(duration).await;
         }

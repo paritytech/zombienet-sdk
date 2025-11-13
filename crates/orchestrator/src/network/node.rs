@@ -242,6 +242,8 @@ impl NetworkNode {
 
     /// Pause the node, this is implemented by pausing the
     /// actual process (e.g polkadot) with sending `SIGSTOP` signal
+    ///
+    /// Note: Using this method with the native provider is currently unsupported.
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.set_is_running(false);
         self.inner.pause().await?;
@@ -250,6 +252,8 @@ impl NetworkNode {
 
     /// Resume the node, this is implemented by resuming the
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
+    ///
+    /// Note: Using this method with the native provider is currently unsupported.
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
         self.set_is_running(true);
         self.inner.resume().await?;
@@ -257,6 +261,8 @@ impl NetworkNode {
     }
 
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
+    ///
+    /// Note: Using this method with the native provider is currently unsupported.
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
         self.set_is_running(false);
         self.inner.restart(after).await?;

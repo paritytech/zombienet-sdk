@@ -65,7 +65,7 @@ async fn upload(
         }
 
         let stream = request.into_body().into_data_stream();
-        let body_with_io_error = stream.map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+        let body_with_io_error = stream.map_err(|err| io::Error::other(err);
         let body_reader = StreamReader::new(body_with_io_error);
         futures::pin_mut!(body_reader);
 

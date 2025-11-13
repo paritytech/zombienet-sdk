@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path, process::Stdio};
+use std::{collections::HashMap, path::Path};
 
 use anyhow::anyhow;
 use futures::future::try_join_all;
@@ -530,17 +530,22 @@ impl DockerClient {
     }
 
     pub(crate) async fn container_logs(&self, container_name: &str) -> Result<String> {
+        let (reader, writer) = std::io::pipe().map_err(|err| {
+            anyhow!("Error creating pipe for redirect stderr to stdout for pod: {container_name}: {err}")
+        })?;
+        let stdout_writer = writer
+            .try_clone()
+            .map_err(|err| anyhow!("Error cloning writer pipe pod: {container_name}: {err}"))?;
+
         let output = Command::new(self.client_binary())
             .args(["logs", "-t", container_name])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+            .stdout(stdout_writer)
+            .stderr(writer)
+            .spawn()
+            .map_err(|err| anyhow!("error while getting logs for pod {container_name}: {err}"))?
+            .wait_with_output()
             .await
-            .map_err(|err| {
-                Error::from(anyhow!(
-                    "error while getting logs for pod {container_name}: {err}"
-                ))
-            })?;
+            .map_err(|err| anyhow!("error while getting logs for pod {container_name}: {err}"))?;
 
         if !output.status.success() {
             return Err(anyhow!(
@@ -551,17 +556,10 @@ impl DockerClient {
             .into());
         }
 
-        // most useful logs are in stderr so we need to merge both
-        let mut lines: Vec<_> = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .chain(String::from_utf8_lossy(&output.stderr).lines())
-            .map(|s| s.to_string())
-            .collect();
-
-        // sort by prefix (should be timestamp)
-        lines.sort_by_key(|line| line.split_whitespace().next().unwrap_or("").to_string());
-
-        Ok(lines.join("\n"))
+        let logs = std::io::read_to_string(reader).map_err(|err| {
+            anyhow!("Error getting logs from reader for pod: {container_name}: {err}")
+        })?;
+        Ok(logs)
     }
 
     fn apply_cmd_options(cmd: &mut Command, options: &ContainerRunOptions) {

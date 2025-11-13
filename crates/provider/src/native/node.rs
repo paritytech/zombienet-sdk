@@ -16,6 +16,7 @@ use nix::{
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
+use serde::{Deserialize, Serialize, Serializer};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
@@ -36,6 +37,7 @@ use tracing::trace;
 use super::namespace::NativeNamespace;
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    native,
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -57,10 +59,49 @@ where
     pub(super) node_log_path: Option<&'a PathBuf>,
 }
 
+impl<'a, FS> NativeNodeOptions<'a, FS>
+where
+    FS: FileSystem + Send + Sync + Clone + 'static,
+{
+    pub(super) fn from_deserializable(
+        deserializable: &'a DeserializableNativeNodeOptions,
+        namespace: &'a Weak<NativeNamespace<FS>>,
+        namespace_base_dir: &'a PathBuf,
+        filesystem: &'a FS,
+    ) -> NativeNodeOptions<'a, FS> {
+        NativeNodeOptions {
+            namespace,
+            namespace_base_dir,
+            name: &deserializable.name,
+            program: &deserializable.program,
+            args: &deserializable.args,
+            env: &deserializable.env,
+            startup_files: &[],
+            created_paths: &[],
+            db_snapshot: None,
+            filesystem,
+            node_log_path: deserializable.node_log_path.as_ref(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub(super) struct DeserializableNativeNodeOptions {
+    pub name: String,
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub node_log_path: Option<PathBuf>,
+}
+
+pub type ProcessInfo = (Child, Pid);
+
+#[derive(Serialize)]
 pub(super) struct NativeNode<FS>
 where
     FS: FileSystem + Send + Sync + Clone,
 {
+    #[serde(skip)]
     namespace: Weak<NativeNamespace<FS>>,
     name: String,
     program: String,
@@ -72,11 +113,21 @@ where
     relay_data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
-    process: RwLock<Option<Child>>,
+    #[serde(serialize_with = "serialize_process_info")]
+    // using RwLock from std to serialize properly, generally using sync locks is ok in async code as long as they
+    // are not held across await points
+    process: std::sync::RwLock<Option<ProcessInfo>>,
+    #[serde(skip)]
     stdout_reading_task: RwLock<Option<JoinHandle<()>>>,
+    #[serde(skip)]
     stderr_reading_task: RwLock<Option<JoinHandle<()>>>,
+    #[serde(skip)]
     log_writing_task: RwLock<Option<JoinHandle<()>>>,
+    #[serde(skip)]
     filesystem: FS,
+    provider_tag: String,
+    #[serde(skip)]
+    is_recreated: bool,
 }
 
 impl<FS> NativeNode<FS>
@@ -125,11 +176,13 @@ where
             relay_data_dir,
             scripts_dir,
             log_path,
-            process: RwLock::new(None),
+            process: std::sync::RwLock::new(None),
             stdout_reading_task: RwLock::new(None),
             stderr_reading_task: RwLock::new(None),
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
+            provider_tag: native::provider::PROVIDER_NAME.to_string(),
+            is_recreated: false,
         });
 
         node.initialize_startup_paths(options.created_paths).await?;
@@ -142,6 +195,54 @@ where
         let (stdout, stderr) = node.initialize_process().await?;
 
         node.initialize_log_writing(stdout, stderr).await;
+
+        Ok(node)
+    }
+
+    pub(super) async fn attach_to_live(
+        options: NativeNodeOptions<'_, FS>,
+        _pid: i32,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let filesystem = options.filesystem.clone();
+
+        let base_dir =
+            PathBuf::from_iter([options.namespace_base_dir, &PathBuf::from(options.name)]);
+        trace!("creating base_dir {:?}", base_dir);
+        options.filesystem.create_dir_all(&base_dir).await?;
+        trace!("created base_dir {:?}", base_dir);
+
+        let base_dir_raw = base_dir.to_string_lossy();
+        let config_dir = PathBuf::from(format!("{base_dir_raw}{NODE_CONFIG_DIR}"));
+        let data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_DATA_DIR}"));
+        let relay_data_dir = PathBuf::from(format!("{base_dir_raw}{NODE_RELAY_DATA_DIR}"));
+        let scripts_dir = PathBuf::from(format!("{base_dir_raw}{NODE_SCRIPTS_DIR}"));
+        let log_path = options
+            .node_log_path
+            .cloned()
+            .unwrap_or_else(|| base_dir.join(format!("{}.log", options.name)));
+
+        let node = Arc::new(NativeNode {
+            namespace: options.namespace.clone(),
+            name: options.name.to_string(),
+            program: options.program.to_string(),
+            args: options.args.to_vec(),
+            env: options.env.to_vec(),
+            base_dir,
+            config_dir,
+            data_dir,
+            relay_data_dir,
+            scripts_dir,
+            log_path,
+            process: std::sync::RwLock::new(None),
+            stdout_reading_task: RwLock::new(None),
+            stderr_reading_task: RwLock::new(None),
+            log_writing_task: RwLock::new(None),
+            filesystem: filesystem.clone(),
+            provider_tag: native::provider::PROVIDER_NAME.to_string(),
+            is_recreated: true,
+        });
+
+        // TODO: let (stdout, stderr) = node.initialize_process().await?; do something with pid etc
 
         Ok(node)
     }
@@ -262,7 +363,13 @@ where
             .take()
             .expect(&format!("infaillible, stderr is piped {THIS_IS_A_BUG}"));
 
-        self.process.write().await.replace(process);
+        let pid = Pid::from_raw(
+            process
+                .id()
+                .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?
+                as i32,
+        );
+        self.process.write().unwrap().replace((process, pid));
 
         Ok((stdout, stderr))
     }
@@ -324,19 +431,23 @@ where
         })
     }
 
-    async fn process_id(&self) -> Result<Pid, ProviderError> {
-        let raw_pid = self
+    fn process_id(&self) -> Result<Pid, ProviderError> {
+        let pid = self
             .process
             .read()
-            .await
+            .unwrap()
             .as_ref()
-            .and_then(|process| process.id())
+            .map(|process| process.1)
             .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?;
 
-        Ok(Pid::from_raw(raw_pid as i32))
+        Ok(pid)
     }
 
     pub(crate) async fn abort(&self) -> anyhow::Result<()> {
+        if self.is_recreated {
+            return Err(anyhow!("Cannot abort a recreated/attached node"));
+        }
+
         self.log_writing_task
             .write()
             .await
@@ -358,13 +469,14 @@ where
             .ok_or_else(|| anyhow!("no stderr reading task was attached for the node"))?
             .abort();
 
-        self.process
-            .write()
-            .await
-            .take()
-            .ok_or_else(|| anyhow!("no process was attached for the node"))?
-            .kill()
-            .await?;
+        let mut process = {
+            let mut guard = self.process.write().unwrap();
+            guard
+                .take()
+                .ok_or_else(|| anyhow!("no process was attached for the node"))?
+        };
+
+        process.0.kill().await?;
 
         Ok(())
     }
@@ -553,7 +665,14 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
-        let process_id = self.process_id().await?;
+        if self.is_recreated {
+            return Err(ProviderError::PauseNodeFailed(
+                self.name.clone(),
+                anyhow!("Cannot pause a recreated/attached node"),
+            ));
+        }
+
+        let process_id = self.process_id()?;
 
         kill(process_id, Signal::SIGSTOP)
             .map_err(|err| ProviderError::PauseNodeFailed(self.name.clone(), err.into()))?;
@@ -562,7 +681,14 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
-        let process_id = self.process_id().await?;
+        if self.is_recreated {
+            return Err(ProviderError::ResumeNodeFailed(
+                self.name.clone(),
+                anyhow!("Cannot resume a recreated/attached node"),
+            ));
+        }
+
+        let process_id = self.process_id()?;
 
         nix::sys::signal::kill(process_id, Signal::SIGCONT)
             .map_err(|err| ProviderError::ResumeNodeFailed(self.name.clone(), err.into()))?;
@@ -571,6 +697,13 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        if self.is_recreated {
+            return Err(ProviderError::RestartNodeFailed(
+                self.name.clone(),
+                anyhow!("Cannot restart a recreated/attached node"),
+            ));
+        }
+
         if let Some(duration) = after {
             sleep(duration).await;
         }
@@ -600,4 +733,19 @@ where
 
         Ok(())
     }
+}
+
+fn serialize_process_info<S>(
+    process_info: &std::sync::RwLock<Option<ProcessInfo>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let pid = process_info
+        .read()
+        .unwrap()
+        .as_ref()
+        .map(|(_, pid)| pid.as_raw());
+    pid.serialize(serializer)
 }

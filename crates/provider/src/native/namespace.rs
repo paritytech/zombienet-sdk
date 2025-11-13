@@ -13,6 +13,7 @@ use uuid::Uuid;
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
+    native::node::DeserializableNativeNodeOptions,
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -66,6 +67,26 @@ where
             weak: weak.clone(),
             provider: provider.clone(),
             name,
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            nodes: RwLock::new(HashMap::new()),
+        }))
+    }
+
+    pub(super) async fn attach_to_live(
+        provider: &Weak<NativeProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        Ok(Arc::new_cyclic(|weak| NativeNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_string(),
             base_dir,
             capabilities: capabilities.clone(),
             filesystem: filesystem.clone(),
@@ -145,6 +166,34 @@ where
             .write()
             .await
             .insert(options.name.clone(), node.clone());
+
+        Ok(node)
+    }
+
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError> {
+        let deserializable: DeserializableNativeNodeOptions =
+            serde_json::from_value(json_value.clone())?;
+        let options = NativeNodeOptions::from_deserializable(
+            &deserializable,
+            &self.weak,
+            &self.base_dir,
+            &self.filesystem,
+        );
+
+        let pid = json_value
+            .get("process")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| ProviderError::InvalidConfig("Missing pid field".to_string()))?
+            as i32;
+        let node = NativeNode::attach_to_live(options, pid).await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
 
         Ok(node)
     }

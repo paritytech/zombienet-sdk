@@ -108,6 +108,9 @@ pub enum ProviderError {
 
     #[error("Failed to delete namespace '{0}': {1}")]
     DeleteNamespaceFailed(String, anyhow::Error),
+
+    #[error("Serialization error")]
+    SerializationError(#[from] serde_json::Error),
 }
 
 #[async_trait]
@@ -123,6 +126,11 @@ pub trait Provider {
     async fn create_namespace_with_base_dir(
         &self,
         base_dir: &Path,
+    ) -> Result<DynNamespace, ProviderError>;
+
+    async fn create_namespace_from_json(
+        &self,
+        json_value: &serde_json::Value,
     ) -> Result<DynNamespace, ProviderError>;
 }
 
@@ -155,6 +163,11 @@ pub trait ProviderNamespace {
 
     async fn spawn_node(&self, options: &SpawnNodeOptions) -> Result<DynNode, ProviderError>;
 
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError>;
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
@@ -165,7 +178,7 @@ pub trait ProviderNamespace {
 pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 
 #[async_trait]
-pub trait ProviderNode {
+pub trait ProviderNode: erased_serde::Serialize {
     fn name(&self) -> &str;
 
     fn args(&self) -> Vec<&str>;

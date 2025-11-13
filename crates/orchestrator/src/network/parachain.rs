@@ -6,7 +6,7 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use provider::types::TransferedFile;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, net::wait_ws_ready};
@@ -17,10 +17,11 @@ use crate::{
     network_spec::parachain::ParachainSpec,
     shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
     tx_helper::client::get_client_from_url,
+    utils::default_as_empty_vec,
     ScopedFilesystem,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,
@@ -29,9 +30,17 @@ pub struct Parachain {
     pub(crate) unique_id: String,
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,
+    #[serde(default, deserialize_with = "default_as_empty_vec")]
     pub(crate) collators: Vec<NetworkNode>,
     pub(crate) files_to_inject: Vec<TransferedFile>,
     pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RawParachain {
+    #[serde(flatten)]
+    pub(crate) inner: Parachain,
+    pub(crate) collators: serde_json::Value,
 }
 
 #[async_trait]

@@ -383,7 +383,14 @@ impl ChainSpec {
         // expected raw path
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
 
-        if self.runtime.is_some() && self.asset_location.is_none() {
+        // workaround, IFF the cmd is `polkadot-omni-node` we rely on the GenericChainSpec always
+        let is_omni_node = if let Some(cmd) = self.command.as_ref() {
+            cmd.cmd().contains("omni-node")
+        } else {
+            false
+        };
+
+        if (self.runtime.is_some() && self.asset_location.is_none()) || is_omni_node {
             // chain-spec created using the runtime
             // we ca proceed with the sc-chain-spec logic
             // read plain spec

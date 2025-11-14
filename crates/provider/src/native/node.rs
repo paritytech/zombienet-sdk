@@ -94,7 +94,10 @@ pub(super) struct DeserializableNativeNodeOptions {
     pub node_log_path: Option<PathBuf>,
 }
 
-pub type ProcessInfo = (Child, Pid);
+enum ProcessHandle {
+    Spawned(Child, Pid),
+    Attached(Pid),
+}
 
 #[derive(Serialize)]
 pub(super) struct NativeNode<FS>
@@ -113,10 +116,10 @@ where
     relay_data_dir: PathBuf,
     scripts_dir: PathBuf,
     log_path: PathBuf,
-    #[serde(serialize_with = "serialize_process_info")]
+    #[serde(serialize_with = "serialize_process_handle")]
     // using RwLock from std to serialize properly, generally using sync locks is ok in async code as long as they
     // are not held across await points
-    process: std::sync::RwLock<Option<ProcessInfo>>,
+    process_handle: std::sync::RwLock<Option<ProcessHandle>>,
     #[serde(skip)]
     stdout_reading_task: RwLock<Option<JoinHandle<()>>>,
     #[serde(skip)]
@@ -126,8 +129,6 @@ where
     #[serde(skip)]
     filesystem: FS,
     provider_tag: String,
-    #[serde(skip)]
-    is_recreated: bool,
 }
 
 impl<FS> NativeNode<FS>
@@ -176,13 +177,12 @@ where
             relay_data_dir,
             scripts_dir,
             log_path,
-            process: std::sync::RwLock::new(None),
+            process_handle: std::sync::RwLock::new(None),
             stdout_reading_task: RwLock::new(None),
             stderr_reading_task: RwLock::new(None),
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
             provider_tag: native::provider::PROVIDER_NAME.to_string(),
-            is_recreated: false,
         });
 
         node.initialize_startup_paths(options.created_paths).await?;
@@ -201,7 +201,7 @@ where
 
     pub(super) async fn attach_to_live(
         options: NativeNodeOptions<'_, FS>,
-        _pid: i32,
+        pid: i32,
     ) -> Result<Arc<Self>, ProviderError> {
         let filesystem = options.filesystem.clone();
 
@@ -221,6 +221,8 @@ where
             .cloned()
             .unwrap_or_else(|| base_dir.join(format!("{}.log", options.name)));
 
+        let pid = Pid::from_raw(pid);
+
         let node = Arc::new(NativeNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
@@ -233,16 +235,13 @@ where
             relay_data_dir,
             scripts_dir,
             log_path,
-            process: std::sync::RwLock::new(None),
+            process_handle: std::sync::RwLock::new(Some(ProcessHandle::Attached(pid))),
             stdout_reading_task: RwLock::new(None),
             stderr_reading_task: RwLock::new(None),
             log_writing_task: RwLock::new(None),
             filesystem: filesystem.clone(),
             provider_tag: native::provider::PROVIDER_NAME.to_string(),
-            is_recreated: true,
         });
-
-        // TODO: let (stdout, stderr) = node.initialize_process().await?; do something with pid etc
 
         Ok(node)
     }
@@ -369,7 +368,10 @@ where
                 .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?
                 as i32,
         );
-        self.process.write().unwrap().replace((process, pid));
+        self.process_handle
+            .write()
+            .unwrap()
+            .replace(ProcessHandle::Spawned(process, pid));
 
         Ok((stdout, stderr))
     }
@@ -433,50 +435,46 @@ where
 
     fn process_id(&self) -> Result<Pid, ProviderError> {
         let pid = self
-            .process
+            .process_handle
             .read()
             .unwrap()
             .as_ref()
-            .map(|process| process.1)
+            .map(|handle| match handle {
+                ProcessHandle::Spawned(_, pid) => *pid,
+                ProcessHandle::Attached(pid) => *pid,
+            })
             .ok_or_else(|| ProviderError::ProcessIdRetrievalFailed(self.name.to_string()))?;
 
         Ok(pid)
     }
 
     pub(crate) async fn abort(&self) -> anyhow::Result<()> {
-        if self.is_recreated {
-            return Err(anyhow!("Cannot abort a recreated/attached node"));
+        if let Some(task) = self.log_writing_task.write().await.take() {
+            task.abort();
+        }
+        if let Some(task) = self.stdout_reading_task.write().await.take() {
+            task.abort();
+        }
+        if let Some(task) = self.stderr_reading_task.write().await.take() {
+            task.abort();
         }
 
-        self.log_writing_task
-            .write()
-            .await
-            .take()
-            .ok_or_else(|| anyhow!("no log writing task was attached for the node"))?
-            .abort();
-
-        self.stdout_reading_task
-            .write()
-            .await
-            .take()
-            .ok_or_else(|| anyhow!("no stdout reading task was attached for the node"))?
-            .abort();
-
-        self.stderr_reading_task
-            .write()
-            .await
-            .take()
-            .ok_or_else(|| anyhow!("no stderr reading task was attached for the node"))?
-            .abort();
-
-        let mut process = {
-            let mut guard = self.process.write().unwrap();
+        let process_handle = {
+            let mut guard = self.process_handle.write().unwrap();
             guard
                 .take()
                 .ok_or_else(|| anyhow!("no process was attached for the node"))?
         };
 
-        process.0.kill().await?;
+        match process_handle {
+            ProcessHandle::Spawned(mut child, _pid) => {
+                child.kill().await?;
+            },
+            ProcessHandle::Attached(pid) => {
+                kill(pid, Signal::SIGKILL)
+                    .map_err(|err| anyhow!("Failed to kill attached process {pid}: {err}"))?;
+            },
+        }
 
         Ok(())
     }
@@ -665,13 +663,6 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
-        if self.is_recreated {
-            return Err(ProviderError::PauseNodeFailed(
-                self.name.clone(),
-                anyhow!("Cannot pause a recreated/attached node"),
-            ));
-        }
-
         let process_id = self.process_id()?;
 
         kill(process_id, Signal::SIGSTOP)
@@ -681,13 +672,6 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
-        if self.is_recreated {
-            return Err(ProviderError::ResumeNodeFailed(
-                self.name.clone(),
-                anyhow!("Cannot resume a recreated/attached node"),
-            ));
-        }
-
         let process_id = self.process_id()?;
 
         nix::sys::signal::kill(process_id, Signal::SIGCONT)
@@ -697,13 +681,6 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
-        if self.is_recreated {
-            return Err(ProviderError::RestartNodeFailed(
-                self.name.clone(),
-                anyhow!("Cannot restart a recreated/attached node"),
-            ));
-        }
-
         if let Some(duration) = after {
             sleep(duration).await;
         }
@@ -735,17 +712,20 @@ where
     }
 }
 
-fn serialize_process_info<S>(
-    process_info: &std::sync::RwLock<Option<ProcessInfo>>,
+fn serialize_process_handle<S>(
+    process_handle: &std::sync::RwLock<Option<ProcessHandle>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let pid = process_info
+    let pid = process_handle
         .read()
         .unwrap()
         .as_ref()
-        .map(|(_, pid)| pid.as_raw());
+        .map(|handle| match handle {
+            ProcessHandle::Spawned(_, pid) => pid.as_raw(),
+            ProcessHandle::Attached(pid) => pid.as_raw(),
+        });
     pid.serialize(serializer)
 }

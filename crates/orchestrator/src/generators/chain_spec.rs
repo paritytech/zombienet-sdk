@@ -383,7 +383,6 @@ impl ChainSpec {
         // expected raw path
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
 
-
         // workaround, IFF the cmd is `polkadot-omni-node` we rely on the GenericChainSpec always
         let is_omni_node = if let Some(cmd) = self.command.as_ref() {
             // chains created with omni-node or pop-cli

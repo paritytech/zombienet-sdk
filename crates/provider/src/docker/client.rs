@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, process::Stdio};
 
 use anyhow::anyhow;
 use futures::future::try_join_all;
@@ -527,6 +527,34 @@ impl DockerClient {
         }
 
         Ok(containers)
+    }
+
+    pub(crate) async fn container_logs(&self, container_name: &str) -> Result<String> {
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(format!("docker logs -t '{container_name}' 2>&1"))
+            .stdout(Stdio::piped())
+            .output()
+            .await
+            .map_err(|err| {
+                anyhow!(
+                    "Failed to spawn docker logs command for container '{container_name}': {err}"
+                )
+            })?;
+
+        let logs = String::from_utf8_lossy(&output.stdout).to_string();
+
+        if !output.status.success() {
+            // stderr was redirected to stdout, so logs should contain the error message if any
+            return Err(anyhow!(
+                "Failed to get logs for container '{name}': {logs}",
+                name = container_name,
+                logs = &logs
+            )
+            .into());
+        }
+
+        Ok(logs)
     }
 
     fn apply_cmd_options(cmd: &mut Command, options: &ContainerRunOptions) {

@@ -449,11 +449,21 @@ where
     }
 
     async fn logs(&self) -> Result<String, ProviderError> {
-        todo!()
+        self.docker_client
+            .container_logs(&self.container_name)
+            .await
+            .map_err(|err| ProviderError::GetLogsFailed(self.name.to_string(), err.into()))
     }
 
-    async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
-        todo!()
+    async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
+        let logs = self.logs().await?;
+
+        self.filesystem
+            .write(local_dest, logs)
+            .await
+            .map_err(|err| ProviderError::DumpLogsFailed(self.name.to_string(), err.into()))?;
+
+        Ok(())
     }
 
     async fn run_command(

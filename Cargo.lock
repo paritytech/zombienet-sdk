@@ -10378,7 +10378,7 @@ dependencies = [
 
 [[package]]
 name = "zombie-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -10389,7 +10389,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-configuration"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "lazy_static",
@@ -10408,7 +10408,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-file-server"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "axum",
  "axum-extra",
@@ -10423,7 +10423,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-orchestrator"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10459,7 +10459,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-prom-metrics-parser"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "pest",
  "pest_derive",
@@ -10468,7 +10468,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-provider"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10498,7 +10498,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-sdk"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "futures",
@@ -10518,7 +10518,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-support"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",

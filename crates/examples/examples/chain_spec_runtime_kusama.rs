@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
             &std::fs::read_to_string(&raw_path)
                 .with_context(|| format!("reading {}", raw_path.display()))?,
         )
-            .with_context(|| format!("parsing {}", raw_path.display()))?;
+        .with_context(|| format!("parsing {}", raw_path.display()))?;
 
         if let Some(pointer) = raw_pointer {
             anyhow::ensure!(

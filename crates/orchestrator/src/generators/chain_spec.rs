@@ -391,9 +391,13 @@ impl ChainSpec {
             false
         };
 
-        if self.runtime.is_some() && self.asset_location.is_none() || is_omni_node {
+        if (self.runtime.is_some() && self.asset_location.is_none()) || is_omni_node {
             match self
-                .try_build_raw_with_generic(scoped_fs, relay_chain_id.clone(), &raw_spec_path)
+                .try_build_raw_with_generic(
+                    scoped_fs,
+                    relay_chain_id.clone(),
+                    raw_spec_path.as_path(),
+                )
                 .await
             {
                 Ok(_) => return Ok(()),
@@ -420,7 +424,7 @@ impl ChainSpec {
         &mut self,
         scoped_fs: &ScopedFilesystem<'a, T>,
         relay_chain_id: Option<Chain>,
-        raw_spec_path: &PathBuf,
+        raw_spec_path: &Path,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
@@ -469,7 +473,7 @@ impl ChainSpec {
             contents
         };
 
-        self.raw_path = Some(raw_spec_path.clone());
+        self.raw_path = Some(raw_spec_path.to_path_buf());
         self.write_spec(scoped_fs, contents).await?;
 
         Ok(())
@@ -564,7 +568,7 @@ impl ChainSpec {
                         )],
                         expected_path.clone(),
                     )
-                        .temp_name(temp_name);
+                    .temp_name(temp_name);
                     trace!("calling generate_files with options: {:#?}", options);
                     ns.generate_files(options).await?;
                 },
@@ -1002,8 +1006,8 @@ impl ChainSpec {
                     para_genesis_config,
                     scoped_fs,
                 )
-                    .await
-                    .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
+                .await
+                .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
             }
 
             // TODO:
@@ -1305,10 +1309,10 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
                 match (&genesis_value, overrides_obj.get(overrides_key)) {
                     // recurse if genesis value is an object
                     (serde_json::Value::Object(_), Some(overrides_value))
-                    if overrides_value.is_object() =>
-                        {
-                            merge(genesis_value, overrides_value);
-                        },
+                        if overrides_value.is_object() =>
+                    {
+                        merge(genesis_value, overrides_value);
+                    },
                     // override if genesis value not an object
                     (_, Some(overrides_value)) => {
                         trace!("overriding: {:?} / {:?}", genesis_value, overrides_value);
@@ -2073,7 +2077,7 @@ mod tests {
             ("beefy".into(), node.accounts.accounts["ec"].address.clone()),
             ("eth".into(), node.accounts.accounts["eth"].address.clone()),
         ]
-            .into();
+        .into();
 
         // Stash
         let sr_stash = &node.accounts.accounts["sr_stash"];

@@ -16,10 +16,10 @@ async fn main() -> Result<()> {
 
     let temp_path = temp_dir.path().to_path_buf();
 
-    let kusama_runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../orchestrator/testing/kusama_runtime-v2000002.compact.compressed.wasm");
-    let asset_hub_runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../orchestrator/testing/asset-hub-kusama_runtime-v2000002.compact.compressed.wasm");
+    let kusama_runtime_url =
+        "https://github.com/polkadot-fellows/runtimes/releases/download/v2.0.2/kusama_runtime-v2000002.compact.compressed.wasm";
+    let asset_hub_runtime_url =
+        "https://github.com/polkadot-fellows/runtimes/releases/download/v2.0.2/asset-hub-kusama_runtime-v2000002.compact.compressed.wasm";
 
     let config = NetworkConfigBuilder::new()
         .with_relaychain(|relaychain| {
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
                 .with_chain("kusama-local")
                 .with_default_image("docker.io/parity/polkadot:latest")
                 .with_default_command("polkadot")
-                .with_chain_spec_runtime(kusama_runtime_path, Some("local_testnet"))
+                .with_chain_spec_runtime(kusama_runtime_url, Some("local_testnet"))
                 .with_validator(|node| node.with_name("alice"))
         })
         .with_parachain(|parachain| {
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
                 .with_chain("asset-hub-kusama-local")
                 .with_default_image("docker.io/parity/polkadot-parachain:latest")
                 .with_default_command("polkadot-parachain")
-                .with_chain_spec_runtime(asset_hub_runtime_path, Some("local_testnet"))
+                .with_chain_spec_runtime(asset_hub_runtime_url, Some("local_testnet"))
                 .with_collator(|collator| collator.with_name("asset-hub-collator-1"))
         })
         .with_global_settings(|settings| settings.with_base_dir(temp_path))

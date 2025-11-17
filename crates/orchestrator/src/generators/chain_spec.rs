@@ -438,42 +438,15 @@ impl ChainSpec {
             ))
         })?;
 
+        self.raw_path = Some(raw_spec_path.to_path_buf());
         let contents = chain_spec.as_json(true).map_err(|e| {
             GeneratorError::ChainSpecGeneration(format!(
                 "getting chain-spec as json should work, err: {e}"
             ))
         })?;
-
-        let contents = if let Context::Para {
-            relay_chain: _,
-            para_id,
-        } = &self.context
-        {
-            let mut contents_json: serde_json::Value =
-                serde_json::from_str(&contents).map_err(|e| {
-                    GeneratorError::ChainSpecGeneration(format!(
-                        "getting chain-spec as json should work, err: {e}"
-                    ))
-                })?;
-
-            if contents_json["relay_chain"].is_null() {
-                contents_json["relay_chain"] = json!(relay_chain_id);
-            }
-
-            if contents_json["para_id"].is_null() {
-                contents_json["para_id"] = json!(para_id);
-            }
-
-            serde_json::to_string_pretty(&contents_json).map_err(|e| {
-                GeneratorError::ChainSpecGeneration(format!(
-                    "getting chain-spec json as pretty string should work, err: {e}"
-                ))
-            })?
-        } else {
-            contents
-        };
-
-        self.raw_path = Some(raw_spec_path.to_path_buf());
+        let contents = self
+            .ensure_para_fields_in_raw(&contents, relay_chain_id)
+            .await?;
         self.write_spec(scoped_fs, contents).await?;
 
         Ok(())
@@ -576,28 +549,27 @@ impl ChainSpec {
         }
 
         self.raw_path = Some(raw_spec_path.clone());
-        self.ensure_para_fields_in_raw(scoped_fs, relay_chain_id)
+        let (content, _) = self.read_spec(scoped_fs).await?;
+        let content = self
+            .ensure_para_fields_in_raw(&content, relay_chain_id)
             .await?;
+        self.write_spec(scoped_fs, content).await?;
 
         Ok(())
     }
 
-    async fn ensure_para_fields_in_raw<'a, T>(
+    async fn ensure_para_fields_in_raw(
         &mut self,
-        scoped_fs: &ScopedFilesystem<'a, T>,
+        content: &str,
         relay_chain_id: Option<Chain>,
-    ) -> Result<(), GeneratorError>
-    where
-        T: FileSystem,
-    {
+    ) -> Result<String, GeneratorError> {
         if let Context::Para {
             relay_chain: _,
             para_id,
         } = &self.context
         {
-            let (content, _) = self.read_spec(scoped_fs).await?;
             let mut chain_spec_json: serde_json::Value =
-                serde_json::from_str(&content).map_err(|e| {
+                serde_json::from_str(content).map_err(|e| {
                     GeneratorError::ChainSpecGeneration(format!(
                         "getting chain-spec as json should work, err: {e}"
                     ))
@@ -621,11 +593,11 @@ impl ChainSpec {
                         "getting chain-spec json as pretty string should work, err: {e}"
                     ))
                 })?;
-                self.write_spec(scoped_fs, contents).await?;
+                return Ok(contents);
             }
         }
 
-        Ok(())
+        Ok(content.to_string())
     }
 
     fn should_retry_with_command(err: &GeneratorError) -> bool {

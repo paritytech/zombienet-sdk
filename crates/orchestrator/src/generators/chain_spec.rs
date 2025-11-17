@@ -391,146 +391,247 @@ impl ChainSpec {
             false
         };
 
-        if (self.runtime.is_some() && self.asset_location.is_none()) || is_omni_node {
-            // chain-spec created using the runtime
-            // we ca proceed with the sc-chain-spec logic
-            // read plain spec
-            let (json_content, _) = self.read_spec(scoped_fs).await?;
-            let json_bytes: Vec<u8> = json_content.as_bytes().into();
-            let chain_spec = GenericChainSpec::<()>::from_json_bytes(json_bytes).map_err(|e| {
-                GeneratorError::ChainSpecGeneration(format!(
-                    "Error loading chain-spec from json_bytes, err: {e}"
-                ))
-            })?;
-
-            let contents = chain_spec.as_json(true).map_err(|e| {
-                GeneratorError::ChainSpecGeneration(format!(
-                    "getting chain-spec as json should work, err: {e}"
-                ))
-            })?;
-
-            let contents = if let Context::Para {
-                relay_chain: _,
-                para_id,
-            } = &self.context
+        if self.runtime.is_some() && self.asset_location.is_none() || is_omni_node {
+            match self
+                .try_build_raw_with_generic(scoped_fs, relay_chain_id.clone(), &raw_spec_path)
+                .await
             {
-                let mut contents_json: serde_json::Value = serde_json::from_str(&contents)
-                    .map_err(|e| {
-                        GeneratorError::ChainSpecGeneration(format!(
-                            "getting chain-spec as json should work, err: {e}"
-                        ))
-                    })?;
+                Ok(_) => return Ok(()),
+                Err(err) => {
+                    if Self::should_retry_with_command(&err) && self.command.is_some() {
+                        warn!(
+                            "GenericChainSpec raw generation failed ({}). Falling back to command execution.",
+                            err
+                        );
+                    } else {
+                        return Err(err);
+                    }
+                },
+            }
+        }
 
-                if contents_json["relay_chain"].is_null() {
-                    contents_json["relay_chain"] = json!(relay_chain_id);
-                }
+        self.build_raw_with_command(ns, scoped_fs, raw_spec_path, relay_chain_id)
+            .await?;
 
-                if contents_json["para_id"].is_null() {
-                    contents_json["para_id"] = json!(para_id);
-                }
+        Ok(())
+    }
 
-                serde_json::to_string_pretty(&contents_json).map_err(|e| {
+    async fn try_build_raw_with_generic<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        relay_chain_id: Option<Chain>,
+        raw_spec_path: &PathBuf,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // `build_raw` is always called after `build`, so `maybe_plain_path` must be set at this point
+        let (json_content, _) = self.read_spec(scoped_fs).await?;
+        let json_bytes: Vec<u8> = json_content.as_bytes().into();
+        let chain_spec = GenericChainSpec::<()>::from_json_bytes(json_bytes).map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!(
+                "Error loading chain-spec from json_bytes, err: {e}"
+            ))
+        })?;
+
+        let contents = chain_spec.as_json(true).map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!(
+                "getting chain-spec as json should work, err: {e}"
+            ))
+        })?;
+
+        let contents = if let Context::Para {
+            relay_chain: _,
+            para_id,
+        } = &self.context
+        {
+            let mut contents_json: serde_json::Value =
+                serde_json::from_str(&contents).map_err(|e| {
+                    GeneratorError::ChainSpecGeneration(format!(
+                        "getting chain-spec as json should work, err: {e}"
+                    ))
+                })?;
+
+            if contents_json["relay_chain"].is_null() {
+                contents_json["relay_chain"] = json!(relay_chain_id);
+            }
+
+            if contents_json["para_id"].is_null() {
+                contents_json["para_id"] = json!(para_id);
+            }
+
+            serde_json::to_string_pretty(&contents_json).map_err(|e| {
+                GeneratorError::ChainSpecGeneration(format!(
+                    "getting chain-spec json as pretty string should work, err: {e}"
+                ))
+            })?
+        } else {
+            contents
+        };
+
+        self.raw_path = Some(raw_spec_path.clone());
+        self.write_spec(scoped_fs, contents).await?;
+
+        Ok(())
+    }
+
+    async fn build_raw_with_command<'a, T>(
+        &mut self,
+        ns: &DynNamespace,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        raw_spec_path: PathBuf,
+        relay_chain_id: Option<Chain>,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // fallback to use _cmd_ for raw creation
+        let temp_name = format!(
+            "temp-build-raw-{}-{}",
+            self.chain_spec_name,
+            rand::random::<u8>()
+        );
+
+        let cmd = self
+            .command
+            .as_ref()
+            .ok_or(GeneratorError::ChainSpecGeneration(
+                "Invalid command".into(),
+            ))?;
+        let maybe_plain_path =
+            self.maybe_plain_path
+                .as_ref()
+                .ok_or(GeneratorError::ChainSpecGeneration(
+                    "Invalid plain path".into(),
+                ))?;
+
+        // TODO: we should get the full path from the scoped filesystem
+        let chain_spec_path_local = format!(
+            "{}/{}",
+            ns.base_dir().to_string_lossy(),
+            maybe_plain_path.display()
+        );
+        // Remote path to be injected
+        let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
+        // Path in the context of the node, this can be different in the context of the providers (e.g native)
+        let chain_spec_path_in_args = if matches!(self.command, Some(CommandInContext::Local(_, _)))
+        {
+            chain_spec_path_local.clone()
+        } else if ns.capabilities().prefix_with_full_path {
+            // In native
+            format!(
+                "{}/{}{}",
+                ns.base_dir().to_string_lossy(),
+                &temp_name,
+                &chain_spec_path_in_pod
+            )
+        } else {
+            chain_spec_path_in_pod.clone()
+        };
+
+        let mut full_cmd = apply_replacements(
+            cmd.cmd(),
+            &HashMap::from([("chainName", chain_spec_path_in_args.as_str())]),
+        );
+
+        if !full_cmd.contains("--raw") {
+            full_cmd = format!("{full_cmd} --raw");
+        }
+        trace!("full_cmd: {:?}", full_cmd);
+
+        let parts: Vec<&str> = full_cmd.split_whitespace().collect();
+        let Some((cmd, args)) = parts.split_first() else {
+            return Err(GeneratorError::ChainSpecGeneration(format!(
+                "Invalid generator command: {full_cmd}"
+            )));
+        };
+        trace!("cmd: {:?} - args: {:?}", cmd, args);
+
+        let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
+
+        if let Some(cmd) = &self.command {
+            match cmd {
+                CommandInContext::Local(_, expected_path) => {
+                    build_locally(generate_command, scoped_fs, expected_path.as_deref()).await?
+                },
+                CommandInContext::Remote(_, expected_path) => {
+                    let options = GenerateFilesOptions::with_files(
+                        vec![generate_command],
+                        self.image.clone(),
+                        &[TransferedFile::new(
+                            chain_spec_path_local,
+                            chain_spec_path_in_pod,
+                        )],
+                        expected_path.clone(),
+                    )
+                        .temp_name(temp_name);
+                    trace!("calling generate_files with options: {:#?}", options);
+                    ns.generate_files(options).await?;
+                },
+            }
+        }
+
+        self.raw_path = Some(raw_spec_path.clone());
+        self.ensure_para_fields_in_raw(scoped_fs, relay_chain_id)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn ensure_para_fields_in_raw<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        relay_chain_id: Option<Chain>,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        if let Context::Para {
+            relay_chain: _,
+            para_id,
+        } = &self.context
+        {
+            let (content, _) = self.read_spec(scoped_fs).await?;
+            let mut chain_spec_json: serde_json::Value =
+                serde_json::from_str(&content).map_err(|e| {
+                    GeneratorError::ChainSpecGeneration(format!(
+                        "getting chain-spec as json should work, err: {e}"
+                    ))
+                })?;
+
+            let mut needs_write = false;
+
+            if chain_spec_json["relay_chain"].is_null() {
+                chain_spec_json["relay_chain"] = json!(relay_chain_id);
+                needs_write = true;
+            }
+
+            if chain_spec_json["para_id"].is_null() {
+                chain_spec_json["para_id"] = json!(para_id);
+                needs_write = true;
+            }
+
+            if needs_write {
+                let contents = serde_json::to_string_pretty(&chain_spec_json).map_err(|e| {
                     GeneratorError::ChainSpecGeneration(format!(
                         "getting chain-spec json as pretty string should work, err: {e}"
                     ))
-                })?
-            } else {
-                contents
-            };
-
-            self.raw_path = Some(raw_spec_path.clone());
-            self.write_spec(scoped_fs, contents).await?;
-        } else {
-            // fallback to use _cmd_ for raw creation
-            let temp_name = format!(
-                "temp-build-raw-{}-{}",
-                self.chain_spec_name,
-                rand::random::<u8>()
-            );
-
-            let cmd = self
-                .command
-                .as_ref()
-                .ok_or(GeneratorError::ChainSpecGeneration(
-                    "Invalid command".into(),
-                ))?;
-            let maybe_plain_path =
-                self.maybe_plain_path
-                    .as_ref()
-                    .ok_or(GeneratorError::ChainSpecGeneration(
-                        "Invalid plain path".into(),
-                    ))?;
-
-            // TODO: we should get the full path from the scoped filesystem
-            let chain_spec_path_local = format!(
-                "{}/{}",
-                ns.base_dir().to_string_lossy(),
-                maybe_plain_path.display()
-            );
-            // Remote path to be injected
-            let chain_spec_path_in_pod =
-                format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
-            // Path in the context of the node, this can be different in the context of the providers (e.g native)
-            let chain_spec_path_in_args =
-                if matches!(self.command, Some(CommandInContext::Local(_, _))) {
-                    chain_spec_path_local.clone()
-                } else if ns.capabilities().prefix_with_full_path {
-                    // In native
-                    format!(
-                        "{}/{}{}",
-                        ns.base_dir().to_string_lossy(),
-                        &temp_name,
-                        &chain_spec_path_in_pod
-                    )
-                } else {
-                    chain_spec_path_in_pod.clone()
-                };
-
-            let mut full_cmd = apply_replacements(
-                cmd.cmd(),
-                &HashMap::from([("chainName", chain_spec_path_in_args.as_str())]),
-            );
-
-            if !full_cmd.contains("--raw") {
-                full_cmd = format!("{full_cmd} --raw");
+                })?;
+                self.write_spec(scoped_fs, contents).await?;
             }
-            trace!("full_cmd: {:?}", full_cmd);
-
-            let parts: Vec<&str> = full_cmd.split_whitespace().collect();
-            let Some((cmd, args)) = parts.split_first() else {
-                return Err(GeneratorError::ChainSpecGeneration(format!(
-                    "Invalid generator command: {full_cmd}"
-                )));
-            };
-            trace!("cmd: {:?} - args: {:?}", cmd, args);
-
-            let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
-
-            if let Some(cmd) = &self.command {
-                match cmd {
-                    CommandInContext::Local(_, expected_path) => {
-                        build_locally(generate_command, scoped_fs, expected_path.as_deref()).await?
-                    },
-                    CommandInContext::Remote(_, expected_path) => {
-                        let options = GenerateFilesOptions::with_files(
-                            vec![generate_command],
-                            self.image.clone(),
-                            &[TransferedFile::new(
-                                chain_spec_path_local,
-                                chain_spec_path_in_pod,
-                            )],
-                            expected_path.clone(),
-                        )
-                        .temp_name(temp_name);
-                        trace!("calling generate_files with options: {:#?}", options);
-                        ns.generate_files(options).await?;
-                    },
-                }
-            }
-            self.raw_path = Some(raw_spec_path);
         }
 
         Ok(())
+    }
+
+    fn should_retry_with_command(err: &GeneratorError) -> bool {
+        match err {
+            GeneratorError::ChainSpecGeneration(msg) => {
+                let msg_lower = msg.to_lowercase();
+                msg_lower.contains("genesisbuilder_get_preset") || msg_lower.contains("_get_preset")
+            },
+            _ => false,
+        }
     }
 
     /// Override the :code in chain-spec raw version
@@ -901,8 +1002,8 @@ impl ChainSpec {
                     para_genesis_config,
                     scoped_fs,
                 )
-                .await
-                .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
+                    .await
+                    .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
             }
 
             // TODO:
@@ -1204,10 +1305,10 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
                 match (&genesis_value, overrides_obj.get(overrides_key)) {
                     // recurse if genesis value is an object
                     (serde_json::Value::Object(_), Some(overrides_value))
-                        if overrides_value.is_object() =>
-                    {
-                        merge(genesis_value, overrides_value);
-                    },
+                    if overrides_value.is_object() =>
+                        {
+                            merge(genesis_value, overrides_value);
+                        },
                     // override if genesis value not an object
                     (_, Some(overrides_value)) => {
                         trace!("overriding: {:?} / {:?}", genesis_value, overrides_value);
@@ -1972,7 +2073,7 @@ mod tests {
             ("beefy".into(), node.accounts.accounts["ec"].address.clone()),
             ("eth".into(), node.accounts.accounts["eth"].address.clone()),
         ]
-        .into();
+            .into();
 
         // Stash
         let sr_stash = &node.accounts.accounts["sr_stash"];

@@ -82,8 +82,35 @@ jobs:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
             /tmp/zombie*/logs/*
-  #
-  #
+  
+  docker-integration-test-smoke:
+    runs-on: parity-zombienet
+    needs: build-tests
+    timeout-minutes: 60
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          path: /tmp
+
+      - name: script
+        run: |
+          export ZOMBIE_PROVIDER="docker"
+          cd /tmp
+          ls -la
+          tar xvfz artifacts.tar.gz
+          ./artifacts/smoke --nocapture
+
+      - name: upload logs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie*/logs/*
+
   native-integration-test-smoke:
     runs-on: parity-default
     needs: build-tests

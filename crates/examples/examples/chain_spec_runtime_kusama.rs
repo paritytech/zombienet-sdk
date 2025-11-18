@@ -1,20 +1,16 @@
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
-use tempfile::Builder;
 use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let temp_dir = Builder::new()
-        .prefix("zombienet-chain-spec-")
-        .tempdir()
-        .context("creating temporary directory")?;
-
-    let temp_path = temp_dir.path().to_path_buf();
+    let temp_path = env::temp_dir().join("zombienet-chain-spec");
+    std::fs::create_dir_all(&temp_path)
+        .with_context(|| format!("creating temporary directory at {}", temp_path.display()))?;
 
     let kusama_runtime_url =
         "https://github.com/polkadot-fellows/runtimes/releases/download/v2.0.2/kusama_runtime-v2000002.compact.compressed.wasm";

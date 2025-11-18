@@ -383,35 +383,21 @@ impl ChainSpec {
         // expected raw path
         let raw_spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
 
-        // workaround, IFF the cmd is `polkadot-omni-node` we rely on the GenericChainSpec always
-        let is_omni_node = if let Some(cmd) = self.command.as_ref() {
-            // chains created with omni-node or pop-cli
-            cmd.cmd().contains("omni-node") || cmd.cmd().contains("pop")
-        } else {
-            false
-        };
-
-        if (self.runtime.is_some() && self.asset_location.is_none()) || is_omni_node {
-            match self
-                .try_build_raw_with_generic(
-                    scoped_fs,
-                    relay_chain_id.clone(),
-                    raw_spec_path.as_path(),
-                )
-                .await
-            {
-                Ok(_) => return Ok(()),
-                Err(err) => {
-                    if Self::should_retry_with_command(&err) && self.command.is_some() {
-                        warn!(
-                            "GenericChainSpec raw generation failed ({}). Falling back to command execution.",
-                            err
-                        );
-                    } else {
-                        return Err(err);
-                    }
-                },
-            }
+        match self
+            .try_build_raw_with_generic(scoped_fs, relay_chain_id.clone(), raw_spec_path.as_path())
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(err) => {
+                if Self::should_retry_with_command(&err) && self.command.is_some() {
+                    warn!(
+                        "GenericChainSpec raw generation failed ({}). Falling back to command execution.",
+                        err
+                    );
+                } else {
+                    return Err(err);
+                }
+            },
         }
 
         self.build_raw_with_command(ns, scoped_fs, raw_spec_path, relay_chain_id)

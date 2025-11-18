@@ -2249,7 +2249,6 @@ dependencies = [
  "anyhow",
  "futures",
  "serde_json",
- "tempfile",
  "tokio",
  "tracing-subscriber",
  "zombienet-sdk",

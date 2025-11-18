@@ -111,6 +111,9 @@ pub enum ProviderError {
 
     #[error("Serialization error")]
     SerializationError(#[from] serde_json::Error),
+
+    #[error("Failed to acquire lock: {0}")]
+    FailedToAcquireLock(String),
 }
 
 #[async_trait]

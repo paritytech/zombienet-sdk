@@ -16,7 +16,7 @@ use nix::{
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{ser::Error, Deserialize, Serialize, Serializer};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
@@ -370,7 +370,7 @@ where
         );
         self.process_handle
             .write()
-            .unwrap()
+            .map_err(|_e| ProviderError::FailedToAcquireLock(self.name.clone()))?
             .replace(ProcessHandle::Spawned(process, pid));
 
         Ok((stdout, stderr))
@@ -437,7 +437,7 @@ where
         let pid = self
             .process_handle
             .read()
-            .unwrap()
+            .map_err(|_e| ProviderError::FailedToAcquireLock(self.name.clone()))?
             .as_ref()
             .map(|handle| match handle {
                 ProcessHandle::Spawned(_, pid) => *pid,
@@ -460,7 +460,10 @@ where
         }
 
         let process_handle = {
-            let mut guard = self.process_handle.write().unwrap();
+            let mut guard = self
+                .process_handle
+                .write()
+                .map_err(|_e| ProviderError::FailedToAcquireLock(self.name.clone()))?;
             guard
                 .take()
                 .ok_or_else(|| anyhow!("no process was attached for the node"))?
@@ -721,7 +724,7 @@ where
 {
     let pid = process_handle
         .read()
-        .unwrap()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
         .as_ref()
         .map(|handle| match handle {
             ProcessHandle::Spawned(_, pid) => pid.as_raw(),

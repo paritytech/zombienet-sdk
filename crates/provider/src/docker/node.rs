@@ -13,7 +13,7 @@ use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{time::sleep, try_join};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use super::{
     client::{ContainerRunOptions, DockerClient},
@@ -273,44 +273,46 @@ where
 
     async fn initialize_db_snapshot(
         &self,
-        _db_snapshot: &AssetLocation,
+        db_snapshot: &AssetLocation,
     ) -> Result<(), ProviderError> {
-        todo!()
-        // trace!("snap: {db_snapshot}");
-        // let url_of_snap = match db_snapshot {
-        //     AssetLocation::Url(location) => location.clone(),
-        //     AssetLocation::FilePath(filepath) => self.upload_to_fileserver(filepath).await?,
-        // };
+        trace!("snap: {db_snapshot}");
+        let url_of_snap = match db_snapshot {
+            AssetLocation::Url(location) => location.clone(),
+            AssetLocation::FilePath(filepath) => {
+                todo!()
+                // self.upload_to_fileserver(filepath).await?,
+            }
+        };
 
-        // // we need to get the snapshot from a public access
-        // // and extract to /data
-        // let opts = RunCommandOptions::new("mkdir").args([
-        //     "-p",
-        //     "/data/",
-        //     "&&",
-        //     "mkdir",
-        //     "-p",
-        //     "/relay-data/",
-        //     "&&",
-        //     // Use our version of curl
-        //     "/cfg/curl",
-        //     url_of_snap.as_ref(),
-        //     "--output",
-        //     "/data/db.tgz",
-        //     "&&",
-        //     "cd",
-        //     "/",
-        //     "&&",
-        //     "tar",
-        //     "--skip-old-files",
-        //     "-xzvf",
-        //     "/data/db.tgz",
-        // ]);
+        // we need to get the snapshot from a public access
+        // and extract to /data
+        let opts = RunCommandOptions::new("mkdir").args([
+            "-p",
+            "/data/",
+            "&&",
+            "mkdir",
+            "-p",
+            "/relay-data/",
+            "&&",
+            // Use our version of curl
+            "/cfg/curl",
+            url_of_snap.as_ref(),
+            "--output",
+            "/data/db.tgz",
+            "&&",
+            "cd",
+            "/",
+            "&&",
+            "tar",
+            "--skip-old-files",
+            "-xzvf",
+            "/data/db.tgz",
+        ]);
 
-        // trace!("cmd opts: {:#?}", opts);
-        // let _ = self.run_command(opts).await?;
+        trace!("cmd opts: {:#?}", opts);
+        let _ = self.run_command(opts).await?;
 
-        // Ok(())
+        Ok(())
     }
 
     async fn initialize_startup_files(

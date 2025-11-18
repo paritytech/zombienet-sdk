@@ -1046,7 +1046,7 @@ where
     T: FileSystem,
 {
     let content = scoped_fs.read_to_string(file).await?;
-    let chain_spec_json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let chain_spec_json: serde_json::Value = serde_json::from_str(&content)?;
 
     Ok(chain_spec_json.pointer("/genesis/raw/top").is_some())
 }

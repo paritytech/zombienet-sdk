@@ -12,6 +12,18 @@ fn small_network() -> NetworkConfig {
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
         })
+        .with_parachain(|p| {
+            p.with_id(2000).cumulus_based(true).with_collator(|n| {
+                n.with_name("collator")
+                    .with_command("polkadot-parachain")
+            })
+        })
+        .with_parachain(|p| {
+            p.with_id(3000).cumulus_based(true).with_collator(|n| {
+                n.with_name("collator-omni")
+                    .with_command("polkadot-omni-node")
+            })
+        })
         .build()
         .unwrap()
 }

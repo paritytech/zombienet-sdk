@@ -25,7 +25,7 @@ fn small_network() -> NetworkConfig {
             p.with_id(3000).cumulus_based(true).with_collator(|n| {
                 n.with_name("collator-new")
                     .with_command("polkadot-parachain")
-                    .with_image("docker.io/parity/polkadot-parachain:1.20.2")
+                    .with_image("docker.io/parity/polkadot-parachain:v1.20.2")
             })
         })
         .with_global_settings(|g| g.with_base_dir(PathBuf::from("/tmp/zombie-1")))

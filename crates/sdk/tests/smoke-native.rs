@@ -8,20 +8,22 @@ fn small_network() -> NetworkConfig {
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
-                .with_default_image("docker.io/parity/polkadot:v1.7.0")
+                .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
         })
         .with_parachain(|p| {
             p.with_id(2000)
                 .cumulus_based(true)
+                .with_default_image("docker.io/parity/polkadot-parachain:v1.20.2")
                 .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .with_parachain(|p| {
-            p.with_id(3000).cumulus_based(true).with_collator(|n| {
-                n.with_name("collator-omni")
-                    .with_command("polkadot-omni-node")
-            })
+            p.with_id(3000)
+                .cumulus_based(true)
+                .with_default_image("docker.io/parity/polkadot-omni-node:v1.20.2")
+                .with_chain_spec_runtime("https://github.com/polkadot-fellows/runtimes/releases/download/v1.9.2/asset-hub-polkadot_runtime-v1009002.compact.compressed.wasm", None)
+                .with_collator(|n| n.with_name("collator-omni").with_command("polkadot-omni-node"))
         })
         .build()
         .unwrap()

@@ -278,10 +278,10 @@ where
         trace!("snap: {db_snapshot}");
         let url_of_snap = match db_snapshot {
             AssetLocation::Url(location) => location.clone(),
-            AssetLocation::FilePath(filepath) => {
+            AssetLocation::FilePath(_) => {
                 todo!()
                 // self.upload_to_fileserver(filepath).await?,
-            }
+            },
         };
 
         // we need to get the snapshot from a public access

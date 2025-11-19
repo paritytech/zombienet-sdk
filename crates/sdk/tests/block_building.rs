@@ -1,6 +1,7 @@
+use std::time::Duration;
+
 use configuration::NetworkConfig;
 use orchestrator::network::node::{LogLineCountOptions, NetworkNode};
-use std::time::Duration;
 use subxt::{dynamic::tx, PolkadotConfig};
 use subxt_signer::sr25519::dev;
 
@@ -81,7 +82,7 @@ async fn submit_transaction_and_wait_finalization(node: &NetworkNode) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn block_building_local_chain_produces_blocks() {
+async fn block_building() {
     let _ = tracing_subscriber::fmt::try_init();
     if std::env::var(INTEGRATION_IMAGE_ENV).is_err() {
         std::env::set_var(INTEGRATION_IMAGE_ENV, DEFAULT_SUBSTRATE_IMAGE);
@@ -93,8 +94,10 @@ async fn block_building_local_chain_produces_blocks() {
     let alice = network.get_node("alice").unwrap();
     let bob = network.get_node("bob").unwrap();
 
-    assert_node_health(&alice).await;
-    assert_node_health(&bob).await;
+    assert_node_health(alice).await;
+    assert_node_health(bob).await;
 
-    submit_transaction_and_wait_finalization(&alice).await;
+    submit_transaction_and_wait_finalization(alice).await;
+
+    network.destroy().await.unwrap();
 }

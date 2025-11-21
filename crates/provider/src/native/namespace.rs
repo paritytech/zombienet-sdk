@@ -184,7 +184,7 @@ where
         );
 
         let pid = json_value
-            .get("process")
+            .get("process_handle")
             .and_then(|v| v.as_i64())
             .ok_or_else(|| ProviderError::InvalidConfig("Missing pid field".to_string()))?
             as i32;

@@ -84,7 +84,7 @@ jobs:
             /tmp/zombie*/logs/*
   
   docker-integration-test-smoke:
-    runs-on: parity-default
+    runs-on: ubuntu-latest
     needs: build-tests
     timeout-minutes: 60
     steps:

@@ -10,7 +10,7 @@ fn small_network() -> NetworkConfig {
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
-                .with_default_image("docker.io/parity/polkadot:v1.7.0")
+                .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
         })
@@ -19,6 +19,13 @@ fn small_network() -> NetworkConfig {
                 n.with_name("collator")
                     .with_command("polkadot-parachain")
                     .with_image("docker.io/parity/polkadot-parachain:1.7.0")
+            })
+        })
+        .with_parachain(|p| {
+            p.with_id(3000).cumulus_based(true).with_collator(|n| {
+                n.with_name("collator-new")
+                    .with_command("polkadot-parachain")
+                    .with_image("docker.io/parity/polkadot-parachain:v1.20.2")
             })
         })
         .with_global_settings(|g| g.with_base_dir(PathBuf::from("/tmp/zombie-1")))
@@ -140,6 +147,8 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // pause / resume
     let alice = network.get_node("alice").unwrap();
     alice.pause().await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     let res_err = alice
         .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await;
@@ -155,6 +164,8 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // timeout connecting ws
     let collator = network.get_node("collator").unwrap();
     collator.pause().await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     let r = collator
         .wait_client_with_timeout::<subxt::PolkadotConfig>(1_u32)
         .await;

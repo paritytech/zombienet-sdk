@@ -84,7 +84,7 @@ jobs:
             /tmp/zombie*/logs/*
   
   docker-integration-test-smoke:
-    runs-on: ubuntu-latest
+    runs-on: parity-default
     needs: build-tests
     timeout-minutes: 60
     steps:
@@ -93,6 +93,9 @@ jobs:
         with:
           name: zombienet-tests-${{ github.sha }}
           path: /tmp
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install protobuf-compiler
 
       - name: script
         run: |

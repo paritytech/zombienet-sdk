@@ -95,7 +95,7 @@ jobs:
           path: /tmp
 
       - name: Install dependencies
-        run: sudo apt-get -y update && sudo apt-get -y install protobuf-compiler libssl1.1
+        run: sudo apt-get -y update && sudo apt-get -y install protobuf-compiler libssl-dev pkg-config
 
       - name: script
         run: |

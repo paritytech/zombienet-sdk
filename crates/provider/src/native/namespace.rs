@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
-    native::node::DeserializableNativeNodeOptions,
+    native::{node::DeserializableNativeNodeOptions, provider},
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -110,6 +110,10 @@ where
 
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
+    }
+
+    fn provider_name(&self) -> &str {
+        provider::PROVIDER_NAME
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {

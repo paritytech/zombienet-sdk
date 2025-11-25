@@ -144,6 +144,8 @@ pub trait ProviderNamespace {
 
     fn capabilities(&self) -> &ProviderCapabilities;
 
+    fn provider_name(&self) -> &str;
+
     async fn detach(&self) {
         // noop by default
         warn!("Detach is not implemented for {}", self.name());

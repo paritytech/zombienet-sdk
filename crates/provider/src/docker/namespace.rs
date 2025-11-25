@@ -18,7 +18,10 @@ use super::{
 };
 use crate::{
     constants::NAMESPACE_PREFIX,
-    docker::node::{DeserializableDockerNodeOptions, DockerNodeOptions},
+    docker::{
+        node::{DeserializableDockerNodeOptions, DockerNodeOptions},
+        provider,
+    },
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -280,6 +283,10 @@ where
 
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
+    }
+
+    fn provider_name(&self) -> &str {
+        provider::PROVIDER_NAME
     }
 
     async fn detach(&self) {

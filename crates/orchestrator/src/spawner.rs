@@ -232,7 +232,7 @@ where
 
     let (rpc_port_external, prometheus_port_external, p2p_external);
 
-    if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
+    if running_in_ci() && ctx.ns.provider_name() == "k8s" {
         // running kubernets in ci require to use ip and default port
         (rpc_port_external, prometheus_port_external, p2p_external) =
             (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);

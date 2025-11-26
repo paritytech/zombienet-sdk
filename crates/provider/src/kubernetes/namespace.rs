@@ -20,7 +20,10 @@ use uuid::Uuid;
 use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
-    kubernetes::node::{DeserializableKubernetesNodeOptions, KubernetesNodeOptions},
+    kubernetes::{
+        node::{DeserializableKubernetesNodeOptions, KubernetesNodeOptions},
+        provider,
+    },
     shared::helpers::{extract_execution_result, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -425,6 +428,10 @@ where
 
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
+    }
+
+    fn provider_name(&self) -> &str {
+        provider::PROVIDER_NAME
     }
 
     async fn detach(&self) {

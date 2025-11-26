@@ -28,7 +28,10 @@ fn small_network() -> NetworkConfig {
                     .with_image("docker.io/parity/polkadot-parachain:v1.20.2")
             })
         })
-        .with_global_settings(|g| g.with_base_dir(PathBuf::from("/tmp/zombie-1")))
+        .with_global_settings(|g| {
+            g.with_base_dir(PathBuf::from("/tmp/zombie-1"))
+                .with_tear_down_on_failure(false)
+        })
         .build()
         .unwrap()
 }

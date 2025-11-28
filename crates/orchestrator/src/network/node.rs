@@ -273,6 +273,22 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// Run a script inside the node's container/environment
+    ///
+    /// The script will be uploaded to the node, made executable, and executed with
+    /// the provided arguments and environment variables.
+    ///
+    /// Returns `Ok(stdout)` on success, or `Err((exit_status, stderr))` on failure.
+    pub async fn run_script(
+        &self,
+        options: provider::types::RunScriptOptions,
+    ) -> Result<provider::types::ExecutionResult, anyhow::Error> {
+        self.inner
+            .run_script(options)
+            .await
+            .map_err(|e| anyhow!("Failed to run script: {}", e))
+    }
+
     // Metrics assertions
 
     /// Get metric value 'by name' from Prometheus (exposed by the node)

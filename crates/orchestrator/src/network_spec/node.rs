@@ -128,6 +128,11 @@ pub struct NodeSpec {
 
     /// Optionally specify a keystore path for the node
     pub(crate) keystore_path: Option<PathBuf>,
+
+    /// Keystore key types to generate.
+    /// Supports short form (e.g., "audi") using predefined schemas,
+    /// or long form (e.g., "audi_sr") with explicit schema (sr, ed, ec).
+    pub(crate) keystore_key_types: Vec<String>,
 }
 
 impl NodeSpec {
@@ -227,6 +232,7 @@ impl NodeSpec {
             full_node_prometheus_port,
             node_log_path: node_config.node_log_path().cloned(),
             keystore_path: node_config.keystore_path().cloned(),
+            keystore_key_types: node_config.keystore_key_types().to_vec(),
         })
     }
 
@@ -327,6 +333,7 @@ impl NodeSpec {
             full_node_prometheus_port,
             node_log_path: None,
             keystore_path: None,
+            keystore_key_types: vec![],
         })
     }
 

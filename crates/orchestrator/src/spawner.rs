@@ -77,6 +77,7 @@ where
             &node_files_path,
             ctx.scoped_fs,
             asset_hub_polkadot,
+            &node.keystore_key_types,
         )
         .await
         .unwrap();

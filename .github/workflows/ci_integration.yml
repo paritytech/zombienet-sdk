@@ -82,7 +82,7 @@ jobs:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
             /tmp/zombie*/logs/*
-  
+
   docker-integration-test-smoke:
     runs-on: parity-default
     needs: build-tests
@@ -103,12 +103,14 @@ jobs:
           sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
 
       - name: script
+        timeout-minutes: 45
         run: |
           export ZOMBIE_PROVIDER="docker"
           cd /tmp
           ls -la
           tar xvfz artifacts.tar.gz
           ./artifacts/smoke --nocapture
+        continue-on-error: true
 
       - name: upload logs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

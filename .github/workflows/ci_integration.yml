@@ -1,0 +1,162 @@
+name: Integration test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUN_IN_CONTAINER: 1
+  FF_DISABLE_UMASK_FOR_DOCKER_EXECUTOR: 1
+  GHA_CLUSTER_SERVER_ADDR: "https://kubernetes.default:443"
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+  BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+  RUN_IN_CI: "1"
+  RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
+  CARGO_TARGET_DIR: /tmp/target
+
+jobs:
+  build-tests:
+    runs-on: parity-large
+    timeout-minutes: 60
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          cache-on-failure: true
+
+      - name: Build tests
+        run: |
+          cargo build --tests --keep-going --locked
+          mkdir -p artifacts
+          cd artifacts
+          find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke-*" ! -name "*.d" -exec mv {} $(pwd)/smoke \;
+          find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke_native-*" ! -name "*.d" -exec mv {} $(pwd)/smoke_native \;
+          cd ..
+          tar cvfz artifacts.tar.gz artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          path: artifacts.tar.gz
+
+  k8s-integration-test-smoke:
+    runs-on: parity-zombienet
+    needs: build-tests
+    timeout-minutes: 60
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          path: /tmp
+
+      - name: script
+        run: |
+          export ZOMBIE_K8S_CI_NAMESPACE=$(cat /data/namespace)
+          export ZOMBIE_PROVIDER="k8s"
+          # mv artifacts.tar.gz /tmp
+          cd /tmp
+          ls -la
+          tar xvfz artifacts.tar.gz
+          ./artifacts/smoke --nocapture
+          # for running local
+          # cargo test --test smoke -- --nocapture
+
+      - name: upload logs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie*/logs/*
+  
+  docker-integration-test-smoke:
+    runs-on: parity-default
+    needs: build-tests
+    timeout-minutes: 60
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          path: /tmp
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install wget
+          # Manually download and install the OpenSSL 1.1 library
+          wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+      - name: script
+        run: |
+          export ZOMBIE_PROVIDER="docker"
+          cd /tmp
+          ls -la
+          tar xvfz artifacts.tar.gz
+          ./artifacts/smoke --nocapture
+
+      - name: upload logs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie*/logs/*
+
+  native-integration-test-smoke:
+    runs-on: parity-default
+    needs: build-tests
+    timeout-minutes: 60
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          path: /tmp
+
+      - name: Download bins
+        shell: bash
+        run: |
+          for bin in polkadot polkadot-execute-worker polkadot-prepare-worker polkadot-omni-node polkadot-parachain; do
+            echo "downloading $bin";
+            curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
+            chmod 755 /tmp/$bin;
+          done
+          ls -ltr /tmp
+          export PATH=/tmp:$PATH
+          echo $PATH
+
+      - name: script
+        run: |
+          export PATH=/tmp:$PATH
+          echo $PATH
+          # mv artifacts.tar.gz /tmp
+          cd /tmp
+          ls -la
+          tar xvfz artifacts.tar.gz
+          export ZOMBIE_PROVIDER="native"
+          ./artifacts/smoke_native --nocapture
+          # cargo test --test smoke-native -- --nocapture
+
+      - name: upload logs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie*/logs/*

@@ -196,18 +196,18 @@ mod tests {
                 expected_public_key: "sr_public_key",
             },
             TestCase {
-                name: "aura with asset_hub_polkadot uses sr",
+                name: "aura with asset_hub_polkadot uses ed",
                 key_types: vec!["aura"],
                 asset_hub_polkadot: true,
                 expected_prefix: "61757261", // "aura" in hex
-                expected_public_key: "sr_public_key",
+                expected_public_key: "ed_public_key",
             },
             TestCase {
-                name: "aura without asset_hub_polkadot uses ed",
+                name: "aura without asset_hub_polkadot uses sr",
                 key_types: vec!["aura"],
                 asset_hub_polkadot: false,
                 expected_prefix: "61757261", // "aura" in hex
-                expected_public_key: "ed_public_key",
+                expected_public_key: "sr_public_key",
             },
             TestCase {
                 name: "custom key type with explicit ec scheme",

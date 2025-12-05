@@ -806,7 +806,8 @@ impl NodeConfigBuilder<Buildable> {
 
     /// Set the keystore key types to generate.
     ///
-    /// Each key type can be specified in short form (e.g., "audi") using predefined schemas,
+    /// Each key type can be specified in short form (e.g., "audi") using predefined schemas
+    /// (defaults to `sr` if no predefined schema exists for the key type),
     /// or in long form (e.g., "audi_sr") with an explicit schema (sr, ed, ec).
     ///
     /// # Examples

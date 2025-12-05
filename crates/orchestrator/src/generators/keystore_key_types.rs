@@ -72,9 +72,9 @@ fn get_predefined_schemes(is_asset_hub_polkadot: bool) -> HashMap<&'static str, 
 
     // aura has special handling for asset-hub-polkadot
     if is_asset_hub_polkadot {
-        schemes.insert("aura", KeyScheme::Sr);
-    } else {
         schemes.insert("aura", KeyScheme::Ed);
+    } else {
+        schemes.insert("aura", KeyScheme::Sr);
     }
 
     schemes.insert("babe", KeyScheme::Sr);
@@ -98,7 +98,7 @@ fn get_predefined_schemes(is_asset_hub_polkadot: bool) -> HashMap<&'static str, 
 /// Parses a single keystore key type specification string.
 ///
 /// Supports two formats:
-/// - Short: `audi` - creates key type with predefined default scheme
+/// - Short: `audi` - creates key type with predefined default scheme (defaults to `sr` if not predefined)
 /// - Long: `audi_sr` - creates key type with explicit scheme
 ///
 /// Returns `None` if the spec is invalid or doesn't match the expected format.
@@ -117,9 +117,9 @@ fn parse_key_spec(spec: &str, predefined: &HashMap<&str, KeyScheme>) -> Option<K
 
     // Try parsing as short form: key_type only (e.g., "audi")
     if spec.len() == 4 {
-        // Look up predefined scheme; ignore if not found
-        let scheme = predefined.get(spec)?;
-        return Some(KeystoreKeyType::new(spec, *scheme));
+        // Look up predefined scheme; default to Sr if not found
+        let scheme = predefined.get(spec).copied().unwrap_or(KeyScheme::Sr);
+        return Some(KeystoreKeyType::new(spec, scheme));
     }
 
     None
@@ -170,6 +170,23 @@ pub fn get_default_keystore_key_types(is_asset_hub_polkadot: bool) -> Vec<Keysto
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_keystore_key_types_ignores_invalid_specs() {
+        let specs = vec![
+            "audi".to_string(),
+            "invalid".to_string(), // Too long - ignored
+            "xxx".to_string(),     // Too short - ignored
+            "xxxx".to_string(),    // Unknown key - defaults to sr
+            "audi_xx".to_string(), // Invalid scheme - ignored
+            "gran".to_string(),
+        ];
+
+        let result = parse_keystore_key_types(&specs, false);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[1], KeystoreKeyType::new("xxxx", KeyScheme::Sr)); // Unknown defaults to sr
+        assert_eq!(result[2], KeystoreKeyType::new("gran", KeyScheme::Ed));
+    }
 
     #[test]
     fn parse_keystore_key_types_returns_specified_keys() {
@@ -225,14 +242,14 @@ mod tests {
 
     #[test]
     fn full_workflow_asset_hub_polkadot() {
-        // For asset-hub-polkadot, aura should default to sr
+        // For asset-hub-polkadot, aura should default to ed
         let specs = vec!["aura".to_string(), "babe".to_string()];
 
         let res = parse_keystore_key_types(&specs, true);
 
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].key_type, "aura");
-        assert_eq!(res[0].scheme, KeyScheme::Sr); // sr for asset-hub-polkadot
+        assert_eq!(res[0].scheme, KeyScheme::Ed); // sr for asset-hub-polkadot
 
         assert_eq!(res[1].key_type, "babe");
         assert_eq!(res[1].scheme, KeyScheme::Sr);
@@ -250,9 +267,9 @@ mod tests {
 
         assert_eq!(res.len(), 3);
 
-        // aura uses default ed
+        // aura uses default sr
         assert_eq!(res[0].key_type, "aura");
-        assert_eq!(res[0].scheme, KeyScheme::Ed);
+        assert_eq!(res[0].scheme, KeyScheme::Sr);
 
         // gran overridden to sr
         assert_eq!(res[1].key_type, "gran");

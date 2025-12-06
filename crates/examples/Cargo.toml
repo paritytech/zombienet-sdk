@@ -12,5 +12,5 @@ futures = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-hex = "0.4.3"
+hex = { workspace = true }
 

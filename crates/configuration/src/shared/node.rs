@@ -361,8 +361,8 @@ impl NodeConfig {
 
     /// Keystore key types to generate.
     /// Returns the list of key type specifications (short form like "audi" or long form like "audi_sr").
-    pub fn keystore_key_types(&self) -> &[String] {
-        &self.keystore_key_types
+    pub fn keystore_key_types(&self) -> Vec<&str> {
+        self.keystore_key_types.iter().map(String::as_str).collect()
     }
 }
 

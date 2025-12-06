@@ -131,15 +131,15 @@ fn parse_key_spec(spec: &str, predefined: &HashMap<&str, KeyScheme>) -> Option<K
 /// Invalid specs are silently ignored.
 ///
 /// If the resulting list is empty, returns the default keystore key types.
-pub fn parse_keystore_key_types(
-    specs: &[String],
+pub fn parse_keystore_key_types<T: AsRef<str>>(
+    specs: &[T],
     is_asset_hub_polkadot: bool,
 ) -> Vec<KeystoreKeyType> {
     let predefined_schemes = get_predefined_schemes(is_asset_hub_polkadot);
 
     let parsed: Vec<KeystoreKeyType> = specs
         .iter()
-        .filter_map(|spec| parse_key_spec(spec, &predefined_schemes))
+        .filter_map(|spec| parse_key_spec(spec.as_ref(), &predefined_schemes))
         .collect();
 
     if parsed.is_empty() {
@@ -249,7 +249,7 @@ mod tests {
 
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].key_type, "aura");
-        assert_eq!(res[0].scheme, KeyScheme::Ed); // sr for asset-hub-polkadot
+        assert_eq!(res[0].scheme, KeyScheme::Ed); // ed for asset-hub-polkadot
 
         assert_eq!(res[1].key_type, "babe");
         assert_eq!(res[1].scheme, KeyScheme::Sr);

@@ -29,7 +29,7 @@ pub async fn generate<'a, T>(
     node_files_path: impl AsRef<Path>,
     scoped_fs: &ScopedFilesystem<'a, T>,
     asset_hub_polkadot: bool,
-    keystore_key_types: &[String],
+    keystore_key_types: Vec<&str>,
 ) -> Result<Vec<PathBuf>, GeneratorError>
 where
     T: FileSystem,
@@ -39,7 +39,7 @@ where
     let mut filenames = vec![];
 
     // Parse the key type specifications
-    let key_types = parse_keystore_key_types(keystore_key_types, asset_hub_polkadot);
+    let key_types = parse_keystore_key_types(&keystore_key_types, asset_hub_polkadot);
 
     let futures: Vec<_> = key_types
         .iter()
@@ -124,9 +124,9 @@ mod tests {
         let base_dir = "/tmp/test";
 
         let scoped_fs = ScopedFilesystem { fs: &fs, base_dir };
-        let key_types: Vec<String> = vec![];
+        let key_types: Vec<&str> = vec![];
 
-        let res = generate(&accounts, "node1", &scoped_fs, false, &key_types).await;
+        let res = generate(&accounts, "node1", &scoped_fs, false, key_types).await;
         assert!(res.is_ok());
 
         let filenames = res.unwrap();
@@ -153,9 +153,9 @@ mod tests {
         let base_dir = "/tmp/test";
 
         let scoped_fs = ScopedFilesystem { fs: &fs, base_dir };
-        let key_types = vec!["audi".to_string(), "gran".to_string()];
+        let key_types = vec!["audi", "gran"];
 
-        let res = generate(&accounts, "node1", &scoped_fs, false, &key_types).await;
+        let res = generate(&accounts, "node1", &scoped_fs, false, key_types).await;
 
         assert!(res.is_ok());
 
@@ -226,13 +226,13 @@ mod tests {
                 base_dir: "/tmp/test",
             };
 
-            let key_types: Vec<String> = tc.key_types.iter().map(|s| s.to_string()).collect();
+            let key_types: Vec<&str> = tc.key_types.clone();
             let res = generate(
                 &accounts,
                 "node1",
                 &scoped_fs,
                 tc.asset_hub_polkadot,
-                &key_types,
+                key_types,
             )
             .await;
 
@@ -274,12 +274,12 @@ mod tests {
         };
 
         let key_types = vec![
-            "invalid".to_string(), // Too long
-            "xxx".to_string(),     // Too short
-            "audi_xx".to_string(), // Invalid sceme
+            "invalid", // Too long
+            "xxx",     // Too short
+            "audi_xx", // Invalid sceme
         ];
 
-        let res = generate(&accounts, "node1", &scoped_fs, false, &key_types).await;
+        let res = generate(&accounts, "node1", &scoped_fs, false, key_types).await;
 
         assert!(res.is_ok());
         let filenames = res.unwrap();

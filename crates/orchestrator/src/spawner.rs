@@ -72,12 +72,13 @@ where
             .parachain_id
             .map(|id| id.starts_with("asset-hub-polkadot"))
             .unwrap_or_default();
+        let keystore_key_types = node.keystore_key_types.iter().map(String::as_str).collect();
         let key_filenames = generators::generate_node_keystore(
             &node.accounts,
             &node_files_path,
             ctx.scoped_fs,
             asset_hub_polkadot,
-            &node.keystore_key_types,
+            keystore_key_types,
         )
         .await
         .unwrap();

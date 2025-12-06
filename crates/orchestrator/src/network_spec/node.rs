@@ -232,7 +232,11 @@ impl NodeSpec {
             full_node_prometheus_port,
             node_log_path: node_config.node_log_path().cloned(),
             keystore_path: node_config.keystore_path().cloned(),
-            keystore_key_types: node_config.keystore_key_types().to_vec(),
+            keystore_key_types: node_config
+                .keystore_key_types()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
         })
     }
 

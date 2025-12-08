@@ -306,7 +306,7 @@ impl DockerClient {
         name: &str,
         command: Vec<S>,
         env: Option<Vec<(S, S)>>,
-        as_user: Option<S>,
+        as_user: Option<String>,
     ) -> Result<ExecutionResult>
     where
         S: Into<String> + std::fmt::Debug + Send + Clone,
@@ -317,9 +317,11 @@ impl DockerClient {
             .await?;
 
         // If command failed and we specified a user, retry without user
-        if result.is_err() && as_user.is_some() {
+        if result.is_err() && as_user.is_none() {
             trace!("Command failed with user, retrying without user specification");
-            return self.exec_with_user(name, command, env, None).await;
+            return self
+                .exec_with_user(name, command, env, Some("root".into()))
+                .await;
         }
 
         Ok(result)
@@ -330,7 +332,7 @@ impl DockerClient {
         name: &str,
         command: Vec<S>,
         env: Option<Vec<(S, S)>>,
-        as_user: Option<S>,
+        as_user: Option<String>,
     ) -> Result<ExecutionResult>
     where
         S: Into<String> + std::fmt::Debug + Send + Clone,
@@ -365,7 +367,7 @@ impl DockerClient {
         name: &str,
         command: Vec<S>,
         env: Option<Vec<(S, S)>>,
-        as_user: Option<S>,
+        as_user: Option<String>,
     ) -> Command
     where
         S: Into<String> + std::fmt::Debug + Send + Clone,
@@ -380,7 +382,7 @@ impl DockerClient {
         }
 
         if let Some(user) = as_user {
-            cmd.args(["-u", user.into().as_ref()]);
+            cmd.args(["-u", user.as_ref()]);
         }
 
         cmd.arg(name);

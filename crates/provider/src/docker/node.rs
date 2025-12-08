@@ -263,7 +263,7 @@ where
                 &self.container_name,
                 ["chmod", "777", "/cfg", "/data", "/relay-data"].into(),
                 None,
-                Some("root"),
+                Some("root".into()),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -372,7 +372,7 @@ where
                 &self.container_name,
                 vec!["mkdir", "-p", &remote_dir.to_string_lossy()],
                 None,
-                Some("root"),
+                None,
             )
             .await
             .map_err(|err| {
@@ -561,7 +561,7 @@ where
                 &self.container_name,
                 vec!["chmod", mode, &remote_file_path.to_string_lossy()],
                 None,
-                Some("root"),
+                None,
             )
             .await
             .map_err(|err| {

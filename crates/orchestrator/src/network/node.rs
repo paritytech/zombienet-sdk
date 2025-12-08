@@ -10,7 +10,10 @@ use anyhow::anyhow;
 use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
-use provider::DynNode;
+use provider::{
+    types::{ExecutionResult, RunScriptOptions},
+    DynNode,
+};
 use serde::{Deserialize, Serialize, Serializer};
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
@@ -281,8 +284,8 @@ impl NetworkNode {
     /// Returns `Ok(stdout)` on success, or `Err((exit_status, stderr))` on failure.
     pub async fn run_script(
         &self,
-        options: provider::types::RunScriptOptions,
-    ) -> Result<provider::types::ExecutionResult, anyhow::Error> {
+        options: RunScriptOptions,
+    ) -> Result<ExecutionResult, anyhow::Error> {
         self.inner
             .run_script(options)
             .await

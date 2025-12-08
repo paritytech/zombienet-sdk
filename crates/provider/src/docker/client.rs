@@ -311,28 +311,31 @@ impl DockerClient {
     where
         S: Into<String> + std::fmt::Debug + Send + Clone,
     {
-        let mut cmd = self.client_command();
-        cmd.arg("exec");
+        // Try with specified user first
+        let result = self
+            .exec_with_user(name, command.clone(), env.clone(), as_user.clone())
+            .await?;
 
-        if let Some(env) = env {
-            for env_var in env {
-                cmd.args(["-e", &format!("{}={}", env_var.0.into(), env_var.1.into())]);
-            }
+        // If command failed and we specified a user, retry without user
+        if result.is_err() && as_user.is_some() {
+            trace!("Command failed with user, retrying without user specification");
+            return self.exec_with_user(name, command, env, None).await;
         }
 
-        if let Some(user) = as_user {
-            cmd.args(["-u", user.into().as_ref()]);
-        }
+        Ok(result)
+    }
 
-        cmd.arg(name);
-
-        cmd.args(
-            command
-                .clone()
-                .into_iter()
-                .map(|s| <S as Into<String>>::into(s)),
-        );
-
+    async fn exec_with_user<S>(
+        &self,
+        name: &str,
+        command: Vec<S>,
+        env: Option<Vec<(S, S)>>,
+        as_user: Option<S>,
+    ) -> Result<ExecutionResult>
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        let mut cmd = self.build_exec_command(name, command.clone(), env, as_user);
         trace!("cmd is : {:?}", cmd);
 
         let result = cmd.output().await.map_err(|err| {
@@ -355,6 +358,35 @@ impl DockerClient {
         }
 
         Ok(Ok(String::from_utf8_lossy(&result.stdout).to_string()))
+    }
+
+    fn build_exec_command<S>(
+        &self,
+        name: &str,
+        command: Vec<S>,
+        env: Option<Vec<(S, S)>>,
+        as_user: Option<S>,
+    ) -> Command
+    where
+        S: Into<String> + std::fmt::Debug + Send + Clone,
+    {
+        let mut cmd = self.client_command();
+        cmd.arg("exec");
+
+        if let Some(env) = env {
+            for env_var in env {
+                cmd.args(["-e", &format!("{}={}", env_var.0.into(), env_var.1.into())]);
+            }
+        }
+
+        if let Some(user) = as_user {
+            cmd.args(["-u", user.into().as_ref()]);
+        }
+
+        cmd.arg(name);
+        cmd.args(command.into_iter().map(|s| <S as Into<String>>::into(s)));
+
+        cmd
     }
 
     pub async fn container_cp(

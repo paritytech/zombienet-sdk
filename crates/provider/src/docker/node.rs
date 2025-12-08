@@ -372,7 +372,7 @@ where
                 &self.container_name,
                 vec!["mkdir", "-p", &remote_dir.to_string_lossy()],
                 None,
-                None,
+                Some("root"),
             )
             .await
             .map_err(|err| {
@@ -511,7 +511,7 @@ where
             ))
             .to_string_lossy();
 
-        let remote_script_path = PathBuf::from(format!("/tmp/{file_name}"));
+        let remote_script_path = self.scripts_dir.join(Path::new(file_name.as_ref()));
 
         // Upload the script to the container and make it executable
         self.send_file(&options.local_script_path, &remote_script_path, "0755")

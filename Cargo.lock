@@ -2195,6 +2195,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "erased-serde"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "259d404d09818dec19332e31d94558aeb442fea04c817006456c24b5460bbd4b"
+dependencies = [
+ "serde",
+ "serde_core",
+ "typeid",
+]
+
+[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2237,6 +2248,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "hex",
  "serde_json",
  "tokio",
  "tracing-subscriber",
@@ -8889,6 +8901,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
 
 [[package]]
+name = "typeid"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
+
+[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10361,7 +10379,7 @@ dependencies = [
 
 [[package]]
 name = "zombie-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -10372,7 +10390,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-configuration"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "lazy_static",
@@ -10391,7 +10409,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-file-server"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "axum",
  "axum-extra",
@@ -10406,10 +10424,11 @@ dependencies = [
 
 [[package]]
 name = "zombienet-orchestrator"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "erased-serde",
  "fancy-regex",
  "futures",
  "glob-match",
@@ -10441,7 +10460,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-prom-metrics-parser"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "pest",
  "pest_derive",
@@ -10450,10 +10469,11 @@ dependencies = [
 
 [[package]]
 name = "zombienet-provider"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "erased-serde",
  "flate2",
  "futures",
  "hex",
@@ -10479,7 +10499,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-sdk"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "async-trait",
  "futures",
@@ -10499,7 +10519,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-support"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "async-trait",

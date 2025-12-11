@@ -72,11 +72,13 @@ where
             .parachain_id
             .map(|id| id.starts_with("asset-hub-polkadot"))
             .unwrap_or_default();
+        let keystore_key_types = node.keystore_key_types.iter().map(String::as_str).collect();
         let key_filenames = generators::generate_node_keystore(
             &node.accounts,
             &node_files_path,
             ctx.scoped_fs,
             asset_hub_polkadot,
+            keystore_key_types,
         )
         .await
         .unwrap();
@@ -89,6 +91,10 @@ where
             ctx.chain_id
         };
 
+        let keystore_path = node.keystore_path.clone().unwrap_or(PathBuf::from(format!(
+            "/data/chains/{remote_keystore_chain_id}/keystore",
+        )));
+
         for key_filename in key_filenames {
             let f = TransferedFile::new(
                 PathBuf::from(format!(
@@ -97,17 +103,11 @@ where
                     node_files_path,
                     key_filename.to_string_lossy()
                 )),
-                PathBuf::from(format!(
-                    "/data/chains/{}/keystore/{}",
-                    remote_keystore_chain_id,
-                    key_filename.to_string_lossy()
-                )),
+                keystore_path.join(key_filename),
             );
             files_to_inject.push(f);
         }
-        created_paths.push(PathBuf::from(format!(
-            "/data/chains/{remote_keystore_chain_id}/keystore"
-        )));
+        created_paths.push(keystore_path);
     }
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
@@ -234,7 +234,7 @@ where
 
     let (rpc_port_external, prometheus_port_external, p2p_external);
 
-    if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
+    if running_in_ci() && ctx.ns.provider_name() == "k8s" {
         // running kubernets in ci require to use ip and default port
         (rpc_port_external, prometheus_port_external, p2p_external) =
             (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);

@@ -5,7 +5,7 @@ use std::{
 };
 
 use configuration::{shared::resources::Resources, types::AssetLocation};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub type Port = u16;
 
@@ -334,7 +334,7 @@ impl RunScriptOptions {
 }
 
 // TODO(team): I think we can rename it to FileMap?
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferedFile {
     pub local_path: PathBuf,
     pub remote_path: PathBuf,

@@ -135,7 +135,7 @@ impl RelaychainSpec {
         let mut names = HashSet::new();
         let (nodes, mut errs) = nodes
             .iter()
-            .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false))
+            .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false, false))
             .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
                 match result {
                     Ok(mut node) => {

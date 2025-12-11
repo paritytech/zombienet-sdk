@@ -41,6 +41,28 @@ pub async fn extract_execution_result(
     }
 }
 
+pub fn extract_namespace_info(
+    json_value: &serde_json::Value,
+) -> Result<(PathBuf, String), ProviderError> {
+    let base_dir = json_value
+        .get("local_base_dir")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+        .ok_or(ProviderError::InvalidConfig(
+            "`field local_base_dir` is missing from zombie.json".to_string(),
+        ))?;
+
+    let name =
+        json_value
+            .get("ns")
+            .and_then(|v| v.as_str())
+            .ok_or(ProviderError::InvalidConfig(
+                "field `ns` is missing from zombie.json".to_string(),
+            ))?;
+
+    Ok((base_dir, name.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

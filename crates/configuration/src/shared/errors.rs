@@ -82,6 +82,9 @@ pub enum FieldError {
     #[error("p2p_port: {0}")]
     P2pPort(anyhow::Error),
 
+    #[error("session_key: {0}")]
+    SessionKey(anyhow::Error),
+
     #[error("registration_strategy: {0}")]
     RegistrationStrategy(anyhow::Error),
 }

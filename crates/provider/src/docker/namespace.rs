@@ -18,7 +18,10 @@ use super::{
 };
 use crate::{
     constants::NAMESPACE_PREFIX,
-    docker::node::DockerNodeOptions,
+    docker::{
+        node::{DeserializableDockerNodeOptions, DockerNodeOptions},
+        provider,
+    },
     shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
@@ -85,6 +88,31 @@ where
         });
 
         namespace.initialize().await?;
+
+        Ok(namespace)
+    }
+
+    pub(super) async fn attach_to_live(
+        provider: &Weak<DockerProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        docker_client: &DockerClient,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        let namespace = Arc::new_cyclic(|weak| DockerNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_owned(),
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            docker_client: docker_client.clone(),
+            nodes: RwLock::new(HashMap::new()),
+            delete_on_drop: Arc::new(Mutex::new(false)),
+        });
 
         Ok(namespace)
     }
@@ -257,6 +285,10 @@ where
         &self.capabilities
     }
 
+    fn provider_name(&self) -> &str {
+        provider::PROVIDER_NAME
+    }
+
     async fn detach(&self) {
         self.set_delete_on_drop(false).await;
     }
@@ -318,6 +350,30 @@ where
             port_mapping: options.port_mapping.as_ref().unwrap_or(&HashMap::default()),
         })
         .await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
+
+        Ok(node)
+    }
+
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError> {
+        let deserializable: DeserializableDockerNodeOptions =
+            serde_json::from_value(json_value.clone())?;
+        let options = DockerNodeOptions::from_deserializable(
+            &deserializable,
+            &self.weak,
+            &self.base_dir,
+            &self.docker_client,
+            &self.filesystem,
+        );
+
+        let node = DockerNode::attach_to_live(options).await?;
 
         self.nodes
             .write()

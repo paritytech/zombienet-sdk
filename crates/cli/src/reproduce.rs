@@ -56,7 +56,6 @@
 //! - Runs the tests inside a Docker container matching the CI environment
 
 use std::{
-    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -259,99 +258,56 @@ impl ArtifactDownloader {
             self.run_id
         );
 
-        let binary_artifacts = vec![
-            "build-linux-stable-cumulus",
-            "build-linux-stable-ray",
-            "build-linux-stable-alexggh",
-            "build-linux-stable-lexnv",
-            "build-linux-stable-skuenrt",
-            "build-linux-stable-gh",
-            "build-linux-substrate-skuenrt",
-            "build-test-parachain",
-            "build-test-collators",
-            "build-malus",
-            "build-templates-node",
-            "build-linux-substrate",
-        ];
-
-        // Create a marker file to track which artifacts have been processed
+        // Create a marker file to track if artifacts have been processed
         let marker_file = binaries_dir.join(".downloaded");
-        let processed_artifacts = Self::load_processed_artifacts(&marker_file)?;
 
-        let processed_set: HashSet<&str> = processed_artifacts.iter().map(String::as_str).collect();
-
-        let mut newly_processed = Vec::new();
-
-        for artifact in binary_artifacts {
-            // Check if this artifact was already processed
-            if processed_set.contains(artifact) {
-                println!("  ✓ Skipping {}* (already downloaded)", artifact);
-                continue;
-            }
-
-            let artifact_name = format!("{}*", artifact);
-            println!("  Downloading: {}", artifact_name);
-
-            // Download to a temporary subdirectory first
-            let temp_download_dir = binaries_dir.join(format!(".download-{}", artifact));
-            fs::create_dir_all(&temp_download_dir)?;
-
-            let output = Command::new("gh")
-                .args([
-                    "run",
-                    "download",
-                    &self.run_id,
-                    "--repo",
-                    &format!("paritytech/{}", self.repo),
-                    "--pattern",
-                    &artifact_name,
-                    "--dir",
-                ])
-                .arg(&temp_download_dir)
-                .output()
-                .context("Failed to execute 'gh' command")?;
-
-            if !output.status.success() {
-                eprintln!(
-                    "  Warning: Failed to download {}: {}",
-                    artifact_name,
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                // Clean up temp directory on failure
-                let _ = fs::remove_dir_all(&temp_download_dir);
-                continue;
-            }
-
-            // Extract the zip files and move binaries to the main binaries directory
-            self.extract_and_move_binaries(&temp_download_dir, binaries_dir)?;
-
-            // Clean up temp directory after successful extraction
-            fs::remove_dir_all(&temp_download_dir)?;
-
-            // Mark this artifact as processed
-            newly_processed.push(artifact.to_string());
+        // Skip if already downloaded
+        if marker_file.exists() {
+            println!("Binary artifacts already downloaded");
+            return Ok(());
         }
 
-        // Only write if we processed new artifacts
-        if !newly_processed.is_empty() {
-            let mut all_processed = processed_artifacts;
-            all_processed.extend(newly_processed);
-            fs::write(&marker_file, all_processed.join("\n"))?;
+        // Download to a temporary subdirectory first
+        let temp_download_dir = binaries_dir.join(".download");
+        fs::create_dir_all(&temp_download_dir)?;
+
+        println!("Downloading all build-* artifacts...");
+        let output = Command::new("gh")
+            .args([
+                "run",
+                "download",
+                &self.run_id,
+                "--repo",
+                &format!("paritytech/{}", self.repo),
+                "--pattern",
+                "build-*",
+                "--dir",
+            ])
+            .arg(&temp_download_dir)
+            .output()
+            .context("Failed to execute 'gh' command")?;
+
+        if !output.status.success() {
+            eprintln!(
+                "Warning: Failed to download build artifacts: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            // Clean up temp directory on failure
+            let _ = fs::remove_dir_all(&temp_download_dir);
+            return Ok(());
         }
+
+        // Extract the zip files and move binaries to the main binaries directory
+        self.extract_and_move_binaries(&temp_download_dir, binaries_dir)?;
+
+        // Clean up temp directory after successful extraction
+        fs::remove_dir_all(&temp_download_dir)?;
+
+        // Mark as downloaded
+        fs::write(&marker_file, "")?;
 
         println!("✅ Binary artifacts ready in {}", binaries_dir.display());
         Ok(())
-    }
-
-    fn load_processed_artifacts(marker_file: &Path) -> Result<Vec<String>> {
-        if marker_file.exists() {
-            Ok(fs::read_to_string(marker_file)?
-                .lines()
-                .map(String::from)
-                .collect())
-        } else {
-            Ok(Vec::new())
-        }
     }
 
     fn extract_and_move_binaries(&self, source_dir: &Path, dest_dir: &Path) -> Result<()> {

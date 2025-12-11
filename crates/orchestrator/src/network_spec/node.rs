@@ -133,6 +133,12 @@ pub struct NodeSpec {
     /// Supports short form (e.g., "audi") using predefined schemas,
     /// or long form (e.g., "audi_sr") with explicit schema (sr, ed, ec).
     pub(crate) keystore_key_types: Vec<String>,
+
+    /// Chain spec session key types to inject.
+    /// Supports short form (e.g., "aura") using predefined schemas,
+    /// or long form (e.g., "aura_sr") with explicit schema (sr, ed, ec).
+    /// When empty, uses the default session keys from the chain spec.
+    pub(crate) chain_spec_key_types: Vec<String>,
 }
 
 impl NodeSpec {
@@ -237,6 +243,11 @@ impl NodeSpec {
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+            chain_spec_key_types: node_config
+                .chain_spec_key_types()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
         })
     }
 
@@ -338,6 +349,7 @@ impl NodeSpec {
             node_log_path: None,
             keystore_path: None,
             keystore_key_types: vec![],
+            chain_spec_key_types: vec![],
         })
     }
 

@@ -89,26 +89,38 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download Runtime
+      - name: Download Runtimes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p artifacts
-          echo "Fetching latest runtime from polkadot-fellows/runtimes..."
+          echo "Fetching latest relay runtime from polkadot-fellows/runtimes..."
+
+          gh release download -R polkadot-fellows/runtimes \
+            -p "polkadot_runtime-*.compact.compressed.wasm" \
+            --output artifacts/relay_runtime.wasm
+
+          if [ ! -f artifacts/relay_runtime.wasm ]; then
+             echo "::error::Relay runtime was not downloaded."
+             exit 1
+          fi
+          echo "Relay runtime downloaded to $(pwd)/artifacts/relay_runtime.wasm"
           
+          echo "Fetching latest para runtime from polkadot-fellows/runtimes..."
+
           # gh release download -R polkadot-fellows/runtimes \
           #   -p "${{ inputs.runtime_pattern }}" \
-          #   --output artifacts/test_runtime.wasm
+          #   --output artifacts/para_runtime.wasm
 
           gh release download -R polkadot-fellows/runtimes \
             -p "asset-hub-polkadot_runtime-*.compact.compressed.wasm" \
-            --output artifacts/test_runtime.wasm
+            --output artifacts/para_runtime.wasm
 
-          if [ ! -f artifacts/test_runtime.wasm ]; then
-             echo "::error::Runtime was not downloaded. Check the pattern or repo permissions."
+          if [ ! -f artifacts/para_runtime.wasm ]; then
+             echo "::error::Para runtime was not downloaded."
              exit 1
           fi
-          echo "Runtime downloaded to $(pwd)/artifacts/test_runtime.wasm"
+          echo "Para runtime downloaded to $(pwd)/artifacts/para_runtime.wasm"
 
       - name: Download Binaries
         shell: bash
@@ -146,7 +158,8 @@ jobs:
 
       - name: Run Compatibility Test for polkadot-${{ matrix.cfg.polkadot }} with polkadot-parachain-${{ matrix.cfg.cumulus }}
         env:
-          RUNTIME_PATH: ${{ github.workspace }}/artifacts/test_runtime.wasm
+          PARA_RUNTIME_PATH: ${{ github.workspace }}/artifacts/para_runtime.wasm
+          RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
           ZOMBIE_PROVIDER: native
           PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
         run: |

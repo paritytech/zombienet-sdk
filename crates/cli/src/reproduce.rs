@@ -139,7 +139,7 @@ fn validate_archive_path(path: &str, require_extension: &str) -> Result<PathBuf>
 
     let canonical = p
         .canonicalize()
-        .with_context(|| format!("Failed to resolve path: {}", path))?;
+        .with_context(|| format!("Failed to resolve path: {path}"))?;
 
     let meta = std::fs::metadata(&canonical)
         .with_context(|| format!("Failed to stat path: {}", canonical.display()))?;
@@ -215,7 +215,7 @@ impl ArtifactDownloader {
         let pattern = self
             .artifact_pattern
             .as_ref()
-            .map(|f| format!("*{}*", f))
+            .map(|f| format!("*{f}*"))
             .unwrap_or_else(|| DEFAULT_ARTIFACT_PATTERN.to_string());
 
         println!(
@@ -223,7 +223,7 @@ impl ArtifactDownloader {
             self.run_id, self.repo
         );
         if let Some(filter) = &self.artifact_pattern {
-            println!("   Using filter pattern: *{}*", filter);
+            println!("   Using filter pattern: *{filter}*");
         }
 
         let output = Command::new("gh")
@@ -579,7 +579,7 @@ impl TestRunner {
 
     fn print_archive_header(&self, current: usize, total: usize) {
         println!("═══════════════════════════════════════════════════════════════");
-        println!("Running archive {}/{}", current, total);
+        println!("Running archive {current}/{total}");
         println!("═══════════════════════════════════════════════════════════════\n");
     }
 
@@ -591,7 +591,7 @@ impl TestRunner {
         test_filter: Option<&Vec<String>>,
     ) -> Result<()> {
         let archive_name = archive_path.file_name().unwrap().to_string_lossy();
-        println!("🚀 Running tests from: {}", archive_name);
+        println!("🚀 Running tests from: {archive_name}");
 
         let inner_cmd = build_nextest_command(self.binaries_dir.as_ref(), skip_tests, test_filter);
         let mut cmd = build_docker_command(
@@ -617,7 +617,7 @@ impl TestRunner {
             );
             anyhow::bail!("Test execution failed");
         } else {
-            println!("✅ Tests from {} completed successfully\n", archive_name);
+            println!("✅ Tests from {archive_name} completed successfully\n");
         }
 
         Ok(())
@@ -691,9 +691,9 @@ fn build_docker_command(
         archive_path.display(),
         DOCKER_ARCHIVE_MOUNT_PATH
     );
-    let workspace_mount = format!("{}:{}", workspace_path, DOCKER_WORKSPACE_MOUNT_PATH);
+    let workspace_mount = format!("{workspace_path}:{DOCKER_WORKSPACE_MOUNT_PATH}");
     let docker_image = get_docker_image(workspace_path).unwrap_or_else(|e| {
-        eprintln!("Warning: {}", e);
+        eprintln!("Warning: {e}");
         DEFAULT_DOCKER_IMAGE.to_string()
     });
 

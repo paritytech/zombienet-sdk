@@ -72,8 +72,7 @@ fn generate_keystore_filename(key_type: &KeystoreKeyType, acc: &NodeAccounts) ->
         .accounts
         .get(account_key)
         .expect(&format!(
-            "Key '{}' should be set for node {THIS_IS_A_BUG}",
-            account_key
+            "Key '{account_key}' should be set for node {THIS_IS_A_BUG}"
         ))
         .public_key
         .as_str();

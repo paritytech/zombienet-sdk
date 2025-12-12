@@ -53,10 +53,10 @@ fn verify_keystore_keys(
     let expected_hex: HashSet<String> = expected_key_types.iter().map(hex::encode).collect();
 
     let actual_hex = get_keystore_key_types(keystore_path)
-        .map_err(|e| format!("Failed to read keystore for {}: {}", node_name, e))?;
+        .map_err(|e| format!("Failed to read keystore for {node_name}: {e}"))?;
 
     if expected_hex != actual_hex {
-        return Err(format!("Keystore mismatch for {}:\n", node_name,));
+        return Err(format!("Keystore mismatch for {node_name}:\n",));
     }
 
     Ok(())
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_dir()
         .ok_or("Failed to get network base directory")?;
 
-    println!("📁 Network base directory: {}", base_dir);
+    println!("📁 Network base directory: {base_dir}");
     println!();
 
     println!("🔑 Verifying keystore key types...");
@@ -116,10 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             match verify_keystore_keys(&path, expected_keys, node_name) {
                 Ok(()) => {
-                    println!("    ✅ Verified: {:?}", expected_keys);
+                    println!("    ✅ Verified: {expected_keys:?}");
                 },
                 Err(err) => {
-                    println!("    ❌ {}", err);
+                    println!("    ❌ {err}");
                 },
             }
         }

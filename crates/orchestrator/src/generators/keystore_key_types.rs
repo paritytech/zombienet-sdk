@@ -42,7 +42,7 @@ impl TryFrom<&str> for KeyScheme {
             "sr" => Ok(KeyScheme::Sr),
             "ed" => Ok(KeyScheme::Ed),
             "ec" => Ok(KeyScheme::Ec),
-            _ => Err(format!("Unsupported key scheme: {}", value)),
+            _ => Err(format!("Unsupported key scheme: {value}")),
         }
     }
 }

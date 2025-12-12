@@ -30,6 +30,7 @@ jobs:
     steps:
       - name: Get Versions
         id: get-versions
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

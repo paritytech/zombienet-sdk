@@ -249,8 +249,9 @@ impl NetworkSpec {
         try_join_all(
             image_command_to_nodes_mapping
                 .keys()
-                .cloned()
                 .map(|(image, command)| async {
+                    let image = image.clone();
+                    let command = command.clone();
                     // get node available args output from image/command
                     let available_args = ns
                         .get_node_available_args((command.clone(), image.clone()))

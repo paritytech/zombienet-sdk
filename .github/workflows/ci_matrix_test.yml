@@ -1,0 +1,151 @@
+name: Zombienet Compatibility Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_pattern:
+        description: "Pattern for runtime artifact"
+        default: "asset-hub-polkadot_runtime-*.compact.compressed.wasm"
+        required: true
+      override_versions:
+        description: "Space separated list of versions to test (leave empty to auto-detect 2 latest stable)"
+        required: false
+        default: ""
+
+env:
+  BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+  RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
+  CARGO_TARGET_DIR: /tmp/target
+
+jobs:
+  prepare-matrix:
+    runs-on: parity-default
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      versions: ${{ steps.get-versions.outputs.versions }}
+    steps:
+      - name: Get Versions
+        id: get-versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.override_versions }}" ]; then
+            VERSIONS=(${{ inputs.override_versions }})
+          else
+            # Fetch tags, filter for polkadot-stable, sort desc, take top 2 unique
+            RAW_TAGS=$(gh api graphql -F owner='paritytech' -F name='polkadot-sdk' -f query='
+              query($name: String!, $owner: String!) {
+                repository(owner: $owner, name: $name) {
+                  releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
+                }
+              }' --jq '.data.repository.releases.nodes[].tagName')
+            VERSIONS=($(echo "$RAW_TAGS" | grep -E "^polkadot-stable[0-9]{4}(-[0-9]+)?$" | head -n 2))
+          fi
+          
+          echo "Selected versions: ${VERSIONS[@]}"
+          echo "versions=$(jq --compact-output --null-input '$ARGS.positional' --args -- "${VERSIONS[@]}")" >> $GITHUB_OUTPUT
+
+      - name: Generate Matrix
+        id: set-matrix
+        run: |
+          # Read the JSON array of versions
+          VERSIONS='${{ steps.get-versions.outputs.versions }}'
+          
+          # Generate combinations: 
+          # We need a matrix that looks like: [{relay: v1, para: v1}, {relay: v1, para: v2}, {relay: v2, para: v1}, {relay: v2, para: v2}]
+          
+          MATRIX=$(echo $VERSIONS | jq -c '
+            . as $v | 
+            [
+              combinations(2) | 
+              {
+                polkadot: .[0], 
+                cumulus: .[1], 
+              }
+            ]
+          ')
+          
+          echo "Generated Matrix: $MATRIX"
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+  run-compatibility-test:
+    needs: prepare-matrix
+    runs-on: parity-default
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    strategy:
+      fail-fast: false
+      matrix:
+        cfg: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Runtime
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          echo "Fetching latest runtime from polkadot-fellows/runtimes..."
+          
+          gh release download -R polkadot-fellows/runtimes \
+            -p "${{ inputs.runtime_pattern }}" \
+            --output artifacts/test_runtime.wasm
+
+          if [ ! -f artifacts/test_runtime.wasm ]; then
+             echo "::error::Runtime was not downloaded. Check the pattern or repo permissions."
+             exit 1
+          fi
+          echo "Runtime downloaded to $(pwd)/artifacts/test_runtime.wasm"
+
+      - name: Download Binaries
+        shell: bash
+        run: |
+          RELAY_VER="${{ matrix.cfg.polkadot }}"
+          PARA_VER="${{ matrix.cfg.cumulus }}"
+          
+          NODE_BINS=("polkadot" "polkadot-execute-worker" "polkadot-prepare-worker")
+          PARA_BINS=("polkadot-parachain")
+          
+          mkdir -p ./bin
+          
+          # Helper function to download
+          download_bin() {
+            local BIN=$1
+            local VER=$2
+            echo "Downloading $BIN for $VER..."
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$VER/$BIN" -o "./bin/$BIN"
+            chmod +x "./bin/$BIN"
+          }
+
+          # Download Relay Chain Binaries
+          for bin in "${NODE_BINS[@]}"; do
+            download_bin "$bin" "$RELAY_VER"
+          done
+
+          # Download Parachain Binaries
+          for bin in "${PARA_BINS[@]}"; do
+            download_bin "$bin" "$PARA_VER"
+          done
+
+          echo "$PWD/bin" >> $GITHUB_PATH
+
+          ls -lrt ./bin/
+
+      - name: Run Compatibility Test for polkadot-${{ matrix.cfg.polkadot }} with polkadot-parachain-${{ matrix.cfg.cumulus }}
+        env:
+          RUNTIME_PATH: ${{ github.workspace }}/artifacts/test_runtime.wasm
+          ZOMBIE_PROVIDER: native
+          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
+        run: |
+          echo "Running Compatibility Test..."
+          echo "Relay: ${{ matrix.cfg.polkadot }}"
+          echo "Cumulus: ${{ matrix.cfg.cumulus }}"
+
+          cargo test --test matrix-native -- --nocapture
+          

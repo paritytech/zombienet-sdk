@@ -1,16 +1,18 @@
 name: Zombienet Compatibility Matrix
 
 on:
-  workflow_dispatch:
-    inputs:
-      runtime_pattern:
-        description: "Pattern for runtime artifact"
-        default: "asset-hub-polkadot_runtime-*.compact.compressed.wasm"
-        required: true
-      override_versions:
-        description: "Space separated list of versions to test (leave empty to auto-detect 2 latest stable)"
-        required: false
-        default: ""
+  pull_request:
+      branches: [main]
+  # workflow_dispatch:
+  #   inputs:
+  #     runtime_pattern:
+  #       description: "Pattern for runtime artifact"
+  #       default: "asset-hub-polkadot_runtime-*.compact.compressed.wasm"
+  #       required: true
+  #     override_versions:
+  #       description: "Space separated list of versions to test (leave empty to auto-detect 2 latest stable)"
+  #       required: false
+  #       default: ""
 
 env:
   BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
@@ -31,9 +33,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -n "${{ inputs.override_versions }}" ]; then
-            VERSIONS=(${{ inputs.override_versions }})
-          else
+          # if [ -n "${{ inputs.override_versions }}" ]; then
+          #   VERSIONS=(${{ inputs.override_versions }})
+          # else
             # Fetch tags, filter for polkadot-stable, sort desc, take top 2 unique
             RAW_TAGS=$(gh api graphql -F owner='paritytech' -F name='polkadot-sdk' -f query='
               query($name: String!, $owner: String!) {
@@ -44,7 +46,7 @@ jobs:
                 }
               }' --jq '.data.repository.releases.nodes[].tagName')
             VERSIONS=($(echo "$RAW_TAGS" | grep -E "^polkadot-stable[0-9]{4}(-[0-9]+)?$" | head -n 2))
-          fi
+          # fi
           
           echo "Selected versions: ${VERSIONS[@]}"
           echo "versions=$(jq --compact-output --null-input '$ARGS.positional' --args -- "${VERSIONS[@]}")" >> $GITHUB_OUTPUT
@@ -93,8 +95,12 @@ jobs:
           mkdir -p artifacts
           echo "Fetching latest runtime from polkadot-fellows/runtimes..."
           
+          # gh release download -R polkadot-fellows/runtimes \
+          #   -p "${{ inputs.runtime_pattern }}" \
+          #   --output artifacts/test_runtime.wasm
+
           gh release download -R polkadot-fellows/runtimes \
-            -p "${{ inputs.runtime_pattern }}" \
+            -p "asset-hub-polkadot_runtime-*.compact.compressed.wasm" \
             --output artifacts/test_runtime.wasm
 
           if [ ! -f artifacts/test_runtime.wasm ]; then

@@ -10,7 +10,10 @@ use anyhow::anyhow;
 use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
-use provider::DynNode;
+use provider::{
+    types::{ExecutionResult, RunScriptOptions},
+    DynNode,
+};
 use serde::{Deserialize, Serialize, Serializer};
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
@@ -271,6 +274,22 @@ impl NetworkNode {
         self.inner.restart(after).await?;
         self.set_is_running(true);
         Ok(())
+    }
+
+    /// Run a script inside the node's container/environment
+    ///
+    /// The script will be uploaded to the node, made executable, and executed with
+    /// the provided arguments and environment variables.
+    ///
+    /// Returns `Ok(stdout)` on success, or `Err((exit_status, stderr))` on failure.
+    pub async fn run_script(
+        &self,
+        options: RunScriptOptions,
+    ) -> Result<ExecutionResult, anyhow::Error> {
+        self.inner
+            .run_script(options)
+            .await
+            .map_err(|e| anyhow!("Failed to run script: {}", e))
     }
 
     // Metrics assertions

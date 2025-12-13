@@ -10,6 +10,7 @@ pub use orchestrator::{
     network::{node::NetworkNode, Network},
     sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
+pub use provider::types::{ExecutionResult, RunScriptOptions};
 
 // Helpers used for interact with the network
 pub mod tx_helper {

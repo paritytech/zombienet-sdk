@@ -1328,6 +1328,13 @@ fn clear_authorities(
                 val["staking"]["validatorCount"] = json!(0);
             }
         }
+
+        // clear assets-related genesis data to avoid orphaned asset accounts
+        if val.get("assets").is_some() {
+            val["assets"]["assets"] = json!([]);
+            val["assets"]["metadata"] = json!([]);
+            val["assets"]["accounts"] = json!([]);
+        }
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }

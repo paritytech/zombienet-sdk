@@ -850,6 +850,10 @@ impl ChainSpec {
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
 
+            // check if `assets` pallet config
+            let balances_to_add = generate_balance_to_add_from_assets_pallet(&pointer, &mut chain_spec_json);
+            add_balances(&pointer, &mut chain_spec_json, balances_to_add);
+
             // write spec
             let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
                 GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
@@ -911,12 +915,19 @@ impl ChainSpec {
             clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
             // add balances
+            let mut balances_to_add = generate_balance_to_add_from_nodes(&relaychain.nodes, staking_min);
+
+            // ensure zombie account (//Zombie) have funds
+            // we will use for internal usage (e.g new validators)
+            balances_to_add.push((
+                "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
+                1000 * 10_u128.pow(token_decimals as u32),
+            ));
+
             add_balances(
                 &pointer,
                 &mut chain_spec_json,
-                &relaychain.nodes,
-                token_decimals,
-                staking_min,
+                balances_to_add
             );
 
             // add staking
@@ -1348,9 +1359,8 @@ fn get_staking_min(runtime_config_ptr: &str, chain_spec_json: &mut serde_json::V
 fn add_balances(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
-    nodes: &Vec<NodeSpec>,
-    token_decimals: u8,
-    staking_min: u128,
+    balances_to_add: Vec<(String, u128)>,
+    // token_decimals: u8,
 ) {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let Some(balances) = val.pointer("/balances/balances") else {
@@ -1361,26 +1371,9 @@ fn add_balances(
 
         // create a balance map
         let mut balances_map = generate_balance_map(balances);
-        for node in nodes {
-            if node.initial_balance.eq(&0) {
-                continue;
-            };
-
-            // TODO: handle error here and check the `accounts.accounts` design
-            // Double down the minimal stake defined
-            let balance = std::cmp::max(node.initial_balance, staking_min * 2);
-            for k in ["sr", "sr_stash"] {
-                let account = node.accounts.accounts.get(k).unwrap();
-                balances_map.insert(account.address.clone(), balance);
-            }
+        for balance in balances_to_add {
+            balances_map.insert(balance.0, balance.1);
         }
-
-        // ensure zombie account (//Zombie) have funds
-        // we will use for internal usage (e.g new validators)
-        balances_map.insert(
-            "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
-            1000 * 10_u128.pow(token_decimals as u32),
-        );
 
         // convert the map and store again
         let new_balances: Vec<(&String, &u128)> =
@@ -1611,6 +1604,28 @@ fn override_parachain_info(
         unreachable!("pointer to runtime config should be valid!")
     }
 }
+
+fn generate_balance_to_add_from_assets_pallet(runtime_config_ptr: &str,chain_spec_json: &serde_json::Value) -> Vec<(String, u128)>{
+    if let Some(val) = chain_spec_json.pointer(runtime_config_ptr) {
+        if let Some(assets_accounts) = val.pointer("/assets/accounts") {
+            let assets_accounts = assets_accounts.as_array().expect("assets_accounts config should be an array, qed");
+            let accounts_to_add: Vec<(String, u128)> = assets_accounts.iter().map(|account| {
+                let account = account.as_array().expect("assets_accounts config should be an array, qed");
+                // map account / balance
+                (
+                    account[1].as_str().expect("account should be a valid string. qed").to_string(),
+                    account[2].as_number().expect("balance should be a valid str").to_string().parse::<u128>().expect("balance should be a valid u128")
+                )
+            }).collect();
+            return accounts_to_add;
+        } else {
+            return vec![]
+        }
+    } else {
+        unreachable!("pointer to runtime config should be valid!")
+    }
+}
+
 fn add_collator_selection(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
@@ -1663,6 +1678,25 @@ fn generate_balance_map(balances: &serde_json::Value) -> HashMap<String, u128> {
     balances_map
 }
 
+fn generate_balance_to_add_from_nodes(nodes: &Vec<NodeSpec>, staking_min: u128) -> Vec<(String, u128)> {
+    // generate balances to add
+    let mut balances_to_add = vec![];
+
+    for node in nodes {
+        if node.initial_balance.eq(&0) {
+            continue;
+        };
+
+        // Double down the minimal stake defined
+        let balance = std::cmp::max(node.initial_balance, staking_min * 2);
+        for k in ["sr", "sr_stash"] {
+            let account = node.accounts.accounts.get(k).unwrap();
+            balances_to_add.push((account.address.clone(), balance));
+        }
+    }
+    balances_to_add
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -1673,6 +1707,7 @@ mod tests {
     use crate::{generators, shared::types::NodeAccounts};
 
     const ROCOCO_LOCAL_PLAIN_TESTING: &str = "./testing/rococo-local-plain.json";
+    const ROCOCO_PENPAL_LOCAL_PLAIN_TESTING: &str = "./testing/rococo-penpal-local-plain.json";
 
     fn chain_spec_test(file: &str) -> serde_json::Value {
         let content = fs::read_to_string(file).unwrap();
@@ -1832,7 +1867,8 @@ mod tests {
         };
 
         let nodes = vec![node];
-        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+        let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
+        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add );
 
         let new_balances = spec_plain
             .pointer("/genesis/runtime/balances/balances")
@@ -1860,7 +1896,12 @@ mod tests {
         let balances_map = generate_balance_map(balances);
 
         let nodes: Vec<NodeSpec> = vec![];
-        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+        let mut balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
+        balances_to_add.push((
+                "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
+                1000 * 10_u128.pow(12 as u32),
+        ));
+        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
 
         let new_balances = spec_plain
             .pointer("/genesis/runtime/balances/balances")
@@ -1870,7 +1911,7 @@ mod tests {
 
         // sr and sr_stash keys exists
         assert!(new_balances_map.contains_key("5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8"));
-        assert_eq!(new_balances_map.len(), balances_map.len() + 1);
+        assert_eq!(new_balances_map.len(), balances_map.len() +1, "Number of balances should includes one more key (zombie key).");
     }
 
     #[test]
@@ -1897,7 +1938,8 @@ mod tests {
         };
 
         let nodes = vec![node];
-        add_balances("/genesis/runtime", &mut spec_plain, &nodes, 12, 0);
+        let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
+        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
 
         let new_balances = spec_plain.pointer("/genesis/runtime/balances/balances");
 
@@ -2069,5 +2111,37 @@ mod tests {
 
         let node_key = get_node_keys(&node, SessionKeyType::default(), true);
         assert_eq!(node_key.2["aura"], node.accounts.accounts["ed"].address);
+    }
+
+    #[test]
+    fn ensure_penpal_assets_works() {
+        let mut spec_plain = chain_spec_test(ROCOCO_PENPAL_LOCAL_PLAIN_TESTING);
+
+
+        let balances = spec_plain
+            .pointer("/genesis/runtimeGenesis/patch/balances/balances")
+            .unwrap();
+        let balances_map = generate_balance_map(balances);
+        println!("balance {:?}", balances_map);
+
+        let nodes: Vec<NodeSpec> = vec![];
+        let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
+        add_balances("/genesis/runtimeGenesis/patch", &mut spec_plain, balances_to_add);
+
+        //
+        let balances_to_add_from_assets = generate_balance_to_add_from_assets_pallet("/genesis/runtimeGenesis/patch", &spec_plain);
+        println!("to add : {:?}", balances_to_add_from_assets);
+        add_balances("/genesis/runtimeGenesis/patch", &mut spec_plain, balances_to_add_from_assets);
+
+        let new_balances = spec_plain
+            .pointer("/genesis/runtimeGenesis/patch/balances/balances")
+            .unwrap();
+
+        let new_balances_map = generate_balance_map(new_balances);
+        println!("balance {:?}", new_balances_map);
+
+        assert_eq!(new_balances_map.len(), balances_map.len() +1);
+
+
     }
 }

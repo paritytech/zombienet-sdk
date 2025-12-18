@@ -8,7 +8,7 @@ use crate::{
 
 const DEFAULT_POLKADOT_IMAGE: &str = "docker.io/parity/polkadot:latest";
 const DEFAULT_CUMULUS_IMAGE: &str = "docker.io/parity/polkadot-parachain:latest";
-const DEFAULT_MALUS_IMAGE: &str = "docker.io/parity/malus:latest";
+const DEFAULT_MALUS_IMAGE: &str = "docker.io/paritypr/malus:latest";
 const DEFAULT_COLANDER_IMAGE: &str = "docker.io/paritypr/colander:latest";
 
 #[derive(Debug, Default)]

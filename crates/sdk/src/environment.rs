@@ -8,11 +8,15 @@ use crate::{
 
 const DEFAULT_POLKADOT_IMAGE: &str = "docker.io/parity/polkadot:latest";
 const DEFAULT_CUMULUS_IMAGE: &str = "docker.io/parity/polkadot-parachain:latest";
+const DEFAULT_MALUS_IMAGE: &str = "docker.io/parity/malus:latest";
+const DEFAULT_COLANDER_IMAGE: &str = "docker.io/paritypr/colander:latest";
 
 #[derive(Debug, Default)]
 pub struct Images {
     pub polkadot: String,
     pub cumulus: String,
+    pub malus: String,
+    pub colander: String,
 }
 
 pub enum Provider {
@@ -47,7 +51,15 @@ impl From<String> for Provider {
 pub fn get_images_from_env() -> Images {
     let polkadot = env::var("POLKADOT_IMAGE").unwrap_or(DEFAULT_POLKADOT_IMAGE.into());
     let cumulus = env::var("CUMULUS_IMAGE").unwrap_or(DEFAULT_CUMULUS_IMAGE.into());
-    Images { polkadot, cumulus }
+    let malus = env::var("MALUS_IMAGE").unwrap_or(DEFAULT_MALUS_IMAGE.into());
+    let colander = env::var("COL_IMAGE").unwrap_or(DEFAULT_COLANDER_IMAGE.into());
+
+    Images {
+        polkadot,
+        cumulus,
+        malus,
+        colander,
+    }
 }
 
 pub fn get_provider_from_env() -> Provider {

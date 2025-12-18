@@ -26,6 +26,9 @@ use crate::{
     ScopedFilesystem,
 };
 
+// Zombie key to insert (//Zombie)
+const ZOMBIE_KEY: &str = "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8";
+
 // TODO: (javier) move to state
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Context {
@@ -922,7 +925,7 @@ impl ChainSpec {
             // ensure zombie account (//Zombie) have funds
             // we will use for internal usage (e.g new validators)
             balances_to_add.push((
-                "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
+                ZOMBIE_KEY.to_string(),
                 1000 * 10_u128.pow(token_decimals as u32),
             ));
 
@@ -1695,7 +1698,7 @@ fn generate_balance_map(balances: &serde_json::Value) -> HashMap<String, u128> {
 }
 
 fn generate_balance_to_add_from_nodes(
-    nodes: &Vec<NodeSpec>,
+    nodes: &[NodeSpec],
     staking_min: u128,
 ) -> Vec<(String, u128)> {
     // generate balances to add
@@ -1916,10 +1919,7 @@ mod tests {
 
         let nodes: Vec<NodeSpec> = vec![];
         let mut balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
-        balances_to_add.push((
-            "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
-            1000 * 10_u128.pow(12),
-        ));
+        balances_to_add.push((ZOMBIE_KEY.to_string(), 1000 * 10_u128.pow(12)));
         add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
 
         let new_balances = spec_plain
@@ -1929,7 +1929,7 @@ mod tests {
         let new_balances_map = generate_balance_map(new_balances);
 
         // sr and sr_stash keys exists
-        assert!(new_balances_map.contains_key("5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8"));
+        assert!(new_balances_map.contains_key(ZOMBIE_KEY));
         assert_eq!(
             new_balances_map.len(),
             balances_map.len() + 1,

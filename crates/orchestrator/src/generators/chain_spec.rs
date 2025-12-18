@@ -852,7 +852,7 @@ impl ChainSpec {
 
             // check if `assets` pallet config
             let balances_to_add =
-                generate_balance_to_add_from_assets_pallet(&pointer, &mut chain_spec_json);
+                generate_balance_to_add_from_assets_pallet(&pointer, &chain_spec_json);
             add_balances(&pointer, &mut chain_spec_json, balances_to_add);
 
             // write spec
@@ -1633,9 +1633,9 @@ fn generate_balance_to_add_from_assets_pallet(
                     )
                 })
                 .collect();
-            return accounts_to_add;
+            accounts_to_add
         } else {
-            return vec![];
+            vec![]
         }
     } else {
         unreachable!("pointer to runtime config should be valid!")
@@ -1918,7 +1918,7 @@ mod tests {
         let mut balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
         balances_to_add.push((
             "5FTcLfwFc7ctvqp3RhbEig6UuHLHcHVRujuUm8r21wy4dAR8".to_string(),
-            1000 * 10_u128.pow(12 as u32),
+            1000 * 10_u128.pow(12),
         ));
         add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
 

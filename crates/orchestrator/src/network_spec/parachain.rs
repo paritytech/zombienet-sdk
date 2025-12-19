@@ -220,23 +220,31 @@ impl ParachainSpec {
                 Err(err) => errs.push(err),
             }
         }
+        // Precedence when deciding the genesis state artifact: path -> generator -> default command
         let genesis_state = if let Some(path) = config.genesis_state_path() {
             ParaArtifact::new(
                 ParaArtifactType::State,
                 ParaArtifactBuildOption::Path(path.to_string()),
             )
-        } else {
-            let cmd = if let Some(cmd) = config.genesis_state_generator() {
-                cmd.cmd()
-            } else {
-                main_cmd
-            };
+        } else if let Some(cmd) = config.genesis_state_generator() {
             ParaArtifact::new(
                 ParaArtifactType::State,
-                ParaArtifactBuildOption::Command(cmd.as_str().into()),
+                ParaArtifactBuildOption::CommandWithCustomArgs(cmd.clone()),
+            )
+            .image(main_image.clone())
+        } else {
+            ParaArtifact::new(
+                ParaArtifactType::State,
+                ParaArtifactBuildOption::Command(main_cmd.as_str().into()),
             )
             .image(main_image.clone())
         };
+
+        debug!(
+            "Parachain {} genesis state artifact: {:?}",
+            config.id(),
+            genesis_state
+        );
 
         let genesis_wasm = if let Some(path) = config.genesis_wasm_path() {
             ParaArtifact::new(

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -16,7 +17,7 @@ use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
@@ -563,6 +564,230 @@ impl NetworkNode {
             Ok(0_f64)
         } else {
             Err(NetworkNodeError::MetricNotFound(metric_name.into()).into())
+        }
+    }
+
+    /// Fetches histogram buckets for a given metric from the Prometheus endpoint.
+    ///
+    /// This function retrieves histogram bucket data by parsing the Prometheus metrics
+    /// and calculating the count of observations in each bucket. It automatically appends
+    /// `_bucket` suffix to the metric name if not already present.
+    ///
+    /// # Arguments
+    /// * `metric_name` - The name of the histogram metric (with or without `_bucket` suffix)
+    /// * `label_filters` - Optional HashMap of label key-value pairs to filter metrics by
+    ///
+    /// # Returns
+    /// A HashMap where keys are the `le` bucket boundaries as strings,
+    /// and values are the count of observations in each bucket (calculated as delta from previous bucket).
+    ///
+    /// # Example
+    /// ```ignore
+    /// let buckets = node.get_histogram_buckets("polkadot_pvf_execution_time", None).await?;
+    /// // Returns: {"0.1": 5, "0.5": 10, "1.0": 3, "+Inf": 0}
+    /// ```
+    pub async fn get_histogram_buckets(
+        &self,
+        metric_name: impl AsRef<str>,
+        label_filters: Option<HashMap<String, String>>,
+    ) -> Result<HashMap<String, u64>, anyhow::Error> {
+        let metric_name = metric_name.as_ref();
+
+        // Fetch raw metrics text
+        let response = reqwest::get(&self.prometheus_uri).await?;
+        let metrics_text = response.text().await?;
+
+        // Ensure metric name has _bucket suffix
+        let resolved_metric_name = if metric_name.contains("_bucket") {
+            metric_name.to_string()
+        } else {
+            format!("{}_bucket", metric_name)
+        };
+
+        let mut raw_buckets: Vec<(String, u64)> = Vec::new();
+        let mut active_series_labels: Option<HashMap<String, String>> = None;
+
+        // Parse metrics line by line
+        for line in metrics_text.lines() {
+            let line = line.trim();
+            // Skip empty lines and comments
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            // Parse the line manually to extract metric name, labels, and value
+            if let Some((name_with_labels, value_str)) = line.split_once(char::is_whitespace) {
+                let name_with_labels = name_with_labels.trim();
+
+                // Check if this line matches our metric name
+                let (name, labels_str) = if let Some(idx) = name_with_labels.find('{') {
+                    (&name_with_labels[..idx], &name_with_labels[idx..])
+                } else {
+                    (name_with_labels, "")
+                };
+
+                if name != resolved_metric_name {
+                    continue;
+                }
+
+                // Parse labels if present
+                let mut parsed_labels: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+                let mut le_label: Option<String> = None;
+
+                if !labels_str.is_empty()
+                    && labels_str.starts_with('{')
+                    && labels_str.ends_with('}')
+                {
+                    let labels_content = &labels_str[1..labels_str.len() - 1];
+                    parsed_labels = Self::parse_prometheus_labels(labels_content);
+                    le_label = parsed_labels.get("le").cloned();
+                }
+
+                // Check if all required label filters match
+                if let Some(ref filters) = label_filters {
+                    let mut all_match = true;
+                    for (filter_key, filter_value) in filters {
+                        if parsed_labels.get(filter_key) != Some(filter_value) {
+                            all_match = false;
+                            break;
+                        }
+                    }
+
+                    if !all_match {
+                        continue;
+                    }
+                }
+
+                // Get non-"le" labels to detect series changes
+                let mut series_labels = parsed_labels.clone();
+                series_labels.remove("le");
+
+                // Check if we're starting a new series (different non-le labels)
+                if let Some(ref prev_labels) = active_series_labels {
+                    if prev_labels != &series_labels {
+                        // New series detected, stop processing if we already have data
+                        if !raw_buckets.is_empty() {
+                            break;
+                        }
+                        // Otherwise reset for new series
+                        active_series_labels = Some(series_labels);
+                    }
+                } else {
+                    // First series
+                    active_series_labels = Some(series_labels);
+                }
+
+                // Extract and collect the metric value
+                if let Some(le) = le_label {
+                    if let Ok(metric_value) = value_str.trim().parse::<u64>() {
+                        trace!("{} le:{} {}", resolved_metric_name, &le, metric_value);
+                        raw_buckets.push((le, metric_value));
+                    }
+                }
+            }
+        }
+
+        raw_buckets.sort_by(|a, b| Self::compare_le_values(&a.0, &b.0));
+
+        let mut buckets = HashMap::new();
+        let mut previous_value = 0_u64;
+        for (le, cumulative_count) in raw_buckets {
+            if cumulative_count < previous_value {
+                warn!(
+                    "Warning: bucket count decreased from {} to {} at le={}",
+                    previous_value, cumulative_count, le
+                );
+            }
+            let delta = cumulative_count.saturating_sub(previous_value);
+            buckets.insert(le, delta);
+            previous_value = cumulative_count;
+        }
+
+        Ok(buckets)
+    }
+
+    /// Parse Prometheus label string handling quoted values with commas and escapes.
+    ///
+    /// Implements a simple state machine to correctly parse label key-value pairs
+    /// that may contain commas within quoted values.
+    fn parse_prometheus_labels(labels_str: &str) -> HashMap<String, String> {
+        let mut labels = HashMap::new();
+        let mut current_key = String::new();
+        let mut current_value = String::new();
+        let mut in_value = false;
+        let mut in_quotes = false;
+        let mut escape_next = false;
+
+        for ch in labels_str.chars() {
+            if escape_next {
+                current_value.push(ch);
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' if in_quotes => {
+                    escape_next = true;
+                },
+                '=' if !in_quotes && !in_value => {
+                    in_value = true;
+                },
+                '"' if in_value => {
+                    in_quotes = !in_quotes;
+                },
+                ',' if !in_quotes => {
+                    // End of key-value pair
+                    if !current_key.is_empty() {
+                        labels.insert(
+                            current_key.trim().to_string(),
+                            current_value.trim().to_string(),
+                        );
+                        current_key.clear();
+                        current_value.clear();
+                        in_value = false;
+                    }
+                },
+                _ => {
+                    if in_value {
+                        current_value.push(ch);
+                    } else {
+                        current_key.push(ch);
+                    }
+                },
+            }
+        }
+
+        // Insert last pair
+        if !current_key.is_empty() {
+            labels.insert(
+                current_key.trim().to_string(),
+                current_value.trim().to_string(),
+            );
+        }
+
+        labels
+    }
+
+    /// Compare two histogram bucket boundary values for sorting.
+    ///
+    /// Treats "+Inf" as the maximum value, otherwise compares numerically.
+    fn compare_le_values(a: &str, b: &str) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        // Handle +Inf specially
+        match (a, b) {
+            ("+Inf", "+Inf") => Ordering::Equal,
+            ("+Inf", _) => Ordering::Greater,
+            (_, "+Inf") => Ordering::Less,
+            _ => {
+                // Try to parse as f64 for numeric comparison
+                match (a.parse::<f64>(), b.parse::<f64>()) {
+                    (Ok(a_val), Ok(b_val)) => a_val.partial_cmp(&b_val).unwrap_or(Ordering::Equal),
+                    // Fallback to string comparison if parsing fails
+                    _ => a.cmp(b),
+                }
+            },
         }
     }
 
@@ -1172,5 +1397,289 @@ mod tests {
         assert!(!task.await?.success());
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_histogram_buckets_parsing() -> Result<(), anyhow::Error> {
+        // This test uses a mock HTTP server to simulate Prometheus metrics
+        use std::sync::Arc;
+
+        // Create a mock metrics response
+        let mock_metrics = r#"
+                # HELP substrate_block_verification_time Time taken to verify blocks
+                # TYPE substrate_block_verification_time histogram
+                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="0.1"} 10
+                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="0.5"} 25
+                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="1.0"} 35
+                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="2.5"} 40
+                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="+Inf"} 42
+                substrate_block_verification_time_sum{chain="rococo_local_testnet"} 45.5
+                substrate_block_verification_time_count{chain="rococo_local_testnet"} 42
+                # Different chain
+                substrate_block_verification_time_bucket{chain="kusama",le="0.1"} 5
+                substrate_block_verification_time_bucket{chain="kusama",le="0.5"} 15
+                "#;
+
+        // Start a mock HTTP server
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let metrics = Arc::new(mock_metrics.to_string());
+
+        tokio::spawn({
+            let metrics = metrics.clone();
+            async move {
+                loop {
+                    if let Ok((mut socket, _)) = listener.accept().await {
+                        let metrics = metrics.clone();
+                        tokio::spawn(async move {
+                            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                            let mut buffer = [0; 1024];
+                            let _ = socket.read(&mut buffer).await;
+
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                                metrics.len(),
+                                metrics
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                        });
+                    }
+                }
+            }
+        });
+
+        // Create a NetworkNode with the mock prometheus URI
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "test_node",
+            "ws://localhost:9944",
+            &format!("http://127.0.0.1:{}/metrics", addr.port()),
+            "/ip4/127.0.0.1/tcp/30333",
+            NodeSpec::default(),
+            mock_provider,
+        );
+
+        // Get buckets without label filter
+        let buckets = mock_node
+            .get_histogram_buckets("substrate_block_verification_time", None)
+            .await?;
+
+        // Should get the first chain's buckets (rococo_local_testnet)
+        assert_eq!(buckets.get("0.1"), Some(&10));
+        assert_eq!(buckets.get("0.5"), Some(&15)); // 25 - 10
+        assert_eq!(buckets.get("1.0"), Some(&10)); // 35 - 25
+        assert_eq!(buckets.get("2.5"), Some(&5)); // 40 - 35
+        assert_eq!(buckets.get("+Inf"), Some(&2)); // 42 - 40
+
+        // Get buckets with label filter for rococo
+        let mut label_filters = std::collections::HashMap::new();
+        label_filters.insert("chain".to_string(), "rococo_local_testnet".to_string());
+
+        let buckets_filtered = mock_node
+            .get_histogram_buckets("substrate_block_verification_time", Some(label_filters))
+            .await?;
+
+        assert_eq!(buckets_filtered.get("0.1"), Some(&10));
+        assert_eq!(buckets_filtered.get("0.5"), Some(&15));
+
+        // Test 3: Get buckets with _bucket suffix already present
+        let buckets_with_suffix = mock_node
+            .get_histogram_buckets("substrate_block_verification_time_bucket", None)
+            .await?;
+
+        assert_eq!(buckets_with_suffix.get("0.1"), Some(&10));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_histogram_buckets_unordered() -> Result<(), anyhow::Error> {
+        // Test that buckets are correctly sorted even when received out of order
+        use std::sync::Arc;
+
+        let mock_metrics = r#"
+                test_metric_bucket{le="2.5"} 40
+                test_metric_bucket{le="0.1"} 10
+                test_metric_bucket{le="+Inf"} 42
+                test_metric_bucket{le="1.0"} 35
+                test_metric_bucket{le="0.5"} 25
+                "#;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let metrics = Arc::new(mock_metrics.to_string());
+
+        tokio::spawn({
+            let metrics = metrics.clone();
+            async move {
+                loop {
+                    if let Ok((mut socket, _)) = listener.accept().await {
+                        let metrics = metrics.clone();
+                        tokio::spawn(async move {
+                            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                            let mut buffer = [0; 1024];
+                            let _ = socket.read(&mut buffer).await;
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                                metrics.len(),
+                                metrics
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                        });
+                    }
+                }
+            }
+        });
+
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "test_node",
+            "ws://localhost:9944",
+            &format!("http://127.0.0.1:{}/metrics", addr.port()),
+            "/ip4/127.0.0.1/tcp/30333",
+            NodeSpec::default(),
+            mock_provider,
+        );
+
+        let buckets = mock_node.get_histogram_buckets("test_metric", None).await?;
+
+        // Verify deltas are calculated correctly after sorting
+        assert_eq!(buckets.get("0.1"), Some(&10)); // 10 - 0
+        assert_eq!(buckets.get("0.5"), Some(&15)); // 25 - 10
+        assert_eq!(buckets.get("1.0"), Some(&10)); // 35 - 25
+        assert_eq!(buckets.get("2.5"), Some(&5)); // 40 - 35
+        assert_eq!(buckets.get("+Inf"), Some(&2)); // 42 - 40
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_histogram_buckets_complex_labels() -> Result<(), anyhow::Error> {
+        // Test label parsing with commas and special characters in values
+        use std::sync::Arc;
+
+        let mock_metrics = r#"
+                test_metric_bucket{method="GET,POST",path="/api/test",le="0.1"} 5
+                test_metric_bucket{method="GET,POST",path="/api/test",le="0.5"} 15
+                test_metric_bucket{method="GET,POST",path="/api/test",le="+Inf"} 20
+                "#;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let metrics = Arc::new(mock_metrics.to_string());
+
+        tokio::spawn({
+            let metrics = metrics.clone();
+            async move {
+                loop {
+                    if let Ok((mut socket, _)) = listener.accept().await {
+                        let metrics = metrics.clone();
+                        tokio::spawn(async move {
+                            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                            let mut buffer = [0; 1024];
+                            let _ = socket.read(&mut buffer).await;
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                                metrics.len(),
+                                metrics
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                        });
+                    }
+                }
+            }
+        });
+
+        let mock_provider = Arc::new(MockNode::new());
+        let mock_node = NetworkNode::new(
+            "test_node",
+            "ws://localhost:9944",
+            &format!("http://127.0.0.1:{}/metrics", addr.port()),
+            "/ip4/127.0.0.1/tcp/30333",
+            NodeSpec::default(),
+            mock_provider,
+        );
+
+        // Test without filter
+        let buckets = mock_node.get_histogram_buckets("test_metric", None).await?;
+        assert_eq!(buckets.get("0.1"), Some(&5));
+        assert_eq!(buckets.get("0.5"), Some(&10)); // 15 - 5
+        assert_eq!(buckets.get("+Inf"), Some(&5)); // 20 - 15
+
+        // Test with filter containing comma in value
+        let mut label_filters = std::collections::HashMap::new();
+        label_filters.insert("method".to_string(), "GET,POST".to_string());
+
+        let buckets_filtered = mock_node
+            .get_histogram_buckets("test_metric", Some(label_filters))
+            .await?;
+
+        assert_eq!(buckets_filtered.get("0.1"), Some(&5));
+        assert_eq!(buckets_filtered.get("0.5"), Some(&10));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_prometheus_labels() {
+        use crate::network::node::NetworkNode;
+
+        // Simple labels
+        let labels = NetworkNode::parse_prometheus_labels(r#"le="0.1",chain="rococo""#);
+        assert_eq!(labels.get("le"), Some(&"0.1".to_string()));
+        assert_eq!(labels.get("chain"), Some(&"rococo".to_string()));
+
+        // Labels with comma in value
+        let labels = NetworkNode::parse_prometheus_labels(r#"method="GET,POST",path="/test""#);
+        assert_eq!(labels.get("method"), Some(&"GET,POST".to_string()));
+        assert_eq!(labels.get("path"), Some(&"/test".to_string()));
+
+        // Labels with escaped quotes
+        let labels = NetworkNode::parse_prometheus_labels(r#"name="test\"value\"",id="123""#);
+        assert_eq!(labels.get("name"), Some(&"test\"value\"".to_string()));
+        assert_eq!(labels.get("id"), Some(&"123".to_string()));
+
+        // Empty labels
+        let labels = NetworkNode::parse_prometheus_labels("");
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn test_compare_le_values() {
+        use std::cmp::Ordering;
+
+        use crate::network::node::NetworkNode;
+
+        // Numeric comparison
+        assert_eq!(NetworkNode::compare_le_values("0.1", "0.5"), Ordering::Less);
+        assert_eq!(
+            NetworkNode::compare_le_values("1.0", "0.5"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            NetworkNode::compare_le_values("1.0", "1.0"),
+            Ordering::Equal
+        );
+
+        // +Inf handling
+        assert_eq!(
+            NetworkNode::compare_le_values("+Inf", "999"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            NetworkNode::compare_le_values("0.1", "+Inf"),
+            Ordering::Less
+        );
+        assert_eq!(
+            NetworkNode::compare_le_values("+Inf", "+Inf"),
+            Ordering::Equal
+        );
+
+        // Large numbers
+        assert_eq!(NetworkNode::compare_le_values("10", "100"), Ordering::Less);
+        assert_eq!(
+            NetworkNode::compare_le_values("1000", "999"),
+            Ordering::Greater
+        );
     }
 }

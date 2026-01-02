@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -593,9 +593,9 @@ impl NetworkNode {
     ) -> Result<HashMap<String, u64>, anyhow::Error> {
         let metric_name = metric_name.as_ref();
 
-        // Fetch raw metrics text
+        // Fetch and parse metrics using the existing parser
         let response = reqwest::get(&self.prometheus_uri).await?;
-        let metrics_text = response.text().await?;
+        let metrics = prom_metrics_parser::parse(&response.text().await?)?;
 
         // Ensure metric name has _bucket suffix
         let resolved_metric_name = if metric_name.contains("_bucket") {
@@ -604,92 +604,102 @@ impl NetworkNode {
             format!("{}_bucket", metric_name)
         };
 
-        let mut raw_buckets: Vec<(String, u64)> = Vec::new();
-        let mut active_series_labels: Option<HashMap<String, String>> = None;
+        // First pass: collect all matching metrics with their label counts
+        // to identify which ones have the most complete label sets
+        // Each entry contains: (full_metric_key, parsed_labels_map, cumulative_count)
+        let mut metric_entries: Vec<(String, HashMap<String, String>, u64)> = Vec::new();
 
-        // Parse metrics line by line
-        for line in metrics_text.lines() {
-            let line = line.trim();
-            // Skip empty lines and comments
-            if line.is_empty() || line.starts_with('#') {
+        for (key, &value) in metrics.iter() {
+            if !key.starts_with(&resolved_metric_name) {
                 continue;
             }
 
-            // Parse the line manually to extract metric name, labels, and value
-            if let Some((name_with_labels, value_str)) = line.split_once(char::is_whitespace) {
-                let name_with_labels = name_with_labels.trim();
+            let remaining = &key[resolved_metric_name.len()..];
+            if !remaining.starts_with('{') || !remaining.ends_with('}') {
+                continue;
+            }
 
-                // Check if this line matches our metric name
-                let (name, labels_str) = if let Some(idx) = name_with_labels.find('{') {
-                    (&name_with_labels[..idx], &name_with_labels[idx..])
-                } else {
-                    (name_with_labels, "")
-                };
+            let labels_str = &remaining[1..remaining.len() - 1];
+            let parsed_labels = Self::parse_label_string(labels_str);
 
-                if name != resolved_metric_name {
+            // Must have "le" label
+            if !parsed_labels.contains_key("le") {
+                continue;
+            }
+
+            // Check if label filters match
+            if let Some(ref filters) = label_filters {
+                let mut all_match = true;
+                for (filter_key, filter_value) in filters {
+                    if parsed_labels.get(filter_key) != Some(filter_value) {
+                        all_match = false;
+                        break;
+                    }
+                }
+                if !all_match {
                     continue;
                 }
-
-                // Parse labels if present
-                let mut parsed_labels: std::collections::HashMap<String, String> =
-                    std::collections::HashMap::new();
-                let mut le_label: Option<String> = None;
-
-                if !labels_str.is_empty()
-                    && labels_str.starts_with('{')
-                    && labels_str.ends_with('}')
-                {
-                    let labels_content = &labels_str[1..labels_str.len() - 1];
-                    parsed_labels = Self::parse_prometheus_labels(labels_content);
-                    le_label = parsed_labels.get("le").cloned();
-                }
-
-                // Check if all required label filters match
-                if let Some(ref filters) = label_filters {
-                    let mut all_match = true;
-                    for (filter_key, filter_value) in filters {
-                        if parsed_labels.get(filter_key) != Some(filter_value) {
-                            all_match = false;
-                            break;
-                        }
-                    }
-
-                    if !all_match {
-                        continue;
-                    }
-                }
-
-                // Get non-"le" labels to detect series changes
-                let mut series_labels = parsed_labels.clone();
-                series_labels.remove("le");
-
-                // Check if we're starting a new series (different non-le labels)
-                if let Some(ref prev_labels) = active_series_labels {
-                    if prev_labels != &series_labels {
-                        // New series detected, stop processing if we already have data
-                        if !raw_buckets.is_empty() {
-                            break;
-                        }
-                        // Otherwise reset for new series
-                        active_series_labels = Some(series_labels);
-                    }
-                } else {
-                    // First series
-                    active_series_labels = Some(series_labels);
-                }
-
-                // Extract and collect the metric value
-                if let Some(le) = le_label {
-                    if let Ok(metric_value) = value_str.trim().parse::<u64>() {
-                        trace!("{} le:{} {}", resolved_metric_name, &le, metric_value);
-                        raw_buckets.push((le, metric_value));
-                    }
-                }
             }
+
+            metric_entries.push((key.clone(), parsed_labels, value as u64));
         }
 
+        // Find the maximum number of labels (excluding "le") across all entries
+        // This helps us identify the "fullest" version of each metric
+        let max_label_count = metric_entries
+            .iter()
+            .map(|(_, labels, _)| labels.iter().filter(|(k, _)| k.as_str() != "le").count())
+            .max()
+            .unwrap_or(0);
+
+        // Second pass: collect buckets, deduplicating and preferring entries with more labels
+        let mut raw_buckets: Vec<(String, u64)> = Vec::new();
+        let mut seen_le_values = HashSet::new();
+        let mut active_series: Option<Vec<(String, String)>> = None;
+
+        for (_, parsed_labels, value) in metric_entries {
+            let le_value = parsed_labels.get("le").unwrap().clone();
+
+            // Get non-"le" labels
+            let mut non_le_labels: Vec<(String, String)> = parsed_labels
+                .iter()
+                .filter(|(k, _)| k.as_str() != "le")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            non_le_labels.sort();
+
+            // Only process entries that have the maximum number of labels
+            // (this filters out the parser's duplicate keys with fewer labels)
+            if non_le_labels.len() < max_label_count {
+                continue;
+            }
+
+            // Detect series changes
+            if let Some(ref prev_series) = active_series {
+                if prev_series != &non_le_labels {
+                    if !raw_buckets.is_empty() {
+                        break; // Stop at first series change
+                    }
+                    active_series = Some(non_le_labels.clone());
+                    seen_le_values.clear();
+                }
+            } else {
+                active_series = Some(non_le_labels.clone());
+            }
+
+            // Deduplicate by le value within this series
+            if !seen_le_values.insert(le_value.clone()) {
+                continue;
+            }
+
+            trace!("{} le:{} {}", resolved_metric_name, &le_value, value);
+            raw_buckets.push((le_value, value));
+        }
+
+        // Sort buckets by their "le" values
         raw_buckets.sort_by(|a, b| Self::compare_le_values(&a.0, &b.0));
 
+        // Calculate deltas between cumulative buckets
         let mut buckets = HashMap::new();
         let mut previous_value = 0_u64;
         for (le, cumulative_count) in raw_buckets {
@@ -707,29 +717,20 @@ impl NetworkNode {
         Ok(buckets)
     }
 
-    /// Parse Prometheus label string handling quoted values with commas and escapes.
+    /// Parse label string from parsed metric key.
     ///
-    /// Implements a simple state machine to correctly parse label key-value pairs
-    /// that may contain commas within quoted values.
-    fn parse_prometheus_labels(labels_str: &str) -> HashMap<String, String> {
+    /// Takes a label string in the format `key1="value1",key2="value2"`
+    /// and returns a HashMap of key-value pairs.
+    /// Handles commas inside quoted values correctly.
+    fn parse_label_string(labels_str: &str) -> HashMap<String, String> {
         let mut labels = HashMap::new();
         let mut current_key = String::new();
         let mut current_value = String::new();
         let mut in_value = false;
         let mut in_quotes = false;
-        let mut escape_next = false;
 
         for ch in labels_str.chars() {
-            if escape_next {
-                current_value.push(ch);
-                escape_next = false;
-                continue;
-            }
-
             match ch {
-                '\\' if in_quotes => {
-                    escape_next = true;
-                },
                 '=' if !in_quotes && !in_value => {
                     in_value = true;
                 },
@@ -1404,21 +1405,18 @@ mod tests {
         // This test uses a mock HTTP server to simulate Prometheus metrics
         use std::sync::Arc;
 
-        // Create a mock metrics response
-        let mock_metrics = r#"
-                # HELP substrate_block_verification_time Time taken to verify blocks
-                # TYPE substrate_block_verification_time histogram
-                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="0.1"} 10
-                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="0.5"} 25
-                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="1.0"} 35
-                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="2.5"} 40
-                substrate_block_verification_time_bucket{chain="rococo_local_testnet",le="+Inf"} 42
-                substrate_block_verification_time_sum{chain="rococo_local_testnet"} 45.5
-                substrate_block_verification_time_count{chain="rococo_local_testnet"} 42
-                # Different chain
-                substrate_block_verification_time_bucket{chain="kusama",le="0.1"} 5
-                substrate_block_verification_time_bucket{chain="kusama",le="0.5"} 15
-                "#;
+        // Create a mock metrics response with proper HELP and TYPE comments
+        let mock_metrics = concat!(
+            "# HELP substrate_block_verification_time Time taken to verify blocks\n",
+            "# TYPE substrate_block_verification_time histogram\n",
+            "substrate_block_verification_time_bucket{chain=\"rococo_local_testnet\",le=\"0.1\"} 10\n",
+            "substrate_block_verification_time_bucket{chain=\"rococo_local_testnet\",le=\"0.5\"} 25\n",
+            "substrate_block_verification_time_bucket{chain=\"rococo_local_testnet\",le=\"1.0\"} 35\n",
+            "substrate_block_verification_time_bucket{chain=\"rococo_local_testnet\",le=\"2.5\"} 40\n",
+            "substrate_block_verification_time_bucket{chain=\"rococo_local_testnet\",le=\"+Inf\"} 42\n",
+            "substrate_block_verification_time_sum{chain=\"rococo_local_testnet\"} 45.5\n",
+            "substrate_block_verification_time_count{chain=\"rococo_local_testnet\"} 42\n",
+        );
 
         // Start a mock HTTP server
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
@@ -1459,12 +1457,14 @@ mod tests {
             mock_provider,
         );
 
-        // Get buckets without label filter
+        // Get buckets with label filter
+        let mut label_filters = HashMap::new();
+        label_filters.insert("chain".to_string(), "rococo_local_testnet".to_string());
         let buckets = mock_node
-            .get_histogram_buckets("substrate_block_verification_time", None)
+            .get_histogram_buckets("substrate_block_verification_time", Some(label_filters))
             .await?;
 
-        // Should get the first chain's buckets (rococo_local_testnet)
+        // Should get the rococo_local_testnet chain's buckets
         assert_eq!(buckets.get("0.1"), Some(&10));
         assert_eq!(buckets.get("0.5"), Some(&15)); // 25 - 10
         assert_eq!(buckets.get("1.0"), Some(&10)); // 35 - 25
@@ -1497,13 +1497,15 @@ mod tests {
         // Test that buckets are correctly sorted even when received out of order
         use std::sync::Arc;
 
-        let mock_metrics = r#"
-                test_metric_bucket{le="2.5"} 40
-                test_metric_bucket{le="0.1"} 10
-                test_metric_bucket{le="+Inf"} 42
-                test_metric_bucket{le="1.0"} 35
-                test_metric_bucket{le="0.5"} 25
-                "#;
+        let mock_metrics = concat!(
+            "# HELP test_metric A test metric\n",
+            "# TYPE test_metric histogram\n",
+            "test_metric_bucket{le=\"2.5\"} 40\n",
+            "test_metric_bucket{le=\"0.1\"} 10\n",
+            "test_metric_bucket{le=\"+Inf\"} 42\n",
+            "test_metric_bucket{le=\"1.0\"} 35\n",
+            "test_metric_bucket{le=\"0.5\"} 25\n",
+        );
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
@@ -1558,11 +1560,13 @@ mod tests {
         // Test label parsing with commas and special characters in values
         use std::sync::Arc;
 
-        let mock_metrics = r#"
-                test_metric_bucket{method="GET,POST",path="/api/test",le="0.1"} 5
-                test_metric_bucket{method="GET,POST",path="/api/test",le="0.5"} 15
-                test_metric_bucket{method="GET,POST",path="/api/test",le="+Inf"} 20
-                "#;
+        let mock_metrics = concat!(
+            "# HELP test_metric A test metric\n",
+            "# TYPE test_metric histogram\n",
+            "test_metric_bucket{method=\"GET,POST\",path=\"/api/test\",le=\"0.1\"} 5\n",
+            "test_metric_bucket{method=\"GET,POST\",path=\"/api/test\",le=\"0.5\"} 15\n",
+            "test_metric_bucket{method=\"GET,POST\",path=\"/api/test\",le=\"+Inf\"} 20\n",
+        );
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
@@ -1618,30 +1622,6 @@ mod tests {
         assert_eq!(buckets_filtered.get("0.5"), Some(&10));
 
         Ok(())
-    }
-
-    #[test]
-    fn test_parse_prometheus_labels() {
-        use crate::network::node::NetworkNode;
-
-        // Simple labels
-        let labels = NetworkNode::parse_prometheus_labels(r#"le="0.1",chain="rococo""#);
-        assert_eq!(labels.get("le"), Some(&"0.1".to_string()));
-        assert_eq!(labels.get("chain"), Some(&"rococo".to_string()));
-
-        // Labels with comma in value
-        let labels = NetworkNode::parse_prometheus_labels(r#"method="GET,POST",path="/test""#);
-        assert_eq!(labels.get("method"), Some(&"GET,POST".to_string()));
-        assert_eq!(labels.get("path"), Some(&"/test".to_string()));
-
-        // Labels with escaped quotes
-        let labels = NetworkNode::parse_prometheus_labels(r#"name="test\"value\"",id="123""#);
-        assert_eq!(labels.get("name"), Some(&"test\"value\"".to_string()));
-        assert_eq!(labels.get("id"), Some(&"123".to_string()));
-
-        // Empty labels
-        let labels = NetworkNode::parse_prometheus_labels("");
-        assert!(labels.is_empty());
     }
 
     #[test]

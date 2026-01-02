@@ -114,6 +114,14 @@ impl LogLineCountOptions {
     pub fn no_occurences_within_timeout(timeout: Duration) -> Self {
         Self::new(|n| n == 0, timeout, true)
     }
+
+    pub fn at_least_once(timeout: Duration) -> Self {
+        Self::new(|count| count >= 1, timeout, false)
+    }
+
+    pub fn exactly_once(timeout: Duration) -> Self {
+        Self::new(|count| count == 1, timeout, false)
+    }
 }
 
 // #[derive(Clone, Debug)]

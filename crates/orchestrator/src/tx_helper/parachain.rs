@@ -1,11 +1,11 @@
 use anyhow::anyhow;
+use subxt::ext::codec::Encode;
 use subxt::{dynamic::Value, tx::DynamicPayload, OnlineClient, PolkadotConfig};
 
 /// Fetches the genesis header from a parachain node
 pub async fn fetch_genesis_header(
     client: &OnlineClient<PolkadotConfig>,
 ) -> Result<Vec<u8>, anyhow::Error> {
-    use subxt::ext::codec::Encode;
     let genesis_hash = client.genesis_hash();
     let header = client
         .backend()
@@ -65,8 +65,8 @@ pub fn create_register_validator_call(stash_account: Value) -> DynamicPayload {
 
 /// Creates a sudo batch call to register a parachain with trusted validation code
 pub fn create_register_para_call(
-    genesis_header: Vec<u8>,
-    validation_code: Vec<u8>,
+    genesis_header: &[u8],
+    validation_code: &[u8],
     para_id: u32,
     registrar_account: Value,
 ) -> DynamicPayload {

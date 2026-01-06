@@ -13,7 +13,7 @@ use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{time::sleep, try_join};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use super::{
     client::{ContainerRunOptions, DockerClient},
@@ -271,46 +271,77 @@ where
         Ok(())
     }
 
+    fn build_db_snapshot_command(download_url: Option<&str>) -> RunCommandOptions {
+        let mut args = vec![
+            "-p".to_string(),
+            "/data/".to_string(),
+            "&&".to_string(),
+            "mkdir".to_string(),
+            "-p".to_string(),
+            "/relay-data/".to_string(),
+            "&&".to_string(),
+        ];
+
+        if let Some(url) = download_url {
+            args.extend([
+                "/helpers/curl".to_string(),
+                url.to_string(),
+                "--output".to_string(),
+                "/data/db.tgz".to_string(),
+                "&&".to_string(),
+            ]);
+        }
+
+        args.extend([
+            "cd".to_string(),
+            "/".to_string(),
+            "&&".to_string(),
+            "tar".to_string(),
+            "--skip-old-files".to_string(),
+            "-xzvf".to_string(),
+            "/data/db.tgz".to_string(),
+        ]);
+
+        RunCommandOptions::new("mkdir").args(args)
+    }
+
     async fn initialize_db_snapshot(
         &self,
-        _db_snapshot: &AssetLocation,
+        db_snapshot: &AssetLocation,
     ) -> Result<(), ProviderError> {
-        todo!()
-        // trace!("snap: {db_snapshot}");
-        // let url_of_snap = match db_snapshot {
-        //     AssetLocation::Url(location) => location.clone(),
-        //     AssetLocation::FilePath(filepath) => self.upload_to_fileserver(filepath).await?,
-        // };
+        trace!(
+            "initializing docker db snapshot for node {}: {db_snapshot}",
+            self.name
+        );
 
-        // // we need to get the snapshot from a public access
-        // // and extract to /data
-        // let opts = RunCommandOptions::new("mkdir").args([
-        //     "-p",
-        //     "/data/",
-        //     "&&",
-        //     "mkdir",
-        //     "-p",
-        //     "/relay-data/",
-        //     "&&",
-        //     // Use our version of curl
-        //     "/cfg/curl",
-        //     url_of_snap.as_ref(),
-        //     "--output",
-        //     "/data/db.tgz",
-        //     "&&",
-        //     "cd",
-        //     "/",
-        //     "&&",
-        //     "tar",
-        //     "--skip-old-files",
-        //     "-xzvf",
-        //     "/data/db.tgz",
-        // ]);
+        match db_snapshot {
+            AssetLocation::Url(url) => {
+                let url_of_snap = url.to_string();
+                trace!(
+                    "downloading snapshot for node {} from {}",
+                    self.name,
+                    url_of_snap
+                );
 
-        // trace!("cmd opts: {:#?}", opts);
-        // let _ = self.run_command(opts).await?;
+                let opts = Self::build_db_snapshot_command(Some(&url_of_snap));
+                let _ = self.run_command(opts).await?;
+            },
+            AssetLocation::FilePath(path) => {
+                trace!(
+                    "uploading local snapshot {} into container {}",
+                    path.to_string_lossy(),
+                    self.container_name
+                );
 
-        // Ok(())
+                self.send_file(path.as_path(), Path::new("/data/db.tgz"), "0644")
+                    .await?;
+
+                let opts = Self::build_db_snapshot_command(None);
+                let _ = self.run_command(opts).await?;
+            },
+        }
+
+        Ok(())
     }
 
     async fn initialize_startup_files(

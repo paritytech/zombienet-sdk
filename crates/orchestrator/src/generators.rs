@@ -8,6 +8,7 @@ mod bootnode_addr;
 mod command;
 mod identity;
 mod keystore;
+mod keystore_key_types;
 mod port;
 
 pub use bootnode_addr::generate as generate_node_bootnode_addr;

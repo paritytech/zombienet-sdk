@@ -242,6 +242,7 @@ impl NetworkSpec {
         )
     }
 
+    #[allow(clippy::redundant_iter_cloned)]
     async fn retrieve_all_nodes_available_args_output(
         ns: Arc<dyn ProviderNamespace + Send + Sync>,
         image_command_to_nodes_mapping: &HashMap<(Option<String>, String), Vec<&mut NodeSpec>>,

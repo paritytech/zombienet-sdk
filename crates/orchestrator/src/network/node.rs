@@ -615,9 +615,6 @@ impl NetworkNode {
             }
 
             let remaining = &key[resolved_metric_name.len()..];
-            if !remaining.starts_with('{') || !remaining.ends_with('}') {
-                continue;
-            }
 
             let labels_str = &remaining[1..remaining.len() - 1];
             let parsed_labels = Self::parse_label_string(labels_str);

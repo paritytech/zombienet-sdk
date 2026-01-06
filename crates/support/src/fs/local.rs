@@ -380,7 +380,7 @@ mod tests {
         let test_dir = setup();
         let fs = LocalFileSystem;
         let path = format!("{test_dir}/somemissingfile");
-        // intentionnally don't create file
+        // intentionally don't create file
 
         let err = fs.set_mode(&path, 0o400).await.unwrap_err();
 

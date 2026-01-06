@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     println!("🚀🚀🚀🚀 network deployed");
-    // give some time to node's bootstraping
+    // give some time to node's bootstrapping
     tokio::time::sleep(Duration::from_secs(12)).await;
 
     // // Add a new node to the running network.

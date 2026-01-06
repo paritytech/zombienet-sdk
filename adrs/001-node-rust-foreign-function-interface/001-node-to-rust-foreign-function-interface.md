@@ -43,7 +43,7 @@ Many mechanisms exists for this purpose like Wasm or N(ode)-API but some may or 
 
 To demonstrate and learn which options fit the best for our use case, we will create a small test program which will have the following functionalities:
 
-- Has a function taking an arbitratry object and a callback as parameters in the Typescript code, calling the callback with the function result on Rust side.
+- Has a function taking an arbitrary object and a callback as parameters in the Typescript code, calling the callback with the function result on Rust side.
 - Has a function taking an arbitrary object as parameter and a returning a promise in Typescript, signaling an asynchronous operation on Rust side.
 - Make an HTTP request asynchronously in the Rust code, using a dependency using the standard library.
 
@@ -107,6 +107,6 @@ The prototype assume versions of `rustc` and `cargo` to be `1.69.0`, use of `sta
 
 ## Decision outcome
 
-- ### **Napi-rs** for crates dependant on async, filesystem or networking: *support*, *orchestrator*, *test-runner*, *providers* from [schema](https://github.com/paritytech/zombienet-sdk/issues/22)
+- ### **Napi-rs** for crates dependent on async, filesystem or networking: *support*, *orchestrator*, *test-runner*, *providers* from [schema](https://github.com/paritytech/zombienet-sdk/issues/22)
 
 - ### **Wasm-pack** for the rest of the crates: *configuration* from [schema](https://github.com/paritytech/zombienet-sdk/issues/22)

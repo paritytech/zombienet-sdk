@@ -781,7 +781,7 @@ impl<T: FileSystem> Network<T> {
     /// * `timeout_secs` - The number of seconds to wait.
     ///
     /// # Returns
-    /// * `Ok()` if the node is up before timeout occured.
+    /// * `Ok()` if the node is up before timeout occurred.
     /// * `Err(e)` if timeout or other error occurred while waiting.
     pub async fn wait_until_is_up(&self, timeout_secs: u64) -> Result<(), anyhow::Error> {
         let handles = self

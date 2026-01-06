@@ -263,7 +263,7 @@ where
                 &self.container_name,
                 ["chmod", "777", "/cfg", "/data", "/relay-data"].into(),
                 None,
-                Some("root"),
+                Some("root".into()),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -501,9 +501,30 @@ where
 
     async fn run_script(
         &self,
-        _options: RunScriptOptions,
+        options: RunScriptOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        todo!()
+        let file_name = options
+            .local_script_path
+            .file_name()
+            .expect(&format!(
+                "file name should be present at this point {THIS_IS_A_BUG}"
+            ))
+            .to_string_lossy();
+
+        let remote_script_path = self.scripts_dir.join(Path::new(file_name.as_ref()));
+
+        // Upload the script to the container and make it executable
+        self.send_file(&options.local_script_path, &remote_script_path, "0755")
+            .await?;
+
+        // Run the script with provided arguments and environment
+        self.run_command(RunCommandOptions {
+            program: remote_script_path.to_string_lossy().to_string(),
+            args: options.args,
+            env: options.env,
+        })
+        .await
+        .map_err(|err| ProviderError::RunScriptError(self.name.to_string(), err.into()))
     }
 
     async fn send_file(
@@ -524,8 +545,7 @@ where
             mode
         );
 
-        let _ = self
-            .docker_client
+        self.docker_client
             .container_cp(&self.container_name, local_file_path, remote_file_path)
             .await
             .map_err(|err| {
@@ -534,10 +554,9 @@ where
                     self.name.clone(),
                     err.into(),
                 )
-            });
+            })?;
 
-        let _ = self
-            .docker_client
+        self.docker_client
             .container_exec(
                 &self.container_name,
                 vec!["chmod", mode, &remote_file_path.to_string_lossy()],
@@ -550,6 +569,13 @@ where
                     self.name.clone(),
                     local_file_path.to_string_lossy().to_string(),
                     err.into(),
+                )
+            })?
+            .map_err(|err| {
+                ProviderError::SendFile(
+                    self.name.clone(),
+                    local_file_path.to_string_lossy().to_string(),
+                    anyhow!("chmod failed: status {}: {}", err.0, err.1),
                 )
             })?;
 

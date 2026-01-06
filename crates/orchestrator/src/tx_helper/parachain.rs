@@ -1,6 +1,5 @@
 use anyhow::anyhow;
-use subxt::ext::codec::Encode;
-use subxt::{dynamic::Value, tx::DynamicPayload, OnlineClient, PolkadotConfig};
+use subxt::{dynamic::Value, ext::codec::Encode, tx::DynamicPayload, OnlineClient, PolkadotConfig};
 
 /// Fetches the genesis header from a parachain node
 pub async fn fetch_genesis_header(
@@ -70,9 +69,9 @@ pub fn create_register_para_call(
     para_id: u32,
     registrar_account: Value,
 ) -> DynamicPayload {
-    let genesis_head_value = Value::from_bytes(&genesis_header);
-    let validation_code_value = Value::from_bytes(&validation_code);
-    let validation_code_for_trusted = Value::from_bytes(&validation_code);
+    let genesis_head_value = Value::from_bytes(genesis_header);
+    let validation_code_value = Value::from_bytes(validation_code);
+    let validation_code_for_trusted = Value::from_bytes(validation_code);
 
     let add_trusted_code_call = Value::named_composite([(
         "Paras",

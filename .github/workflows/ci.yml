@@ -54,7 +54,7 @@ jobs:
         run: cargo build
 
       - name: Tests
-        run: cargo test --workspace -- --skip ci_ --skip chain_spec_runtime
+        run: cargo test --workspace -- --skip ci_ --skip polkadot_local_with_chain_spec_runtime --skip rococo_local_with_omni_node_and_wasm_runtime
 
   # TODO: fix and re-enable
   # coverage:

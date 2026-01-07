@@ -297,7 +297,7 @@ impl NetworkNode {
         self.inner
             .run_script(options)
             .await
-            .map_err(|e| anyhow!("Failed to run script: {}", e))
+            .map_err(|e| anyhow!("Failed to run script: {e}"))
     }
 
     // Metrics assertions

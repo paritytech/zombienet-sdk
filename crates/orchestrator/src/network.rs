@@ -3,7 +3,14 @@ pub mod node;
 pub mod parachain;
 pub mod relaychain;
 
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::PathBuf,
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use configuration::{
     para_states::{Initial, Running},
@@ -27,6 +34,7 @@ use crate::{
         types::{ChainDefaultContext, RegisterParachainOptions},
     },
     spawner::{self, SpawnNodeCtx},
+    utils::write_zombie_json,
     ScopedFilesystem, ZombieRole,
 };
 
@@ -43,6 +51,8 @@ pub struct Network<T: FileSystem> {
     nodes_by_name: HashMap<String, NetworkNode>,
     #[serde(skip)]
     nodes_to_watch: Arc<RwLock<Vec<NetworkNode>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_time_ts: Option<String>,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -83,6 +93,7 @@ impl<T: FileSystem> Network<T> {
             parachains: Default::default(),
             nodes_by_name: Default::default(),
             nodes_to_watch: Default::default(),
+            start_time_ts: Default::default(),
         }
     }
 
@@ -213,6 +224,9 @@ impl<T: FileSystem> Network<T> {
 
         // Add node to relaychain data
         self.add_running_node(node.clone(), None).await;
+
+        // Dump zombie.json
+        self.write_zombie_json().await?;
 
         Ok(())
     }
@@ -353,6 +367,9 @@ impl<T: FileSystem> Network<T> {
 
         parachain.collators.push(node.clone());
         self.add_running_node(node, None).await;
+
+        // Dump zombie.json
+        self.write_zombie_json().await?;
 
         Ok(())
     }
@@ -583,6 +600,9 @@ impl<T: FileSystem> Network<T> {
             self.add_running_node(node, Some(running_para_id)).await;
         }
 
+        // Dump zombie.json
+        self.write_zombie_json().await?;
+
         Ok(())
     }
 
@@ -721,6 +741,15 @@ impl<T: FileSystem> Network<T> {
         self.parachains.entry(para.para_id).or_default().push(para);
     }
 
+    pub(crate) async fn write_zombie_json(&self) -> Result<(), anyhow::Error> {
+        let base_dir = self.ns.base_dir().to_string_lossy();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+        let ns_name = self.ns.name();
+
+        write_zombie_json(serde_json::to_value(self)?, scoped_fs, ns_name).await?;
+        Ok(())
+    }
+
     pub fn name(&self) -> &str {
         self.ns.name()
     }
@@ -838,5 +867,14 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn insert_node(&mut self, node: NetworkNode) {
         self.nodes_by_name.insert(node.name.clone(), node);
+    }
+
+    pub(crate) fn set_start_time_ts(&mut self, start_time: SystemTime) {
+        if let Ok(start_time_ts) = start_time.duration_since(SystemTime::UNIX_EPOCH) {
+            self.start_time_ts = Some(start_time_ts.as_millis().to_string());
+        } else {
+            // Just warn, do not propagate the err (this should not happens)
+            warn!("⚠️ Error getting start_time timestamp");
+        }
     }
 }

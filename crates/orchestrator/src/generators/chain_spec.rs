@@ -2144,7 +2144,7 @@ mod tests {
             .pointer("/genesis/runtimeGenesis/patch/balances/balances")
             .unwrap();
         let balances_map = generate_balance_map(balances);
-        println!("balance {:?}", balances_map);
+        println!("balance {balances_map:?}");
 
         let nodes: Vec<NodeSpec> = vec![];
         let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
@@ -2159,7 +2159,7 @@ mod tests {
             "/genesis/runtimeGenesis/patch",
             &spec_plain,
         );
-        println!("to add : {:?}", balances_to_add_from_assets);
+        println!("to add : {balances_to_add_from_assets:?}");
         add_balances(
             "/genesis/runtimeGenesis/patch",
             &mut spec_plain,
@@ -2171,7 +2171,7 @@ mod tests {
             .unwrap();
 
         let new_balances_map = generate_balance_map(new_balances);
-        println!("balance {:?}", new_balances_map);
+        println!("balance {new_balances_map:?}");
 
         assert_eq!(new_balances_map.len(), balances_map.len() + 1);
     }

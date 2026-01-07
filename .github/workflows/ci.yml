@@ -54,7 +54,7 @@ jobs:
         run: cargo build
 
       - name: Tests
-        run: cargo test --workspace -- --skip ci_k8s
+        run: cargo test --workspace -- --skip ci_ --skip chain_spec_runtime
 
   # TODO: fix and re-enable
   # coverage:

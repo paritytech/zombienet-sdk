@@ -94,12 +94,23 @@ impl RelaychainSpec {
 
         let chain_spec = ChainSpec::new(config.chain().as_str(), Context::Relay)
             .set_chain_name(config.chain().as_str())
-            .command(tmpl.as_str(), config.chain_spec_command_is_local())
+            .command(
+                tmpl.as_str(),
+                config.chain_spec_command_is_local(),
+                config.chain_spec_command_output_path(),
+            )
             .image(main_image.clone());
 
         // Add asset location if present
         let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
             chain_spec.asset_location(chain_spec_path.clone())
+        } else {
+            chain_spec
+        };
+
+        // add chain-spec runtime  if present
+        let chain_spec = if let Some(chain_spec_runtime) = config.chain_spec_runtime() {
+            chain_spec.runtime(chain_spec_runtime.clone())
         } else {
             chain_spec
         };
@@ -124,7 +135,7 @@ impl RelaychainSpec {
         let mut names = HashSet::new();
         let (nodes, mut errs) = nodes
             .iter()
-            .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false))
+            .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false, false))
             .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
                 match result {
                     Ok(mut node) => {

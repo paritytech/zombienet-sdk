@@ -1,4 +1,4 @@
-use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, error::Error, fmt::Display, marker::PhantomData, path::PathBuf, rc::Rc};
 
 use multiaddr::Multiaddr;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -6,8 +6,8 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use super::{
     errors::FieldError,
     helpers::{
-        ensure_port_unique, ensure_value_is_not_empty, generate_unique_node_name, merge_errors,
-        merge_errors_vecs,
+        ensure_port_unique, ensure_value_is_not_empty, generate_unique_node_name,
+        generate_unique_node_name_from_names, merge_errors, merge_errors_vecs,
     },
     macros::states,
     resources::ResourcesBuilder,
@@ -91,9 +91,21 @@ pub struct NodeConfig {
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
     pub(crate) db_snapshot: Option<AssetLocation>,
+    /// Optional override for the automatically generated EVM (eth) session key.
+    /// When set, override the auto-generated key so the seed will not be part of the resulting zombie.json
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    override_eth_key: Option<String>,
     #[serde(default)]
     // used to skip serialization of fields with defaults to avoid duplication
     pub(crate) chain_context: ChainDefaultContext,
+    pub(crate) node_log_path: Option<PathBuf>,
+    // optional node keystore path override
+    keystore_path: Option<PathBuf>,
+    /// Keystore key types to generate.
+    /// Supports short form (e.g., "audi") using predefined schemas,
+    /// or long form (e.g., "audi_sr") with explicit schema (sr, ed, ec).
+    #[serde(default)]
+    keystore_key_types: Vec<String>,
 }
 
 impl Serialize for NodeConfig {
@@ -101,7 +113,7 @@ impl Serialize for NodeConfig {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("NodeConfig", 18)?;
+        let mut state = serializer.serialize_struct("NodeConfig", 19)?;
         state.serialize_field("name", &self.name)?;
 
         if self.image == self.chain_context.default_image {
@@ -156,11 +168,30 @@ impl Serialize for NodeConfig {
         state.serialize_field("prometheus_port", &self.prometheus_port)?;
         state.serialize_field("p2p_port", &self.p2p_port)?;
         state.serialize_field("p2p_cert_hash", &self.p2p_cert_hash)?;
+        state.serialize_field("override_eth_key", &self.override_eth_key)?;
 
         if self.db_snapshot == self.chain_context.default_db_snapshot {
             state.skip_field("db_snapshot")?;
         } else {
             state.serialize_field("db_snapshot", &self.db_snapshot)?;
+        }
+
+        if self.node_log_path.is_none() {
+            state.skip_field("node_log_path")?;
+        } else {
+            state.serialize_field("node_log_path", &self.node_log_path)?;
+        }
+
+        if self.keystore_path.is_none() {
+            state.skip_field("keystore_path")?;
+        } else {
+            state.serialize_field("keystore_path", &self.keystore_path)?;
+        }
+
+        if self.keystore_key_types.is_empty() {
+            state.skip_field("keystore_key_types")?;
+        } else {
+            state.serialize_field("keystore_key_types", &self.keystore_key_types)?;
         }
 
         state.skip_field("chain_context")?;
@@ -178,10 +209,29 @@ pub struct GroupNodeConfig {
 
 impl GroupNodeConfig {
     /// Expands the group into individual node configs.
-    /// Each node will have the same base configuration.
+    /// Each node will have the same base configuration, but with unique names and log paths.
     pub fn expand_group_configs(&self) -> Vec<NodeConfig> {
-        std::iter::repeat(self.base_config.clone())
-            .take(self.count)
+        let mut used_names = std::collections::HashSet::new();
+
+        (0..self.count)
+            .map(|_index| {
+                let mut node = self.base_config.clone();
+
+                let unique_name = generate_unique_node_name_from_names(node.name, &mut used_names);
+                node.name = unique_name;
+
+                // If base config has a log path, generate unique log path for each node
+                if let Some(ref base_log_path) = node.node_log_path {
+                    let unique_log_path = if let Some(parent) = base_log_path.parent() {
+                        parent.join(format!("{}.log", node.name))
+                    } else {
+                        PathBuf::from(format!("{}.log", node.name))
+                    };
+                    node.node_log_path = Some(unique_log_path);
+                }
+
+                node
+            })
             .collect()
     }
 }
@@ -293,6 +343,27 @@ impl NodeConfig {
     pub fn db_snapshot(&self) -> Option<&AssetLocation> {
         self.db_snapshot.as_ref()
     }
+
+    /// Node log path
+    pub fn node_log_path(&self) -> Option<&PathBuf> {
+        self.node_log_path.as_ref()
+    }
+
+    /// Keystore path
+    pub fn keystore_path(&self) -> Option<&PathBuf> {
+        self.keystore_path.as_ref()
+    }
+
+    /// Override EVM session key to use for the node
+    pub fn override_eth_key(&self) -> Option<&str> {
+        self.override_eth_key.as_deref()
+    }
+
+    /// Keystore key types to generate.
+    /// Returns the list of key type specifications (short form like "audi" or long form like "audi_sr").
+    pub fn keystore_key_types(&self) -> Vec<&str> {
+        self.keystore_key_types.iter().map(String::as_str).collect()
+    }
 }
 
 /// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
@@ -325,7 +396,11 @@ impl Default for NodeConfigBuilder<Initial> {
                 p2p_port: None,
                 p2p_cert_hash: None,
                 db_snapshot: None,
+                override_eth_key: None,
                 chain_context: Default::default(),
+                node_log_path: None,
+                keystore_path: None,
+                keystore_key_types: vec![],
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -513,6 +588,18 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Override the EVM session key to use for the node
+    pub fn with_override_eth_key(self, session_key: impl Into<String>) -> Self {
+        Self::transition(
+            NodeConfig {
+                override_eth_key: Some(session_key.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the node initial balance.
     pub fn with_initial_balance(self, initial_balance: u128) -> Self {
         Self::transition(
@@ -537,7 +624,10 @@ impl NodeConfigBuilder<Buildable> {
     }
 
     /// Set the bootnodes addresses that the node will try to connect to. Override the default.
-    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    ///
+    /// Note: Bootnode address replacements are NOT supported here.
+    /// Only arguments (`args`) support dynamic replacements. Bootnode addresses must be a valid address.
+    pub fn with_raw_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
@@ -690,6 +780,60 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Set the node log path that will be used to launch the node.
+    pub fn with_log_path(self, log_path: impl Into<PathBuf>) -> Self {
+        Self::transition(
+            NodeConfig {
+                node_log_path: Some(log_path.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the keystore path override.
+    pub fn with_keystore_path(self, keystore_path: impl Into<PathBuf>) -> Self {
+        Self::transition(
+            NodeConfig {
+                keystore_path: Some(keystore_path.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the keystore key types to generate.
+    ///
+    /// Each key type can be specified in short form (e.g., "audi") using predefined schemas
+    /// (defaults to `sr` if no predefined schema exists for the key type),
+    /// or in long form (e.g., "audi_sr") with an explicit schema (sr, ed, ec).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zombienet_configuration::shared::{node::NodeConfigBuilder, types::ChainDefaultContext};
+    ///
+    /// let config = NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
+    ///     .with_name("node")
+    ///     .with_keystore_key_types(vec!["audi", "gran", "cust_sr"])
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// assert_eq!(config.keystore_key_types(), &["audi", "gran", "cust_sr"]);
+    /// ```
+    pub fn with_keystore_key_types(self, key_types: Vec<impl Into<String>>) -> Self {
+        Self::transition(
+            NodeConfig {
+                keystore_key_types: key_types.into_iter().map(|k| k.into()).collect(),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Seals the builder and returns a [`NodeConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NodeConfig, (String, Vec<anyhow::Error>)> {
         if !self.errors.is_empty() {
@@ -812,9 +956,10 @@ mod tests {
                 .validator(true)
                 .invulnerable(true)
                 .bootnode(true)
+                .with_override_eth_key("0x0123456789abcdef0123456789abcdef01234567")
                 .with_initial_balance(100_000_042)
                 .with_env(vec![("VAR1", "VALUE1"), ("VAR2", "VALUE2")])
-                .with_bootnodes_addresses(vec![
+                .with_raw_bootnodes_addresses(vec![
                     "/ip4/10.41.122.55/tcp/45421",
                     "/ip4/51.144.222.10/tcp/2333",
                 ])
@@ -833,6 +978,7 @@ mod tests {
                     "ec8d6467180a4b72a52b24c53aa1e53b76c05602fa96f5d0961bf720edda267f",
                 )
                 .with_db_snapshot("/tmp/mysnapshot")
+                .with_keystore_path("/tmp/mykeystore")
                 .build()
                 .unwrap();
 
@@ -844,6 +990,10 @@ mod tests {
         assert!(node_config.is_validator());
         assert!(node_config.is_invulnerable());
         assert!(node_config.is_bootnode());
+        assert_eq!(
+            node_config.override_eth_key(),
+            Some("0x0123456789abcdef0123456789abcdef01234567")
+        );
         assert_eq!(node_config.initial_balance(), 100_000_042);
         let env: Vec<EnvVar> = vec![("VAR1", "VALUE1").into(), ("VAR2", "VALUE2").into()];
         assert_eq!(node_config.env(), env.iter().collect::<Vec<_>>());
@@ -870,6 +1020,10 @@ mod tests {
         );
         assert!(matches!(
             node_config.db_snapshot().unwrap(), AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
+        ));
+        assert!(matches!(
+            node_config.keystore_path().unwrap().to_str().unwrap(),
+            "/tmp/mykeystore"
         ));
     }
 
@@ -930,7 +1084,7 @@ mod tests {
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
                 .with_name("node")
-                .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+                .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421"])
                 .build()
                 .unwrap_err();
 
@@ -948,7 +1102,7 @@ mod tests {
         let (node_name, errors) =
             NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
                 .with_name("node")
-                .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+                .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
                 .build()
                 .unwrap_err();
 

@@ -8,10 +8,9 @@ pub mod network_helper;
 pub mod tx_helper;
 
 mod network_spec;
-#[cfg(feature = "pjs")]
-pub mod pjs_helper;
 pub mod shared;
 mod spawner;
+mod utils;
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -30,7 +29,7 @@ pub use network_spec::NetworkSpec;
 use network_spec::{node::NodeSpec, parachain::ParachainSpec};
 use provider::{
     types::{ProviderCapabilities, TransferedFile},
-    DynProvider,
+    DynNamespace, DynProvider,
 };
 use serde_json::json;
 use support::{
@@ -44,7 +43,11 @@ use support::{
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
-use crate::{shared::types::RegisterParachainOptions, spawner::SpawnNodeCtx};
+use crate::{
+    network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
+    shared::types::RegisterParachainOptions,
+    spawner::SpawnNodeCtx,
+};
 pub struct Orchestrator<T>
 where
     T: FileSystem + Sync + Send,
@@ -92,6 +95,50 @@ where
         .await
         .map_err(|_| OrchestratorError::GlobalTimeOut(global_timeout));
         res?
+    }
+
+    pub async fn attach_to_live(
+        &self,
+        zombie_json_path: &Path,
+    ) -> Result<Network<T>, OrchestratorError> {
+        info!("attaching to live network...");
+        info!("reading zombie.json from {:?}", zombie_json_path);
+
+        let zombie_json_content = self.filesystem.read_to_string(zombie_json_path).await?;
+        let zombie_json: serde_json::Value = serde_json::from_str(&zombie_json_content)?;
+
+        info!("recreating namespace...");
+        let ns: DynNamespace = self
+            .provider
+            .create_namespace_from_json(&zombie_json)
+            .await?;
+
+        info!("recreating relaychain...");
+        let (relay, initial_spec) =
+            recreate_relaychain_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
+        let relay_nodes = relay.nodes.clone();
+
+        let mut network =
+            Network::new_with_relay(relay, ns.clone(), self.filesystem.clone(), initial_spec);
+
+        for node in relay_nodes {
+            network.insert_node(node);
+        }
+
+        info!("recreating parachains...");
+        let parachains_map =
+            recreate_parachains_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
+        let para_nodes = parachains_map
+            .values()
+            .flat_map(|paras| paras.iter().flat_map(|para| para.collators.clone()))
+            .collect::<Vec<NetworkNode>>();
+
+        network.set_parachains(parachains_map);
+        for node in para_nodes {
+            network.insert_node(node);
+        }
+
+        Ok(network)
     }
 
     async fn spawn_inner(
@@ -189,7 +236,7 @@ where
         network_spec
             .relaychain
             .chain_spec
-            .build_raw(&ns, &scoped_fs)
+            .build_raw(&ns, &scoped_fs, None)
             .await?;
 
         // override wasm if needed
@@ -225,6 +272,7 @@ where
             bootnodes_addr: &vec![],
             wait_ready: false,
             nodes_by_name: json!({}),
+            global_settings: &network_spec.global_settings,
         };
 
         let global_files_to_inject = vec![TransferedFile::new(
@@ -492,6 +540,109 @@ where
 }
 
 // Helpers
+
+async fn recreate_network_nodes_from_json(
+    nodes_json: &serde_json::Value,
+    ns: DynNamespace,
+    provider_name: &str,
+) -> Result<Vec<NetworkNode>, OrchestratorError> {
+    let raw_nodes: Vec<RawNetworkNode> = serde_json::from_value(nodes_json.clone())?;
+
+    let mut nodes = Vec::with_capacity(raw_nodes.len());
+    for raw in raw_nodes {
+        // validate provider tag
+        let provider_tag = raw
+            .inner
+            .get("provider_tag")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                OrchestratorError::InvalidConfig("Missing `provider_tag` in inner node JSON".into())
+            })?;
+
+        if provider_tag != provider_name {
+            return Err(OrchestratorError::InvalidConfigForProvider(
+                provider_name.to_string(),
+                provider_tag.to_string(),
+            ));
+        }
+        let inner = ns.spawn_node_from_json(&raw.inner).await?;
+        let relay_node = NetworkNode::new(
+            raw.name,
+            raw.ws_uri,
+            raw.prometheus_uri,
+            raw.multiaddr,
+            raw.spec,
+            inner,
+        );
+        nodes.push(relay_node);
+    }
+
+    Ok(nodes)
+}
+
+async fn recreate_relaychain_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+    provider_name: &str,
+) -> Result<(Relaychain, NetworkSpec), OrchestratorError> {
+    let relay_json = zombie_json
+        .get("relay")
+        .ok_or(OrchestratorError::InvalidConfig(
+            "Missing `relay` field in zombie.json".into(),
+        ))?
+        .clone();
+
+    let mut relay_raw: RawRelaychain = serde_json::from_value(relay_json)?;
+
+    let initial_spec: NetworkSpec = serde_json::from_value(
+        zombie_json
+            .get("initial_spec")
+            .ok_or(OrchestratorError::InvalidConfig(
+                "Missing `initial_spec` field in zombie.json".into(),
+            ))?
+            .clone(),
+    )?;
+
+    // Populate relay nodes
+    let nodes =
+        recreate_network_nodes_from_json(&relay_raw.nodes, ns.clone(), provider_name).await?;
+    relay_raw.inner.nodes = nodes;
+
+    Ok((relay_raw.inner, initial_spec))
+}
+
+async fn recreate_parachains_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+    provider_name: &str,
+) -> Result<HashMap<u32, Vec<Parachain>>, OrchestratorError> {
+    let paras_json = zombie_json
+        .get("parachains")
+        .ok_or(OrchestratorError::InvalidConfig(
+            "Missing `parachains` field in zombie.json".into(),
+        ))?
+        .clone();
+
+    let raw_paras: HashMap<u32, Vec<RawParachain>> = serde_json::from_value(paras_json)?;
+
+    let mut parachains_map = HashMap::new();
+
+    for (id, parachain_entries) in raw_paras {
+        let mut parsed_vec = Vec::with_capacity(parachain_entries.len());
+
+        for raw_para in parachain_entries {
+            let mut para = raw_para.inner;
+            para.collators =
+                recreate_network_nodes_from_json(&raw_para.collators, ns.clone(), provider_name)
+                    .await?;
+            parsed_vec.push(para);
+        }
+
+        parachains_map.insert(id, parsed_vec);
+    }
+
+    Ok(parachains_map)
+}
 
 // Split the node list depending if it's bootnode or not
 // NOTE: if there isn't a bootnode declared we use the first one
@@ -817,6 +968,18 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
         Ok(())
     }
 
+    async fn read(&self, file: impl AsRef<Path>) -> Result<Vec<u8>, FileSystemError> {
+        let file = file.as_ref();
+
+        let full_path = if file.is_absolute() {
+            file.to_owned()
+        } else {
+            PathBuf::from(format!("{}/{}", self.base_dir, file.to_string_lossy()))
+        };
+        let content = self.fs.read(full_path).await?;
+        Ok(content)
+    }
+
     async fn read_to_string(&self, file: impl AsRef<Path>) -> Result<String, FileSystemError> {
         let file = file.as_ref();
 
@@ -862,6 +1025,19 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
 
         self.fs.write(full_path, contents).await
     }
+
+    /// Get the full_path in the scoped FS
+    fn full_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        let path = path.as_ref();
+
+        let full_path = if path.is_absolute() {
+            path.to_owned()
+        } else {
+            PathBuf::from(format!("{}/{}", self.base_dir, path.to_string_lossy()))
+        };
+
+        full_path
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -877,8 +1053,7 @@ pub enum ZombieRole {
 // re-exports
 pub use network::{AddCollatorOptions, AddNodeOptions};
 pub use network_helper::metrics;
-#[cfg(feature = "pjs")]
-pub use pjs_helper::PjsResult;
+pub use sc_chain_spec;
 
 #[cfg(test)]
 mod tests {

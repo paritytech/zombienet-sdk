@@ -3,7 +3,7 @@ use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let mut _network = NetworkConfigBuilder::new()
+    let _network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("substrate-node")

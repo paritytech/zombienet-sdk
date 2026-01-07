@@ -2,17 +2,28 @@ use std::path::PathBuf;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::node::NetworkNode;
-use crate::{network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions};
+use crate::{
+    network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions,
+    utils::default_as_empty_vec,
+};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Relaychain {
     pub(crate) chain: String,
     pub(crate) chain_id: String,
     pub(crate) chain_spec_path: PathBuf,
+    #[serde(default, deserialize_with = "default_as_empty_vec")]
     pub(crate) nodes: Vec<NetworkNode>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RawRelaychain {
+    #[serde(flatten)]
+    pub(crate) inner: Relaychain,
+    pub(crate) nodes: serde_json::Value,
 }
 
 #[async_trait]
@@ -27,10 +38,7 @@ impl ChainUpgrade for Relaychain {
             {
                 node
             } else {
-                return Err(anyhow!(
-                    "Node: {} is not part of the set of nodes",
-                    node_name
-                ));
+                return Err(anyhow!("Node: {node_name} is not part of the set of nodes"));
             }
         } else {
             // take the first node

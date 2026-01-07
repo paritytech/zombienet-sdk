@@ -18,7 +18,7 @@ use crate::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
     },
-    types::{CommandWithCustomArgs, JsonOverrides},
+    types::{ChainSpecRuntime, CommandWithCustomArgs, JsonOverrides},
     utils::{default_as_false, default_as_true, default_initial_balance, is_false},
 };
 
@@ -131,7 +131,11 @@ pub struct ParachainConfig {
     genesis_wasm_generator: Option<Command>,
     genesis_state_path: Option<AssetLocation>,
     genesis_state_generator: Option<CommandWithCustomArgs>,
+    /// chain-spec to use (location can be url or file path)
     chain_spec_path: Option<AssetLocation>,
+    /// runtime to use for generating the chain-spec.
+    /// Location can be url or file path and an optional preset
+    chain_spec_runtime: Option<ChainSpecRuntime>,
     // Path or url to override the runtime (:code) in the chain-spec
     wasm_override: Option<AssetLocation>,
     // Full _template_ command, will be rendered using [tera]
@@ -141,6 +145,9 @@ pub struct ParachainConfig {
     // Does the chain_spec_command needs to be run locally
     #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
+    // Path to the file where the `chain_spec_command` will write the chain-spec into.
+    // Defaults to /dev/stdout.
+    chain_spec_command_output_path: Option<String>,
     #[serde(rename = "cumulus_based", default = "default_as_true")]
     is_cumulus_based: bool,
     #[serde(rename = "evm_based", default = "default_as_false")]
@@ -262,6 +269,12 @@ impl ParachainConfig {
         self.chain_spec_command_is_local
     }
 
+    /// The file where the `chain_spec_command` will write the chain-spec into.
+    /// Defaults to /dev/stdout.
+    pub fn chain_spec_command_output_path(&self) -> Option<&str> {
+        self.chain_spec_command_output_path.as_deref()
+    }
+
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
@@ -305,6 +318,11 @@ impl ParachainConfig {
     /// The location of a file or inline json to override raw chain-spec.
     pub fn raw_spec_override(&self) -> Option<&JsonOverrides> {
         self.raw_spec_override.as_ref()
+    }
+
+    /// The location of runtime to use by chain-spec builder lib (from `sc-chain-spec` crate)
+    pub fn chain_spec_runtime(&self) -> Option<&ChainSpecRuntime> {
+        self.chain_spec_runtime.as_ref()
     }
 }
 
@@ -358,7 +376,9 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 genesis_state_generator: None,
                 genesis_overrides: None,
                 chain_spec_path: None,
+                chain_spec_runtime: None,
                 chain_spec_command: None,
+                chain_spec_command_output_path: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote by default
                 is_cumulus_based: true,
@@ -762,6 +782,29 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Set the runtime path to use for generating the chain-spec and an optiona preset.
+    /// If the preset is not set, we will try to match [`local_testnet`, `development`, `dev`]
+    /// with the available ones and fallback to the default configuration as last option.
+    pub fn with_chain_spec_runtime(
+        self,
+        location: impl Into<AssetLocation>,
+        preset: Option<&str>,
+    ) -> Self {
+        let chain_spec_runtime = if let Some(preset) = preset {
+            ChainSpecRuntime::with_preset(location.into(), preset.to_string())
+        } else {
+            ChainSpecRuntime::new(location.into())
+        };
+        Self::transition(
+            ParachainConfig {
+                chain_spec_runtime: Some(chain_spec_runtime),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the location of a wasm to override the chain-spec.
     pub fn with_wasm_override(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
@@ -779,6 +822,18 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         Self::transition(
             ParachainConfig {
                 chain_spec_command_is_local: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the output path for the chain-spec command.
+    pub fn with_chain_spec_command_output_path(self, output_path: &str) -> Self {
+        Self::transition(
+            ParachainConfig {
+                chain_spec_command_output_path: Some(output_path.to_string()),
                 ..self.config
             },
             self.validation_context,
@@ -811,7 +866,10 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
     }
 
     /// Set the bootnodes addresses the collators will connect to.
-    pub fn with_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
+    ///
+    /// Note: Bootnode address replacements are NOT supported here.
+    /// Only arguments (`args`) support dynamic replacements. Bootnode addresses must be a valid address.
+    pub fn with_raw_bootnodes_addresses<T>(self, bootnodes_addresses: Vec<T>) -> Self
     where
         T: TryInto<Multiaddr> + Display + Copy,
         T::Error: Error + Send + Sync + 'static,
@@ -1156,11 +1214,12 @@ mod tests {
                 "undying-collator export-genesis-state --pov-size=10000 --pvf-complexity=1",
             )
             .with_chain_spec_path("./path/to/chain/spec.json")
+            .with_chain_spec_runtime("./path/to/runtime.wasm", Some("dev"))
             .with_wasm_override("./path/to/override/runtime.wasm")
             .with_raw_spec_override("./path/to/override/rawspec.json")
             .cumulus_based(false)
             .evm_based(false)
-            .with_bootnodes_addresses(vec![
+            .with_raw_bootnodes_addresses(vec![
                 "/ip4/10.41.122.55/tcp/45421",
                 "/ip4/51.144.222.10/tcp/2333",
             ])
@@ -1222,6 +1281,19 @@ mod tests {
             parachain_config.wasm_override().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/override/runtime.wasm"
         ));
+        assert!(matches!(
+            &parachain_config.chain_spec_runtime().unwrap().location,
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "./path/to/runtime.wasm"
+        ));
+        assert_eq!(
+            parachain_config
+                .chain_spec_runtime()
+                .unwrap()
+                .preset
+                .as_deref(),
+            Some("dev")
+        );
+
         let args: Vec<Arg> = vec![("--arg1", "value1").into(), "--option2".into()];
         assert_eq!(
             parachain_config.default_args(),
@@ -1443,7 +1515,7 @@ mod tests {
         let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .with_collator(|collator| {
                 collator
                     .with_name("collator")
@@ -1519,7 +1591,7 @@ mod tests {
         let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(2000)
             .with_chain("myparachain")
-            .with_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
+            .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421", "//10.42.153.10/tcp/43111"])
             .with_collator(|collator| {
                 collator
                     .with_name("collator1")

@@ -43,7 +43,7 @@ impl NetworkSpec {
 
         // TODO: move to `fold` or map+fold
         for para_config in network_config.parachains() {
-            match ParachainSpec::from_config(para_config) {
+            match ParachainSpec::from_config(para_config, relaychain.chain.clone()) {
                 Ok(para) => parachains.push(para),
                 Err(err) => errs.push(err),
             }
@@ -178,6 +178,7 @@ impl NetworkSpec {
                     format!("{}/genesis-state", para.unique_id),
                     &ns,
                     scoped_fs,
+                    None,
                 )
                 .await?;
             debug!("parachain genesis state built!");
@@ -187,6 +188,7 @@ impl NetworkSpec {
                     format!("{}/genesis-wasm", para.unique_id),
                     &ns,
                     scoped_fs,
+                    None,
                 )
                 .await?;
             debug!("parachain genesis wasm built!");
@@ -240,6 +242,7 @@ impl NetworkSpec {
         )
     }
 
+    #[allow(clippy::redundant_iter_cloned)]
     async fn retrieve_all_nodes_available_args_output(
         ns: Arc<dyn ProviderNamespace + Send + Sync>,
         image_command_to_nodes_mapping: &HashMap<(Option<String>, String), Vec<&mut NodeSpec>>,
@@ -247,19 +250,21 @@ impl NetworkSpec {
         try_join_all(
             image_command_to_nodes_mapping
                 .keys()
-                .cloned()
-                .map(|(image, command)| async {
-                    // get node available args output from image/command
-                    let available_args = ns
-                        .get_node_available_args((command.clone(), image.clone()))
-                        .await?;
-                    debug!(
-                        "retrieved available args for image: {:?}, command: {}",
-                        image, command
-                    );
+                .map(|(image, command)| {
+                    let ns_cloned = ns.clone();
+                    async move {
+                        // get node available args output from image/command
+                        let available_args = ns_cloned
+                            .get_node_available_args((command.clone(), image.clone()))
+                            .await?;
+                        debug!(
+                            "retrieved available args for image: {:?}, command: {}",
+                            image, command
+                        );
 
-                    // map the result to include image and command
-                    Ok::<_, OrchestratorError>((image, command, available_args))
+                        // map the result to include image and command
+                        Ok::<_, OrchestratorError>((image.clone(), command.clone(), available_args))
+                    }
                 })
                 .collect::<Vec<_>>(),
         )

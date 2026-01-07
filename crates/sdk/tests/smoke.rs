@@ -1,18 +1,16 @@
-use std::time::Instant;
+use std::{path::PathBuf, time::Instant};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
 use futures::{stream::StreamExt, try_join};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
-#[cfg(feature = "pjs")]
-use serde_json::json;
-use zombienet_sdk::environment::get_spawn_fn;
+use zombienet_sdk::environment::{get_attach_fn, get_spawn_fn};
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("rococo-local")
                 .with_default_command("polkadot")
-                .with_default_image("docker.io/parity/polkadot:v1.7.0")
+                .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
         })
@@ -23,25 +21,42 @@ fn small_network() -> NetworkConfig {
                     .with_image("docker.io/parity/polkadot-parachain:1.7.0")
             })
         })
+        .with_parachain(|p| {
+            p.with_id(3000).cumulus_based(true).with_collator(|n| {
+                n.with_name("collator-new")
+                    .with_command("polkadot-parachain")
+                    .with_image("docker.io/parity/polkadot-parachain:v1.20.2")
+            })
+        })
+        .with_global_settings(|g| {
+            g.with_base_dir(PathBuf::from("/tmp/zombie-1"))
+                .with_tear_down_on_failure(false)
+        })
         .build()
         .unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ci_k8s_basic_functionalities_should_works() {
-    tracing_subscriber::fmt::init();
+    let _ = tracing_subscriber::fmt::try_init();
+
     const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
     let now = Instant::now();
 
     let config = small_network();
     let spawn_fn = get_spawn_fn();
 
-    let mut network = spawn_fn(config).await.unwrap();
-    // Optionally detach the network
-    // network.detach().await;
+    let network = spawn_fn(config).await.unwrap();
 
     let elapsed = now.elapsed();
     println!("🚀🚀🚀🚀 network deployed in {elapsed:.2?}");
+
+    // detach and attach to running
+    network.detach().await;
+    drop(network);
+    let attach_fn = get_attach_fn();
+    let zombie_path = PathBuf::from("/tmp/zombie-1/zombie.json");
+    let mut network = attach_fn(zombie_path).await.unwrap();
 
     // Get a ref to the node
     let alice = network.get_node("alice").unwrap();
@@ -94,34 +109,6 @@ async fn ci_k8s_basic_functionalities_should_works() {
 
     assert!(best_block >= 2.0, "Current best {best_block}");
 
-    #[cfg(feature = "pjs")]
-    {
-        // pjs
-        let para_is_registered = r#"
-    const paraId = arguments[0];
-    const parachains: number[] = (await api.query.paras.parachains()) || [];
-    const isRegistered = parachains.findIndex((id) => id.toString() == paraId.toString()) >= 0;
-    return isRegistered;
-    "#;
-
-        let is_registered = alice
-            .pjs(para_is_registered, vec![json!(2000)], None)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(is_registered, json!(true));
-
-        // run pjs with code
-        let query_paras = r#"
-    const parachains: number[] = (await api.query.paras.parachains()) || [];
-    return parachains.toJSON()
-    "#;
-
-        let paras = alice.pjs(query_paras, vec![], None).await.unwrap();
-
-        println!("parachains registered: {paras:?}");
-    }
-
     // collator
     let collator = network.get_node("collator").unwrap();
     let client = collator
@@ -163,6 +150,8 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // pause / resume
     let alice = network.get_node("alice").unwrap();
     alice.pause().await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     let res_err = alice
         .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 5_f64, 5_u32)
         .await;
@@ -178,11 +167,13 @@ async fn ci_k8s_basic_functionalities_should_works() {
     // timeout connecting ws
     let collator = network.get_node("collator").unwrap();
     collator.pause().await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     let r = collator
         .wait_client_with_timeout::<subxt::PolkadotConfig>(1_u32)
         .await;
     assert!(r.is_err());
 
     // tear down (optional if you don't detach the network)
-    // network.destroy().await.unwrap();
+    network.destroy().await.unwrap();
 }

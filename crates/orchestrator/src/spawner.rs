@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
+use configuration::GlobalSettings;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
     shared::helpers::running_in_ci,
@@ -43,6 +44,8 @@ pub struct SpawnNodeCtx<'a, T: FileSystem> {
     pub(crate) wait_ready: bool,
     /// A json representation of the running nodes with their names as 'key'
     pub(crate) nodes_by_name: serde_json::Value,
+    /// A ref to the global settings
+    pub(crate) global_settings: &'a GlobalSettings,
 }
 
 pub async fn spawn_node<'a, T>(
@@ -69,11 +72,13 @@ where
             .parachain_id
             .map(|id| id.starts_with("asset-hub-polkadot"))
             .unwrap_or_default();
+        let keystore_key_types = node.keystore_key_types.iter().map(String::as_str).collect();
         let key_filenames = generators::generate_node_keystore(
             &node.accounts,
             &node_files_path,
             ctx.scoped_fs,
             asset_hub_polkadot,
+            keystore_key_types,
         )
         .await
         .unwrap();
@@ -86,6 +91,10 @@ where
             ctx.chain_id
         };
 
+        let keystore_path = node.keystore_path.clone().unwrap_or(PathBuf::from(format!(
+            "/data/chains/{remote_keystore_chain_id}/keystore",
+        )));
+
         for key_filename in key_filenames {
             let f = TransferedFile::new(
                 PathBuf::from(format!(
@@ -94,17 +103,11 @@ where
                     node_files_path,
                     key_filename.to_string_lossy()
                 )),
-                PathBuf::from(format!(
-                    "/data/chains/{}/keystore/{}",
-                    remote_keystore_chain_id,
-                    key_filename.to_string_lossy()
-                )),
+                keystore_path.join(key_filename),
             );
             files_to_inject.push(f);
         }
-        created_paths.push(PathBuf::from(format!(
-            "/data/chains/{remote_keystore_chain_id}/keystore"
-        )));
+        created_paths.push(keystore_path);
     }
 
     let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
@@ -195,7 +198,8 @@ where
         .injected_files(files_to_inject)
         .created_paths(created_paths)
         .db_snapshot(node.db_snapshot.clone())
-        .port_mapping(HashMap::from(ports));
+        .port_mapping(HashMap::from(ports))
+        .node_log_path(node.node_log_path.clone());
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())
@@ -222,11 +226,15 @@ where
         )
     })?;
 
-    let mut ip_to_use = LOCALHOST;
+    let mut ip_to_use = if let Some(local_ip) = ctx.global_settings.local_ip() {
+        *local_ip
+    } else {
+        LOCALHOST
+    };
 
     let (rpc_port_external, prometheus_port_external, p2p_external);
-    // Create port-forward iff we are  in CI and with k8s provider
-    if running_in_ci() && ctx.ns.capabilities().use_default_ports_in_cmd {
+
+    if running_in_ci() && ctx.ns.provider_name() == "k8s" {
         // running kubernets in ci require to use ip and default port
         (rpc_port_external, prometheus_port_external, p2p_external) =
             (RPC_PORT, PROMETHEUS_PORT, P2P_PORT);

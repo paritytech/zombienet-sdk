@@ -5,7 +5,7 @@ use std::{
 
 use configuration::{
     shared::{helpers::generate_unique_node_name_from_names, resources::Resources},
-    types::{Arg, AssetLocation, Command, Image, JsonOverrides},
+    types::{Arg, AssetLocation, Chain, Command, Image, JsonOverrides},
     NodeConfig, ParachainConfig, RegistrationStrategy,
 };
 use provider::DynNamespace;
@@ -88,10 +88,16 @@ pub struct ParachainSpec {
 
     /// Raw chain-spec override path, url or inline json to use.
     pub(crate) raw_spec_override: Option<JsonOverrides>,
+
+    /// Bootnodes addresses to use for the parachain nodes
+    pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }
 
 impl ParachainSpec {
-    pub fn from_config(config: &ParachainConfig) -> Result<ParachainSpec, OrchestratorError> {
+    pub fn from_config(
+        config: &ParachainConfig,
+        relay_chain: Chain,
+    ) -> Result<ParachainSpec, OrchestratorError> {
         let main_cmd = if let Some(cmd) = config.default_command() {
             cmd
         } else if let Some(first_node) = config.collators().first() {
@@ -123,14 +129,26 @@ impl ParachainSpec {
 
             let chain_spec_builder = if chain_name.is_empty() {
                 // if the chain don't have name use the unique_id for the name of the file
-                ChainSpec::new(config.unique_id().to_string(), Context::Para)
+                ChainSpec::new(
+                    config.unique_id().to_string(),
+                    Context::Para {
+                        relay_chain,
+                        para_id: config.id(),
+                    },
+                )
             } else {
                 let chain_spec_file_name = if config.unique_id().contains('-') {
                     &format!("{}-{}", chain_name, config.unique_id())
                 } else {
                     chain_name
                 };
-                ChainSpec::new(chain_spec_file_name, Context::Para)
+                ChainSpec::new(
+                    chain_spec_file_name,
+                    Context::Para {
+                        relay_chain,
+                        para_id: config.id(),
+                    },
+                )
             };
             let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
 
@@ -145,14 +163,27 @@ impl ParachainSpec {
             };
 
             let chain_spec = chain_spec_builder
-                .command(tmpl.as_str(), config.chain_spec_command_is_local())
+                .command(
+                    tmpl.as_str(),
+                    config.chain_spec_command_is_local(),
+                    config.chain_spec_command_output_path(),
+                )
                 .image(main_image.clone());
 
-            if let Some(chain_spec_path) = config.chain_spec_path() {
-                Some(chain_spec.asset_location(chain_spec_path.clone()))
+            let chain_spec = if let Some(chain_spec_path) = config.chain_spec_path() {
+                chain_spec.asset_location(chain_spec_path.clone())
             } else {
-                Some(chain_spec)
-            }
+                chain_spec
+            };
+
+            // add chain-spec runtime if present
+            let chain_spec = if let Some(chain_spec_runtime) = config.chain_spec_runtime() {
+                chain_spec.runtime(chain_spec_runtime.clone())
+            } else {
+                chain_spec
+            };
+
+            Some(chain_spec)
         } else {
             None
         };
@@ -180,7 +211,7 @@ impl ParachainSpec {
 
         let mut names = HashSet::new();
         for node_config in nodes {
-            match NodeSpec::from_config(&node_config, &chain_context, true) {
+            match NodeSpec::from_config(&node_config, &chain_context, true, config.is_evm_based()) {
                 Ok(mut node) => {
                     let unique_name = generate_unique_node_name_from_names(node.name, &mut names);
                     node.name = unique_name;
@@ -189,23 +220,31 @@ impl ParachainSpec {
                 Err(err) => errs.push(err),
             }
         }
+        // Precedence when deciding the genesis state artifact: path -> generator -> default command
         let genesis_state = if let Some(path) = config.genesis_state_path() {
             ParaArtifact::new(
                 ParaArtifactType::State,
                 ParaArtifactBuildOption::Path(path.to_string()),
             )
-        } else {
-            let cmd = if let Some(cmd) = config.genesis_state_generator() {
-                cmd.cmd()
-            } else {
-                main_cmd
-            };
+        } else if let Some(cmd) = config.genesis_state_generator() {
             ParaArtifact::new(
                 ParaArtifactType::State,
-                ParaArtifactBuildOption::Command(cmd.as_str().into()),
+                ParaArtifactBuildOption::CommandWithCustomArgs(cmd.clone()),
+            )
+            .image(main_image.clone())
+        } else {
+            ParaArtifact::new(
+                ParaArtifactType::State,
+                ParaArtifactBuildOption::Command(main_cmd.as_str().into()),
             )
             .image(main_image.clone())
         };
+
+        debug!(
+            "Parachain {} genesis state artifact: {:?}",
+            config.id(),
+            genesis_state
+        );
 
         let genesis_wasm = if let Some(path) = config.genesis_wasm_path() {
             ParaArtifact::new(
@@ -254,6 +293,7 @@ impl ParachainSpec {
             genesis_overrides: config.genesis_overrides().cloned(),
             collators,
             raw_spec_override: config.raw_spec_override().cloned(),
+            bootnodes_addresses: config.bootnodes_addresses().into_iter().cloned().collect(),
         };
 
         Ok(para_spec)
@@ -316,7 +356,9 @@ impl ParachainSpec {
                 .customize_para(&cloned, relay_chain_id, scoped_fs)
                 .await?;
             debug!("parachain chain-spec customized!");
-            chain_spec.build_raw(ns, scoped_fs).await?;
+            chain_spec
+                .build_raw(ns, scoped_fs, Some(relay_chain_id.try_into()?))
+                .await?;
             debug!("parachain chain-spec raw built!");
 
             // override wasm if needed
@@ -343,5 +385,10 @@ impl ParachainSpec {
             None
         };
         Ok(chain_spec_raw_path)
+    }
+
+    /// Get the bootnodes addresses for the parachain spec
+    pub(crate) fn bootnodes_addresses(&self) -> Vec<&multiaddr::Multiaddr> {
+        self.bootnodes_addresses.iter().collect()
     }
 }

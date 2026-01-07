@@ -64,6 +64,7 @@ impl ParaArtifact {
         artifact_path: impl AsRef<Path>,
         ns: &DynNamespace,
         scoped_fs: &ScopedFilesystem<'a, T>,
+        maybe_output_path: Option<PathBuf>,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
@@ -89,9 +90,10 @@ impl ParaArtifact {
             ParaArtifactType::Wasm => "export-genesis-wasm",
             ParaArtifactType::State => "export-genesis-state",
         };
-
         // TODO: replace uuid with para_id-random
         let temp_name = format!("temp-{}-{}", generate_subcmd, Uuid::new_v4());
+
+        // Start with the subcommand, but we'll skip it from custom_args if it's duplicated
         let mut args: Vec<String> = vec![generate_subcmd.into()];
 
         let files_to_inject = if let Some(chain_spec_path) = chain_spec_path {
@@ -123,22 +125,6 @@ impl ParaArtifact {
             args.push("--chain".into());
             args.push(chain_spec_path_in_args);
 
-            for custom_arg in custom_args {
-                match custom_arg {
-                    configuration::types::Arg::Flag(flag) => {
-                        args.push(flag.into());
-                    },
-                    configuration::types::Arg::Option(flag, flag_value) => {
-                        args.push(flag.into());
-                        args.push(flag_value.into());
-                    },
-                    configuration::types::Arg::Array(flag, values) => {
-                        args.push(flag.into());
-                        values.iter().for_each(|v| args.push(v.into()));
-                    },
-                }
-            }
-
             vec![TransferedFile::new(
                 chain_spec_path_local,
                 chain_spec_path_in_pod,
@@ -147,12 +133,43 @@ impl ParaArtifact {
             vec![]
         };
 
+        // Add custom args regardless of whether we have a chain spec
+        // Skip the first custom arg if it matches the subcommand (already added above)
+        let custom_args_to_add = if !custom_args.is_empty() {
+            // Check if first arg is the subcommand (as a Flag)
+            let skip_first = matches!(custom_args.first(), Some(configuration::types::Arg::Flag(flag)) if flag == generate_subcmd);
+            if skip_first {
+                &custom_args[1..]
+            } else {
+                custom_args
+            }
+        } else {
+            custom_args
+        };
+
+        for custom_arg in custom_args_to_add {
+            match custom_arg {
+                configuration::types::Arg::Flag(flag) => {
+                    args.push(flag.into());
+                },
+                configuration::types::Arg::Option(flag, flag_value) => {
+                    args.push(flag.into());
+                    args.push(flag_value.into());
+                },
+                configuration::types::Arg::Array(flag, values) => {
+                    args.push(flag.into());
+                    values.iter().for_each(|v| args.push(v.into()));
+                },
+            }
+        }
+
         let artifact_path_ref = artifact_path.as_ref();
         let generate_command = GenerateFileCommand::new(cmd.as_str(), artifact_path_ref).args(args);
         let options = GenerateFilesOptions::with_files(
             vec![generate_command],
             self.image.clone(),
             &files_to_inject,
+            maybe_output_path,
         )
         .temp_name(temp_name);
         ns.generate_files(options).await?;

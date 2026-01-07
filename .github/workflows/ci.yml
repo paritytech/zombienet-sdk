@@ -29,6 +29,9 @@ jobs:
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
+      - name: install_deps
+        run: sudo apt-get update && sudo apt-get install protobuf-compiler
+
       - name: Init nigthly install for fmt
         run: rustup update nightly && rustup default nightly && rustup component add rustfmt
 

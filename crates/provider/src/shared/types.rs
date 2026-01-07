@@ -5,7 +5,7 @@ use std::{
 };
 
 use configuration::{shared::resources::Resources, types::AssetLocation};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub type Port = u16;
 
@@ -50,6 +50,8 @@ pub struct SpawnNodeOptions {
     /// Could be a local or remote asset
     pub db_snapshot: Option<AssetLocation>,
     pub port_mapping: Option<HashMap<Port, Port>>,
+    /// Optionally specify a log path for the node
+    pub node_log_path: Option<PathBuf>,
 }
 
 impl SpawnNodeOptions {
@@ -68,6 +70,7 @@ impl SpawnNodeOptions {
             created_paths: vec![],
             db_snapshot: None,
             port_mapping: None,
+            node_log_path: None,
         }
     }
 
@@ -134,6 +137,11 @@ impl SpawnNodeOptions {
         self.port_mapping = Some(ports);
         self
     }
+
+    pub fn node_log_path(mut self, path: Option<PathBuf>) -> Self {
+        self.node_log_path = path;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -187,10 +195,11 @@ pub struct GenerateFilesOptions {
     pub injected_files: Vec<TransferedFile>,
     // Allow to control the name of the node used to create the files.
     pub temp_name: Option<String>,
+    pub expected_path: Option<PathBuf>,
 }
 
 impl GenerateFilesOptions {
-    pub fn new<I>(commands: I, image: Option<String>) -> Self
+    pub fn new<I>(commands: I, image: Option<String>, expected_path: Option<PathBuf>) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
     {
@@ -199,6 +208,7 @@ impl GenerateFilesOptions {
             injected_files: vec![],
             image,
             temp_name: None,
+            expected_path,
         }
     }
 
@@ -206,6 +216,7 @@ impl GenerateFilesOptions {
         commands: I,
         image: Option<String>,
         injected_files: &[TransferedFile],
+        expected_path: Option<PathBuf>,
     ) -> Self
     where
         I: IntoIterator<Item = GenerateFileCommand>,
@@ -215,6 +226,7 @@ impl GenerateFilesOptions {
             injected_files: injected_files.into(),
             image,
             temp_name: None,
+            expected_path,
         }
     }
 
@@ -322,7 +334,7 @@ impl RunScriptOptions {
 }
 
 // TODO(team): I think we can rename it to FileMap?
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferedFile {
     pub local_path: PathBuf,
     pub remote_path: PathBuf,

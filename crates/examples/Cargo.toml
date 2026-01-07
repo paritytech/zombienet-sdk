@@ -2,13 +2,16 @@
 name = "examples"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zombienet-sdk = {workspace = true, features = ["pjs"]}
+zombienet-sdk = {workspace = true}
 tokio = { workspace = true }
 futures = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+hex = { workspace = true }
+

@@ -146,9 +146,9 @@ impl FileSystem for InMemoryFileSystem {
         match self.files.read().await.get(os_path) {
             Some(InMemoryFile::File { contents, .. }) => Ok(contents.clone()),
             Some(InMemoryFile::Directory { .. }) => {
-                Err(anyhow!("file {:?} is a directory", os_path).into())
+                Err(anyhow!("file {os_path:?} is a directory").into())
             },
-            None => Err(anyhow!("file {:?} not found", os_path).into()),
+            None => Err(anyhow!("file {os_path:?} not found").into()),
         }
     }
 
@@ -160,7 +160,7 @@ impl FileSystem for InMemoryFileSystem {
         let content = self.read(path).await?;
 
         String::from_utf8(content)
-            .map_err(|_| anyhow!("invalid utf-8 encoding for file {:?}", os_path).into())
+            .map_err(|_| anyhow!("invalid utf-8 encoding for file {os_path:?}").into())
     }
 
     async fn write<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>
@@ -184,7 +184,7 @@ impl FileSystem for InMemoryFileSystem {
         }
 
         if let Some(InMemoryFile::Directory { .. }) = files.get(os_path) {
-            return Err(anyhow!("file {:?} is a directory", os_path).into());
+            return Err(anyhow!("file {os_path:?} is a directory").into());
         }
 
         files.insert(os_path.to_owned(), InMemoryFile::file_raw(contents));
@@ -238,7 +238,7 @@ impl FileSystem for InMemoryFileSystem {
             };
             Ok(())
         } else {
-            Err(anyhow!("file {:?} not found", os_path).into())
+            Err(anyhow!("file {os_path:?} not found").into())
         }
     }
 

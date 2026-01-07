@@ -160,12 +160,6 @@ impl NetworkConfig {
             )?;
         }
 
-        nodes.extend(
-            group_nodes
-                .into_iter()
-                .flat_map(|node| node.expand_group_configs()),
-        );
-
         // Keep track of node names to ensure uniqueness
         let mut names = HashSet::new();
 
@@ -218,12 +212,6 @@ impl NetworkConfig {
             }
 
             let mut collators: Vec<NodeConfig> = para.collators.clone();
-
-            collators.extend(
-                group_collators
-                    .into_iter()
-                    .flat_map(|node| node.expand_group_configs()),
-            );
 
             for collator in collators.iter_mut() {
                 populate_collator_with_defaults(
@@ -894,7 +882,7 @@ mod tests {
             .with_global_settings(|global_settings| {
                 global_settings
                     .with_local_ip("127.0.0000.1")
-                    .with_bootnodes_addresses(vec!["/ip4//tcp/45421"])
+                    .with_raw_bootnodes_addresses(vec!["/ip4//tcp/45421"])
             })
             .build()
             .unwrap_err();

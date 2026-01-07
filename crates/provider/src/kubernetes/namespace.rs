@@ -5,7 +5,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use k8s_openapi::{
     api::core::v1::{
@@ -21,8 +20,11 @@ use uuid::Uuid;
 use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
-    kubernetes::node::KubernetesNodeOptions,
-    shared::helpers::running_in_ci,
+    kubernetes::{
+        node::{DeserializableKubernetesNodeOptions, KubernetesNodeOptions},
+        provider,
+    },
+    shared::helpers::{extract_execution_result, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -102,6 +104,35 @@ where
         });
 
         namespace.initialize().await?;
+
+        Ok(namespace)
+    }
+
+    pub(super) async fn attach_to_live(
+        provider: &Weak<KubernetesProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        k8s_client: &KubernetesClient,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        let namespace = Arc::new_cyclic(|weak| KubernetesNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_owned(),
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            k8s_client: k8s_client.clone(),
+            file_server_port: RwLock::new(None),
+            file_server_fw_task: RwLock::new(None),
+            nodes: RwLock::new(HashMap::new()),
+            delete_on_drop: Arc::new(Mutex::new(false)),
+        });
+
+        namespace.setup_file_server_port_fwd("fileserver").await?;
 
         Ok(namespace)
     }
@@ -290,9 +321,15 @@ where
             .write(service_dest_path, serialized_service_manifest)
             .await?;
 
+        self.setup_file_server_port_fwd(&name).await?;
+
+        Ok(())
+    }
+
+    async fn setup_file_server_port_fwd(&self, name: &str) -> Result<(), ProviderError> {
         let (port, task) = self
             .k8s_client
-            .create_pod_port_forward(&self.name, &name, 0, 80)
+            .create_pod_port_forward(&self.name, name, 0, 80)
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
@@ -393,6 +430,10 @@ where
         &self.capabilities
     }
 
+    fn provider_name(&self) -> &str {
+        provider::PROVIDER_NAME
+    }
+
     async fn detach(&self) {
         self.set_delete_on_drop(false).await;
     }
@@ -463,6 +504,30 @@ where
         Ok(node)
     }
 
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError> {
+        let deserializable: DeserializableKubernetesNodeOptions =
+            serde_json::from_value(json_value.clone())?;
+        let options = KubernetesNodeOptions::from_deserializable(
+            &deserializable,
+            &self.weak,
+            &self.base_dir,
+            &self.k8s_client,
+            &self.filesystem,
+        );
+
+        let node = KubernetesNode::attach_to_live(options).await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
+
+        Ok(node)
+    }
+
     async fn generate_files(&self, options: GenerateFilesOptions) -> Result<(), ProviderError> {
         debug!("generate files options {options:#?}");
 
@@ -500,17 +565,16 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            match temp_node
-                .run_command(RunCommandOptions { program, args, env })
-                .await?
-            {
-                Ok(contents) => self
-                    .filesystem
-                    .write(local_output_full_path, contents)
-                    .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-            };
+            let contents = extract_execution_result(
+                &temp_node,
+                RunCommandOptions { program, args, env },
+                options.expected_path.as_ref(),
+            )
+            .await?;
+            self.filesystem
+                .write(local_output_full_path, contents)
+                .await
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?;
         }
 
         temp_node.destroy().await

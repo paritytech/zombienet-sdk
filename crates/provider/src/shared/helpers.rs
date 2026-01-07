@@ -1,8 +1,66 @@
-use std::env;
+use std::{env, path::PathBuf};
+
+use anyhow::anyhow;
+
+use crate::{types::RunCommandOptions, DynNode, ProviderError};
 
 /// Check if we are running in `CI` by checking the 'RUN_IN_CI' env var
 pub fn running_in_ci() -> bool {
     env::var("RUN_IN_CI").unwrap_or_default() == "1"
+}
+
+/// Executes a command on a temporary node and extracts the execution result either from the
+/// standard output or a file.
+pub async fn extract_execution_result(
+    temp_node: &DynNode,
+    options: RunCommandOptions,
+    expected_path: Option<&PathBuf>,
+) -> Result<String, ProviderError> {
+    let output_contents = temp_node
+        .run_command(options)
+        .await?
+        .map_err(|(_, msg)| ProviderError::FileGenerationFailed(anyhow!("{msg}")))?;
+
+    // If an expected_path is provided, read the file contents from inside the container
+    if let Some(expected_path) = expected_path.as_ref() {
+        Ok(temp_node
+            .run_command(
+                RunCommandOptions::new("cat")
+                    .args(vec![expected_path.to_string_lossy().to_string()]),
+            )
+            .await?
+            .map_err(|(_, msg)| {
+                ProviderError::FileGenerationFailed(anyhow!(format!(
+                    "failed reading expected_path {}: {}",
+                    expected_path.display(),
+                    msg
+                )))
+            })?)
+    } else {
+        Ok(output_contents)
+    }
+}
+
+pub fn extract_namespace_info(
+    json_value: &serde_json::Value,
+) -> Result<(PathBuf, String), ProviderError> {
+    let base_dir = json_value
+        .get("local_base_dir")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+        .ok_or(ProviderError::InvalidConfig(
+            "`field local_base_dir` is missing from zombie.json".to_string(),
+        ))?;
+
+    let name =
+        json_value
+            .get("ns")
+            .and_then(|v| v.as_str())
+            .ok_or(ProviderError::InvalidConfig(
+                "field `ns` is missing from zombie.json".to_string(),
+            ))?;
+
+    Ok((base_dir, name.to_string()))
 }
 
 #[cfg(test)]

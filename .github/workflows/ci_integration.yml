@@ -65,25 +65,94 @@ jobs:
           path: /tmp
 
       - name: script
+        timeout-minutes: 45
         run: |
           export ZOMBIE_K8S_CI_NAMESPACE=$(cat /data/namespace)
           export ZOMBIE_PROVIDER="k8s"
-          # mv artifacts.tar.gz /tmp
           cd /tmp
           ls -la
           tar xvfz artifacts.tar.gz
           ./artifacts/smoke --nocapture
-          # for running local
-          # cargo test --test smoke -- --nocapture
+
+      - name: dump logs
+        if: always()
+        run: |
+          export ZOMBIE_K8S_CI_NAMESPACE=$(cat /data/namespace)
+          mkdir -p /tmp/zombie-1/logs
+          
+          # Install kubectl if not available
+          if ! command -v kubectl &> /dev/null; then
+            echo "Installing kubectl..."
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            mv kubectl /usr/local/bin/
+          fi
+          
+          echo "Listing pods in namespace $ZOMBIE_K8S_CI_NAMESPACE..."
+          kubectl get pods -n "$ZOMBIE_K8S_CI_NAMESPACE" -o wide || true
+          for pod in $(kubectl get pods -n "$ZOMBIE_K8S_CI_NAMESPACE" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true); do
+            echo "Dumping logs for pod: $pod"
+            kubectl logs -n "$ZOMBIE_K8S_CI_NAMESPACE" "$pod" --all-containers=true > "/tmp/zombie-1/logs/${pod}.log" 2>&1 || true
+          done
+          find /tmp/zombie* -name "*.log" -type f ! -regex '.*/[0-9]+\.log' -exec cp {} /tmp/zombie-1/logs/ \; 2>/dev/null || true
+          echo "Collected logs:"
+          ls -la /tmp/zombie-1/logs/ || true
 
       - name: upload logs
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
-            /tmp/zombie*/logs/*
-  #
-  #
+            /tmp/zombie-1/logs/*
+
+  docker-integration-test-smoke:
+    runs-on: parity-default
+    needs: build-tests
+    timeout-minutes: 60
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: zombienet-tests-${{ github.sha }}
+          path: /tmp
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install wget
+          # Manually download and install the OpenSSL 1.1 library
+          wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+      - name: script
+        timeout-minutes: 45
+        run: |
+          export ZOMBIE_PROVIDER="docker"
+          cd /tmp
+          ls -la
+          tar xvfz artifacts.tar.gz
+          ./artifacts/smoke --nocapture
+
+      - name: dump logs
+        if: always()
+        run: |
+            mkdir -p /tmp/zombie-1/logs
+            for container in $(docker ps -a --filter "name=zombie" --format "{{.Names}}" 2>/dev/null || true); do
+              echo "Dumping logs for container: $container"
+              docker logs "$container" > "/tmp/zombie-1/logs/${container}.log" 2>&1 || true
+            done
+            find /tmp/zombie* -name "*.log" -type f ! -regex '.*/[0-9]+\.log' -exec cp {} /tmp/zombie-1/logs/ \; 2>/dev/null || true
+            ls -la /tmp/zombie-1/logs/ || true
+
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zombienet-logs-${{ github.job }}-${{ github.sha }}
+          path: |
+            /tmp/zombie-1/logs/*
+
   native-integration-test-smoke:
     runs-on: parity-default
     needs: build-tests
@@ -100,7 +169,7 @@ jobs:
       - name: Download bins
         shell: bash
         run: |
-          for bin in polkadot polkadot-execute-worker polkadot-prepare-worker; do
+          for bin in polkadot polkadot-execute-worker polkadot-prepare-worker polkadot-omni-node polkadot-parachain; do
             echo "downloading $bin";
             curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
             chmod 755 /tmp/$bin;
@@ -121,9 +190,17 @@ jobs:
           ./artifacts/smoke_native --nocapture
           # cargo test --test smoke-native -- --nocapture
 
+      - name: collect logs
+        if: always()
+        run: |
+          mkdir -p /tmp/zombie-1/logs
+          find /tmp/zombie* -name "*.log" -type f ! -regex '.*/[0-9]+\.log' -exec cp {} /tmp/zombie-1/logs/ \; 2>/dev/null || true
+          ls -la /tmp/zombie-1/logs/ || true
+
       - name: upload logs
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
-            /tmp/zombie*/logs/*
+            /tmp/zombie-1/logs/*

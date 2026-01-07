@@ -15,7 +15,7 @@ keywords = ["zombienet", "provider", "native"]
 [dependencies]
 async-trait = { workspace = true }
 futures = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true, features = [
@@ -40,6 +40,7 @@ reqwest = { workspace = true }
 regex = { workspace = true }
 url = { workspace = true }
 flate2 = { workspace = true }
+erased-serde = { workspace = true }
 
 # Zomebienet deps
 support = { workspace = true }

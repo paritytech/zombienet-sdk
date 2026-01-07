@@ -10,16 +10,17 @@ use anyhow::anyhow;
 use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
-use provider::DynNode;
-use serde::Serialize;
+use provider::{
+    types::{ExecutionResult, RunScriptOptions},
+    DynNode,
+};
+use serde::{Deserialize, Serialize, Serializer};
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
-#[cfg(feature = "pjs")]
-use crate::pjs_helper::{pjs_build_template, pjs_exec, PjsResult, ReturnValue};
 use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
 
 type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
@@ -32,7 +33,7 @@ pub enum NetworkNodeError {
 
 #[derive(Clone, Serialize)]
 pub struct NetworkNode {
-    #[serde(skip)]
+    #[serde(serialize_with = "serialize_provider_node")]
     pub(crate) inner: DynNode,
     // TODO: do we need the full spec here?
     // Maybe a reduce set of values.
@@ -45,6 +46,16 @@ pub struct NetworkNode {
     metrics_cache: Arc<RwLock<MetricMap>>,
     #[serde(skip)]
     is_running: Arc<AtomicBool>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RawNetworkNode {
+    pub(crate) name: String,
+    pub(crate) ws_uri: String,
+    pub(crate) prometheus_uri: String,
+    pub(crate) multiaddr: String,
+    pub(crate) spec: NodeSpec,
+    pub(crate) inner: serde_json::Value,
 }
 
 /// Result of waiting for a certain number of log lines to appear.
@@ -105,6 +116,14 @@ impl LogLineCountOptions {
 
     pub fn no_occurences_within_timeout(timeout: Duration) -> Self {
         Self::new(|n| n == 0, timeout, true)
+    }
+
+    pub fn at_least_once(timeout: Duration) -> Self {
+        Self::new(|count| count >= 1, timeout, false)
+    }
+
+    pub fn exactly_once(timeout: Duration) -> Self {
+        Self::new(|count| count == 1, timeout, false)
     }
 }
 
@@ -210,11 +229,11 @@ impl NetworkNode {
         debug!("wait_client ws_uri: {}", self.ws_uri());
         wait_ws_ready(self.ws_uri())
             .await
-            .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {}", e))?;
+            .map_err(|e| anyhow!("Error awaiting http_client to ws be ready, err: {e}"))?;
 
         self.try_client()
             .await
-            .map_err(|e| anyhow!("Can't create a subxt client, err: {}", e))
+            .map_err(|e| anyhow!("Can't create a subxt client, err: {e}"))
     }
 
     /// Wait until get the [online client](subxt::client::OnlineClient) for the node with a defined timeout
@@ -234,6 +253,9 @@ impl NetworkNode {
 
     /// Pause the node, this is implemented by pausing the
     /// actual process (e.g polkadot) with sending `SIGSTOP` signal
+    ///
+    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
+    /// with global setting `teardown_on_failure` disabled.
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
         self.set_is_running(false);
         self.inner.pause().await?;
@@ -242,6 +264,9 @@ impl NetworkNode {
 
     /// Resume the node, this is implemented by resuming the
     /// actual process (e.g polkadot) with sending `SIGCONT` signal
+    ///
+    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
+    /// with global setting `teardown_on_failure` disabled.
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
         self.set_is_running(true);
         self.inner.resume().await?;
@@ -249,11 +274,30 @@ impl NetworkNode {
     }
 
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
+    ///
+    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
+    /// with global setting `teardown_on_failure` disabled.
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
         self.set_is_running(false);
         self.inner.restart(after).await?;
         self.set_is_running(true);
         Ok(())
+    }
+
+    /// Run a script inside the node's container/environment
+    ///
+    /// The script will be uploaded to the node, made executable, and executed with
+    /// the provided arguments and environment variables.
+    ///
+    /// Returns `Ok(stdout)` on success, or `Err((exit_status, stderr))` on failure.
+    pub async fn run_script(
+        &self,
+        options: RunScriptOptions,
+    ) -> Result<ExecutionResult, anyhow::Error> {
+        self.inner
+            .run_script(options)
+            .await
+            .map_err(|e| anyhow!("Failed to run script: {}", e))
     }
 
     // Metrics assertions
@@ -365,7 +409,7 @@ impl NetworkNode {
         if let Ok(inner_res) = res {
             match inner_res {
                 Ok(_) => Ok(()),
-                Err(e) => Err(anyhow!("Error waiting for metric: {}", e)),
+                Err(e) => Err(anyhow!("Error waiting for metric: {e}")),
             }
         } else {
             // timeout
@@ -518,48 +562,6 @@ impl NetworkNode {
         }
     }
 
-    // TODO: impl
-    // wait_event_count
-    // wait_event_count_with_timeout
-
-    #[cfg(feature = "pjs")]
-    /// Execute js/ts code inside [pjs_rs] custom runtime.
-    ///
-    /// The code will be run in a wrapper similar to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs(
-        &self,
-        code: impl AsRef<str>,
-        args: Vec<serde_json::Value>,
-        user_types: Option<serde_json::Value>,
-    ) -> Result<PjsResult, anyhow::Error> {
-        let code = pjs_build_template(self.ws_uri(), code.as_ref(), args, user_types);
-        tracing::trace!("Code to execute: {code}");
-        let value = match pjs_exec(code)? {
-            ReturnValue::Deserialized(val) => Ok(val),
-            ReturnValue::CantDeserialize(msg) => Err(msg),
-        };
-
-        Ok(value)
-    }
-
-    #[cfg(feature = "pjs")]
-    /// Execute js/ts file  inside [pjs_rs] custom runtime.
-    ///
-    /// The content of the file will be run in a wrapper similar to the `javascript` developer tab
-    /// of polkadot.js apps. The returning value is represented as [PjsResult] enum, to allow
-    /// to communicate that the execution was successful but the returning value can be deserialized as [serde_json::Value].
-    pub async fn pjs_file(
-        &self,
-        file: impl AsRef<std::path::Path>,
-        args: Vec<serde_json::Value>,
-        user_types: Option<serde_json::Value>,
-    ) -> Result<PjsResult, anyhow::Error> {
-        let content = std::fs::read_to_string(file)?;
-        self.pjs(content, args, user_types).await
-    }
-
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {
         let response = reqwest::get(&self.prometheus_uri).await?;
         let metrics = prom_metrics_parser::parse(&response.text().await?)?;
@@ -624,6 +626,13 @@ impl std::fmt::Debug for NetworkNode {
     }
 }
 
+fn serialize_provider_node<S>(node: &DynNode, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    erased_serde::serialize(node.as_ref(), serializer)
+}
+
 // TODO: mock and impl more unit tests
 #[cfg(test)]
 mod tests {
@@ -637,6 +646,7 @@ mod tests {
 
     use super::*;
 
+    #[derive(Serialize)]
     struct MockNode {
         logs: Arc<Mutex<Vec<String>>>,
     }

@@ -1,8 +1,12 @@
 use std::time::{Duration, Instant};
 
-use clap::{Parser, Subcommand};
+use clap::{Args as ClapArgs, Parser, Subcommand};
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use zombienet_sdk::{environment::Provider, GlobalSettingsBuilder, NetworkConfig};
+
+mod reproduce;
+
+use reproduce::ReproduceConfig;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum NodeVerifier {
@@ -19,6 +23,34 @@ impl<T: AsRef<str>> From<T> for NodeVerifier {
     }
 }
 
+/// Common options for spawning networks
+#[derive(ClapArgs, Debug, Clone)]
+pub struct SpawnOptions {
+    #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["docker", "k8s", "native"]), default_value="docker")]
+    provider: String,
+    #[arg(
+        short = 'd',
+        long = "dir",
+        help = "Directory path for placing the network files instead of random temp one"
+    )]
+    base_path: Option<String>,
+    #[arg(
+        short = 'c',
+        long = "spawn-concurrency",
+        help = "Number of concurrent spawning process to launch"
+    )]
+    spawn_concurrency: Option<usize>,
+    /// Allow to manage how we verify node readiness or disable (None)
+    /// For 'metric' we query prometheus 'process_start_time_seconds' in order to check the rediness".
+    #[arg(
+        short = 'v',
+        long = "node-verifier",
+        value_parser = clap::builder::PossibleValuesParser::new(["none", "metric"]), default_value="metric",
+        verbatim_doc_comment,
+    )]
+    node_verifier: String,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
@@ -29,30 +61,41 @@ pub struct Args {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     Spawn {
+        /// Network config file path
         config: String,
-        #[arg(short, long, value_parser = clap::builder::PossibleValuesParser::new(["docker", "k8s", "native"]), default_value="docker")]
-        provider: String,
+        #[command(flatten)]
+        spawn_opts: SpawnOptions,
+    },
+    Reproduce {
+        /// Repository name (e.g. zombienet-sdk) - only needed if downloading from GitHub
+        #[arg(required_unless_present = "archive_file")]
+        repo: Option<String>,
+        /// CI run id to reproduce - only needed if downloading from GitHub
+        #[arg(required_unless_present = "archive_file")]
+        run_id: Option<String>,
         #[arg(
-            short = 'd',
-            long = "dir",
-            help = "Directory path for placing the network files instead of random temp one (e.g. -d /home/user/my-zombienet)"
+            short = 'a',
+            long = "archive",
+            help = "Path to local nextest archive file (.tar.zst)",
+            conflicts_with_all = ["repo", "run_id"]
         )]
-        base_path: Option<String>,
+        archive_file: Option<String>,
         #[arg(
-            short = 'c',
-            long = "spawn-concurrency",
-            help = "Number of concurrent spawning process to launch"
+            short = 'p',
+            long = "artifact-pattern",
+            help = "Specific artifact pattern to run (if not specified, will run all tests in archive)"
         )]
-        spawn_concurrency: Option<usize>,
-        /// Allow to manage how we verify node readiness or disable (None)
-        /// For 'metric' we query prometheus 'process_start_time_seconds' in order to check the rediness".
+        artifact_pattern: Option<String>,
+        /// Test names or patterns to skip (can be specified multiple times)
         #[arg(
-            short = 'v',
-            long = "node-verifier",
-            value_parser = clap::builder::PossibleValuesParser::new(["none", "metric"]), default_value="metric",
-            verbatim_doc_comment,
+            short = 's',
+            long = "skip",
+            help = "Skip tests matching this pattern (can be specified multiple times)"
         )]
-        node_verifier: String,
+        skip_tests: Vec<String>,
+        /// Arguments to pass after -- to cargo nextest run (e.g. test names, filters)
+        #[arg(last = true, trailing_var_arg = true)]
+        test_filter: Vec<String>,
     },
 }
 
@@ -69,22 +112,56 @@ async fn main() -> Result<(), anyhow::Error> {
     let now = Instant::now();
     let args = Args::parse();
 
-    let (config, provider, base_path, spawn_concurrency, node_verifier) = match args.cmd {
-        Commands::Spawn {
-            config,
-            provider,
-            base_path,
-            spawn_concurrency,
-            node_verifier,
-        } => (
-            config,
-            provider,
-            base_path,
-            spawn_concurrency,
-            node_verifier,
-        ),
-    };
+    match args.cmd {
+        Commands::Spawn { config, spawn_opts } => {
+            spawn_network(
+                config,
+                spawn_opts.provider,
+                spawn_opts.base_path,
+                spawn_opts.spawn_concurrency,
+                spawn_opts.node_verifier,
+                now,
+            )
+            .await
+        },
+        Commands::Reproduce {
+            repo,
+            run_id,
+            archive_file,
+            artifact_pattern,
+            skip_tests,
+            test_filter,
+        } => {
+            ReproduceConfig {
+                repo,
+                run_id,
+                archive_file,
+                artifact_pattern,
+                skip_tests: if skip_tests.is_empty() {
+                    None
+                } else {
+                    Some(skip_tests)
+                },
+                test_filter: if test_filter.is_empty() {
+                    None
+                } else {
+                    Some(test_filter)
+                },
+            }
+            .execute()
+            .await
+        },
+    }
+}
 
+async fn spawn_network(
+    config: String,
+    provider: String,
+    base_path: Option<String>,
+    spawn_concurrency: Option<usize>,
+    node_verifier: String,
+    start_time: Instant,
+) -> Result<(), anyhow::Error> {
     let config = network_config(&config, base_path, spawn_concurrency);
 
     let provider: Provider = provider.into();
@@ -100,7 +177,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .map_err(display_node_crash)?;
     }
 
-    let elapsed = now.elapsed();
+    let elapsed = start_time.elapsed();
     println!("🚀🚀🚀 network is up, in {elapsed:.2?}");
 
     loop {
@@ -115,7 +192,7 @@ async fn main() -> Result<(), anyhow::Error> {
 }
 
 fn display_node_crash(e: anyhow::Error) -> anyhow::Error {
-    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {}", e.to_string())
+    anyhow::anyhow!("\n\t🧟 One of the nodes crashed, {e}")
 }
 
 pub fn network_config(
@@ -139,7 +216,7 @@ pub fn network_config(
         .collect();
 
     let settings_builder = GlobalSettingsBuilder::new()
-        .with_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
+        .with_raw_bootnodes_addresses(bootnodes_addresses.iter().map(|x| x.as_str()).collect())
         .with_network_spawn_timeout(current_settings.network_spawn_timeout())
         .with_node_spawn_timeout(current_settings.node_spawn_timeout())
         .with_tear_down_on_failure(false);

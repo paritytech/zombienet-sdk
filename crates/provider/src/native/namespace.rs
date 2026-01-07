@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
@@ -14,6 +13,8 @@ use uuid::Uuid;
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
+    native::{node::DeserializableNativeNodeOptions, provider},
+    shared::helpers::extract_execution_result,
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -72,6 +73,26 @@ where
             nodes: RwLock::new(HashMap::new()),
         }))
     }
+
+    pub(super) async fn attach_to_live(
+        provider: &Weak<NativeProvider<FS>>,
+        capabilities: &ProviderCapabilities,
+        filesystem: &FS,
+        custom_base_dir: &Path,
+        name: &str,
+    ) -> Result<Arc<Self>, ProviderError> {
+        let base_dir = custom_base_dir.to_path_buf();
+
+        Ok(Arc::new_cyclic(|weak| NativeNamespace {
+            weak: weak.clone(),
+            provider: provider.clone(),
+            name: name.to_string(),
+            base_dir,
+            capabilities: capabilities.clone(),
+            filesystem: filesystem.clone(),
+            nodes: RwLock::new(HashMap::new()),
+        }))
+    }
 }
 
 #[async_trait]
@@ -89,6 +110,10 @@ where
 
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
+    }
+
+    fn provider_name(&self) -> &str {
+        provider::PROVIDER_NAME
     }
 
     async fn nodes(&self) -> HashMap<String, DynNode> {
@@ -137,6 +162,7 @@ where
             created_paths: &options.created_paths,
             db_snapshot: options.db_snapshot.as_ref(),
             filesystem: &self.filesystem,
+            node_log_path: options.node_log_path.as_ref(),
         })
         .await?;
 
@@ -144,6 +170,34 @@ where
             .write()
             .await
             .insert(options.name.clone(), node.clone());
+
+        Ok(node)
+    }
+
+    async fn spawn_node_from_json(
+        &self,
+        json_value: &serde_json::Value,
+    ) -> Result<DynNode, ProviderError> {
+        let deserializable: DeserializableNativeNodeOptions =
+            serde_json::from_value(json_value.clone())?;
+        let options = NativeNodeOptions::from_deserializable(
+            &deserializable,
+            &self.weak,
+            &self.base_dir,
+            &self.filesystem,
+        );
+
+        let pid = json_value
+            .get("process_handle")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| ProviderError::InvalidConfig("Missing pid field".to_string()))?
+            as i32;
+        let node = NativeNode::attach_to_live(options, pid).await?;
+
+        self.nodes
+            .write()
+            .await
+            .insert(node.name().to_string(), node.clone());
 
         Ok(node)
     }
@@ -189,18 +243,16 @@ where
                 local_output_path.to_string_lossy()
             );
 
-            match temp_node
-                .run_command(RunCommandOptions { program, args, env })
+            let contents = extract_execution_result(
+                &temp_node,
+                RunCommandOptions { program, args, env },
+                options.expected_path.as_ref(),
+            )
+            .await?;
+            self.filesystem
+                .write(local_output_full_path, contents)
                 .await
-                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?
-            {
-                Ok(contents) => self
-                    .filesystem
-                    .write(local_output_full_path, contents)
-                    .await
-                    .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?,
-                Err((_, msg)) => Err(ProviderError::FileGenerationFailed(anyhow!("{msg}")))?,
-            };
+                .map_err(|err| ProviderError::FileGenerationFailed(err.into()))?;
         }
 
         temp_node.destroy().await
@@ -231,5 +283,92 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use support::fs::local::LocalFileSystem;
+
+    use super::*;
+    use crate::{
+        types::{GenerateFileCommand, GenerateFilesOptions},
+        NativeProvider, Provider,
+    };
+
+    fn unique_temp_dir() -> PathBuf {
+        let mut base = std::env::temp_dir();
+        base.push(format!("znet_native_ns_test_{}", uuid::Uuid::new_v4()));
+        base
+    }
+
+    #[tokio::test]
+    async fn generate_files_uses_expected_path_when_provided() {
+        let fs = LocalFileSystem;
+        let provider = NativeProvider::new(fs.clone());
+        let base_dir = unique_temp_dir();
+        // Namespace builder will create directory if needed
+        let ns = provider
+            .create_namespace_with_base_dir(&base_dir)
+            .await
+            .expect("namespace should be created");
+
+        // Create a unique on-host path that the native node will write to
+        let expected_path =
+            std::env::temp_dir().join(format!("znet_expected_{}.json", uuid::Uuid::new_v4()));
+
+        // Command will write JSON into expected_path; stdout will be something else to ensure we don't read it
+        let program = "bash".to_string();
+        let script = format!(
+            "echo -n '{{\"hello\":\"world\"}}' > {} && echo should_not_be_used",
+            expected_path.to_string_lossy()
+        );
+        let args: Vec<String> = vec!["-lc".into(), script];
+
+        let out_name = PathBuf::from("result_expected.json");
+        let cmd = GenerateFileCommand::new(program, out_name.clone()).args(args);
+        let options = GenerateFilesOptions::new(vec![cmd], None, Some(expected_path.clone()));
+
+        ns.generate_files(options)
+            .await
+            .expect("generation should succeed");
+
+        // Read produced file from namespace base_dir
+        let produced_path = base_dir.join(out_name);
+        let produced = fs
+            .read_to_string(&produced_path)
+            .await
+            .expect("should read produced file");
+        assert_eq!(produced, "{\"hello\":\"world\"}");
+    }
+
+    #[tokio::test]
+    async fn generate_files_uses_stdout_when_expected_path_absent() {
+        let fs = LocalFileSystem;
+        let provider = NativeProvider::new(fs.clone());
+        let base_dir = unique_temp_dir();
+        let ns = provider
+            .create_namespace_with_base_dir(&base_dir)
+            .await
+            .expect("namespace should be created");
+
+        // Command prints to stdout only
+        let program = "bash".to_string();
+        let args: Vec<String> = vec!["-lc".into(), "echo -n 42".into()];
+
+        let out_name = PathBuf::from("result_stdout.txt");
+        let cmd = GenerateFileCommand::new(program, out_name.clone()).args(args);
+        let options = GenerateFilesOptions::new(vec![cmd], None, None);
+
+        ns.generate_files(options)
+            .await
+            .expect("generation should succeed");
+
+        let produced_path = base_dir.join(out_name);
+        let produced = fs
+            .read_to_string(&produced_path)
+            .await
+            .expect("should read produced file");
+        assert_eq!(produced, "42");
     }
 }

@@ -6,7 +6,7 @@ use std::{
 use anyhow::anyhow;
 use async_trait::async_trait;
 use provider::types::TransferedFile;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use subxt::{dynamic::Value, tx::TxStatus, OnlineClient, SubstrateConfig};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, net::wait_ws_ready};
@@ -17,10 +17,11 @@ use crate::{
     network_spec::parachain::ParachainSpec,
     shared::types::{RegisterParachainOptions, RuntimeUpgradeOptions},
     tx_helper::client::get_client_from_url,
+    utils::default_as_empty_vec,
     ScopedFilesystem,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,
@@ -29,8 +30,17 @@ pub struct Parachain {
     pub(crate) unique_id: String,
     pub(crate) chain_id: Option<String>,
     pub(crate) chain_spec_path: Option<PathBuf>,
+    #[serde(default, deserialize_with = "default_as_empty_vec")]
     pub(crate) collators: Vec<NetworkNode>,
     pub(crate) files_to_inject: Vec<TransferedFile>,
+    pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RawParachain {
+    #[serde(flatten)]
+    pub(crate) inner: Parachain,
+    pub(crate) collators: serde_json::Value,
 }
 
 #[async_trait]
@@ -45,10 +55,7 @@ impl ChainUpgrade for Parachain {
             {
                 node
             } else {
-                return Err(anyhow!(
-                    "Node: {} is not part of the set of nodes",
-                    node_name
-                ));
+                return Err(anyhow!("Node: {node_name} is not part of the set of nodes"));
             }
         } else {
             // take the first node
@@ -73,6 +80,7 @@ impl Parachain {
             chain_spec_path: None,
             collators: Default::default(),
             files_to_inject: Default::default(),
+            bootnodes_addresses: vec![],
         }
     }
 
@@ -90,6 +98,7 @@ impl Parachain {
             chain_spec_path: Some(chain_spec_path.as_ref().into()),
             collators: Default::default(),
             files_to_inject: Default::default(),
+            bootnodes_addresses: vec![],
         }
     }
 
@@ -101,7 +110,7 @@ impl Parachain {
         let mut para_files_to_inject = files_to_inject.to_owned();
 
         // parachain id is used for the keystore
-        let mut para = if let Some(chain_spec) = para.chain_spec.as_ref() {
+        let mut parachain = if let Some(chain_spec) = para.chain_spec.as_ref() {
             let id = chain_spec.read_chain_id(scoped_fs).await?;
 
             // add the spec to global files to inject
@@ -120,14 +129,16 @@ impl Parachain {
             if let Some(chain_name) = chain_spec.chain_name() {
                 running_para.chain = Some(chain_name.to_string());
             }
+
             running_para
         } else {
             Parachain::new(para.id, &para.unique_id)
         };
 
-        para.files_to_inject = para_files_to_inject;
+        parachain.bootnodes_addresses = para.bootnodes_addresses().into_iter().cloned().collect();
+        parachain.files_to_inject = para_files_to_inject;
 
-        Ok(para)
+        Ok(parachain)
     }
 
     pub async fn register(
@@ -232,6 +243,10 @@ impl Parachain {
     pub fn collators(&self) -> Vec<&NetworkNode> {
         self.collators.iter().collect()
     }
+
+    pub fn bootnodes_addresses(&self) -> Vec<&multiaddr::Multiaddr> {
+        self.bootnodes_addresses.iter().collect()
+    }
 }
 
 #[cfg(test)]
@@ -270,15 +285,19 @@ mod tests {
 
         use crate::network_spec::parachain::ParachainSpec;
 
+        let bootnode_addresses = vec!["/ip4/10.41.122.55/tcp/45421"];
+
         let para_config = ParachainConfigBuilder::new(Default::default())
             .with_id(100)
             .cumulus_based(false)
             .with_default_command("adder-collator")
+            .with_raw_bootnodes_addresses(bootnode_addresses.clone())
             .with_collator(|c| c.with_name("col"))
             .build()
             .unwrap();
 
-        let para_spec = ParachainSpec::from_config(&para_config).unwrap();
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "rococo-local".try_into().unwrap()).unwrap();
         let fs = support::fs::in_memory::InMemoryFileSystem::new(HashMap::default());
         let scoped_fs = ScopedFilesystem {
             fs: &fs,
@@ -299,5 +318,67 @@ mod tests {
         assert_eq!(para.chain, None);
         // one file should be added.
         assert_eq!(para.files_to_inject.len(), 1);
+        assert_eq!(
+            para.bootnodes_addresses()
+                .iter()
+                .map(|addr| addr.to_string())
+                .collect::<Vec<_>>(),
+            bootnode_addresses
+        );
+    }
+
+    #[test]
+    fn genesis_state_precedence_uses_path_over_generator() {
+        use configuration::ParachainConfigBuilder;
+
+        use crate::network_spec::parachain::ParachainSpec;
+
+        let para_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(101)
+            .with_genesis_state_path("./path/to/genesis/state")
+            .with_genesis_state_generator("generator_state --flag")
+            .with_collator(|c| c.with_name("col").with_command("cmd"))
+            .build()
+            .unwrap();
+
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "relay".try_into().unwrap()).unwrap();
+
+        // ParaArtifact implements Debug; ensure the build option is the Path variant
+        let debug = format!("{:?}", para_spec.genesis_state);
+        assert!(
+            debug.contains("Path("),
+            "expected genesis_state to be Path variant, got: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn genesis_state_generator_with_args_preserved() {
+        use configuration::ParachainConfigBuilder;
+
+        use crate::network_spec::parachain::ParachainSpec;
+
+        let para_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(102)
+            .with_genesis_state_generator(
+                "undying-collator export-genesis-state --pov-size=10000 --pvf-complexity=1",
+            )
+            .with_collator(|c| c.with_name("col").with_command("cmd"))
+            .build()
+            .unwrap();
+
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "relay".try_into().unwrap()).unwrap();
+        let debug = format!("{:?}", para_spec.genesis_state);
+
+        // Ensure CommandWithCustomArgs is used and arguments are present in debug output
+        assert!(
+            debug.contains("CommandWithCustomArgs"),
+            "expected CommandWithCustomArgs in debug, got: {}",
+            debug
+        );
+        assert!(debug.contains("export-genesis-state"));
+        assert!(debug.contains("--pov-size"));
     }
 }

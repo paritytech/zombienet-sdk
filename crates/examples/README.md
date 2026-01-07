@@ -50,9 +50,21 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: Illustrates how to start a network, create a database snapshot, and then launch a new network from that snapshot to speed up initialization.
     *   **Run**: `cargo run --example db_snapshot`
 
+*   **`docker_db_snapshot`**
+    *   **Description**: Demonstrates how to spawn a network using a pre-existing database snapshot from a URL to speed up initialization in Docker environments.
+    *   **Run**: `cargo run --example docker_db_snapshot`
+
 *   **`chain_spec_generation`**
     *   **Description**: Shows how to generate a chain spec dynamically when launching a network by providing a `chain_spec_command`.
     *   **Run**: `cargo run --example chain_spec_generation`
+
+*   **`chain_spec_runtime_kusama`**
+    *   **Description**: Demonstrates launching a Kusama relay chain and Asset Hub parachain using custom runtime WASM files from the Polkadot Fellows repository.
+    *   **Run**: `cargo run --example chain_spec_runtime_kusama`
+
+*   **`polkadot_people_wasm_runtime`**
+    *   **Description**: Shows how to launch a Polkadot network with People parachain using custom runtime WASM files for both relay chain and parachain.
+    *   **Run**: `cargo run --example polkadot_people_wasm_runtime`
 
 *   **`raw_spec_override`**
     *   **Description**: Demonstrates how to override fields in the relay chain's raw chain spec (such as the chain name or bootNodes) using the SDK's `.with_raw_spec_override()` method.
@@ -61,6 +73,32 @@ This directory contains a collection of examples demonstrating the features of t
 *   **`genesis_override`**
     *   **Description**: Shows how to override the genesis configuration (such as balances) for a parachain using `.with_genesis_overrides()`, and verifies the change by querying the balance with Polkadot.js.
     *   **Run**: `cargo run --example genesis_override`
+
+*   **`genesis_state_generator_example`**
+    *   **Description**: Demonstrates how to use a custom genesis state generator command for a parachain.
+    *   **Run**: `cargo run --example genesis_state_generator_example`
+
+### Network Utilities
+
+*   **`from_live`**
+    *   **Description**: Shows how to attach to a live, already-running Zombienet network using the `zombie.json` file to interact with existing nodes.
+    *   **Run**: `cargo run --example from_live`
+
+*   **`test_run_script`**
+    *   **Description**: Demonstrates how to run custom scripts on nodes in a network using the `run_script` API.
+    *   **Run**: `cargo run --example test_run_script`
+
+*   **`small_network_config`**
+    *   **Description**: A minimal example showing basic network configuration structure.
+    *   **Run**: `cargo run --example small_network_config`
+
+*   **`keystore_key_types`**
+    *   **Description**: Demonstrates how to work with keystore directories and validate the key types generated for validators.
+    *   **Run**: `cargo run --example keystore_key_types`
+
+*   **`evm_parachain_session_key`**
+    *   **Description**: Shows how to configure an EVM-based parachain collator with session keys.
+    *   **Run**: `cargo run --example evm_parachain_session_key`
 
 ### Parachain Lifecycle
 
@@ -91,9 +129,3 @@ This directory contains a collection of examples demonstrating the features of t
 *   **`two_paras_same_id`**
     *   **Description**: Demonstrates what happens when two parachains with the same ID are added to the network, useful for testing duplicate parachain ID handling.
     *   **Run**: `cargo run --example two_paras_same_id`
-
-### Scripting and Testing
-
-*   **`pjs`**
-    *   **Description**: Demonstrates how to execute a JavaScript test file (`pjs_transfer.js`) against a running network using the integrated Polkadot.js runner.
-    *   **Run**: `cargo run --example pjs`

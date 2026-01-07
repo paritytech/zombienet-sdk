@@ -348,8 +348,7 @@ mod tests {
         let debug = format!("{:?}", para_spec.genesis_state);
         assert!(
             debug.contains("Path("),
-            "expected genesis_state to be Path variant, got: {}",
-            debug
+            "expected genesis_state to be Path variant, got: {debug}"
         );
     }
 
@@ -375,8 +374,7 @@ mod tests {
         // Ensure CommandWithCustomArgs is used and arguments are present in debug output
         assert!(
             debug.contains("CommandWithCustomArgs"),
-            "expected CommandWithCustomArgs in debug, got: {}",
-            debug
+            "expected CommandWithCustomArgs in debug, got: {debug}"
         );
         assert!(debug.contains("export-genesis-state"));
         assert!(debug.contains("--pov-size"));

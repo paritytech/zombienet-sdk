@@ -13,7 +13,7 @@ use futures::future::try_join_all;
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{time::sleep, try_join};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use super::{
     client::{ContainerRunOptions, DockerClient},
@@ -263,7 +263,7 @@ where
                 &self.container_name,
                 ["chmod", "777", "/cfg", "/data", "/relay-data"].into(),
                 None,
-                Some("root"),
+                Some("root".into()),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -271,46 +271,77 @@ where
         Ok(())
     }
 
+    fn build_db_snapshot_command(download_url: Option<&str>) -> RunCommandOptions {
+        let mut args = vec![
+            "-p".to_string(),
+            "/data/".to_string(),
+            "&&".to_string(),
+            "mkdir".to_string(),
+            "-p".to_string(),
+            "/relay-data/".to_string(),
+            "&&".to_string(),
+        ];
+
+        if let Some(url) = download_url {
+            args.extend([
+                "/helpers/curl".to_string(),
+                url.to_string(),
+                "--output".to_string(),
+                "/data/db.tgz".to_string(),
+                "&&".to_string(),
+            ]);
+        }
+
+        args.extend([
+            "cd".to_string(),
+            "/".to_string(),
+            "&&".to_string(),
+            "tar".to_string(),
+            "--skip-old-files".to_string(),
+            "-xzvf".to_string(),
+            "/data/db.tgz".to_string(),
+        ]);
+
+        RunCommandOptions::new("mkdir").args(args)
+    }
+
     async fn initialize_db_snapshot(
         &self,
-        _db_snapshot: &AssetLocation,
+        db_snapshot: &AssetLocation,
     ) -> Result<(), ProviderError> {
-        todo!()
-        // trace!("snap: {db_snapshot}");
-        // let url_of_snap = match db_snapshot {
-        //     AssetLocation::Url(location) => location.clone(),
-        //     AssetLocation::FilePath(filepath) => self.upload_to_fileserver(filepath).await?,
-        // };
+        trace!(
+            "initializing docker db snapshot for node {}: {db_snapshot}",
+            self.name
+        );
 
-        // // we need to get the snapshot from a public access
-        // // and extract to /data
-        // let opts = RunCommandOptions::new("mkdir").args([
-        //     "-p",
-        //     "/data/",
-        //     "&&",
-        //     "mkdir",
-        //     "-p",
-        //     "/relay-data/",
-        //     "&&",
-        //     // Use our version of curl
-        //     "/cfg/curl",
-        //     url_of_snap.as_ref(),
-        //     "--output",
-        //     "/data/db.tgz",
-        //     "&&",
-        //     "cd",
-        //     "/",
-        //     "&&",
-        //     "tar",
-        //     "--skip-old-files",
-        //     "-xzvf",
-        //     "/data/db.tgz",
-        // ]);
+        match db_snapshot {
+            AssetLocation::Url(url) => {
+                let url_of_snap = url.to_string();
+                trace!(
+                    "downloading snapshot for node {} from {}",
+                    self.name,
+                    url_of_snap
+                );
 
-        // trace!("cmd opts: {:#?}", opts);
-        // let _ = self.run_command(opts).await?;
+                let opts = Self::build_db_snapshot_command(Some(&url_of_snap));
+                let _ = self.run_command(opts).await?;
+            },
+            AssetLocation::FilePath(path) => {
+                trace!(
+                    "uploading local snapshot {} into container {}",
+                    path.to_string_lossy(),
+                    self.container_name
+                );
 
-        // Ok(())
+                self.send_file(path.as_path(), Path::new("/data/db.tgz"), "0644")
+                    .await?;
+
+                let opts = Self::build_db_snapshot_command(None);
+                let _ = self.run_command(opts).await?;
+            },
+        }
+
+        Ok(())
     }
 
     async fn initialize_startup_files(
@@ -501,9 +532,30 @@ where
 
     async fn run_script(
         &self,
-        _options: RunScriptOptions,
+        options: RunScriptOptions,
     ) -> Result<ExecutionResult, ProviderError> {
-        todo!()
+        let file_name = options
+            .local_script_path
+            .file_name()
+            .expect(&format!(
+                "file name should be present at this point {THIS_IS_A_BUG}"
+            ))
+            .to_string_lossy();
+
+        let remote_script_path = self.scripts_dir.join(Path::new(file_name.as_ref()));
+
+        // Upload the script to the container and make it executable
+        self.send_file(&options.local_script_path, &remote_script_path, "0755")
+            .await?;
+
+        // Run the script with provided arguments and environment
+        self.run_command(RunCommandOptions {
+            program: remote_script_path.to_string_lossy().to_string(),
+            args: options.args,
+            env: options.env,
+        })
+        .await
+        .map_err(|err| ProviderError::RunScriptError(self.name.to_string(), err.into()))
     }
 
     async fn send_file(
@@ -524,8 +576,7 @@ where
             mode
         );
 
-        let _ = self
-            .docker_client
+        self.docker_client
             .container_cp(&self.container_name, local_file_path, remote_file_path)
             .await
             .map_err(|err| {
@@ -534,10 +585,9 @@ where
                     self.name.clone(),
                     err.into(),
                 )
-            });
+            })?;
 
-        let _ = self
-            .docker_client
+        self.docker_client
             .container_exec(
                 &self.container_name,
                 vec!["chmod", mode, &remote_file_path.to_string_lossy()],
@@ -550,6 +600,13 @@ where
                     self.name.clone(),
                     local_file_path.to_string_lossy().to_string(),
                     err.into(),
+                )
+            })?
+            .map_err(|err| {
+                ProviderError::SendFile(
+                    self.name.clone(),
+                    local_file_path.to_string_lossy().to_string(),
+                    anyhow!("chmod failed: status {}: {}", err.0, err.1),
                 )
             })?;
 

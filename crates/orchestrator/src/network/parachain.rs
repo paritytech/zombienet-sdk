@@ -326,4 +326,59 @@ mod tests {
             bootnode_addresses
         );
     }
+
+    #[test]
+    fn genesis_state_precedence_uses_path_over_generator() {
+        use configuration::ParachainConfigBuilder;
+
+        use crate::network_spec::parachain::ParachainSpec;
+
+        let para_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(101)
+            .with_genesis_state_path("./path/to/genesis/state")
+            .with_genesis_state_generator("generator_state --flag")
+            .with_collator(|c| c.with_name("col").with_command("cmd"))
+            .build()
+            .unwrap();
+
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "relay".try_into().unwrap()).unwrap();
+
+        // ParaArtifact implements Debug; ensure the build option is the Path variant
+        let debug = format!("{:?}", para_spec.genesis_state);
+        assert!(
+            debug.contains("Path("),
+            "expected genesis_state to be Path variant, got: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn genesis_state_generator_with_args_preserved() {
+        use configuration::ParachainConfigBuilder;
+
+        use crate::network_spec::parachain::ParachainSpec;
+
+        let para_config = ParachainConfigBuilder::new(Default::default())
+            .with_id(102)
+            .with_genesis_state_generator(
+                "undying-collator export-genesis-state --pov-size=10000 --pvf-complexity=1",
+            )
+            .with_collator(|c| c.with_name("col").with_command("cmd"))
+            .build()
+            .unwrap();
+
+        let para_spec =
+            ParachainSpec::from_config(&para_config, "relay".try_into().unwrap()).unwrap();
+        let debug = format!("{:?}", para_spec.genesis_state);
+
+        // Ensure CommandWithCustomArgs is used and arguments are present in debug output
+        assert!(
+            debug.contains("CommandWithCustomArgs"),
+            "expected CommandWithCustomArgs in debug, got: {}",
+            debug
+        );
+        assert!(debug.contains("export-genesis-state"));
+        assert!(debug.contains("--pov-size"));
+    }
 }

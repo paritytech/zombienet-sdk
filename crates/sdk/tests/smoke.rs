@@ -148,7 +148,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .unwrap();
 
     // ensure zombie.json is updated with "new1" and "new-col-1"
-    let raw = tokio::fs::read_to_string(format!("{}/zombie.json", network.base_dir().unwrap()))
+    let raw = tokio::fs::read_to_string("/tmp/zombie-1/zombie.json")
         .await
         .unwrap();
     let zombie_json: serde_json::Value = serde_json::from_str(&raw).unwrap();

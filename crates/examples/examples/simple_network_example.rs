@@ -1,10 +1,17 @@
+//! Example: Simple network deployment and block subscription.
+//!
+//! This script demonstrates how to:
+//! - Load a network configuration from a TOML file
+//! - Deploy the network using native binaries
+//! - Wait for network startup and finalized blocks
+
 use futures::stream::StreamExt;
 use zombienet_sdk::{subxt, NetworkConfig, NetworkConfigExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    let network = NetworkConfig::load_from_toml("./crates/examples/examples/0001-simple.toml")
+    let network = NetworkConfig::load_from_toml("./crates/examples/examples/configs/simple.toml")
         .expect("errored?")
         .spawn_native()
         .await?;

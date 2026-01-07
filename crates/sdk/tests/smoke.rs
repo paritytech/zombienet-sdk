@@ -152,19 +152,24 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .await
         .unwrap();
     let zombie_json: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    let paras = zombie_json["parachains"].as_array().unwrap();
-    let relay = zombie_json["relay"]["nodes"].as_array().unwrap();
 
-    assert!(paras.iter().any(|p| {
-        p["para_id"] == 2000
-            && p["collators"]
+    assert!(zombie_json["parachains"]["2000"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| {
+            p["collators"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .any(|c| c["name"] == "new-col-1")
-    }));
+        }));
 
-    assert!(relay.iter().any(|c| c["name"] == "new1"));
+    assert!(zombie_json["relay"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["name"] == "new1"));
 
     // pause / resume
     let alice = network.get_node("alice").unwrap();

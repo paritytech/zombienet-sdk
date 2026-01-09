@@ -48,55 +48,6 @@ jobs:
           echo "runtime_tag=$RUNTIME_TAG" >> $GITHUB_OUTPUT
           echo "binary_matrix=$BINARIES" >> $GITHUB_OUTPUT
 
-  test-binary:
-    needs: prepare-matrix
-    runs-on: parity-default
-    name: "Test Binary: ${{ matrix.binary_tag }} with runtime: ${{ needs.prepare-matrix.outputs.runtime_tag }}"
-    container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
-    strategy:
-      fail-fast: false
-      matrix:
-        binary_tag: ${{ fromJson(needs.prepare-matrix.outputs.binary_matrix) }}
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Download Specific Binary
-        shell: bash
-        run: |
-          BIN_TAG="${{ matrix.binary_tag }}"
-          mkdir -p ./bin
-          NODE_BINS=("polkadot" "polkadot-execute-worker" "polkadot-prepare-worker")
-          for bin in "${NODE_BINS[@]}"; do
-            echo "Downloading $bin @ $BIN_TAG"
-            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$BIN_TAG/$bin" -o "./bin/$bin"
-            chmod +x "./bin/$bin"
-          done
-          echo "$PWD/bin" >> $GITHUB_PATH
-
-      - name: Download Latest Runtime
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p artifacts
-          TAG="${{ needs.prepare-matrix.outputs.runtime_tag }}"
-          
-          echo "Downloading Runtime $TAG..."
-          
-          gh release download "$TAG" -R polkadot-fellows/runtimes \
-            -p "polkadot_runtime-*.compact.compressed.wasm" \
-            --output artifacts/relay_runtime.wasm
-
-      - name: Run Compatibility Test
-        env:
-          RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
-          ZOMBIE_PROVIDER: native
-          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
-        run: |
-          echo "Testing Binary ${{ matrix.binary_tag }} against Runtime ${{ needs.prepare-matrix.outputs.runtime_tag }}"
-          cargo test --test client-runtime -- --nocapture
   test-mixed-binaries:
     needs: prepare-matrix
     runs-on: parity-default
@@ -113,9 +64,10 @@ jobs:
           mkdir -p ./mixed-bins
           for i in "${!BIN_TAGS[@]}"; do
             TAG="${BIN_TAGS[$i]}"
-            echo "Downloading Polkadot @ $TAG as polkadot_$i"
-            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot" -o "./mixed-bins/polkadot_$i"
-            chmod +x "./mixed-bins/polkadot_$i"
+            FILENAME="polkadot-${TAG}"
+            echo "Downloading Polkadot @ $TAG as $FILENAME"
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot" -o "./mixed-bins/$FILENAME"
+            chmod +x "./mixed-bins/$FILENAME"
 
             # Download workers for the primary/newest binary
             if [ $i -eq 0 ]; then
@@ -138,11 +90,19 @@ jobs:
       - name: Run Mixed Version Test
         env:
           RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
-          POLKADOT_BIN_LATEST: polkadot_0
-          POLKADOT_BIN_LATEST-1: polkadot_1
-          POLKADOT_BIN_LATEST-2: polkadot_2
           ZOMBIE_PROVIDER: native
           PATH: ${{ github.workspace }}/mixed_bins:${{ env.PATH }}
         run: |
+          BIN_TAGS=($(echo '${{ needs.prepare-matrix.outputs.binary_matrix }}' | jq -r '.[]'))
+          
+          export POLKADOT_BIN_LATEST="polkadot-${BIN_TAGS[0]}"
+          export POLKADOT_BIN_LATEST-1="polkadot-${BIN_TAGS[1]}"
+          export POLKADOT_BIN_LATEST-2="polkadot-${BIN_TAGS[2]}"
+
+          echo "Running mixed network test with:"
+          echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"
+          echo "Bob (Latest-1)   : $POLKADOT_BIN_LATEST-1"
+          echo "Charlie (Latest-2): $POLKADOT_BIN_LATEST-2"
+
           echo "Running mixed network with 3 latest client versions"
           cargo test --test client-runtime -- --nocapture

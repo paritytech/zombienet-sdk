@@ -8,92 +8,112 @@ on:
 env:
   BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
   RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
-  CARGO_TARGET_DIR: /tmp/target
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
-  prepare-matrix:
+  build-and-setup:
     runs-on: parity-default
     container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+      image: ${{ env.BASE_IMAGE }}
     outputs:
       runtime_matrix: ${{ steps.set-matrix.outputs.runtime_matrix }}
       binary_tag: ${{ steps.set-matrix.outputs.binary_tag }}
     steps:
-      - name: Fetch Versions
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Fetch and Sort Versions
         id: set-matrix
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch 3 latest runtime tags from fellows/runtimes (v2.0.4, v2.0.3, etc)
+          # 1. Fetch Runtimes (Latest 3)
           RUNTIMES=$(gh api graphql -f query='
             query {
               repository(owner: "polkadot-fellows", name: "runtimes") {
-                releases(first: 3, orderBy: {field: CREATED_AT, direction: DESC}) {
+                releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
                   nodes { tagName }
                 }
               }
             }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^v[0-9]+" | head -n 3 | jq -R . | jq -s -c .)
-          
-          # Fetch latest stable binary tag from paritytech/polkadot-sdk
-          BINARY_TAG=$(gh api graphql -f query='
+
+          # 2. Fetch Binaries (Version Sort, Exclude RCs)
+          RAW_BINARIES=$(gh api graphql -f query='
             query {
               repository(owner: "paritytech", name: "polkadot-sdk") {
                 releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
                   nodes { tagName }
                 }
               }
-            }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | grep -v "\-rc" | sort -Vr | head -n 1)
+            }' --jq '.data.repository.releases.nodes[].tagName')
+          
+          BINARY_TAG=$(echo "$RAW_BINARIES" | grep -E "^polkadot-stable[0-9]+" | grep -v "\-rc" | sort -Vr | head -n 1)
 
           echo "runtime_matrix=$RUNTIMES" >> $GITHUB_OUTPUT
           echo "binary_tag=$BINARY_TAG" >> $GITHUB_OUTPUT
 
+      - name: Download Binaries
+        shell: bash
+        run: |
+          mkdir -p ./shared-bin
+          BIN_TAG="${{ steps.set-matrix.outputs.binary_tag }}"
+          NODE_BINS=("polkadot" "polkadot-execute-worker" "polkadot-prepare-worker")
+          
+          for bin in "${NODE_BINS[@]}"; do
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$BIN_TAG/$bin" -o "./shared-bin/$bin"
+            chmod +x "./shared-bin/$bin"
+          done
+
+      - name: Compile Tests
+        run: |
+          cargo test --test client-runtime --no-run
+
+      - name: Upload Workspace Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-test-and-bins
+          path: |
+            ./shared-bin/
+            ${{ env.CARGO_TARGET_DIR }}/debug/deps/client_runtime-*
+            ${{ env.CARGO_TARGET_DIR }}/debug/client-runtime
+
   test-runtime:
-    needs: prepare-matrix
+    needs: build-and-setup
     runs-on: parity-default
-    name: "Test Runtime: ${{ matrix.runtime_tag }} with binary: ${{ needs.prepare-matrix.outputs.binary_tag }}"
+    name: "Test Runtime: ${{ matrix.runtime_tag }} with binary ${{ needs.build-and-setup.outputs.binary_tag }}"
     container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+      image: ${{ env.BASE_IMAGE }}
     strategy:
       fail-fast: false
       matrix:
-        runtime_tag: ${{ fromJson(needs.prepare-matrix.outputs.runtime_matrix) }}
+        runtime_tag: ${{ fromJson(needs.build-and-setup.outputs.runtime_matrix) }}
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download Latest Binaries
-        shell: bash
-        run: |
-          BIN_TAG="${{ needs.prepare-matrix.outputs.binary_tag }}"
-          mkdir -p ./bin
-          NODE_BINS=("polkadot" "polkadot-execute-worker" "polkadot-prepare-worker")
-          for bin in "${NODE_BINS[@]}"; do
-            echo "Downloading $bin @ $BIN_TAG"
-            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$BIN_TAG/$bin" -o "./bin/$bin"
-            chmod +x "./bin/$bin"
-          done
-          echo "$PWD/bin" >> $GITHUB_PATH
+      - name: Download Workspace Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: compiled-test-and-bins
+          path: .
 
       - name: Download Specific Runtime
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p artifacts
-          TAG="${{ matrix.runtime_tag }}"
-          
-          echo "Downloading Runtimes for $TAG..."
-          
-          gh release download "$TAG" -R polkadot-fellows/runtimes \
+          gh release download "${{ matrix.runtime_tag }}" -R polkadot-fellows/runtimes \
             -p "polkadot_runtime-*.compact.compressed.wasm" \
             --output artifacts/relay_runtime.wasm
 
-      - name: Run Compatibility Test
+      - name: Run Pre-compiled Test
         env:
           RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
           ZOMBIE_PROVIDER: native
-          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
+          PATH: ${{ github.workspace }}/shared-bin:${{ env.PATH }}
         run: |
-          echo "Testing Binary ${{ needs.prepare-matrix.outputs.binary_tag }} against Runtime ${{ matrix.runtime_tag }}"
-          cargo test --test client-runtime -- --nocapture
+          chmod +x ./shared-bin/*
+          TEST_BIN=$(find ./target/debug/ -maxdepth 1 -name "client-runtime" -type f -executable | head -n 1)
+          $TEST_BIN --nocapture

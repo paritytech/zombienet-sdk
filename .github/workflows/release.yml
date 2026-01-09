@@ -26,6 +26,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install protoc on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc on macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install protobuf
+
       - name: Build release binary
         run: cargo build --release --bin zombie-cli --target ${{ matrix.target }}
 
@@ -46,9 +57,10 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: artifacts
+          merge-multiple: true
       
       - name: Generate checksums
         run: |
@@ -58,10 +70,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
         with:
-          files: |
-            artifacts/**/*
-            artifacts/checksums.txt
+          files: artifacts/**/*
           generate_release_notes: true
-          draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

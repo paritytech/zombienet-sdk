@@ -1,0 +1,18 @@
+[relaychain]
+chain = "rococo-local"
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+
+[[relaychain.nodes]]
+name = "bob"
+validator = true
+
+    [relaychain.nodes.resources.requests]
+    memory = "512Mi"
+    cpu = "250M"
+
+    [relaychain.nodes.resources.limits]
+    memory = "1Gi"
+    cpu = "500M"

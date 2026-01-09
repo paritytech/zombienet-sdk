@@ -57,7 +57,7 @@ fn get_predefined_schemes(is_asset_hub_polkadot: bool) -> HashMap<&'static str, 
 /// - Short: `aura` - uses predefined default scheme (defaults to `sr` if not predefined)
 /// - Long: `aura_sr` - uses explicit scheme
 ///
-/// Returns `None` if the spec is invalid (e.g., invalid scheme).
+/// Returns `None` if the spec is empty.
 pub fn parse_key_spec(
     spec: &str,
     predefined: &HashMap<&str, KeyScheme>,
@@ -106,32 +106,6 @@ pub fn parse_chain_spec_key_types<T: AsRef<str>>(
     } else {
         Some(parsed)
     }
-}
-
-pub fn get_default_chain_spec_key_types(is_asset_hub_polkadot: bool) -> Vec<ChainSpecKeyType> {
-    let predefined_schemes = get_predefined_schemes(is_asset_hub_polkadot);
-    let default_keys = [
-        "babe",
-        "im_online",
-        "parachain_validator",
-        "authority_discovery",
-        "para_validator",
-        "para_assignment",
-        "aura",
-        "nimbus",
-        "vrf",
-        "grandpa",
-        "beefy",
-    ];
-
-    default_keys
-        .iter()
-        .filter_map(|key_name| {
-            predefined_schemes
-                .get(*key_name)
-                .map(|scheme| ChainSpecKeyType::new(*key_name, *scheme))
-        })
-        .collect()
 }
 
 #[cfg(test)]

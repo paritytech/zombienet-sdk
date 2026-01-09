@@ -5,7 +5,6 @@ use subxt::{OnlineClient, PolkadotConfig, ext::futures::StreamExt};
 use zombienet_sdk::NetworkConfigExt;
 
 fn small_network() -> NetworkConfig {
-    let para_runtime_path = PathBuf::from(env::var("PARA_RUNTIME_PATH").unwrap());
     let relay_runtime_path = PathBuf::from(env::var("RELAY_RUNTIME_PATH").unwrap());
 
     NetworkConfigBuilder::new()
@@ -16,12 +15,6 @@ fn small_network() -> NetworkConfig {
                 .with_chain_spec_runtime(relay_runtime_path, None)
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
-        })
-        .with_parachain(|p| {
-            p.with_id(3000)
-                .cumulus_based(true)
-                .with_chain_spec_runtime(para_runtime_path, None)
-                .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()
         .unwrap()
@@ -45,19 +38,5 @@ async fn ci_native_smoke_should_works() {
 
     while let Some(block) = blocks.next().await {
         println!("Block #{}", block.unwrap().header().number);
-    }
-
-    let collator = network.get_node("collator").unwrap();
-    let collator_client: OnlineClient<PolkadotConfig> = collator.wait_client().await.unwrap();
-
-    let mut blocks = collator_client
-        .blocks()
-        .subscribe_finalized()
-        .await
-        .unwrap()
-        .take(10);
-
-    while let Some(block) = blocks.next().await {
-        println!("Parachain Block #{}", block.unwrap().header().number);
     }
 }

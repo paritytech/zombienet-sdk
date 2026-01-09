@@ -7,13 +7,12 @@ use zombienet_sdk::NetworkConfigExt;
 fn small_network() -> NetworkConfig {
     let relay_runtime_path = PathBuf::from(env::var("RELAY_RUNTIME_PATH").unwrap());
     let polkadot_bin_latest = env::var("POLKADOT_BIN_LATEST").unwrap_or("polkadot".into());
-    let polkadot_bin_latest_1 = env::var("POLKADOT_BIN_LATEST-1").unwrap_or("polkadot".into());
-    let polkadot_bin_latest_2 = env::var("POLKADOT_BIN_LATEST-2").unwrap_or("polkadot".into());
+    let polkadot_bin_latest_1 = env::var("POLKADOT_BIN_LATEST_1").unwrap_or("polkadot".into());
+    let polkadot_bin_latest_2 = env::var("POLKADOT_BIN_LATEST_2").unwrap_or("polkadot".into());
 
     NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain("polkadot-local")
-                .with_default_command("polkadot")
                 .with_default_args(vec!["-lparachain=debug,runtime=debug".into()])
                 .with_chain_spec_runtime(relay_runtime_path, None)
                 .with_validator(|node| {

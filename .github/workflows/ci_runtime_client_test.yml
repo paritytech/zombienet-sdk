@@ -88,6 +88,7 @@ jobs:
             --output artifacts/relay_runtime.wasm
 
       - name: Run Mixed Version Test
+        shell: bash
         env:
           RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
           ZOMBIE_PROVIDER: native
@@ -96,13 +97,13 @@ jobs:
           BIN_TAGS=($(echo '${{ needs.prepare-matrix.outputs.binary_matrix }}' | jq -r '.[]'))
           
           export POLKADOT_BIN_LATEST="polkadot-${BIN_TAGS[0]}"
-          export POLKADOT_BIN_LATEST-1="polkadot-${BIN_TAGS[1]}"
-          export POLKADOT_BIN_LATEST-2="polkadot-${BIN_TAGS[2]}"
+          export POLKADOT_BIN_LATEST_1="polkadot-${BIN_TAGS[1]}"
+          export POLKADOT_BIN_LATEST_2="polkadot-${BIN_TAGS[2]}"
 
           echo "Running mixed network test with:"
           echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"
-          echo "Bob (Latest-1)   : $POLKADOT_BIN_LATEST-1"
-          echo "Charlie (Latest-2): $POLKADOT_BIN_LATEST-2"
+          echo "Bob (Latest-1)   : $POLKADOT_BIN_LATEST_1"
+          echo "Charlie (Latest-2): $POLKADOT_BIN_LATEST_2"
 
           echo "Running mixed network with 3 latest client versions"
           cargo test --test client-runtime -- --nocapture

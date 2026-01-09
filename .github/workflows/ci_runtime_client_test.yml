@@ -143,5 +143,5 @@ jobs:
           POLKADOT_BIN_LATEST-2: ${{ github.workspace }}/mixed-bins/polkadot_2
           ZOMBIE_PROVIDER: native
         run: |
-          echo "Running mixed network with 3 versions of Polkadot"
-          cargo test --test mixed-version-network -- --nocapture
+          echo "Running mixed network with 3 latest client versions"
+          cargo test --test client-runtime -- --nocapture

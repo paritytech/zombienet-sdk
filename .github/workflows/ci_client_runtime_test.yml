@@ -43,7 +43,7 @@ jobs:
                   nodes { tagName }
                 }
               }
-            }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | head -n 1)
+            }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | sort -Vr | head -n 1)
 
           echo "runtime_matrix=$RUNTIMES" >> $GITHUB_OUTPUT
           echo "binary_tag=$BINARY_TAG" >> $GITHUB_OUTPUT

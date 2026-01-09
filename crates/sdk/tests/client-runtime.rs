@@ -1,7 +1,7 @@
 use std::{env, path::PathBuf};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
-use subxt::{OnlineClient, PolkadotConfig, ext::futures::StreamExt};
+use subxt::{ext::futures::StreamExt, OnlineClient, PolkadotConfig};
 use zombienet_sdk::NetworkConfigExt;
 
 fn small_network() -> NetworkConfig {

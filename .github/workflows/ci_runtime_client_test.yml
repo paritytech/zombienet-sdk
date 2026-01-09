@@ -138,10 +138,11 @@ jobs:
       - name: Run Mixed Version Test
         env:
           RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
-          POLKADOT_BIN_LATEST: ${{ github.workspace }}/mixed-bins/polkadot_0
-          POLKADOT_BIN_LATEST-1: ${{ github.workspace }}/mixed-bins/polkadot_1
-          POLKADOT_BIN_LATEST-2: ${{ github.workspace }}/mixed-bins/polkadot_2
+          POLKADOT_BIN_LATEST: polkadot_0
+          POLKADOT_BIN_LATEST-1: polkadot_1
+          POLKADOT_BIN_LATEST-2: polkadot_2
           ZOMBIE_PROVIDER: native
+          PATH: ${{ github.workspace }}/mixed_bins:${{ env.PATH }}
         run: |
           echo "Running mixed network with 3 latest client versions"
           cargo test --test client-runtime -- --nocapture

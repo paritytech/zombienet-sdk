@@ -30,7 +30,7 @@ async fn main() -> Result<(), anyhow::Error> {
         })
         .with_parachain(|p| {
             p.with_id(100)
-                .with_default_command("test-parachain")
+                .with_default_command("polkadot-parachain")
                 .with_default_image(images.cumulus.as_str())
                 .with_collator(|c| c.with_name("collator"))
         })

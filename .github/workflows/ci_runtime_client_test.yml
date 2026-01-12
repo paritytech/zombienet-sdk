@@ -104,6 +104,11 @@ jobs:
           export WORKERS_PATH_LATEST_1="${{ github.workspace }}/bin/workers-${BIN_TAGS[1]}"
           export WORKERS_PATH_LATEST_2="${{ github.workspace }}/bin/workers-${BIN_TAGS[2]}"
 
+          ls "${{ github.workspace }}/bin/"
+          ls ${WORKERS_PATH_LATEST}
+          ls ${WORKERS_PATH_LATEST_1}
+          ls ${WORKERS_PATH_LATEST_2}
+
           echo "Running mixed network test with:"
           echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"
           echo "Bob (Latest-1)   : $POLKADOT_BIN_LATEST_1"

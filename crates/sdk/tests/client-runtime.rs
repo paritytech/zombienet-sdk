@@ -10,23 +10,47 @@ fn small_network() -> NetworkConfig {
     let polkadot_bin_latest_1 = env::var("POLKADOT_BIN_LATEST_1").unwrap_or("polkadot".into());
     let polkadot_bin_latest_2 = env::var("POLKADOT_BIN_LATEST_2").unwrap_or("polkadot".into());
 
+    let workers_path_latest = env::var("WORKERS_PATH_LATEST").ok();
+    let workers_path_latest_1 = env::var("WORKERS_PATH_LATEST_1").ok();
+    let workers_path_latest_2 = env::var("WORKERS_PATH_LATEST_2").ok();
+
     NetworkConfigBuilder::new()
         .with_relaychain(|r| {
-            r.with_chain("polkadot-local")
+            let relaychain = r
+                .with_chain("polkadot-local")
                 .with_default_args(vec!["-lparachain=debug,runtime=debug".into()])
                 .with_chain_spec_runtime(relay_runtime_path, None)
                 .with_validator(|node| {
-                    node.with_name("alice")
-                        .with_command(polkadot_bin_latest.as_ref())
+                    let mut alice = node
+                        .with_name("alice")
+                        .with_command(polkadot_bin_latest.as_ref());
+                    if let Some(workers_path) = &workers_path_latest {
+                        alice =
+                            alice.with_args(vec![("--workers-path", workers_path.as_str()).into()]);
+                    }
+                    alice
                 })
                 .with_validator(|node| {
-                    node.with_name("bob")
-                        .with_command(polkadot_bin_latest_1.as_ref())
+                    let mut bob = node
+                        .with_name("bob")
+                        .with_command(polkadot_bin_latest_1.as_ref());
+                    if let Some(workers_path) = &workers_path_latest_1 {
+                        bob = bob.with_args(vec![("--workers-path", workers_path.as_str()).into()]);
+                    }
+                    bob
                 })
                 .with_validator(|node| {
-                    node.with_name("charlie")
-                        .with_command(polkadot_bin_latest_2.as_ref())
-                })
+                    let mut charlie = node
+                        .with_name("charlie")
+                        .with_command(polkadot_bin_latest_2.as_ref());
+                    if let Some(workers_path) = &workers_path_latest_2 {
+                        charlie =
+                            charlie
+                                .with_args(vec![("--workers-path", workers_path.as_str()).into()]);
+                    }
+                    charlie
+                });
+            relaychain
         })
         .build()
         .unwrap()

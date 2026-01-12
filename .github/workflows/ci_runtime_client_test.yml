@@ -69,11 +69,13 @@ jobs:
             curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot" -o "./bin/$FILENAME"
             chmod +x "./bin/$FILENAME"
 
+            # Create separate worker directory for this version
             echo "Downloading workers for $TAG"
-            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-execute-worker" -o "./bin/polkadot-execute-worker-${TAG}"
-            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-prepare-worker" -o "./bin/polkadot-prepare-worker-${TAG}"
-            chmod +x "./bin/polkadot-execute-worker-${TAG}"
-            chmod +x "./bin/polkadot-prepare-worker-${TAG}"
+            mkdir -p "./bin/workers-${TAG}"
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-execute-worker" -o "./bin/workers-${TAG}/polkadot-execute-worker"
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-prepare-worker" -o "./bin/workers-${TAG}/polkadot-prepare-worker"
+            chmod +x "./bin/workers-${TAG}/polkadot-execute-worker"
+            chmod +x "./bin/workers-${TAG}/polkadot-prepare-worker"
           done
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Download Latest Runtime
@@ -98,6 +100,9 @@ jobs:
           export POLKADOT_BIN_LATEST="polkadot-${BIN_TAGS[0]}"
           export POLKADOT_BIN_LATEST_1="polkadot-${BIN_TAGS[1]}"
           export POLKADOT_BIN_LATEST_2="polkadot-${BIN_TAGS[2]}"
+          export WORKERS_PATH_LATEST="${{ github.workspace }}/bin/workers-${BIN_TAGS[0]}"
+          export WORKERS_PATH_LATEST_1="${{ github.workspace }}/bin/workers-${BIN_TAGS[1]}"
+          export WORKERS_PATH_LATEST_2="${{ github.workspace }}/bin/workers-${BIN_TAGS[2]}"
 
           echo "Running mixed network test with:"
           echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"

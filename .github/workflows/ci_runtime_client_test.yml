@@ -77,7 +77,7 @@ jobs:
             chmod +x "./bin/workers-${TAG}/polkadot-execute-worker"
             chmod +x "./bin/workers-${TAG}/polkadot-prepare-worker"
 
-            ls "./bin/workers-${TAG}"
+            echo "$(ls bin/workers-${TAG})"
           done
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Download Latest Runtime

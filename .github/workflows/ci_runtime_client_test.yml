@@ -76,6 +76,8 @@ jobs:
             curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-prepare-worker" -o "./bin/workers-${TAG}/polkadot-prepare-worker"
             chmod +x "./bin/workers-${TAG}/polkadot-execute-worker"
             chmod +x "./bin/workers-${TAG}/polkadot-prepare-worker"
+
+            ls "./bin/workers-${TAG}"
           done
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Download Latest Runtime
@@ -103,11 +105,6 @@ jobs:
           export WORKERS_PATH_LATEST="${{ github.workspace }}/bin/workers-${BIN_TAGS[0]}"
           export WORKERS_PATH_LATEST_1="${{ github.workspace }}/bin/workers-${BIN_TAGS[1]}"
           export WORKERS_PATH_LATEST_2="${{ github.workspace }}/bin/workers-${BIN_TAGS[2]}"
-
-          ls "${{ github.workspace }}/bin/"
-          ls ${WORKERS_PATH_LATEST}
-          ls ${WORKERS_PATH_LATEST_1}
-          ls ${WORKERS_PATH_LATEST_2}
 
           echo "Running mixed network test with:"
           echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"

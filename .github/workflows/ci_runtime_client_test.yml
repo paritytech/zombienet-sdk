@@ -69,12 +69,11 @@ jobs:
             curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot" -o "./bin/$FILENAME"
             chmod +x "./bin/$FILENAME"
 
-            # Download workers for the primary/newest binary
-            if [ $i -eq 0 ]; then
-               curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-execute-worker" -o "./bin/polkadot-execute-worker"
-               curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-prepare-worker" -o "./bin/polkadot-prepare-worker"
-               chmod +x ./bin/polkadot-*-worker
-            fi
+            echo "Downloading workers for $TAG"
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-execute-worker" -o "./bin/polkadot-execute-worker-${TAG}"
+            curl -sL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot-prepare-worker" -o "./bin/polkadot-prepare-worker-${TAG}"
+            chmod +x "./bin/polkadot-execute-worker-${TAG}"
+            chmod +x "./bin/polkadot-prepare-worker-${TAG}"
           done
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Download Latest Runtime

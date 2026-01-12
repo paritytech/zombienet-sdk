@@ -94,6 +94,7 @@ jobs:
         shell: bash
         env:
           RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
+          WORKERS_BASE_PATH: ${{ github.workspace }}/bin
           ZOMBIE_PROVIDER: native
           PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
         run: |
@@ -102,9 +103,9 @@ jobs:
           export POLKADOT_BIN_LATEST="polkadot-${BIN_TAGS[0]}"
           export POLKADOT_BIN_LATEST_1="polkadot-${BIN_TAGS[1]}"
           export POLKADOT_BIN_LATEST_2="polkadot-${BIN_TAGS[2]}"
-          export WORKERS_PATH_LATEST="${{ github.workspace }}/bin/workers-${BIN_TAGS[0]}"
-          export WORKERS_PATH_LATEST_1="${{ github.workspace }}/bin/workers-${BIN_TAGS[1]}"
-          export WORKERS_PATH_LATEST_2="${{ github.workspace }}/bin/workers-${BIN_TAGS[2]}"
+          export WORKERS_PATH_LATEST="$WORKERS_BASE_PATH/workers-${BIN_TAGS[0]}"
+          export WORKERS_PATH_LATEST_1="$WORKERS_BASE_PATH/workers-${BIN_TAGS[1]}"
+          export WORKERS_PATH_LATEST_2="$WORKERS_BASE_PATH/workers-${BIN_TAGS[2]}"
 
           echo "Running mixed network test with:"
           echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"

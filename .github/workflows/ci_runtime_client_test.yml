@@ -13,9 +13,7 @@ on:
         type: string
 
 env:
-  BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
   RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
-  CARGO_TARGET_DIR: /tmp/target
 
 jobs:
   prepare-matrix:

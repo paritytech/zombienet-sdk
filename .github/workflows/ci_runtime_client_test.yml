@@ -1,9 +1,16 @@
 name: Zombienet Runtime-Client Compatibility Test
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      runtime_tag:
+        description: 'Runtime version tag (e.g., v2.0.4). Leave empty for auto-discovery of latest.'
+        required: false
+        type: string
+      binary_tags:
+        description: 'Comma-separated list of 3 client binary tags (e.g., polkadot-stable2503,polkadot-stable2502,polkadot-stable2501). Leave empty for auto-discovery of 3 latest.'
+        required: false
+        type: string
 
 env:
   BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
@@ -24,26 +31,41 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RUNTIME_TAG: ${{ inputs.runtime_tag }}
+          INPUT_BINARY_TAGS: ${{ inputs.binary_tags }}
         run: |
-          # 1. Fetch the single latest runtime tag from fellows/runtimes (e.g., v2.0.4)
-          RUNTIME_TAG=$(gh api graphql -f query='
-            query {
-              repository(owner: "polkadot-fellows", name: "runtimes") {
-                releases(first: 5, orderBy: {field: CREATED_AT, direction: DESC}) {
-                  nodes { tagName }
+          # 1. Use provided runtime tag or fetch the single latest from fellows/runtimes (e.g., v2.0.4)
+          if [[ -n "$INPUT_RUNTIME_TAG" ]]; then
+            RUNTIME_TAG="$INPUT_RUNTIME_TAG"
+            echo "Using provided runtime tag: $RUNTIME_TAG"
+          else
+            RUNTIME_TAG=$(gh api graphql -f query='
+              query {
+                repository(owner: "polkadot-fellows", name: "runtimes") {
+                  releases(first: 5, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
                 }
-              }
-            }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^v[0-9]+" | head -n 1)
-          
-          # 2. Fetch 3 latest stable binary tags from paritytech/polkadot-sdk
-          BINARIES=$(gh api graphql -f query='
-            query {
-              repository(owner: "paritytech", name: "polkadot-sdk") {
-                releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
-                  nodes { tagName }
+              }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^v[0-9]+" | head -n 1)
+            echo "Auto-discovered runtime tag: $RUNTIME_TAG"
+          fi
+
+          # 2. Use provided binary tags or fetch 3 latest stable binary tags from paritytech/polkadot-sdk
+          if [[ -n "$INPUT_BINARY_TAGS" ]]; then
+            # Convert comma-separated input to JSON array
+            BINARIES=$(echo "$INPUT_BINARY_TAGS" | tr ',' '\n' | jq -R . | jq -s -c .)
+            echo "Using provided binary tags: $BINARIES"
+          else
+            BINARIES=$(gh api graphql -f query='
+              query {
+                repository(owner: "paritytech", name: "polkadot-sdk") {
+                  releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
                 }
-              }
-            }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | grep -v "\-rc" | sort -Vr | head -n 3 | jq -R . | jq -s -c .)
+              }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | grep -v "\-rc" | sort -Vr | head -n 3 | jq -R . | jq -s -c .)
+            echo "Auto-discovered binary tags: $BINARIES"
+          fi
 
           echo "runtime_tag=$RUNTIME_TAG" >> $GITHUB_OUTPUT
           echo "binary_matrix=$BINARIES" >> $GITHUB_OUTPUT

@@ -1,6 +1,7 @@
 // TODO(Javier): Remove when we implement the logic in the orchestrator to spawn with the provider.
 #![allow(dead_code, clippy::expect_fun_call)]
 
+pub mod decorators;
 pub mod errors;
 pub mod generators;
 pub mod network;
@@ -44,6 +45,7 @@ use tokio::time::timeout;
 use tracing::{debug, info, trace};
 
 use crate::{
+    decorators::DecoratorRegistry,
     network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
     shared::types::RegisterParachainOptions,
     spawner::SpawnNodeCtx,
@@ -55,6 +57,7 @@ where
 {
     filesystem: T,
     provider: DynProvider,
+    customizer: Option<DecoratorRegistry>,
 }
 
 impl<T> Orchestrator<T>
@@ -65,7 +68,14 @@ where
         Self {
             filesystem,
             provider,
+            customizer: None,
         }
+    }
+
+    /// Sets a `DecoratorRegistry` for this orchestrator
+    pub fn with_customizer(mut self, registry: DecoratorRegistry) -> Self {
+        self.customizer = Some(registry);
+        self
     }
 
     pub async fn spawn(
@@ -200,7 +210,7 @@ where
         let relay_chain_name = network_spec.relaychain.chain.as_str().to_owned();
         let base_dir_exists = network_spec.global_settings.base_dir().is_some();
         network_spec
-            .build_parachain_artifacts(ns.clone(), &scoped_fs, &relay_chain_id, base_dir_exists)
+            .build_parachain_artifacts(ns.clone(), &scoped_fs, &relay_chain_id, base_dir_exists, self.customizer.as_ref())
             .await?;
 
         // Gather the parachains to register in genesis and the ones to register with extrinsic
@@ -230,6 +240,7 @@ where
                 &network_spec.hrmp_channels,
                 para_artifacts,
                 &scoped_fs,
+                self.customizer.as_ref(),
             )
             .await?;
 

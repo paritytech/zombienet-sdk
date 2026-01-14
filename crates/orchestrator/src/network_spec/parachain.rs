@@ -15,13 +15,10 @@ use tracing::debug;
 
 use super::node::NodeSpec;
 use crate::{
-    errors::OrchestratorError,
-    generators::{
+    ScopedFilesystem, decorators::DecoratorRegistry, errors::OrchestratorError, generators::{
         chain_spec::{ChainSpec, Context, ParaGenesisConfig},
         para_artifact::*,
-    },
-    shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
-    ScopedFilesystem,
+    }, shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext}
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -342,6 +339,7 @@ impl ParachainSpec {
         relay_chain_id: &str,
         ns: &DynNamespace,
         scoped_fs: &ScopedFilesystem<'a, T>,
+        customizer: Option<&DecoratorRegistry>,
     ) -> Result<Option<PathBuf>, anyhow::Error>
     where
         T: FileSystem,
@@ -353,7 +351,7 @@ impl ParachainSpec {
             debug!("parachain chain-spec built!");
 
             chain_spec
-                .customize_para(&cloned, relay_chain_id, scoped_fs)
+                .customize_para(&cloned, relay_chain_id, scoped_fs, customizer)
                 .await?;
             debug!("parachain chain-spec customized!");
             chain_spec

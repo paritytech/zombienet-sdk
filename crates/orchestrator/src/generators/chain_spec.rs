@@ -937,7 +937,7 @@ impl ChainSpec {
         hrmp_channels: &[HrmpChannelConfig],
         para_artifacts: Vec<ParaGenesisConfig<U>>,
         scoped_fs: &ScopedFilesystem<'a, T>,
-        decorator_registry: Option<&crate::decorators::DecoratorRegistry>,
+        decorator_registry: Option<&DecoratorRegistry>,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,

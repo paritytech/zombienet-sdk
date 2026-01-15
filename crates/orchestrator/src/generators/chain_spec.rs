@@ -28,6 +28,7 @@ use crate::{
     decorators::{ChainType, DecoratorRegistry},
     generators::keystore_key_types::KeyScheme,
     network_spec::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec},
+    utils::apply_decorator_or_default,
     ScopedFilesystem,
 };
 
@@ -813,12 +814,13 @@ impl ChainSpec {
             }
 
             // Clear authorities - use decorator's custom implementation if provided
-            match decorator_registry.and_then(|r| r.apply_clear_authorities(&mut chain_spec_json)) {
-                Some(result) => {
-                    result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+            apply_decorator_or_default(
+                decorator_registry.and_then(|r| r.apply_clear_authorities(&mut chain_spec_json)),
+                || {
+                    clear_authorities(&pointer, &mut chain_spec_json, &self.context);
+                    Ok(())
                 },
-                None => clear_authorities(&pointer, &mut chain_spec_json, &self.context),
-            }
+            )?;
 
             // Apply decorator customizations
             if let Some(registry) = decorator_registry {
@@ -846,36 +848,36 @@ impl ChainSpec {
                 .is_some()
             {
                 // Use decorator's add_authorities if provided, otherwise use default
-                match decorator_registry.and_then(|r| r.apply_add_authorities(&mut chain_spec_json))
-                {
-                    Some(result) => {
-                        result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+                apply_decorator_or_default(
+                    decorator_registry.and_then(|r| r.apply_add_authorities(&mut chain_spec_json)),
+                    || {
+                        add_authorities(
+                            &pointer,
+                            &mut chain_spec_json,
+                            &validators,
+                            key_type_to_use,
+                        );
+                        Ok(())
                     },
-                    None => add_authorities(
-                        &pointer,
-                        &mut chain_spec_json,
-                        &validators,
-                        key_type_to_use,
-                    ),
-                }
+                )?;
             } else if chain_spec_json
                 .pointer(&format!("{pointer}/aura"))
                 .is_some()
             {
                 // Use decorator's add_aura_authorities if provided
-                match decorator_registry
-                    .and_then(|r| r.apply_add_aura_authorities(&mut chain_spec_json))
-                {
-                    Some(result) => {
-                        result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+                apply_decorator_or_default(
+                    decorator_registry
+                        .and_then(|r| r.apply_add_aura_authorities(&mut chain_spec_json)),
+                    || {
+                        add_aura_authorities(
+                            &pointer,
+                            &mut chain_spec_json,
+                            &validators,
+                            KeyType::Aura,
+                        );
+                        Ok(())
                     },
-                    None => add_aura_authorities(
-                        &pointer,
-                        &mut chain_spec_json,
-                        &validators,
-                        KeyType::Aura,
-                    ),
-                }
+                )?;
             } else {
                 warn!("Can't customize keys, not `session` or `aura` find in the chain-spec file");
             };
@@ -888,19 +890,19 @@ impl ChainSpec {
                 .collect();
 
             // Use decorator's add_collator_selection if provided
-            match decorator_registry
-                .and_then(|r| r.apply_add_collator_selection(&mut chain_spec_json))
-            {
-                Some(result) => {
-                    result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+            apply_decorator_or_default(
+                decorator_registry
+                    .and_then(|r| r.apply_add_collator_selection(&mut chain_spec_json)),
+                || {
+                    add_collator_selection(
+                        &pointer,
+                        &mut chain_spec_json,
+                        &invulnerables,
+                        key_type_to_use,
+                    );
+                    Ok(())
                 },
-                None => add_collator_selection(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &invulnerables,
-                    key_type_to_use,
-                ),
-            }
+            )?;
 
             // override `parachainInfo/parachainId`
             override_parachain_info(&pointer, &mut chain_spec_json, para.id);
@@ -910,12 +912,13 @@ impl ChainSpec {
                 generate_balance_to_add_from_assets_pallet(&pointer, &chain_spec_json);
 
             // Use decorator's add_balances if provided
-            match decorator_registry.and_then(|r| r.apply_add_balances(&mut chain_spec_json)) {
-                Some(result) => {
-                    result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+            apply_decorator_or_default(
+                decorator_registry.and_then(|r| r.apply_add_balances(&mut chain_spec_json)),
+                || {
+                    add_balances(&pointer, &mut chain_spec_json, balances_to_add);
+                    Ok(())
                 },
-                None => add_balances(&pointer, &mut chain_spec_json, balances_to_add),
-            }
+            )?;
 
             // write spec
             let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
@@ -976,12 +979,13 @@ impl ChainSpec {
             let staking_min = get_staking_min(&pointer, &mut chain_spec_json);
 
             // Clear authorities - use decorator's custom implementation if provided
-            match decorator_registry.and_then(|r| r.apply_clear_authorities(&mut chain_spec_json)) {
-                Some(result) => {
-                    result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+            apply_decorator_or_default(
+                decorator_registry.and_then(|r| r.apply_clear_authorities(&mut chain_spec_json)),
+                || {
+                    clear_authorities(&pointer, &mut chain_spec_json, &self.context);
+                    Ok(())
                 },
-                None => clear_authorities(&pointer, &mut chain_spec_json, &self.context),
-            }
+            )?;
 
             // Apply decorator customizations
             if let Some(registry) = decorator_registry {
@@ -1002,25 +1006,27 @@ impl ChainSpec {
             ));
 
             // Use decorator's add_balances if provided
-            match decorator_registry.and_then(|r| r.apply_add_balances(&mut chain_spec_json)) {
-                Some(result) => {
-                    result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+            apply_decorator_or_default(
+                decorator_registry.and_then(|r| r.apply_add_balances(&mut chain_spec_json)),
+                || {
+                    add_balances(&pointer, &mut chain_spec_json, balances_to_add);
+                    Ok(())
                 },
-                None => add_balances(&pointer, &mut chain_spec_json, balances_to_add),
-            }
+            )?;
 
             // Use decorator's add_staking if provided
-            match decorator_registry.and_then(|r| r.apply_add_staking(&mut chain_spec_json)) {
-                Some(result) => {
-                    result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+            apply_decorator_or_default(
+                decorator_registry.and_then(|r| r.apply_add_staking(&mut chain_spec_json)),
+                || {
+                    add_staking(
+                        &pointer,
+                        &mut chain_spec_json,
+                        &relaychain.nodes,
+                        staking_min,
+                    );
+                    Ok(())
                 },
-                None => add_staking(
-                    &pointer,
-                    &mut chain_spec_json,
-                    &relaychain.nodes,
-                    staking_min,
-                ),
-            }
+            )?;
 
             // Get validators to add as authorities
             let validators: Vec<&NodeSpec> = relaychain
@@ -1035,62 +1041,62 @@ impl ChainSpec {
                 .is_some()
             {
                 // Use decorator's add_authorities if provided
-                match decorator_registry.and_then(|r| r.apply_add_authorities(&mut chain_spec_json))
-                {
-                    Some(result) => {
-                        result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+                apply_decorator_or_default(
+                    decorator_registry.and_then(|r| r.apply_add_authorities(&mut chain_spec_json)),
+                    || {
+                        add_authorities(
+                            &pointer,
+                            &mut chain_spec_json,
+                            &validators,
+                            SessionKeyType::Stash,
+                        );
+                        Ok(())
                     },
-                    None => add_authorities(
-                        &pointer,
-                        &mut chain_spec_json,
-                        &validators,
-                        SessionKeyType::Stash,
-                    ),
-                }
+                )?;
             } else {
                 // Use decorator's add_aura_authorities if provided
-                match decorator_registry
-                    .and_then(|r| r.apply_add_aura_authorities(&mut chain_spec_json))
-                {
-                    Some(result) => {
-                        result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+                apply_decorator_or_default(
+                    decorator_registry
+                        .and_then(|r| r.apply_add_aura_authorities(&mut chain_spec_json)),
+                    || {
+                        add_aura_authorities(
+                            &pointer,
+                            &mut chain_spec_json,
+                            &validators,
+                            KeyType::Aura,
+                        );
+                        Ok(())
                     },
-                    None => add_aura_authorities(
-                        &pointer,
-                        &mut chain_spec_json,
-                        &validators,
-                        KeyType::Aura,
-                    ),
-                }
+                )?;
 
                 // Use decorator's add_grandpa_authorities if provided
-                match decorator_registry
-                    .and_then(|r| r.apply_add_grandpa_authorities(&mut chain_spec_json))
-                {
-                    Some(result) => {
-                        result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+                apply_decorator_or_default(
+                    decorator_registry
+                        .and_then(|r| r.apply_add_grandpa_authorities(&mut chain_spec_json)),
+                    || {
+                        add_grandpa_authorities(
+                            &pointer,
+                            &mut chain_spec_json,
+                            &validators,
+                            KeyType::Aura,
+                        );
+                        Ok(())
                     },
-                    None => add_grandpa_authorities(
-                        &pointer,
-                        &mut chain_spec_json,
-                        &validators,
-                        KeyType::Aura,
-                    ),
-                }
+                )?;
             }
 
             // staking && nominators
 
             if !hrmp_channels.is_empty() {
                 // Use decorator's add_hrmp_channels if provided
-                match decorator_registry
-                    .and_then(|r| r.apply_add_hrmp_channels(&mut chain_spec_json))
-                {
-                    Some(result) => {
-                        result.map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?
+                apply_decorator_or_default(
+                    decorator_registry
+                        .and_then(|r| r.apply_add_hrmp_channels(&mut chain_spec_json)),
+                    || {
+                        add_hrmp_channels(&pointer, &mut chain_spec_json, hrmp_channels);
+                        Ok(())
                     },
-                    None => add_hrmp_channels(&pointer, &mut chain_spec_json, hrmp_channels),
-                }
+                )?;
             }
 
             // paras

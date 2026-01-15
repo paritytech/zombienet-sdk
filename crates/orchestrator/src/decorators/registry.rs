@@ -36,23 +36,6 @@ impl DecoratorRegistry {
         self.decorators.insert(name, decorator);
     }
 
-    /// Apply a specific decorator by name
-    pub fn apply(
-        &self,
-        name: &str,
-        spec: &mut serde_json::Value,
-        chain_type: ChainType,
-    ) -> Result<(), anyhow::Error> {
-        if let Some(decorator) = self.decorators.get(name) {
-            match chain_type {
-                ChainType::Relay => decorator.customize_relay(spec)?,
-                ChainType::Para => decorator.customize_para(spec)?,
-            }
-        }
-
-        Ok(())
-    }
-
     /// Apply all decorators
     pub fn apply_all(
         &self,

@@ -2252,7 +2252,11 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing-subscriber",
+ "zombienet-configuration",
+ "zombienet-orchestrator",
+ "zombienet-provider",
  "zombienet-sdk",
+ "zombienet-support",
 ]
 
 [[package]]

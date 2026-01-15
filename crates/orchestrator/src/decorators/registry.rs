@@ -70,7 +70,6 @@ impl DecoratorRegistry {
     }
 
     /// Apply clear_authorities from decorators (if any override it)
-    /// Returns None if no decorator provides clear_authorities override
     pub fn apply_clear_authorities(
         &self,
         spec: &mut serde_json::Value,

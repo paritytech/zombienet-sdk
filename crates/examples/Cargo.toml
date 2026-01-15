@@ -7,7 +7,11 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zombienet-sdk = {workspace = true}
+zombienet-sdk = { workspace = true }
+orchestrator = { workspace = true }
+configuration = { workspace = true }
+support = { workspace = true }
+provider = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 tracing-subscriber = { workspace = true }

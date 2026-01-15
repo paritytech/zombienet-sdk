@@ -25,6 +25,7 @@ use super::{
     errors::GeneratorError,
 };
 use crate::{
+    decorators::{ChainType, DecoratorRegistry},
     generators::keystore_key_types::KeyScheme,
     network_spec::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec},
     ScopedFilesystem,
@@ -776,7 +777,7 @@ impl ChainSpec {
         para: &ParachainSpec,
         relay_chain_id: &str,
         scoped_fs: &ScopedFilesystem<'a, T>,
-        decorator_registry: Option<&crate::decorators::DecoratorRegistry>,
+        decorator_registry: Option<&DecoratorRegistry>,
     ) -> Result<(), GeneratorError>
     where
         T: FileSystem,
@@ -822,7 +823,7 @@ impl ChainSpec {
             // Apply decorator customizations
             if let Some(registry) = decorator_registry {
                 registry
-                    .apply_all(&mut chain_spec_json, crate::decorators::ChainType::Para)
+                    .apply_all(&mut chain_spec_json, ChainType::Para)
                     .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
             }
 
@@ -985,7 +986,7 @@ impl ChainSpec {
             // Apply decorator customizations
             if let Some(registry) = decorator_registry {
                 registry
-                    .apply_all(&mut chain_spec_json, crate::decorators::ChainType::Relay)
+                    .apply_all(&mut chain_spec_json, ChainType::Relay)
                     .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
             }
 

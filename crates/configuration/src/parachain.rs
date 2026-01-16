@@ -142,6 +142,8 @@ pub struct ParachainConfig {
     // and executed for generate the chain-spec.
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
+    /// Optional post-process script to run after chain-spec generation for this parachain.
+    post_process_script: Option<String>,
     // Does the chain_spec_command needs to be run locally
     #[serde(skip_serializing_if = "is_false", default)]
     chain_spec_command_is_local: bool,
@@ -275,6 +277,11 @@ impl ParachainConfig {
         self.chain_spec_command_output_path.as_deref()
     }
 
+    /// Optional post-process script to run after chain-spec generation for this parachain.
+    pub fn post_process_script(&self) -> Option<&str> {
+        self.post_process_script.as_deref()
+    }
+
     /// Whether the parachain is based on cumulus.
     pub fn is_cumulus_based(&self) -> bool {
         self.is_cumulus_based
@@ -378,6 +385,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 chain_spec_path: None,
                 chain_spec_runtime: None,
                 chain_spec_command: None,
+                post_process_script: None,
                 chain_spec_command_output_path: None,
                 wasm_override: None,
                 chain_spec_command_is_local: false, // remote by default
@@ -431,6 +439,12 @@ impl<A, C> ParachainConfigBuilder<A, C> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+    }
+
+    /// Set an optional post-process script to run after chain-spec generation for this parachain.
+    pub fn with_post_process_script(mut self, script: impl Into<String>) -> Self {
+        self.config.post_process_script = Some(script.into());
+        self
     }
 }
 

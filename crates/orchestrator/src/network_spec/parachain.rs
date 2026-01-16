@@ -91,6 +91,8 @@ pub struct ParachainSpec {
 
     /// Bootnodes addresses to use for the parachain nodes
     pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
+    /// Optional post-process script configured for this parachain
+    pub(crate) post_process_script: Option<String>,
 }
 
 impl ParachainSpec {
@@ -294,6 +296,7 @@ impl ParachainSpec {
             collators,
             raw_spec_override: config.raw_spec_override().cloned(),
             bootnodes_addresses: config.bootnodes_addresses().into_iter().cloned().collect(),
+            post_process_script: config.post_process_script().map(str::to_string),
         };
 
         Ok(para_spec)
@@ -342,6 +345,7 @@ impl ParachainSpec {
         relay_chain_id: &str,
         ns: &DynNamespace,
         scoped_fs: &ScopedFilesystem<'a, T>,
+        post_process_script: Option<&str>,
     ) -> Result<Option<PathBuf>, anyhow::Error>
     where
         T: FileSystem,
@@ -356,6 +360,13 @@ impl ParachainSpec {
                 .customize_para(&cloned, relay_chain_id, scoped_fs)
                 .await?;
             debug!("parachain chain-spec customized!");
+            // Run post-process script if configured for this parachain (run against plain spec before building raw)
+            if let Some(script_cmd) = post_process_script {
+                chain_spec
+                    .run_post_process_script(script_cmd, scoped_fs)
+                    .await?;
+            }
+
             chain_spec
                 .build_raw(ns, scoped_fs, Some(relay_chain_id.try_into()?))
                 .await?;

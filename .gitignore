@@ -22,5 +22,5 @@ bins
 # nix
 result
 
-# docs
-docs
+# mdbook build output
+docs/book/

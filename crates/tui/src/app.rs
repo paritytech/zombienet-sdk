@@ -7,7 +7,7 @@ use orchestrator::network::Network;
 use support::fs::local::LocalFileSystem;
 use zombienet_sdk::AttachToLive;
 
-use crate::network::NodeInfo;
+use crate::network::{NodeInfo, NodeStatus};
 
 /// The current view/panel focus in the TUI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -278,24 +278,34 @@ impl App {
 
     /// Pause the currently selected node.
     pub async fn pause_selected_node(&mut self) -> Result<()> {
-        if let (Some(network), Some(node_info)) = (&self.network, self.selected_node()) {
-            let name = node_info.name.clone();
-            let node = network.get_node(&name)?;
-            node.pause().await?;
-            self.set_status(format!("Paused node: {}", name));
-            self.refresh_nodes();
+        if let Some(network) = &self.network {
+            if let Some(node_info) = self.nodes.get(self.selected_node_index) {
+                let name = node_info.name.clone();
+                let node = network.get_node(&name)?;
+                node.pause().await?;
+                // Update status.
+                if let Some(node_info) = self.nodes.get_mut(self.selected_node_index) {
+                    node_info.status = NodeStatus::Paused;
+                }
+                self.set_status(format!("Paused node: {}", name));
+            }
         }
         Ok(())
     }
 
     /// Resume the currently selected node.
     pub async fn resume_selected_node(&mut self) -> Result<()> {
-        if let (Some(network), Some(node_info)) = (&self.network, self.selected_node()) {
-            let name = node_info.name.clone();
-            let node = network.get_node(&name)?;
-            node.resume().await?;
-            self.set_status(format!("Resumed node: {}", name));
-            self.refresh_nodes();
+        if let Some(network) = &self.network {
+            if let Some(node_info) = self.nodes.get(self.selected_node_index) {
+                let name = node_info.name.clone();
+                let node = network.get_node(&name)?;
+                node.resume().await?;
+                // Update status.
+                if let Some(node_info) = self.nodes.get_mut(self.selected_node_index) {
+                    node_info.status = NodeStatus::Running;
+                }
+                self.set_status(format!("Resumed node: {}", name));
+            }
         }
         Ok(())
     }

@@ -11,6 +11,7 @@ use ratatui::{
 };
 
 use crate::app::{App, InputMode, PendingAction, View};
+use crate::network::NodeStatus;
 
 /// Main render function for the TUI.
 pub fn render(frame: &mut Frame, app: &App) {
@@ -86,16 +87,23 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 ""
             };
 
+            // Status icon with color.
+            let status_color = match node.status {
+                NodeStatus::Running => Color::Green,
+                NodeStatus::Paused => Color::Yellow,
+                NodeStatus::Unknown => Color::DarkGray,
+            };
+
             let type_indicator = format!("[{}]", node.node_type.icon());
 
             let para_suffix = node
                 .para_id
-                .map(|id| format!(" (para:{})", id))
+                .map(|id| format!(" ({})", id))
                 .unwrap_or_default();
 
-            let content = format!("{}{} {}{}", prefix, type_indicator, node.name, para_suffix);
-
-            let style = if i == app.selected_node_index() {
+            // Build line with colored status indicator.
+            let is_selected = i == app.selected_node_index();
+            let base_style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD)
@@ -103,7 +111,16 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(Color::White)
             };
 
-            ListItem::new(content).style(style)
+            let line = Line::from(vec![
+                Span::raw(prefix),
+                Span::styled(node.status.icon(), Style::default().fg(status_color)),
+                Span::raw(" "),
+                Span::styled(type_indicator, base_style),
+                Span::styled(format!(" {}", node.name), base_style),
+                Span::styled(para_suffix, Style::default().fg(Color::DarkGray)),
+            ]);
+
+            ListItem::new(line)
         })
         .collect();
 
@@ -144,10 +161,24 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
     let is_focused = app.current_view() == View::Details;
 
     let content = if let Some(node) = app.selected_node() {
+        // Status color based on state.
+        let status_color = match node.status {
+            NodeStatus::Running => Color::Green,
+            NodeStatus::Paused => Color::Yellow,
+            NodeStatus::Unknown => Color::DarkGray,
+        };
+
         let mut lines = vec![
             Line::from(vec![
                 Span::styled("Name: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(&node.name, Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("{:?} {:?}", node.status.icon(), node.status.as_str()),
+                    Style::default().fg(status_color),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("Type: ", Style::default().fg(Color::DarkGray)),
@@ -165,12 +196,31 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
 
         if let Some(para_id) = node.para_id {
             lines.insert(
-                2,
+                3,
                 Line::from(vec![
                     Span::styled("Para ID: ", Style::default().fg(Color::DarkGray)),
                     Span::styled(para_id.to_string(), Style::default().fg(Color::Magenta)),
                 ]),
             );
+        }
+
+        if let Some(base_dir) = app.network_base_dir() {
+            let log_path = crate::network::derive_log_path(base_dir, &node.name);
+            let data_dir = crate::network::derive_data_dir(base_dir, &node.name);
+            lines.push(Line::from(vec![
+                Span::styled("Log: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    log_path.to_string_lossy().to_string(),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("Data: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    data_dir.to_string_lossy().to_string(),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
         }
 
         lines

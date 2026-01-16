@@ -11,6 +11,7 @@ members = [
   "crates/prom-metrics-parser",
   "crates/file-server",
   "crates/cli",
+  "crates/tui",
 ]
 
 [workspace.package]

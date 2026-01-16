@@ -55,6 +55,8 @@ pub struct RelaychainConfig {
     command: Option<Command>,
     // Inline json or asset location to override raw chainspec
     raw_spec_override: Option<JsonOverrides>,
+    /// Optional post-process script to run after chain-spec generation.
+    post_process_script: Option<String>,
 }
 
 impl RelaychainConfig {
@@ -149,6 +151,11 @@ impl RelaychainConfig {
         self.raw_spec_override.as_ref()
     }
 
+    /// Optional post-process script to run after chain-spec generation for this relaychain.
+    pub fn post_process_script(&self) -> Option<&str> {
+        self.post_process_script.as_deref()
+    }
+
     /// Set the nodes to build
     pub(crate) fn set_nodes(&mut self, nodes: Vec<NodeConfig>) {
         self.nodes = nodes;
@@ -199,6 +206,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 nodes: vec![],
                 node_groups: vec![],
                 raw_spec_override: None,
+                post_process_script: None,
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -239,6 +247,12 @@ impl<A> RelaychainConfigBuilder<A> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+    }
+
+    /// Set an optional post-process script to run after chain-spec generation for this relaychain.
+    pub fn with_post_process_script(mut self, script: impl Into<String>) -> Self {
+        self.config.post_process_script = Some(script.into());
+        self
     }
 }
 

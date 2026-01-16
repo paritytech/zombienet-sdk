@@ -1061,6 +1061,67 @@ impl ChainSpec {
             ))
         }
     }
+
+    /// Run a post-processing script on the chain-spec file.
+    /// The script receives the path to the chain-spec as argument.
+    pub async fn run_post_process_script<'a, T>(
+        &self,
+        script_command: &str,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // Prefer the plain spec (the raw spec is generated from plain). Run the script
+        // against the plain spec when available, otherwise fall back to raw.
+        let spec_path = match (self.maybe_plain_path.as_ref(), self.raw_path.as_ref()) {
+            (Some(plain), _) => plain,
+            (None, Some(raw)) => raw,
+            (None, None) => {
+                return Err(GeneratorError::ChainSpecGeneration(
+                    "No chain-spec path available to run post-process script".into(),
+                ))
+            },
+        };
+
+        let full_path = scoped_fs.full_path(spec_path);
+
+        info!(
+            "🔧 Running chain-spec post-process script: {} {}",
+            script_command,
+            full_path.display()
+        );
+
+        let output = Command::new(script_command)
+            .arg(full_path.to_str().ok_or_else(|| {
+                GeneratorError::ChainSpecGeneration("Invalid path encoding".into())
+            })?)
+            // No chain type argument is passed anymore.
+            .output()
+            .await
+            .map_err(|e| {
+                GeneratorError::ChainSpecGeneration(format!(
+                    "Failed to execute chain-spec post-process script: {}",
+                    e
+                ))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GeneratorError::ChainSpecGeneration(format!(
+                "Chain-spec post-process script failed with exit code {:?}: {}",
+                output.status.code(),
+                stderr
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.is_empty() {
+            info!("Script output: {}", stdout.trim());
+        }
+
+        Ok(())
+    }
 }
 
 type GenesisNodeKey = (String, String, HashMap<String, String>);

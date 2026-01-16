@@ -482,7 +482,12 @@ impl<T: FileSystem> Network<T> {
         )?;
 
         let chain_spec_raw_path = para_spec
-            .build_chain_spec(&relay_chain_id, &self.ns, &scoped_fs)
+            .build_chain_spec(
+                &relay_chain_id,
+                &self.ns,
+                &scoped_fs,
+                para_spec.post_process_script.clone().as_deref(),
+            )
             .await?;
 
         // Para artifacts

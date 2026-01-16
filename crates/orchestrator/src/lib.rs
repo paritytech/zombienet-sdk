@@ -233,7 +233,16 @@ where
             )
             .await?;
 
-        // Build raw version
+        // Run post-process script if configured for the relaychain (run against plain spec before building raw)
+        if let Some(script_cmd) = network_spec.relaychain.post_process_script.as_deref() {
+            network_spec
+                .relaychain
+                .chain_spec
+                .run_post_process_script(script_cmd, &scoped_fs)
+                .await?;
+        }
+
+        // Build raw version (after any post-processing of the plain spec)
         network_spec
             .relaychain
             .chain_spec

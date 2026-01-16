@@ -60,6 +60,9 @@ pub struct RelaychainSpec {
 
     /// Raw chain-spec override path, url or inline json to use.
     pub(crate) raw_spec_override: Option<JsonOverrides>,
+
+    /// Optional post-process script configured for this relaychain
+    pub(crate) post_process_script: Option<String>,
 }
 
 impl RelaychainSpec {
@@ -168,6 +171,7 @@ impl RelaychainSpec {
             runtime_genesis_patch: config.runtime_genesis_patch().cloned(),
             nodes,
             raw_spec_override: config.raw_spec_override().cloned(),
+            post_process_script: config.post_process_script().map(str::to_string),
         })
     }
 

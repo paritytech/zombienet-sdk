@@ -42,7 +42,10 @@ pub fn render_help_overlay(frame: &mut Frame) {
         )),
         help_line("f", "Toggle follow mode (auto-scroll)"),
         help_line("PgUp / PgDn", "Scroll logs by page"),
+        help_line("Home / End", "Jump to start / end of logs"),
         help_line("j / k", "Scroll logs line by line (when focused)"),
+        help_line("/", "Start search in logs"),
+        help_line("n / N", "Next / previous search match"),
         Line::from(""),
         Line::from(Span::styled(
             "Node Actions",

@@ -1,5 +1,4 @@
 mod help;
-mod layout;
 mod widgets;
 
 use ratatui::{
@@ -10,8 +9,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, InputMode, PendingAction, View};
-use crate::network::NodeStatus;
+use crate::{
+    app::{App, InputMode, PendingAction, View},
+    network::NodeStatus,
+};
 
 /// Main render function for the TUI.
 pub fn render(frame: &mut Frame, app: &App) {
@@ -35,6 +36,9 @@ pub fn render(frame: &mut Frame, app: &App) {
         },
         InputMode::Confirm => {
             render_confirm_dialog(frame, app);
+        },
+        InputMode::Search => {
+            render_search_input(frame, app);
         },
         InputMode::Normal => {},
     }
@@ -249,30 +253,41 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
 /// Render the logs panel.
 fn render_logs_panel(frame: &mut Frame, app: &App, area: Rect) {
     let is_focused = app.current_view() == View::Logs;
+    let log_viewer = app.log_viewer();
 
-    let log_lines = app.log_lines();
-    let scroll = app.log_scroll();
-    let follow_indicator = if app.log_follow() { " [FOLLOW]" } else { "" };
+    let follow_indicator = if log_viewer.follow() { " [FOLLOW]" } else { "" };
+
+    let search_info = if log_viewer.search_query().is_some() {
+        format!(
+            " [{}/{}]",
+            log_viewer.current_search_index(),
+            log_viewer.search_match_count()
+        )
+    } else {
+        String::new()
+    };
 
     let title = format!(
-        " Logs [3]{} ({}/{}) ",
+        " Logs [3]{}{} ({}/{}) ",
         follow_indicator,
-        scroll + 1,
-        log_lines.len().max(1)
+        search_info,
+        log_viewer.scroll() + 1,
+        log_viewer.len().max(1)
     );
 
     // Calculate visible lines.
     let visible_height = area.height.saturating_sub(2) as usize;
-    let start = scroll;
-    let end = (start + visible_height).min(log_lines.len());
 
-    let visible_lines: Vec<Line> = log_lines
-        .get(start..end)
-        .unwrap_or_default()
+    let visible_lines: Vec<Line> = log_viewer
+        .visible_lines(visible_height)
         .iter()
-        .map(|line| {
+        .enumerate()
+        .map(|(i, line)| {
+            let line_index = log_viewer.scroll() + i;
+            let is_match = log_viewer.is_search_match(line_index);
+
             // Color log lines based on content.
-            let style = if line.contains("ERROR") || line.contains("error") {
+            let base_style = if line.contains("ERROR") || line.contains("error") {
                 Style::default().fg(Color::Red)
             } else if line.contains("WARN") || line.contains("warn") {
                 Style::default().fg(Color::Yellow)
@@ -281,7 +296,14 @@ fn render_logs_panel(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            Line::styled(line.clone(), style)
+
+            let style = if is_match {
+                base_style.bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+            } else {
+                base_style
+            };
+
+            Line::styled(line.to_string(), style)
         })
         .collect();
 
@@ -305,7 +327,7 @@ fn render_logs_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let status_text = app.status_message().unwrap_or("");
 
-    let keybindings = " q:Quit | Tab:Switch | j/k:Navigate | p:Pause | u:Resume | r:Restart | Q:Shutdown | ?:Help ";
+    let keybindings = " q:Quit | Tab:Switch | j/k:Navigate | /:Search | f:Follow | p:Pause | u:Resume | r:Restart | ?:Help ";
 
     let status_line = if status_text.is_empty() {
         keybindings.to_string()
@@ -359,6 +381,54 @@ fn render_confirm_dialog(frame: &mut Frame, app: &App) {
         .wrap(Wrap { trim: true });
 
     frame.render_widget(dialog, area);
+}
+
+/// Render the search input bar at the bottom of the screen.
+fn render_search_input(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+    let search_area = Rect {
+        x: 0,
+        y: area.height.saturating_sub(3),
+        width: area.width,
+        height: 3,
+    };
+
+    frame.render_widget(Clear, search_area);
+
+    let log_viewer = app.log_viewer();
+    let match_info = if log_viewer.search_match_count() > 0 {
+        format!(
+            " ({}/{})",
+            log_viewer.current_search_index(),
+            log_viewer.search_match_count()
+        )
+    } else if !app.search_input().is_empty() {
+        " (no matches)".to_string()
+    } else {
+        String::new()
+    };
+
+    let search_text = format!("/{}{}", app.search_input(), match_info);
+
+    let search_bar = Paragraph::new(Line::from(vec![
+        Span::styled("Search: ", Style::default().fg(Color::Cyan)),
+        Span::styled(search_text, Style::default().fg(Color::White)),
+        Span::styled(
+            "_",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::SLOW_BLINK),
+        ),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(" Search [Enter:confirm | Esc:cancel | n:next | N:prev] "),
+    )
+    .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(search_bar, search_area);
 }
 
 /// Create a centered rectangle within the given area.

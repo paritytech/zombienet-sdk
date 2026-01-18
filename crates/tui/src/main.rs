@@ -18,7 +18,6 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-
 use zombienet_tui::{app::App, event, ui};
 
 /// Zombienet TUI - Monitor and manage running zombienet networks.
@@ -98,7 +97,7 @@ async fn run_app(
                 Event::Key(key) => {
                     event::handle_key_event(app, key).await?;
                 },
-                Event::Resize(_, _) => {
+                Event::Resize(..) => {
                     // Terminal resize is handled automatically by ratatui.
                 },
                 _ => {},

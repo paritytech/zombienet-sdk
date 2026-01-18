@@ -9,7 +9,9 @@
 
 pub mod app;
 pub mod event;
+pub mod logs;
 pub mod network;
 pub mod ui;
+pub mod watcher;
 
 pub use app::App;

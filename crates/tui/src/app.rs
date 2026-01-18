@@ -7,7 +7,11 @@ use orchestrator::network::Network;
 use support::fs::local::LocalFileSystem;
 use zombienet_sdk::AttachToLive;
 
-use crate::network::{NodeInfo, NodeStatus};
+use crate::{
+    logs::LogViewer,
+    network::{NodeInfo, NodeStatus},
+    watcher::{FileWatcher, WatchEvent},
+};
 
 /// The current view/panel focus in the TUI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -31,6 +35,8 @@ pub enum InputMode {
     Confirm,
     /// Help overlay is visible.
     Help,
+    /// Search input mode for logs.
+    Search,
 }
 
 /// Core application state for the TUI.
@@ -49,16 +55,18 @@ pub struct App {
     selected_node_index: usize,
     /// Cached node information for display.
     nodes: Vec<NodeInfo>,
-    /// Log lines for the currently selected node.
-    log_lines: Vec<String>,
-    /// Whether to auto-scroll logs (follow mode).
-    log_follow: bool,
-    /// Scroll position in the log viewer.
-    log_scroll: usize,
+    /// Log viewer for the currently selected node.
+    log_viewer: LogViewer,
+    /// Current search input buffer.
+    search_input: String,
     /// Status message to display.
     status_message: Option<String>,
     /// Pending confirmation action.
     pending_action: Option<PendingAction>,
+    /// File watcher for log file changes.
+    file_watcher: Option<FileWatcher>,
+    /// Currently watched log file path.
+    watched_log_path: Option<PathBuf>,
 }
 
 /// Actions that require user confirmation.
@@ -71,6 +79,8 @@ pub enum PendingAction {
 impl App {
     /// Create a new App instance.
     pub fn new() -> Self {
+        let file_watcher = FileWatcher::new().ok();
+
         Self {
             running: true,
             network: None,
@@ -79,11 +89,12 @@ impl App {
             input_mode: InputMode::Normal,
             selected_node_index: 0,
             nodes: Vec::new(),
-            log_lines: Vec::new(),
-            log_follow: true,
-            log_scroll: 0,
+            log_viewer: LogViewer::new(),
+            search_input: String::new(),
             status_message: None,
             pending_action: None,
+            file_watcher,
+            watched_log_path: None,
         }
     }
 
@@ -122,19 +133,14 @@ impl App {
         self.nodes.get(self.selected_node_index)
     }
 
-    /// Get the log lines for the current node.
-    pub fn log_lines(&self) -> &[String] {
-        &self.log_lines
+    /// Get the log viewer.
+    pub fn log_viewer(&self) -> &LogViewer {
+        &self.log_viewer
     }
 
-    /// Get the current log scroll position.
-    pub fn log_scroll(&self) -> usize {
-        self.log_scroll
-    }
-
-    /// Check if log follow mode is enabled.
-    pub fn log_follow(&self) -> bool {
-        self.log_follow
+    /// Get the current search input.
+    pub fn search_input(&self) -> &str {
+        &self.search_input
     }
 
     /// Get the status message.
@@ -233,19 +239,71 @@ impl App {
 
     /// Toggle log follow mode.
     pub fn toggle_log_follow(&mut self) {
-        self.log_follow = !self.log_follow;
+        self.log_viewer.toggle_follow();
     }
 
     /// Scroll logs up.
     pub fn scroll_logs_up(&mut self, amount: usize) {
-        self.log_scroll = self.log_scroll.saturating_sub(amount);
-        self.log_follow = false;
+        self.log_viewer.scroll_up(amount);
     }
 
     /// Scroll logs down.
     pub fn scroll_logs_down(&mut self, amount: usize) {
-        let max_scroll = self.log_lines.len().saturating_sub(1);
-        self.log_scroll = (self.log_scroll + amount).min(max_scroll);
+        self.log_viewer.scroll_down(amount);
+    }
+
+    /// Scroll logs to top.
+    pub fn scroll_logs_to_top(&mut self) {
+        self.log_viewer.scroll_to_top();
+    }
+
+    /// Scroll logs to bottom.
+    pub fn scroll_logs_to_bottom(&mut self) {
+        self.log_viewer.scroll_to_bottom();
+    }
+
+    pub fn start_search(&mut self) {
+        self.search_input.clear();
+        self.input_mode = InputMode::Search;
+    }
+
+    /// Cancel search and return to normal mode.
+    pub fn cancel_search(&mut self) {
+        self.search_input.clear();
+        self.log_viewer.clear_search();
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Confirm search and return to normal mode.
+    pub fn confirm_search(&mut self) {
+        self.log_viewer.search(&self.search_input);
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Add character to search input.
+    pub fn add_search_char(&mut self, c: char) {
+        self.search_input.push(c);
+        self.log_viewer.search(&self.search_input);
+    }
+
+    /// Remove last character from search input.
+    pub fn remove_search_char(&mut self) {
+        self.search_input.pop();
+        if self.search_input.is_empty() {
+            self.log_viewer.clear_search();
+        } else {
+            self.log_viewer.search(&self.search_input);
+        }
+    }
+
+    /// Jump to next search match.
+    pub fn next_search_match(&mut self) {
+        self.log_viewer.next_search_match();
+    }
+
+    /// Jump to previous search match.
+    pub fn prev_search_match(&mut self) {
+        self.log_viewer.prev_search_match();
     }
 
     /// Request confirmation for an action.
@@ -260,10 +318,10 @@ impl App {
             match action {
                 PendingAction::RestartNode(name) => {
                     self.restart_node(&name).await?;
-                }
+                },
                 PendingAction::ShutdownNetwork => {
                     self.shutdown_network().await?;
-                }
+                },
             }
         }
         self.input_mode = InputMode::Normal;
@@ -341,22 +399,67 @@ impl App {
 
     /// Load logs for the currently selected node.
     pub async fn load_selected_node_logs(&mut self) -> Result<()> {
-        if let (Some(network), Some(node_info)) = (&self.network, self.selected_node()) {
-            let node = network.get_node(&node_info.name)?;
-            let logs = node.logs().await?;
-            self.log_lines = logs.lines().map(String::from).collect();
+        if let (Some(base_dir), Some(node_info)) = (
+            self.network_base_dir().map(String::from),
+            self.selected_node(),
+        ) {
+            let log_path = crate::network::derive_log_path(&base_dir, &node_info.name);
 
-            if self.log_follow {
-                self.log_scroll = self.log_lines.len().saturating_sub(1);
+            if self.watched_log_path.as_ref() != Some(&log_path) {
+                if let (Some(watcher), Some(old_path)) =
+                    (&mut self.file_watcher, &self.watched_log_path)
+                {
+                    let _ = watcher.unwatch(old_path);
+                }
+
+                if let Some(watcher) = &mut self.file_watcher {
+                    if log_path.exists() {
+                        let _ = watcher.watch(&log_path);
+                    }
+                }
+
+                self.watched_log_path = Some(log_path.clone());
             }
+
+            self.log_viewer.set_log_path(log_path)?;
         }
+        Ok(())
+    }
+
+    /// Refresh logs from the current log file.
+    pub fn refresh_logs(&mut self) -> Result<()> {
+        self.log_viewer.load_from_file()?;
         Ok(())
     }
 
     /// Periodic tick for async updates.
     pub async fn tick(&mut self) {
-        if self.log_follow && self.current_view == View::Logs {
-            let _ = self.load_selected_node_logs().await;
+        let events: Vec<WatchEvent> = self
+            .file_watcher
+            .as_ref()
+            .map(|w| std::iter::from_fn(|| w.try_recv()).collect())
+            .unwrap_or_default();
+
+        let mut is_needs_refresh = false;
+        for event in events {
+            match event {
+                WatchEvent::Modified(path) => {
+                    if self.watched_log_path.as_ref() == Some(&path) {
+                        is_needs_refresh = true;
+                    }
+                },
+                WatchEvent::Error(e) => {
+                    self.set_status(format!("Error watching log file: {e}"));
+                },
+            }
+        }
+
+        if is_needs_refresh {
+            let _ = self.refresh_logs();
+        }
+
+        if self.log_viewer.follow() && self.current_view == View::Logs {
+            let _ = self.refresh_logs();
         }
     }
 }
@@ -422,13 +525,37 @@ mod tests {
     #[test]
     fn test_log_follow_toggle() {
         let mut app = App::new();
-        assert!(app.log_follow());
+        assert!(app.log_viewer().follow());
 
         app.toggle_log_follow();
-        assert!(!app.log_follow());
+        assert!(!app.log_viewer().follow());
 
         app.toggle_log_follow();
-        assert!(app.log_follow());
+        assert!(app.log_viewer().follow());
+    }
+
+    #[test]
+    fn test_search_flow() {
+        let mut app = App::new();
+        assert_eq!(app.input_mode(), InputMode::Normal);
+
+        app.start_search();
+        assert_eq!(app.input_mode(), InputMode::Search);
+        assert!(app.search_input().is_empty());
+
+        app.add_search_char('h');
+        app.add_search_char('e');
+        app.add_search_char('l');
+        app.add_search_char('l');
+        app.add_search_char('o');
+
+        assert_eq!(app.search_input(), "hello");
+
+        app.remove_search_char();
+        assert_eq!(app.search_input(), "hell");
+
+        app.confirm_search();
+        assert_eq!(app.input_mode(), InputMode::Normal);
     }
 
     #[test]

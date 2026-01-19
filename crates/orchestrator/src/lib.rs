@@ -41,12 +41,13 @@ use support::{
     replacer::{get_tokens_to_replace, has_tokens},
 };
 use tokio::time::timeout;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 use crate::{
     network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
     shared::types::RegisterParachainOptions,
     spawner::SpawnNodeCtx,
+    utils::write_zombie_json,
 };
 pub struct Orchestrator<T>
 where
@@ -514,22 +515,9 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
-        // - write zombie.json state file
-        let mut zombie_json = serde_json::to_value(&network)?;
-        zombie_json["local_base_dir"] = serde_json::value::Value::String(base_dir.to_string());
-        zombie_json["ns"] = serde_json::value::Value::String(ns.name().to_string());
+        network.set_start_time_ts(start_time);
 
-        if let Ok(start_time_ts) = start_time.duration_since(SystemTime::UNIX_EPOCH) {
-            zombie_json["start_time_ts"] =
-                serde_json::value::Value::String(start_time_ts.as_millis().to_string());
-        } else {
-            // Just warn, do not propagate the err (this should not happens)
-            warn!("⚠️ Error getting start_time timestamp");
-        }
-
-        scoped_fs
-            .write("zombie.json", serde_json::to_string_pretty(&zombie_json)?)
-            .await?;
+        write_zombie_json(serde_json::to_value(&network)?, scoped_fs, ns.name()).await?;
 
         if network_spec.global_settings.tear_down_on_failure() {
             network.spawn_watching_task();
@@ -1037,6 +1025,11 @@ impl<'a, FS: FileSystem> ScopedFilesystem<'a, FS> {
         };
 
         full_path
+    }
+
+    /// Get the base_dir in the scoped FS
+    fn base_dir(&self) -> &str {
+        self.base_dir
     }
 }
 

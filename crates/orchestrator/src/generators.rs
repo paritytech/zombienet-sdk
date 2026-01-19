@@ -5,6 +5,7 @@ pub mod para_artifact;
 
 mod arg_filter;
 mod bootnode_addr;
+mod chain_spec_key_types;
 mod command;
 mod identity;
 mod keystore;

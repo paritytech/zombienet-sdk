@@ -20,8 +20,12 @@ use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacem
 use tokio::process::Command;
 use tracing::{debug, info, trace, warn};
 
-use super::errors::GeneratorError;
+use super::{
+    chain_spec_key_types::{parse_chain_spec_key_types, ChainSpecKeyType},
+    errors::GeneratorError,
+};
 use crate::{
+    generators::keystore_key_types::KeyScheme,
     network_spec::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec},
     ScopedFilesystem,
 };
@@ -1386,6 +1390,20 @@ fn add_balances(
     }
 }
 
+/// Gets the address for a given key scheme from the node's accounts.
+fn get_address_for_scheme(node: &NodeSpec, scheme: KeyScheme) -> String {
+    let account_key = scheme.account_key();
+    node.accounts
+        .accounts
+        .get(account_key)
+        .expect(&format!(
+            "'{}' account should be set at spec computation {THIS_IS_A_BUG}",
+            account_key
+        ))
+        .address
+        .clone()
+}
+
 fn get_node_keys(
     node: &NodeSpec,
     session_key: SessionKeyType,
@@ -1427,6 +1445,45 @@ fn get_node_keys(
 
     (account_to_use.clone(), account_to_use, keys)
 }
+
+/// Generates session keys for a node with custom key types.
+/// Returns (account, account, keys_map) tuple.
+fn get_node_keys_with_custom_types(
+    node: &NodeSpec,
+    session_key: SessionKeyType,
+    custom_key_types: &[ChainSpecKeyType],
+) -> GenesisNodeKey {
+    let sr_account = node.accounts.accounts.get("sr").unwrap();
+    let sr_stash = node.accounts.accounts.get("sr_stash").unwrap();
+    let eth_account = node.accounts.accounts.get("eth").unwrap();
+
+    // key_name -> address
+    let mut keys = HashMap::new();
+    for key_type in custom_key_types {
+        let scheme = key_type.scheme;
+        let account_key = scheme.account_key();
+        let address = node
+            .accounts
+            .accounts
+            .get(account_key)
+            .expect(&format!(
+                "'{}' account should be set at spec computation {THIS_IS_A_BUG}",
+                account_key
+            ))
+            .address
+            .clone();
+        keys.insert(key_type.key_name.clone(), address);
+    }
+
+    let account_to_use = match session_key {
+        SessionKeyType::Default => sr_account.address.clone(),
+        SessionKeyType::Stash => sr_stash.address.clone(),
+        SessionKeyType::Evm => format!("0x{}", eth_account.public_key),
+    };
+
+    (account_to_use.clone(), account_to_use, keys)
+}
+
 fn add_authorities(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
@@ -1442,7 +1499,15 @@ fn add_authorities(
         if let Some(session_keys) = val.pointer_mut("/session/keys") {
             let keys: Vec<GenesisNodeKey> = nodes
                 .iter()
-                .map(|node| get_node_keys(node, session_key, asset_hub_polkadot))
+                .map(|node| {
+                    if let Some(custom_key_types) =
+                        parse_chain_spec_key_types(&node.chain_spec_key_types, asset_hub_polkadot)
+                    {
+                        get_node_keys_with_custom_types(node, session_key, &custom_key_types)
+                    } else {
+                        get_node_keys(node, session_key, asset_hub_polkadot)
+                    }
+                })
                 .collect();
             *session_keys = json!(keys);
         } else {
@@ -2144,7 +2209,7 @@ mod tests {
             .pointer("/genesis/runtimeGenesis/patch/balances/balances")
             .unwrap();
         let balances_map = generate_balance_map(balances);
-        println!("balance {:?}", balances_map);
+        println!("balance {balances_map:?}");
 
         let nodes: Vec<NodeSpec> = vec![];
         let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
@@ -2159,7 +2224,7 @@ mod tests {
             "/genesis/runtimeGenesis/patch",
             &spec_plain,
         );
-        println!("to add : {:?}", balances_to_add_from_assets);
+        println!("to add : {balances_to_add_from_assets:?}");
         add_balances(
             "/genesis/runtimeGenesis/patch",
             &mut spec_plain,
@@ -2171,8 +2236,68 @@ mod tests {
             .unwrap();
 
         let new_balances_map = generate_balance_map(new_balances);
-        println!("balance {:?}", new_balances_map);
+        println!("balance {new_balances_map:?}");
 
         assert_eq!(new_balances_map.len(), balances_map.len() + 1);
+    }
+
+    #[test]
+    fn get_node_keys_with_custom_types_works() {
+        use super::super::{chain_spec_key_types::ChainSpecKeyType, keystore_key_types::KeyScheme};
+
+        let mut name = String::from("alice");
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            ..Default::default()
+        };
+
+        let custom_key_types = vec![
+            ChainSpecKeyType::new("aura", KeyScheme::Ed),
+            ChainSpecKeyType::new("grandpa", KeyScheme::Sr),
+        ];
+
+        let node_key =
+            get_node_keys_with_custom_types(&node, SessionKeyType::Default, &custom_key_types);
+
+        // Account should be sr (default)
+        assert_eq!(node_key.0, node.accounts.accounts["sr"].address);
+        assert_eq!(node_key.1, node.accounts.accounts["sr"].address);
+
+        // Keys should use custom schemes
+        assert_eq!(node_key.2["aura"], node.accounts.accounts["ed"].address);
+        assert_eq!(node_key.2["grandpa"], node.accounts.accounts["sr"].address);
+    }
+
+    #[test]
+    fn get_node_keys_with_custom_types_stash_works() {
+        use super::super::{chain_spec_key_types::ChainSpecKeyType, keystore_key_types::KeyScheme};
+
+        let mut name = String::from("alice");
+        let seed = format!("//{}{name}", name.remove(0).to_uppercase());
+        let accounts = NodeAccounts {
+            accounts: generators::generate_node_keys(&seed).unwrap(),
+            seed,
+        };
+        let node = NodeSpec {
+            name,
+            accounts,
+            ..Default::default()
+        };
+
+        let custom_key_types = vec![ChainSpecKeyType::new("aura", KeyScheme::Sr)];
+
+        let node_key =
+            get_node_keys_with_custom_types(&node, SessionKeyType::Stash, &custom_key_types);
+
+        // Account should be sr_stash (stash derivation)
+        assert_eq!(node_key.0, node.accounts.accounts["sr_stash"].address);
+        assert_eq!(node_key.1, node.accounts.accounts["sr_stash"].address);
+        assert_eq!(node_key.2["aura"], node.accounts.accounts["sr"].address);
     }
 }

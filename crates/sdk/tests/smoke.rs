@@ -147,6 +147,30 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .await
         .unwrap();
 
+    // ensure zombie.json is updated with "new1" and "new-col-1"
+    let raw = tokio::fs::read_to_string("/tmp/zombie-1/zombie.json")
+        .await
+        .unwrap();
+    let zombie_json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+    assert!(zombie_json["parachains"]["2000"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| {
+            p["collators"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["name"] == "new-col-1")
+        }));
+
+    assert!(zombie_json["relay"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["name"] == "new1"));
+
     // pause / resume
     let alice = network.get_node("alice").unwrap();
     alice.pause().await.unwrap();

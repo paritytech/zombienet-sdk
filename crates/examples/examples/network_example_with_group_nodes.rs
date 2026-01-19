@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let network =
-        NetworkConfig::load_from_toml("./crates/examples/examples/0002-simple-group-nodes.toml")
+        NetworkConfig::load_from_toml("./crates/examples/examples/configs/simple-group-nodes.toml")
             .expect("errored?")
             .spawn_native()
             .await?;

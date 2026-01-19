@@ -106,6 +106,12 @@ pub struct NodeConfig {
     /// or long form (e.g., "audi_sr") with explicit schema (sr, ed, ec).
     #[serde(default)]
     keystore_key_types: Vec<String>,
+    /// Chain spec session key types to inject.
+    /// Supports short form (e.g., "aura") using predefined schemas,
+    /// or long form (e.g., "aura_sr") with explicit schema (sr, ed, ec).
+    /// When empty, uses the default session keys from the chain spec.
+    #[serde(default)]
+    chain_spec_key_types: Vec<String>,
 }
 
 impl Serialize for NodeConfig {
@@ -192,6 +198,12 @@ impl Serialize for NodeConfig {
             state.skip_field("keystore_key_types")?;
         } else {
             state.serialize_field("keystore_key_types", &self.keystore_key_types)?;
+        }
+
+        if self.chain_spec_key_types.is_empty() {
+            state.skip_field("chain_spec_key_typese")?;
+        } else {
+            state.serialize_field("chain_spec_key_types", &self.chain_spec_key_types)?;
         }
 
         state.skip_field("chain_context")?;
@@ -364,6 +376,15 @@ impl NodeConfig {
     pub fn keystore_key_types(&self) -> Vec<&str> {
         self.keystore_key_types.iter().map(String::as_str).collect()
     }
+
+    /// Chain spec session key types to inject.
+    /// Returns the list of key type specifications (short form like "aura" or long form like "aura_sr").
+    pub fn chain_spec_key_types(&self) -> Vec<&str> {
+        self.chain_spec_key_types
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
 }
 
 /// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
@@ -401,6 +422,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 node_log_path: None,
                 keystore_path: None,
                 keystore_key_types: vec![],
+                chain_spec_key_types: vec![],
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -827,6 +849,42 @@ impl NodeConfigBuilder<Buildable> {
         Self::transition(
             NodeConfig {
                 keystore_key_types: key_types.into_iter().map(|k| k.into()).collect(),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the chain spec session key types to inject.
+    ///
+    /// Each key type can be specified in short form (e.g., "aura") using predefined schemas
+    /// (defaults to `sr` if no predefined schema exists for the key type),
+    /// or in long form (e.g., "aura_sr") with an explicit schema (sr, ed, ec).
+    ///
+    /// When specified, only these keys will be injected into the chain spec session keys.
+    /// When empty, uses the default session keys from the chain spec.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zombienet_configuration::shared::{node::NodeConfigBuilder, types::ChainDefaultContext};
+    ///
+    /// let config = NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
+    ///     .with_name("node")
+    ///     .with_chain_spec_key_types(vec!["aura", "grandpa", "babe_sr"])
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// assert_eq!(
+    ///     config.chain_spec_key_types(),
+    ///     &["aura", "grandpa", "babe_sr"]
+    /// );
+    /// ```
+    pub fn with_chain_spec_key_types(self, key_types: Vec<impl Into<String>>) -> Self {
+        Self::transition(
+            NodeConfig {
+                chain_spec_key_types: key_types.into_iter().map(|k| k.into()).collect(),
                 ..self.config
             },
             self.validation_context,

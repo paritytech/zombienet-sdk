@@ -50,12 +50,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(stdout) => {
             println!("\n✅ Script executed successfully!");
             println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            println!("STDOUT:\n{}", stdout);
+            println!("STDOUT:\n{stdout}");
             println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         },
         Err((status, stderr)) => {
             println!("\n❌ Script failed with exit code: {:?}", status.code());
-            println!("STDERR:\n{}", stderr);
+            println!("STDERR:\n{stderr}");
             return Err("Script execution failed".into());
         },
     }

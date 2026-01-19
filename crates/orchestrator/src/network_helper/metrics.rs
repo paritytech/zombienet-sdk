@@ -23,18 +23,18 @@ impl Metrics {
         }
     }
 
-    async fn fetch_metrics(
+    pub async fn fetch_metrics(
         endpoint: impl AsRef<str>,
     ) -> Result<HashMap<String, f64>, anyhow::Error> {
         let response = reqwest::get(endpoint.as_ref()).await?;
         Ok(prom_metrics_parser::parse(&response.text().await?)?)
     }
 
-    fn get_metric(
+    pub fn get_metric(
         metrics_map: HashMap<String, f64>,
         metric_name: &str,
+        treat_not_found_as_zero: bool,
     ) -> Result<f64, anyhow::Error> {
-        let treat_not_found_as_zero = true;
         if let Some(val) = metrics_map.get(metric_name) {
             Ok(*val)
         } else if treat_not_found_as_zero {
@@ -49,7 +49,7 @@ impl Metrics {
 impl MetricsHelper for Metrics {
     async fn metric(&self, metric_name: &str) -> Result<f64, anyhow::Error> {
         let metrics_map = Metrics::fetch_metrics(self.endpoint.as_str()).await?;
-        Metrics::get_metric(metrics_map, metric_name)
+        Metrics::get_metric(metrics_map, metric_name, true)
     }
 
     async fn metric_with_url(
@@ -57,6 +57,6 @@ impl MetricsHelper for Metrics {
         endpoint: impl Into<Url> + Send,
     ) -> Result<f64, anyhow::Error> {
         let metrics_map = Metrics::fetch_metrics(endpoint.into()).await?;
-        Metrics::get_metric(metrics_map, metric_name.as_ref())
+        Metrics::get_metric(metrics_map, metric_name.as_ref(), true)
     }
 }

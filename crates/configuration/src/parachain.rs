@@ -143,6 +143,7 @@ pub struct ParachainConfig {
     // available tokens {{chainName}} / {{disableBootnodes}}
     chain_spec_command: Option<String>,
     /// Optional post-process script to run after chain-spec generation for this parachain.
+    #[serde(skip_serializing_if = "Option::is_none")]
     post_process_script: Option<String>,
     // Does the chain_spec_command needs to be run locally
     #[serde(skip_serializing_if = "is_false", default)]

@@ -56,6 +56,7 @@ pub struct RelaychainConfig {
     // Inline json or asset location to override raw chainspec
     raw_spec_override: Option<JsonOverrides>,
     /// Optional post-process script to run after chain-spec generation.
+    #[serde(skip_serializing_if = "Option::is_none")]
     post_process_script: Option<String>,
 }
 

@@ -1072,18 +1072,12 @@ impl ChainSpec {
     where
         T: FileSystem,
     {
-        // Prefer the plain spec (the raw spec is generated from plain). Run the script
-        // against the plain spec when available, otherwise fall back to raw.
-        let spec_path = match (self.maybe_plain_path.as_ref(), self.raw_path.as_ref()) {
-            (Some(plain), _) => plain,
-            (None, Some(raw)) => raw,
-            (None, None) => {
-                return Err(GeneratorError::ChainSpecGeneration(
-                    "No chain-spec path available to run post-process script".into(),
-                ))
-            },
-        };
-
+        let spec_path =
+            self.maybe_plain_path
+                .as_ref()
+                .ok_or(GeneratorError::ChainSpecGeneration(
+                    "Chain-spec path not found for post-process script".into(),
+                ))?;
         let full_path = scoped_fs.full_path(spec_path);
 
         info!(

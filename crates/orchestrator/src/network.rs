@@ -365,8 +365,7 @@ impl<T: FileSystem> Network<T> {
         node.wait_until_is_up(self.initial_spec.global_settings.network_spawn_timeout())
             .await?;
 
-        parachain.collators.push(node.clone());
-        self.add_running_node(node, None).await;
+        self.add_running_node(node, Some(para_id)).await;
 
         // Dump zombie.json
         self.write_zombie_json().await?;

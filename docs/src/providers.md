@@ -106,18 +106,6 @@ zombie-cli spawn network.toml --provider k8s
 let network = config.spawn_k8s().await?;
 ```
 
-### Resource Limits
-
-Kubernetes is the only provider supporting resource requests and limits:
-
-```toml
-[relaychain.default_resources]
-request_memory = "512Mi"
-request_cpu = "250m"
-limit_memory = "1Gi"
-limit_cpu = "500m"
-```
-
 ## Attaching to Running Networks
 
 Reconnect to a previously spawned network, currently running network using the `zombie.json` state file:

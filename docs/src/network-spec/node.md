@@ -81,7 +81,8 @@ limit_cpu = "1000m"
 | `bootnodes` | Array | — | Additional bootnode addresses |
 | `db_snapshot` | String | — | Database snapshot path/URL |
 | `keystore_path` | String | — | Custom keystore directory |
-| `keystore_key_types` | Array | — | Key types to generate (e.g., `aura`, `gran`, `babe`) |
+| `keystore_key_types` | Array | — | Key types to generate in keystore (e.g., `aura`, `gran`, `babe`) |
+| `chain_spec_key_types` | Array | — | Session key types to inject into chain spec genesis |
 | `override_eth_key` | String | — | Override auto-generated EVM session key |
 | `log_path` | String | — | Path for node log file (alias: `node_log_path`) |
 | `resources` | Object | — | Resource limits (see below) |
@@ -136,4 +137,3 @@ limit_cpu = "1000m"
 | `limit_memory` | String | Memory limit |
 | `limit_cpu` | String | CPU limit |
 
-**Supported units:** `m` (milli), `K`, `M`, `G`, `T`, `P`, `E`, `Ki`, `Mi`, `Gi`, `Ti`, `Pi`, `Ei`

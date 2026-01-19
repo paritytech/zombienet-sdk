@@ -1,15 +1,9 @@
 #!/bin/bash
-# Example chain-spec post-processing script
-#
-# This script receives:
-#   $1: Path to the chain-spec JSON file
-#
-# The script should modify the chain-spec file in place.
-# Exit with 0 for success, non-zero for failure.
+# Read chain-spec JSON from stdin, modify it and write result to stdout.
 
-SPEC_PATH="$1"
+set -euo pipefail
 
-echo "🔧 Post-processing chain-spec at: $SPEC_PATH"
+echo "🔧 Post-processing chain-spec (stdin->stdout)" >&2
 
 # Alice's public key (SS58)
 ALICE_ACCOUNT="5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
@@ -18,11 +12,9 @@ ALICE_HEX="0xd43593c715fdd31c61141abd04a99fd6822c8558"
 ALICE_HEX_NO0X="d43593c715fdd31c61141abd04a99fd6822c8558"
 NEW_BALANCE="5000000000000000000"
 
-echo "📝 Modifying Alice's balance to ${NEW_BALANCE}..."
+echo "📝 Modifying Alice's balance to ${NEW_BALANCE}..." >&2
 
-# Recursively walk the JSON and replace any [account, balance] arrays where the account matches
-# This handles both plain and raw chain-spec JSON structures.
-jq --arg alice "$ALICE_ACCOUNT" --arg alice_hex "$ALICE_HEX" --arg alice_hex_no0x "$ALICE_HEX_NO0X" --arg balance "$NEW_BALANCE" '
+JQ_FILTER=$(cat <<'JQ'
   def walk(f): . as $in |
     if type == "object" then
       reduce keys[] as $k ({}; . + { ($k): ($in[$k] | walk(f)) }) | f
@@ -39,15 +31,17 @@ jq --arg alice "$ALICE_ACCOUNT" --arg alice_hex "$ALICE_HEX" --arg alice_hex_no0
       .
     end
   )
-' "$SPEC_PATH" > "$SPEC_PATH.tmp"
+JQ
+)
 
-# Check if jq succeeded
-if [ $? -eq 0 ]; then
-    mv "$SPEC_PATH.tmp" "$SPEC_PATH"
-    echo "✅ Successfully customized chain-spec - Alice's balance updated"
-    exit 0
-else
-    echo "❌ Failed to customize chain-spec"
-    rm -f "$SPEC_PATH.tmp"
-    exit 1
+run_jq() {
+  jq --arg alice "$ALICE_ACCOUNT" --arg alice_hex "$ALICE_HEX" --arg alice_hex_no0x "$ALICE_HEX_NO0X" --arg balance "$NEW_BALANCE" "$JQ_FILTER"
+}
+
+# Read from stdin and output modified JSON to stdout
+if ! run_jq; then
+  echo "❌ Failed to customize chain-spec" >&2
+  exit 1
 fi
+
+exit 0

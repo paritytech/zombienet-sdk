@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    process::Stdio,
 };
 
 use anyhow::anyhow;
@@ -17,7 +18,7 @@ use sc_chain_spec::{GenericChainSpec, GenesisConfigBuilderRuntimeCaller};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
-use tokio::process::Command;
+use tokio::{fs as tokio_fs, io::AsyncWriteExt, process::Command};
 use tracing::{debug, info, trace, warn};
 
 use super::{
@@ -1086,13 +1087,16 @@ impl ChainSpec {
             full_path.display()
         );
 
-        let output = Command::new(script_command)
-            .arg(full_path.to_str().ok_or_else(|| {
-                GeneratorError::ChainSpecGeneration("Invalid path encoding".into())
-            })?)
-            // No chain type argument is passed anymore.
-            .output()
-            .await
+        // Read the current spec content and pass it to the script stdin.
+        let spec_content = scoped_fs.read_to_string(spec_path).await.map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!("Failed to read spec: {}", e))
+        })?;
+
+        let mut child = Command::new(script_command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .map_err(|e| {
                 GeneratorError::ChainSpecGeneration(format!(
                     "Failed to execute chain-spec post-process script: {}",
@@ -1100,8 +1104,28 @@ impl ChainSpec {
                 ))
             })?;
 
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(spec_content.as_bytes())
+                .await
+                .map_err(|e| {
+                    GeneratorError::ChainSpecGeneration(format!(
+                        "Failed to write to script stdin: {}",
+                        e
+                    ))
+                })?;
+        }
+
+        let output = child.wait_with_output().await.map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!("Failed to wait for script output: {}", e))
+        })?;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            info!("Script stderr: {}", stderr.trim());
+        }
+
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GeneratorError::ChainSpecGeneration(format!(
                 "Chain-spec post-process script failed with exit code {:?}: {}",
                 output.status.code(),
@@ -1110,8 +1134,48 @@ impl ChainSpec {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        if !stdout.is_empty() {
-            info!("Script output: {}", stdout.trim());
+        let stdout_trimmed = stdout.trim();
+        if !stdout_trimmed.is_empty() {
+            // Validate JSON before overwriting the spec. If invalid, log and skip applying.
+            if let Err(e) = serde_json::from_str::<serde_json::Value>(stdout_trimmed) {
+                warn!(
+                    "Script produced invalid JSON; output will NOT be applied: {}",
+                    e
+                );
+                return Ok(());
+            }
+
+            // Write to a temporary file inside the scoped fs, then copy into place via provider
+            let tmp_path = PathBuf::from(format!("{}.postproc.tmp", spec_path.to_string_lossy()));
+            scoped_fs
+                .write(&tmp_path, stdout_trimmed.to_string())
+                .await
+                .map_err(|e| {
+                    GeneratorError::ChainSpecGeneration(format!(
+                        "Failed to write temp post-processed spec: {}",
+                        e
+                    ))
+                })?;
+
+            let full_tmp = scoped_fs.full_path(&tmp_path);
+            // Prepare transfer object: copy local tmp -> remote final path inside scoped fs
+            let tf = TransferedFile::new(full_tmp, spec_path.to_path_buf());
+            scoped_fs.copy_files(vec![&tf]).await.map_err(|e| {
+                GeneratorError::ChainSpecGeneration(format!(
+                    "Failed to copy temp spec into final path: {}",
+                    e
+                ))
+            })?;
+
+            // Remove temporary file
+            let _ = tokio_fs::remove_file(scoped_fs.full_path(&tmp_path)).await;
+
+            info!(
+                "Script output applied to spec (bytes: {})",
+                stdout_trimmed.len()
+            );
+        } else {
+            info!("Script produced no output; spec left unchanged");
         }
 
         Ok(())

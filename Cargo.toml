@@ -64,6 +64,12 @@ flate2 = "1.0"
 fancy-regex = "0.14.0"
 sc-chain-spec = "46.0.0"
 erased-serde = "0.4"
+ratatui = "0.29"
+crossterm = "0.28"
+clap = { version = "4.5", features = ["derive"] }
+notify = "7.0"
+sysinfo = "0.32"
+walkdir = "2.5"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.4.4", path = "crates/support" }

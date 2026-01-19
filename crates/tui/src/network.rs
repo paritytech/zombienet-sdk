@@ -20,6 +20,71 @@ pub struct NodeInfo {
     pub node_type: NodeType,
     /// Current node status.
     pub status: NodeStatus,
+    /// Storage usage information.
+    pub storage: Option<StorageInfo>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StorageInfo {
+    /// Total storage used by the node.
+    pub total_bytes: u64,
+    /// Storage used by the data directory.
+    pub data_bytes: u64,
+    /// Whether storage calculation is in progress.
+    pub is_calculating: bool,
+}
+
+impl StorageInfo {
+    pub fn total_formatted(&self) -> String {
+        format_size(self.total_bytes)
+    }
+
+    pub fn level(&self) -> StorageLevel {
+        const MB: u64 = 1024 * 1024;
+        const GB: u64 = MB * 1024;
+
+        if self.total_bytes >= 10 * GB {
+            StorageLevel::Critical
+        } else if self.total_bytes >= GB {
+            StorageLevel::High
+        } else if self.total_bytes >= 100 * MB {
+            StorageLevel::Medium
+        } else {
+            StorageLevel::Low
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageLevel {
+    /// Low storage usage (< 100 MB).
+    Low,
+    /// Medium storage usage (100 MB - 1 GB).
+    Medium,
+    /// High storage usage (1 GB - 10 GB).
+    High,
+    /// Critical storage usage (> 10 GB).
+    Critical,
+}
+
+impl StorageLevel {
+    pub fn color(&self) -> &'static str {
+        match self {
+            StorageLevel::Low => "green",
+            StorageLevel::Medium => "yellow",
+            StorageLevel::High => "red",
+            StorageLevel::Critical => "red",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            StorageLevel::Low => "▁",
+            StorageLevel::Medium => "▃",
+            StorageLevel::High => "▅",
+            StorageLevel::Critical => "█",
+        }
+    }
 }
 
 /// The type of node in the network.
@@ -94,6 +159,7 @@ pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
             para_id: None,
             node_type: NodeType::Relay,
             status: NodeStatus::Running, // Assume running initially.
+            storage: None,
         });
     }
 
@@ -107,11 +173,27 @@ pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
                 para_id: Some(para.para_id()),
                 node_type: NodeType::Collator,
                 status: NodeStatus::Running, // Assume running initially.
+                storage: None,
             });
         }
     }
 
     nodes
+}
+
+/// Calculate storage for a single node given the base directory.
+pub fn calculate_node_storage(base_dir: &str, node_name: &str) -> StorageInfo {
+    let node_dir = PathBuf::from(base_dir).join(node_name);
+    let data_dir = node_dir.join("data");
+
+    let total_bytes = calculate_dir_size(&node_dir).unwrap_or(0);
+    let data_bytes = calculate_dir_size(&data_dir).unwrap_or(0);
+
+    StorageInfo {
+        total_bytes,
+        data_bytes,
+        is_calculating: false,
+    }
 }
 
 /// Derive the log path for a node given the network base directory.
@@ -212,5 +294,61 @@ mod tests {
         assert_eq!(NodeStatus::Running.icon(), "●");
         assert_eq!(NodeStatus::Paused.icon(), "◐");
         assert_eq!(NodeStatus::Unknown.icon(), "○");
+    }
+
+    #[test]
+    fn test_storage_info_formatted() {
+        let storage = StorageInfo {
+            total_bytes: 1024 * 1024 * 512, // 512 MB
+            data_bytes: 1024 * 1024 * 256,  // 256 MB
+            is_calculating: false,
+        };
+        assert_eq!(storage.total_formatted(), "512.00 MB");
+    }
+
+    #[test]
+    fn test_storage_level() {
+        const MB: u64 = 1024 * 1024;
+        const GB: u64 = MB * 1024;
+
+        // Low: < 100 MB
+        let low = StorageInfo {
+            total_bytes: 50 * MB,
+            data_bytes: 0,
+            is_calculating: false,
+        };
+        assert_eq!(low.level(), StorageLevel::Low);
+
+        // Medium: 100 MB - 1 GB
+        let medium = StorageInfo {
+            total_bytes: 500 * MB,
+            data_bytes: 0,
+            is_calculating: false,
+        };
+        assert_eq!(medium.level(), StorageLevel::Medium);
+
+        // High: 1 GB - 10 GB
+        let high = StorageInfo {
+            total_bytes: 5 * GB,
+            data_bytes: 0,
+            is_calculating: false,
+        };
+        assert_eq!(high.level(), StorageLevel::High);
+
+        // Critical: > 10 GB
+        let critical = StorageInfo {
+            total_bytes: 15 * GB,
+            data_bytes: 0,
+            is_calculating: false,
+        };
+        assert_eq!(critical.level(), StorageLevel::Critical);
+    }
+
+    #[test]
+    fn test_storage_level_icons() {
+        assert_eq!(StorageLevel::Low.icon(), "▁");
+        assert_eq!(StorageLevel::Medium.icon(), "▃");
+        assert_eq!(StorageLevel::High.icon(), "▅");
+        assert_eq!(StorageLevel::Critical.icon(), "█");
     }
 }

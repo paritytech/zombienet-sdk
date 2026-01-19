@@ -462,6 +462,26 @@ impl App {
             let _ = self.refresh_logs();
         }
     }
+
+    /// Calculate storage for all nodes.
+    pub fn refresh_storage(&mut self) {
+        if let Some(base_dir) = self.network_base_dir().map(String::from) {
+            for node in &mut self.nodes {
+                let storage = crate::network::calculate_node_storage(&base_dir, &node.name);
+                node.storage = Some(storage);
+            }
+        }
+    }
+
+    /// Calculate storage for the currently selected node.
+    pub fn refresh_selected_node_storage(&mut self) {
+        if let Some(base_dir) = self.network_base_dir().map(String::from) {
+            if let Some(node) = self.nodes.get_mut(self.selected_node_index) {
+                let storage = crate::network::calculate_node_storage(&base_dir, &node.name);
+                node.storage = Some(storage);
+            }
+        }
+    }
 }
 
 impl Default for App {

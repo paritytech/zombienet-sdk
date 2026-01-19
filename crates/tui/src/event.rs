@@ -165,6 +165,20 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
             app.set_status("Node list refreshed");
         },
 
+        // Calculate storage for selected node.
+        KeyCode::Char('s') => {
+            app.set_status("Calculating storage...");
+            app.refresh_selected_node_storage();
+            app.set_status("Storage calculated");
+        },
+
+        // Calculate storage for all nodes.
+        KeyCode::Char('S') => {
+            app.set_status("Calculating storage for all nodes...");
+            app.refresh_storage();
+            app.set_status("All storage calculated");
+        },
+
         // Load/refresh logs.
         KeyCode::Enter => {
             if app.current_view() == View::Nodes || app.current_view() == View::Details {

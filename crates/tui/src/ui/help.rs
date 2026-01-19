@@ -65,6 +65,8 @@ pub fn render_help_overlay(frame: &mut Frame) {
         )),
         help_line("Q", "Shutdown entire network (with confirmation)"),
         help_line("R", "Refresh node list"),
+        help_line("s", "Calculate storage for selected node"),
+        help_line("S", "Calculate storage for all nodes"),
         Line::from(""),
         Line::from(Span::styled(
             "General",

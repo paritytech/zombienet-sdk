@@ -13,42 +13,23 @@ name = "zombienet-tui"
 path = "src/main.rs"
 
 [dependencies]
-# TUI framework
 ratatui = "0.29"
 crossterm = "0.28"
-
-# Async runtime
 tokio = { workspace = true, features = ["full", "sync"] }
 futures = { workspace = true }
-
-# Zombienet integration
 zombienet-sdk = { workspace = true }
 provider = { workspace = true }
 orchestrator = { workspace = true }
 support = { workspace = true }
-
-# Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# Error handling
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-
-# CLI argument parsing
 clap = { version = "4.5", features = ["derive"] }
-
-# Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-
-# File watching for logs
 notify = "7.0"
-
-# System info for resource monitoring
 sysinfo = "0.32"
-
-# Directory size calculation
 walkdir = "2.5"
 
 [dev-dependencies]

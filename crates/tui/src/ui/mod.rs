@@ -105,6 +105,20 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 .map(|id| format!(" ({})", id))
                 .unwrap_or_default();
 
+            // Storage indicator.
+            let (storage_text, storage_color) = if let Some(storage) = &node.storage {
+                let level = storage.level();
+                let color = match level {
+                    crate::network::StorageLevel::Low => Color::Green,
+                    crate::network::StorageLevel::Medium => Color::Yellow,
+                    crate::network::StorageLevel::High => Color::Red,
+                    crate::network::StorageLevel::Critical => Color::LightRed,
+                };
+                (format!(" {}", storage.total_formatted()), color)
+            } else {
+                (String::new(), Color::DarkGray)
+            };
+
             // Build line with colored status indicator.
             let is_selected = i == app.selected_node_index();
             let base_style = if is_selected {
@@ -122,6 +136,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(type_indicator, base_style),
                 Span::styled(format!(" {}", node.name), base_style),
                 Span::styled(para_suffix, Style::default().fg(Color::DarkGray)),
+                Span::styled(storage_text, Style::default().fg(storage_color)),
             ]);
 
             ListItem::new(line)
@@ -227,6 +242,39 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
             ]));
         }
 
+        // Storage information.
+        if let Some(storage) = &node.storage {
+            let level = storage.level();
+            let storage_color = match level {
+                crate::network::StorageLevel::Low => Color::Green,
+                crate::network::StorageLevel::Medium => Color::Yellow,
+                crate::network::StorageLevel::High => Color::Red,
+                crate::network::StorageLevel::Critical => Color::LightRed,
+            };
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("Storage: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(level.icon(), Style::default().fg(storage_color)),
+                Span::styled(
+                    format!(" {} total", storage.total_formatted()),
+                    Style::default().fg(storage_color),
+                ),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Data dir: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    crate::network::format_size(storage.data_bytes),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("Storage: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("(press 's' to calculate)", Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
         lines
     } else {
         vec![Line::from("No node selected")]
@@ -327,7 +375,7 @@ fn render_logs_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let status_text = app.status_message().unwrap_or("");
 
-    let keybindings = " q:Quit | Tab:Switch | j/k:Navigate | /:Search | f:Follow | p:Pause | u:Resume | r:Restart | ?:Help ";
+    let keybindings = " q:Quit | Tab:Switch | j/k:Navigate | /:Search | f:Follow | s:Storage | p:Pause | u:Resume | ?:Help ";
 
     let status_line = if status_text.is_empty() {
         keybindings.to_string()

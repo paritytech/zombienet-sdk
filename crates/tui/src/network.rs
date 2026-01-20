@@ -146,19 +146,32 @@ impl NodeStatus {
     }
 }
 
+/// Convert the internal running state to a NodeStatus.
+fn running_state_to_status(is_running: bool) -> NodeStatus {
+    if is_running {
+        NodeStatus::Running
+    } else {
+        NodeStatus::Paused
+    }
+}
+
 /// Extract node information from a running network.
+///
+/// This reads the current running state from each node. For a more robust
+/// check that verifies nodes are actually responsive, use `check_node_status_async`.
 pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
     let mut nodes = Vec::new();
 
     // Extract relay chain nodes.
     for node in network.relaychain().nodes() {
+        let status = running_state_to_status(node.is_running());
         nodes.push(NodeInfo {
             name: node.name().to_string(),
             ws_uri: node.ws_uri().to_string(),
             multiaddr: node.multiaddr().to_string(),
             para_id: None,
             node_type: NodeType::Relay,
-            status: NodeStatus::Running, // Assume running initially.
+            status,
             storage: None,
         });
     }
@@ -166,19 +179,83 @@ pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
     // Extract parachain collators.
     for para in network.parachains() {
         for collator in para.collators() {
+            let status = running_state_to_status(collator.is_running());
             nodes.push(NodeInfo {
                 name: collator.name().to_string(),
                 ws_uri: collator.ws_uri().to_string(),
                 multiaddr: collator.multiaddr().to_string(),
                 para_id: Some(para.para_id()),
                 node_type: NodeType::Collator,
-                status: NodeStatus::Running, // Assume running initially.
+                status,
                 storage: None,
             });
         }
     }
 
     nodes
+}
+
+/// Check node status by verifying RPC connectivity.
+///
+/// This is more robust than the basic `is_running()` check as it actually
+/// attempts to connect to the node's WebSocket endpoint.
+pub async fn check_node_status_async(
+    network: &Network<LocalFileSystem>,
+    node_name: &str,
+) -> NodeStatus {
+    if let Ok(node) = network.get_node(node_name) {
+        if !node.is_running() {
+            return NodeStatus::Paused;
+        }
+
+        if node.is_responsive().await {
+            NodeStatus::Running
+        } else {
+            NodeStatus::Unknown
+        }
+    } else {
+        NodeStatus::Unknown
+    }
+}
+
+/// Check status of all nodes.
+///
+/// Returns a map of node name to status.
+pub async fn check_all_nodes_status_async(
+    network: &Network<LocalFileSystem>,
+) -> std::collections::HashMap<String, NodeStatus> {
+    use futures::future::join_all;
+
+    let mut status_map = std::collections::HashMap::new();
+
+    let mut node_names: Vec<String> = network
+        .relaychain()
+        .nodes()
+        .iter()
+        .map(|n| n.name().to_string())
+        .collect();
+
+    for para in network.parachains() {
+        for collator in para.collators() {
+            node_names.push(collator.name().to_string());
+        }
+    }
+
+    let futures: Vec<_> = node_names
+        .iter()
+        .map(|name| async {
+            let status = check_node_status_async(network, name).await;
+            (name.clone(), status)
+        })
+        .collect();
+
+    let results = join_all(futures).await;
+
+    for (name, status) in results {
+        status_map.insert(name, status);
+    }
+
+    status_map
 }
 
 /// Calculate storage for a single node given the base directory.

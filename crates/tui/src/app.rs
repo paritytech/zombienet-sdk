@@ -1,6 +1,9 @@
 //! Application state and core logic for the TUI.
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use orchestrator::network::Network;
@@ -31,8 +34,10 @@ pub enum InputMode {
     /// Normal navigation mode.
     #[default]
     Normal,
-    /// Confirmation dialog is active.
+    /// Confirmation dialog (y/n).
     Confirm,
+    /// Text confirmation dialog (type "yes" to confirm).
+    ConfirmText,
     /// Help overlay is visible.
     Help,
     /// Search input mode for logs.
@@ -63,17 +68,42 @@ pub struct App {
     status_message: Option<String>,
     /// Pending confirmation action.
     pending_action: Option<PendingAction>,
+    /// Confirmation text input buffer.
+    confirmation_input: String,
     /// File watcher for log file changes.
     file_watcher: Option<FileWatcher>,
     /// Currently watched log file path.
     watched_log_path: Option<PathBuf>,
+    /// Last time node statuses were checked.
+    last_status_check: Option<Instant>,
 }
 
 /// Actions that require user confirmation.
 #[derive(Debug, Clone)]
 pub enum PendingAction {
+    /// Restart a single node.
     RestartNode(String),
+    /// Restart all nodes in the network.
+    RestartAllNodes,
+    /// Shutdown the entire network.
     ShutdownNetwork,
+}
+
+impl PendingAction {
+    pub fn requires_text_confirm(&self) -> bool {
+        matches!(
+            self,
+            PendingAction::ShutdownNetwork | PendingAction::RestartAllNodes
+        )
+    }
+
+    pub fn confirmation_prompt(&self) -> &'static str {
+        match self {
+            PendingAction::RestartNode(_) => "Press 'y' to confirm, 'n' to cancel",
+            PendingAction::RestartAllNodes => "Type 'yes' to confirm, Esc to cancel",
+            PendingAction::ShutdownNetwork => "Type 'yes' to confirm, Esc to cancel",
+        }
+    }
 }
 
 impl App {
@@ -93,8 +123,10 @@ impl App {
             search_input: String::new(),
             status_message: None,
             pending_action: None,
+            confirmation_input: String::new(),
             file_watcher,
             watched_log_path: None,
+            last_status_check: None,
         }
     }
 
@@ -151,6 +183,11 @@ impl App {
     /// Get the pending action requiring confirmation.
     pub fn pending_action(&self) -> Option<&PendingAction> {
         self.pending_action.as_ref()
+    }
+
+    /// Get the confirmation text input.
+    pub fn confirmation_input(&self) -> &str {
+        &self.confirmation_input
     }
 
     /// Get the network name.
@@ -308,8 +345,29 @@ impl App {
 
     /// Request confirmation for an action.
     pub fn request_confirmation(&mut self, action: PendingAction) {
+        let requires_text = action.requires_text_confirm();
         self.pending_action = Some(action);
-        self.input_mode = InputMode::Confirm;
+        self.confirmation_input.clear();
+        self.input_mode = if requires_text {
+            InputMode::ConfirmText
+        } else {
+            InputMode::Confirm
+        };
+    }
+
+    /// Add a character to the confirmation input.
+    pub fn add_confirmation_char(&mut self, c: char) {
+        self.confirmation_input.push(c);
+    }
+
+    /// Remove the last character from the confirmation input.
+    pub fn remove_confirmation_char(&mut self) {
+        self.confirmation_input.pop();
+    }
+
+    /// Check if the text confirmation is valid ("yes").
+    pub fn is_confirmation_valid(&self) -> bool {
+        self.confirmation_input.eq_ignore_ascii_case("yes")
     }
 
     /// Confirm the pending action.
@@ -319,11 +377,15 @@ impl App {
                 PendingAction::RestartNode(name) => {
                     self.restart_node(&name).await?;
                 },
+                PendingAction::RestartAllNodes => {
+                    self.restart_all_nodes().await?;
+                },
                 PendingAction::ShutdownNetwork => {
                     self.shutdown_network().await?;
                 },
             }
         }
+        self.confirmation_input.clear();
         self.input_mode = InputMode::Normal;
         Ok(())
     }
@@ -331,6 +393,7 @@ impl App {
     /// Cancel the pending action.
     pub fn cancel_action(&mut self) {
         self.pending_action = None;
+        self.confirmation_input.clear();
         self.input_mode = InputMode::Normal;
     }
 
@@ -390,10 +453,69 @@ impl App {
         Ok(())
     }
 
+    /// Restart all nodes in the network.
+    async fn restart_all_nodes(&mut self) -> Result<()> {
+        let node_names: Vec<String> = self.nodes.iter().map(|n| n.name.clone()).collect();
+        let total = node_names.len();
+        let mut errors: Vec<String> = Vec::new();
+
+        for (i, name) in node_names.iter().enumerate() {
+            self.set_status(format!("Restarting node {}/{}: {}...", i + 1, total, name));
+
+            if let Some(network) = &self.network {
+                if let Ok(node) = network.get_node(name) {
+                    if let Err(e) = node.restart(None).await {
+                        errors.push(format!("{}: {}", name, e));
+                    }
+                }
+            }
+        }
+
+        self.refresh_nodes();
+
+        if errors.is_empty() {
+            self.set_status(format!("Restarted {} nodes", total));
+        } else {
+            self.set_status(format!(
+                "Restarted {} nodes with {} errors",
+                total - errors.len(),
+                errors.len()
+            ));
+        }
+        Ok(())
+    }
+
     /// Refresh the node list from the network.
     pub fn refresh_nodes(&mut self) {
         if let Some(network) = &self.network {
             self.nodes = crate::network::extract_nodes(network);
+        }
+    }
+
+    /// Refresh node statuses by checking RPC connectivity.
+    ///
+    /// This performs actual connection attempts to verify nodes are responsive.
+    /// Call this periodically for accurate status information.
+    pub async fn refresh_node_statuses(&mut self) {
+        if let Some(network) = &self.network {
+            let status_map = crate::network::check_all_nodes_status_async(network).await;
+
+            for node in &mut self.nodes {
+                if let Some(status) = status_map.get(&node.name) {
+                    node.status = *status;
+                }
+            }
+        }
+    }
+
+    /// Check and update status for a single node.
+    pub async fn refresh_node_status(&mut self, node_name: &str) {
+        if let Some(network) = &self.network {
+            let status = crate::network::check_node_status_async(network, node_name).await;
+
+            if let Some(node) = self.nodes.iter_mut().find(|n| n.name == node_name) {
+                node.status = status;
+            }
         }
     }
 
@@ -460,6 +582,18 @@ impl App {
 
         if self.log_viewer.follow() && self.current_view == View::Logs {
             let _ = self.refresh_logs();
+        }
+
+        // Pull node statuses (every 5 sec).
+        const STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+        let should_check_status = self
+            .last_status_check
+            .map(|t| t.elapsed() >= STATUS_CHECK_INTERVAL)
+            .unwrap_or(true);
+
+        if should_check_status && self.network.is_some() {
+            self.refresh_node_statuses().await;
+            self.last_status_check = Some(Instant::now());
         }
     }
 

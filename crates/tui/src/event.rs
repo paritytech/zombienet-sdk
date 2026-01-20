@@ -19,6 +19,7 @@ pub async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<()> {
     match app.input_mode() {
         InputMode::Normal => handle_normal_mode(app, key).await,
         InputMode::Confirm => handle_confirm_mode(app, key).await,
+        InputMode::ConfirmText => handle_confirm_text_mode(app, key).await,
         InputMode::Help => handle_help_mode(app, key),
         InputMode::Search => handle_search_mode(app, key),
     }
@@ -165,6 +166,18 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
             app.set_status("Node list refreshed");
         },
 
+        // Check node statuses via RPC.
+        KeyCode::Char('c') => {
+            app.set_status("Checking node statuses...");
+            app.refresh_node_statuses().await;
+            app.set_status("Node statuses updated");
+        },
+
+        // Restart all nodes (with confirmation).
+        KeyCode::Char('A') => {
+            app.request_confirmation(PendingAction::RestartAllNodes);
+        },
+
         // Calculate storage for selected node.
         KeyCode::Char('s') => {
             app.set_status("Calculating storage...");
@@ -195,7 +208,7 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
     Ok(())
 }
 
-/// Handle key events in confirmation mode.
+/// Handle key events in confirmation mode (y/n).
 async fn handle_confirm_mode(app: &mut App, key: KeyEvent) -> Result<()> {
     match key.code {
         // Confirm with 'y' or Enter.
@@ -207,6 +220,35 @@ async fn handle_confirm_mode(app: &mut App, key: KeyEvent) -> Result<()> {
         // Cancel with 'n', Escape, or 'q'.
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
             app.cancel_action();
+        },
+        _ => {},
+    }
+
+    Ok(())
+}
+
+/// Handle key events in text confirmation mode (type "yes").
+async fn handle_confirm_text_mode(app: &mut App, key: KeyEvent) -> Result<()> {
+    match key.code {
+        // Cancel with Escape.
+        KeyCode::Esc => {
+            app.cancel_action();
+        },
+        // Confirm with Enter if text is valid.
+        KeyCode::Enter => {
+            if app.is_confirmation_valid() {
+                if let Err(e) = app.confirm_action().await {
+                    app.set_status(format!("Error executing action: {}", e));
+                }
+            }
+        },
+        // Delete last character with Backspace.
+        KeyCode::Backspace => {
+            app.remove_confirmation_char();
+        },
+        // Add typed characters.
+        KeyCode::Char(c) => {
+            app.add_confirmation_char(c);
         },
         _ => {},
     }

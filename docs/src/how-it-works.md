@@ -13,9 +13,9 @@ The framework applies these modifications to relay chain specs:
 | Customization | Description |
 |---------------|-------------|
 | **Runtime Genesis Patch** | Merges user-provided `genesis_overrides` JSON (applied first) |
-| **Clear Authorities** | Removes existing session/grandpa/aura authorities |
-| **Add Balances** | Adds balances for each node based on staking minimum |
-| **Add Zombie Account** | Adds `//Zombie` account with 1000 tokens for internal operations |
+| **Clear Authorities** | Removes existing authorities from `session/keys`, `aura/authorities`, `grandpa/authorities`, `collatorSelection/invulnerables`, and `staking/invulnerables` + `staking/stakers` (relay only). Also sets `validatorCount` to 0 unless `devStakers` is configured. |
+| **Add Balances** | Adds balances for each node's `sr` and `sr_stash` accounts. Balance is `max(initial_balance, staking_min * 2)`. Only nodes with `initial_balance > 0` receive balances. |
+| **Add Zombie Account** | Adds `//Zombie` account with 1000 units (in chain denomination, i.e., `1000 * 10^token_decimals` planck) for internal operations |
 | **Add Staking** | Configures staking for validators with minimum stake |
 | **Add Session Authorities** | Adds validators as session authorities (if `session` pallet exists) |
 | **Add Aura/Grandpa Authorities** | For chains without session pallet |
@@ -28,15 +28,64 @@ For cumulus-based parachains:
 
 | Customization | Description |
 |---------------|-------------|
-| **Override para_id/paraId** | Sets correct parachain ID in chain spec root |
-| **Override relay_chain** | Sets relay chain ID in chain spec |
+| **Override para_id/paraId** | Sets correct parachain ID in chain spec root (both `para_id` and `paraId` variants) |
+| **Override relay_chain** | Sets relay chain ID in chain spec root |
 | **Apply Genesis Overrides** | Merges user-provided JSON overrides |
-| **Clear/Add Authorities** | Configures collator session or aura authorities |
-| **Add Collator Selection** | Adds invulnerable collators to `collatorSelection` |
-| **Override parachainInfo** | Sets correct `para_id` in runtime genesis |
-| **Add Balances** | Initial balances from assets pallet config |
+| **Clear/Add Authorities** | Clears existing authorities from `session/keys`, `aura/authorities`, `grandpa/authorities`, `collatorSelection/invulnerables`. Then adds collator session keys (if session pallet exists) or aura authorities. |
+| **Add Collator Selection** | Adds invulnerable collators to `collatorSelection/invulnerables` |
+| **Override parachainInfo** | Sets correct `parachainId` in `/parachainInfo/parachainId` |
+| **Add Balances** | Extracts accounts from assets pallet metadata and ensures they have native token balances. Adds balances for collator `sr` accounts. |
 
 For EVM-based parachains (`is_evm_based = true`), Ethereum session keys are generated and used instead of standard keys.
+
+### Chain Spec Key Types
+
+ZombieNet supports customizing session key types and their cryptographic schemes via the `chain_spec_key_types` configuration option.
+
+#### Cryptographic Schemes
+
+| Scheme | Suffix | Description |
+|--------|--------|-------------|
+| **SR25519** | `_sr` | Schnorr signatures, used by most runtime keys |
+| **ED25519** | `_ed` | Edwards curve signatures, used by grandpa |
+| **ECDSA** | `_ec` | Elliptic curve, used by beefy and Ethereum compatibility |
+
+#### Predefined Key Types
+
+These key types have predefined default schemes:
+
+| Key Type | Default Scheme | Notes |
+|----------|----------------|-------|
+| `aura` | SR25519 | ED25519 on asset-hub-polkadot |
+| `babe` | SR25519 | |
+| `grandpa` | ED25519 | |
+| `beefy` | ECDSA | |
+| `im_online` | SR25519 | |
+| `authority_discovery` | SR25519 | |
+| `para_validator` | SR25519 | |
+| `para_assignment` | SR25519 | |
+| `parachain_validator` | SR25519 | |
+| `nimbus` | SR25519 | |
+| `vrf` | SR25519 | |
+
+#### Syntax
+
+Two formats are supported:
+
+- **Short form**: `aura` — uses the predefined default scheme
+- **Long form**: `aura_ed` — explicitly specifies the scheme
+
+Unknown key types default to SR25519 when using short form.
+
+#### Example
+
+```toml
+[relaychain]
+chain_spec_key_types = ["aura", "grandpa", "beefy"]  # Uses defaults
+
+# Or with explicit schemes:
+chain_spec_key_types = ["aura_ed", "grandpa_sr", "custom_key_ec"]
+```
 
 ### Optional Overrides
 
@@ -61,15 +110,16 @@ These arguments are **always set by the framework** and filtered out if provided
 | `--name` | Node name from config |
 | `--rpc-cors` | `all` |
 | `--rpc-methods` | `unsafe` |
-| `--parachain-id` | Parachain ID (for parachain nodes) |
+| `--parachain-id` | Parachain ID (relay chain nodes only, when `para_id` is specified; NOT used for cumulus collators) |
 | `--node-key` | Deterministic key derived from node name |
 
 Additionally, these flags are managed by the framework:
 
 | Flag | When Added |
 |------|------------|
-| `--no-telemetry` | Always (relay chain nodes) |
+| `--no-telemetry` | Relay chain nodes only (not cumulus collators) |
 | `--collator` | Cumulus collators with `is_validator: true` |
+| `--execution wasm` | Embedded relay chain full node (after `--` separator) |
 
 ### Arguments Added Conditionally
 
@@ -104,11 +154,11 @@ Cumulus-based collators receive two sets of arguments separated by `--`:
 - User-provided collator args
 
 **After `--`** (embedded relay chain full node):
+- `--base-path` (separate relay data directory)
 - `--chain` (relay chain spec)
-- `--base-path` (separate directory)
-- `--execution wasm`
-- `--port` (full node P2P port)
-- `--prometheus-port` (full node metrics port)
+- `--execution wasm` (hardcoded, always WASM execution)
+- `--port` (full node P2P port, injected by framework when assigned port differs from default 30333)
+- `--prometheus-port` (full node metrics port, injected by framework when assigned port differs from default 9616)
 - User-provided full node args
 
 ### Removing Framework Arguments
@@ -136,17 +186,17 @@ polkadot \
   --name alice \
   --rpc-cors all \
   --rpc-methods unsafe \
-  --unsafe-rpc-external \          # Only for Docker/K8s
+  --unsafe-rpc-external \          # omitted for native provider
   --node-key <deterministic_key> \
-  --no-telemetry \
   --prometheus-external \
   --validator \
-  --insecure-validator-i-know-what-i-do \
+  --insecure-validator-i-know-what-i-do \  # if binary supports it
+  --bootnodes <bootnode_multiaddrs> \
   --prometheus-port 9615 \
   --rpc-port 9944 \
   --listen-addr /ip4/0.0.0.0/tcp/30333/ws \
   --base-path /data \
-  --bootnodes <bootnode_multiaddrs> \
+  --no-telemetry \
   [user_args...]
 ```
 
@@ -158,21 +208,21 @@ polkadot-parachain \
   --name collator01 \
   --rpc-cors all \
   --rpc-methods unsafe \
-  --unsafe-rpc-external \          
+  --unsafe-rpc-external \          # omitted for native provider
   --node-key <deterministic_key> \
   --prometheus-external \
-  --collator \
+  --collator \                     # if is_validator: true
+  --bootnodes <para_bootnode_multiaddrs> \
   --prometheus-port 9615 \
   --rpc-port 9944 \
   --listen-addr /ip4/0.0.0.0/tcp/30333/ws \
   --base-path /data \
-  --bootnodes <para_bootnode_multiaddrs> \
   [user_collator_args...] \
   -- \
   --base-path /relay-data \
   --chain /cfg/rococo-local.json \
   --execution wasm \
-  --port 30334 \
-  --prometheus-port 9616 \
+  --port 30334 \                   # if assigned port differs from default
+  --prometheus-port 9616 \         # if assigned port differs from default
   [user_full_node_args...]
 ```

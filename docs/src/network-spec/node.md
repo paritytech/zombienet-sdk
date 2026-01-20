@@ -25,14 +25,14 @@ rpc_port = 9933
 prometheus_port = 9615
 p2p_port = 30333
 # p2p_cert_hash = "..."  # Optional: libp2p WebRTC cert hash
-bootnodes = ["/ip4/127.0.0.1/tcp/30333/p2p/12D3KooW..."]
+bootnodes_addresses = ["/ip4/127.0.0.1/tcp/30333/p2p/12D3KooW..."]
 
 # Storage & Keys
 db_snapshot = "/path/to/snapshot.tar.gz"
 keystore_path = "/path/to/keystore"
 keystore_key_types = ["aura", "gran"]
 # override_eth_key = "0x..."  # Optional: override EVM session key
-log_path = "/tmp/alice.log"
+node_log_path = "/tmp/alice.log"
 
 # Resources (for container providers)
 [relaychain.nodes.resources]
@@ -78,13 +78,13 @@ limit_cpu = "1000m"
 | `prometheus_port` | Number | Auto | Prometheus metrics port |
 | `p2p_port` | Number | Auto | P2P networking port |
 | `p2p_cert_hash` | String | — | libp2p WebRTC certificate hash |
-| `bootnodes` | Array | — | Additional bootnode addresses |
+| `bootnodes_addresses` | Array | — | Additional bootnode addresses |
 | `db_snapshot` | String | — | Database snapshot path/URL |
 | `keystore_path` | String | — | Custom keystore directory |
 | `keystore_key_types` | Array | — | Key types to generate in keystore (e.g., `aura`, `gran`, `babe`) |
 | `chain_spec_key_types` | Array | — | Session key types to inject into chain spec genesis |
 | `override_eth_key` | String | — | Override auto-generated EVM session key |
-| `log_path` | String | — | Path for node log file (alias: `node_log_path`) |
+| `node_log_path` | String | — | Path for node log file |
 | `resources` | Object | — | Resource limits (see below) |
 
 ## Node Groups

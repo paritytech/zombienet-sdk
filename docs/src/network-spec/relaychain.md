@@ -24,7 +24,7 @@ random_nominators_count = 4
 max_nominations = 16
 
 # Genesis patch (applied to chain spec)
-[relaychain.runtime_genesis_patch.balances]
+[relaychain.genesis.balances]
 balances = [["5GrwvaEF...", 1000000000000]]
 
 [[relaychain.nodes]]
@@ -72,6 +72,6 @@ let config = NetworkConfigBuilder::new()
 | `chain_spec_runtime` | Object | — | Runtime WASM for chain spec generation (see [Chain Spec](./chain-spec.md)) |
 | `random_nominators_count` | Number | — | Number of random nominators for staking |
 | `max_nominations` | Number | — | Maximum nominations per nominator |
-| `runtime_genesis_patch` | Object | — | Genesis overrides as JSON (alias: `genesis`) |
+| `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`) |
 | `wasm_override` | String | — | WASM runtime override path/URL |
 | `raw_spec_override` | String/Object | — | Raw chain spec override (inline JSON or file path) |

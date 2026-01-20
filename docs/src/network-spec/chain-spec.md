@@ -21,5 +21,3 @@ chain_spec_command = "polkadot build-spec --chain {chain} --disable-default-boot
 src = "/path/to/runtime.wasm"
 preset = "development"  # optional
 ```
-
-Common presets: `development`, `local`

@@ -9,10 +9,12 @@ chain = "asset-hub-rococo-local"
 cumulus_based = true
 onboard_as_parachain = true
 default_command = "polkadot-parachain"
-initial_balance = 2000000000000
+balance = 2000000000000
 
-# Registration strategy: "InGenesis", "UsingExtrinsic", or "Manual"
-# registration_strategy = "InGenesis"
+# Registration strategy (pick one):
+# add_to_genesis = true    # InGenesis (default, fastest)
+# register_para = true     # UsingExtrinsic (via extrinsic after spawn)
+# (neither = Manual, no automatic registration)
 
 # Genesis configuration
 # genesis_wasm_path = "/path/to/para-wasm"
@@ -23,7 +25,7 @@ initial_balance = 2000000000000
 # genesis_state_generator = ["polkadot-parachain", "export-genesis-state"]
 
 # Genesis patch
-[parachains.runtime_genesis_patch.balances]
+[parachains.genesis.balances]
 balances = [["5GrwvaEF...", 1000000000000]]
 
 [[parachains.collators]]
@@ -66,8 +68,9 @@ let config = NetworkConfigBuilder::new()
 | `cumulus_based` | Boolean | `true` | Whether parachain uses Cumulus |
 | `evm_based` | Boolean | `false` | Whether parachain is EVM-based (e.g., Frontier) |
 | `onboard_as_parachain` | Boolean | `true` | Register as parachain (vs parathread) |
-| `registration_strategy` | String | `InGenesis` | How to register: `InGenesis`, `UsingExtrinsic`, `Manual` |
-| `initial_balance` | Number | 2000000000000 | Initial balance for parachain account |
+| `add_to_genesis` | Boolean | — | Register in genesis (InGenesis strategy). Mutually exclusive with `register_para` |
+| `register_para` | Boolean | — | Register via extrinsic (UsingExtrinsic strategy). Mutually exclusive with `add_to_genesis` |
+| `balance` | Number | 2000000000000 | Initial balance for parachain account |
 | `default_command` | String | — | Default collator command |
 | `default_image` | String | — | Default container image |
 | `default_args` | Array | — | Default CLI arguments |
@@ -85,7 +88,7 @@ let config = NetworkConfigBuilder::new()
 | `chain_spec_runtime` | Object | — | Runtime WASM for chain spec generation |
 | `wasm_override` | String | — | WASM runtime override path/URL |
 | `raw_spec_override` | String/Object | — | Raw chain spec override (inline JSON or file path) |
-| `bootnodes` | Array | — | Bootnode multiaddresses |
+| `bootnodes_addresses` | Array | — | Bootnode multiaddresses |
 | `no_default_bootnodes` | Boolean | `false` | Don't auto-assign bootnode role if none specified |
 
 ## Registration Strategies

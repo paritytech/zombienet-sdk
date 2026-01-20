@@ -271,7 +271,10 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             lines.push(Line::from(vec![
                 Span::styled("Storage: ", Style::default().fg(Color::DarkGray)),
-                Span::styled("(press 's' to calculate)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "(press 's' to calculate)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
 

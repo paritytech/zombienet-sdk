@@ -14,6 +14,18 @@ members = [
   "crates/tui",
 ]
 
+default-members = [
+  "crates/sdk",
+  "crates/examples",
+  "crates/support",
+  "crates/configuration",
+  "crates/orchestrator",
+  "crates/provider",
+  "crates/prom-metrics-parser",
+  "crates/file-server",
+  "crates/cli",
+]
+
 [workspace.package]
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"

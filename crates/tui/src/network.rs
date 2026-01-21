@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use orchestrator::network::Network;
 use support::fs::local::LocalFileSystem;
 
+pub use crate::helpers::format_size;
+
 /// Information about a node for display in the TUI.
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
@@ -31,6 +33,51 @@ pub struct BlockInfo {
     pub finalized: u64,
 }
 
+/// Configurable thresholds for storage level classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StorageThresholds {
+    pub medium: u64,
+    pub high: u64,
+    pub critical: u64,
+}
+
+impl StorageThresholds {
+    const GB: u64 = Self::MB * 1024;
+    const MB: u64 = 1024 * 1024;
+
+    pub fn new(medium: u64, high: u64, critical: u64) -> Self {
+        Self {
+            medium,
+            high,
+            critical,
+        }
+    }
+
+    pub fn from_mb(medium_mb: u64, high_mb: u64, critical_mb: u64) -> Self {
+        Self {
+            medium: medium_mb * Self::MB,
+            high: high_mb * Self::MB,
+            critical: critical_mb * Self::MB,
+        }
+    }
+}
+
+impl Default for StorageThresholds {
+    /// Default thresholds suitable for short-lived test networks.
+    ///
+    /// - Low: < 100 MB
+    /// - Medium: 100 MB - 1 GB
+    /// - High: 1 GB - 10 GB
+    /// - Critical: > 10 GB
+    fn default() -> Self {
+        Self {
+            medium: 100 * Self::MB,  // 100 MB
+            high: Self::GB,          // 1 GB
+            critical: 10 * Self::GB, // 10 GB
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StorageInfo {
     /// Total storage used by the node.
@@ -46,15 +93,13 @@ impl StorageInfo {
         format_size(self.total_bytes)
     }
 
-    pub fn level(&self) -> StorageLevel {
-        const MB: u64 = 1024 * 1024;
-        const GB: u64 = MB * 1024;
-
-        if self.total_bytes >= 10 * GB {
+    /// Determine storage level based on thresholds.
+    pub fn level_with_thresholds(&self, thresholds: &StorageThresholds) -> StorageLevel {
+        if self.total_bytes >= thresholds.critical {
             StorageLevel::Critical
-        } else if self.total_bytes >= GB {
+        } else if self.total_bytes >= thresholds.high {
             StorageLevel::High
-        } else if self.total_bytes >= 100 * MB {
+        } else if self.total_bytes >= thresholds.medium {
             StorageLevel::Medium
         } else {
             StorageLevel::Low
@@ -362,37 +407,9 @@ pub fn calculate_dir_size(path: &PathBuf) -> std::io::Result<u64> {
     Ok(total_size)
 }
 
-/// Format a byte size as a human-readable string.
-pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_size() {
-        assert_eq!(format_size(0), "0 B");
-        assert_eq!(format_size(512), "512 B");
-        assert_eq!(format_size(1024), "1.00 KB");
-        assert_eq!(format_size(1536), "1.50 KB");
-        assert_eq!(format_size(1024 * 1024), "1.00 MB");
-        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
-        assert_eq!(format_size(1024 * 1024 * 1024 * 2), "2.00 GB");
-    }
 
     #[test]
     fn test_node_type_as_str() {
@@ -453,7 +470,10 @@ mod tests {
             data_bytes: 0,
             is_calculating: false,
         };
-        assert_eq!(low.level(), StorageLevel::Low);
+        assert_eq!(
+            low.level_with_thresholds(&StorageThresholds::default()),
+            StorageLevel::Low
+        );
 
         // Medium: 100 MB - 1 GB
         let medium = StorageInfo {
@@ -461,7 +481,10 @@ mod tests {
             data_bytes: 0,
             is_calculating: false,
         };
-        assert_eq!(medium.level(), StorageLevel::Medium);
+        assert_eq!(
+            medium.level_with_thresholds(&StorageThresholds::default()),
+            StorageLevel::Medium
+        );
 
         // High: 1 GB - 10 GB
         let high = StorageInfo {
@@ -469,7 +492,10 @@ mod tests {
             data_bytes: 0,
             is_calculating: false,
         };
-        assert_eq!(high.level(), StorageLevel::High);
+        assert_eq!(
+            high.level_with_thresholds(&StorageThresholds::default()),
+            StorageLevel::High
+        );
 
         // Critical: > 10 GB
         let critical = StorageInfo {
@@ -477,7 +503,10 @@ mod tests {
             data_bytes: 0,
             is_calculating: false,
         };
-        assert_eq!(critical.level(), StorageLevel::Critical);
+        assert_eq!(
+            critical.level_with_thresholds(&StorageThresholds::default()),
+            StorageLevel::Critical
+        );
     }
 
     #[test]
@@ -486,5 +515,40 @@ mod tests {
         assert_eq!(StorageLevel::Medium.icon(), "▃");
         assert_eq!(StorageLevel::High.icon(), "▅");
         assert_eq!(StorageLevel::Critical.icon(), "█");
+    }
+
+    #[test]
+    fn test_storage_thresholds_custom() {
+        const GB: u64 = 1024 * 1024 * 1024;
+
+        let thresholds = StorageThresholds::from_mb(1024, 10240, 102400); // 1GB, 10GB, 100GB
+
+        let storage = StorageInfo {
+            total_bytes: 15 * GB, // 15 GB would be "Critical" with defaults.
+            data_bytes: 0,
+            is_calculating: false,
+        };
+
+        // With defaults, 15 GB is Critical.
+        assert_eq!(
+            storage.level_with_thresholds(&StorageThresholds::default()),
+            StorageLevel::Critical
+        );
+
+        // With custom thresholds, 15 GB (between 10GB and 100GB) is High.
+        assert_eq!(
+            storage.level_with_thresholds(&thresholds),
+            StorageLevel::High
+        );
+    }
+
+    #[test]
+    fn test_storage_thresholds_from_mb() {
+        let thresholds = StorageThresholds::from_mb(500, 2000, 5000);
+        const MB: u64 = 1024 * 1024;
+
+        assert_eq!(thresholds.medium, 500 * MB);
+        assert_eq!(thresholds.high, 2000 * MB);
+        assert_eq!(thresholds.critical, 5000 * MB);
     }
 }

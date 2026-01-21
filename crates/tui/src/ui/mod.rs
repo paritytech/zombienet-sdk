@@ -107,7 +107,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
 
             // Storage indicator.
             let (storage_text, storage_color) = if let Some(storage) = &node.storage {
-                let level = storage.level();
+                let level = storage.level_with_thresholds(app.storage_thresholds());
                 let color = match level {
                     crate::network::StorageLevel::Low => Color::Green,
                     crate::network::StorageLevel::Medium => Color::Yellow,
@@ -274,7 +274,7 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
 
         // Storage information.
         if let Some(storage) = &node.storage {
-            let level = storage.level();
+            let level = storage.level_with_thresholds(app.storage_thresholds());
             let storage_color = match level {
                 crate::network::StorageLevel::Low => Color::Green,
                 crate::network::StorageLevel::Medium => Color::Yellow,

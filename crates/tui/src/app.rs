@@ -12,7 +12,7 @@ use zombienet_sdk::AttachToLive;
 
 use crate::{
     logs::LogViewer,
-    network::{NodeInfo, NodeStatus},
+    network::{NodeInfo, NodeStatus, StorageThresholds},
     watcher::{FileWatcher, WatchEvent},
 };
 
@@ -72,6 +72,8 @@ pub struct App {
     watched_log_path: Option<PathBuf>,
     /// Last time node statuses were checked.
     last_status_check: Option<Instant>,
+    /// Storage thresholds.
+    storage_thresholds: StorageThresholds,
 }
 
 /// Actions that require user confirmation.
@@ -111,6 +113,7 @@ impl App {
             file_watcher,
             watched_log_path: None,
             last_status_check: None,
+            storage_thresholds: StorageThresholds::default(),
         }
     }
 
@@ -191,6 +194,16 @@ impl App {
     /// Set the zombie.json path for attachment.
     pub fn set_zombie_json_path(&mut self, path: PathBuf) {
         self.zombie_json_path = Some(path);
+    }
+
+    /// Set custom storage thresholds.
+    pub fn set_storage_thresholds(&mut self, thresholds: StorageThresholds) {
+        self.storage_thresholds = thresholds;
+    }
+
+    /// Get the current storage thresholds.
+    pub fn storage_thresholds(&self) -> &StorageThresholds {
+        &self.storage_thresholds
     }
 
     /// Attach to a running network from the zombie.json file.

@@ -18,7 +18,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-use zombienet_tui::{app::App, event, ui};
+use zombienet_tui::{app::App, event, network::StorageThresholds, ui};
 
 /// Zombienet TUI - Monitor and manage running zombienet networks.
 #[derive(Parser, Debug)]
@@ -32,6 +32,18 @@ struct Args {
     /// Enable verbose logging to stderr.
     #[arg(short, long)]
     verbose: bool,
+
+    /// Storage threshold for "Medium" level in MB (default: 100).
+    #[arg(long, default_value = "100")]
+    storage_medium_mb: u64,
+
+    /// Storage threshold for "High" level in MB (default: 1024 = 1GB).
+    #[arg(long, default_value = "1024")]
+    storage_high_mb: u64,
+
+    /// Storage threshold for "Critical" level in MB (default: 10240 = 10GB).
+    #[arg(long, default_value = "10240")]
+    storage_critical_mb: u64,
 }
 
 #[tokio::main]
@@ -46,7 +58,14 @@ async fn main() -> Result<()> {
         tracing::subscriber::set_global_default(subscriber)?;
     }
 
+    let storage_thresholds = StorageThresholds::from_mb(
+        args.storage_medium_mb,
+        args.storage_high_mb,
+        args.storage_critical_mb,
+    );
+
     let mut app = App::new();
+    app.set_storage_thresholds(storage_thresholds);
     app.set_zombie_json_path(args.attach);
     let mut terminal = setup_terminal()?;
     let result = run_app(&mut terminal, &mut app).await;

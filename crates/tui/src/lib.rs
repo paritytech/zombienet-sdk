@@ -9,6 +9,7 @@
 
 pub mod app;
 pub mod event;
+pub mod helpers;
 pub mod logs;
 pub mod network;
 pub mod ui;

@@ -51,7 +51,7 @@ pub struct App {
     /// Path to the zombie.json file.
     zombie_json_path: Option<PathBuf>,
     /// Current view/panel focus.
-    pub current_view: View,
+    current_view: View,
     /// Current input mode.
     input_mode: InputMode,
     /// Index of the currently selected node.
@@ -127,6 +127,11 @@ impl App {
     /// Get the current view.
     pub fn current_view(&self) -> View {
         self.current_view
+    }
+
+    /// Set the current view.
+    pub fn set_current_view(&mut self, view: View) {
+        self.current_view = view;
     }
 
     /// Get the current input mode.

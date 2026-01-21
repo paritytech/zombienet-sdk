@@ -75,7 +75,7 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
 
         // End - scroll to bottom of logs.
         KeyCode::End => {
-            if app.current_view == View::Logs {
+            if app.current_view() == View::Logs {
                 app.scroll_logs_to_bottom();
             }
         },
@@ -91,13 +91,13 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
 
         // View-specific shortcuts.
         KeyCode::Char('1') => {
-            app.current_view = View::Nodes;
+            app.set_current_view(View::Nodes);
         },
         KeyCode::Char('2') => {
-            app.current_view = View::Details;
+            app.set_current_view(View::Details);
         },
         KeyCode::Char('3') => {
-            app.current_view = View::Logs;
+            app.set_current_view(View::Logs);
         },
 
         // Toggle help.
@@ -194,7 +194,7 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
         // Load/refresh logs.
         KeyCode::Enter => {
             if app.current_view() == View::Nodes || app.current_view() == View::Details {
-                app.current_view = View::Logs;
+                app.set_current_view(View::Logs);
             }
             if let Err(e) = app.load_selected_node_logs().await {
                 app.set_status(format!("Error loading logs: {}", e));

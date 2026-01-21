@@ -203,15 +203,20 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled("Type: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(node.node_type.as_str(), Style::default().fg(Color::Cyan)),
             ]),
-            Line::from(vec![
-                Span::styled("WS URI: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(&node.ws_uri, Style::default().fg(Color::Green)),
-            ]),
-            Line::from(vec![
-                Span::styled("Multiaddr: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(&node.multiaddr, Style::default().fg(Color::Green)),
-            ]),
         ];
+
+        if let Some(network) = app.network() {
+            if let Ok(sdk_node) = network.get_node(&node.name) {
+                lines.push(Line::from(vec![
+                    Span::styled("WS URI: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(sdk_node.ws_uri(), Style::default().fg(Color::Green)),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("Multiaddr: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(sdk_node.multiaddr(), Style::default().fg(Color::Green)),
+                ]));
+            }
+        }
 
         if let Some(para_id) = node.para_id {
             lines.insert(

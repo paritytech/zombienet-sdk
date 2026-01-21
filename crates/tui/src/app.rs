@@ -184,6 +184,10 @@ impl App {
         self.network.as_ref().and_then(|n| n.base_dir())
     }
 
+    pub fn network(&self) -> Option<&Network<LocalFileSystem>> {
+        self.network.as_ref()
+    }
+
     /// Set the zombie.json path for attachment.
     pub fn set_zombie_json_path(&mut self, path: PathBuf) {
         self.zombie_json_path = Some(path);
@@ -360,35 +364,51 @@ impl App {
 
     /// Pause the currently selected node.
     pub async fn pause_selected_node(&mut self) -> Result<()> {
-        if let Some(network) = &self.network {
-            if let Some(node_info) = self.nodes.get(self.selected_node_index) {
-                let name = node_info.name.clone();
-                let node = network.get_node(&name)?;
-                node.pause().await?;
-                // Update status.
-                if let Some(node_info) = self.nodes.get_mut(self.selected_node_index) {
-                    node_info.status = NodeStatus::Paused;
-                }
-                self.set_status(format!("Paused node: {}", name));
-            }
+        let Some(name) = self
+            .nodes
+            .get(self.selected_node_index)
+            .map(|n| n.name.clone())
+        else {
+            return Ok(());
+        };
+
+        let Some(network) = &self.network else {
+            return Ok(());
+        };
+
+        let node = network.get_node(&name)?;
+        node.pause().await?;
+
+        if let Some(node_info) = self.nodes.get_mut(self.selected_node_index) {
+            node_info.status = NodeStatus::Paused;
         }
+        self.set_status(format!("Paused node: {}", name));
+
         Ok(())
     }
 
     /// Resume the currently selected node.
     pub async fn resume_selected_node(&mut self) -> Result<()> {
-        if let Some(network) = &self.network {
-            if let Some(node_info) = self.nodes.get(self.selected_node_index) {
-                let name = node_info.name.clone();
-                let node = network.get_node(&name)?;
-                node.resume().await?;
-                // Update status.
-                if let Some(node_info) = self.nodes.get_mut(self.selected_node_index) {
-                    node_info.status = NodeStatus::Running;
-                }
-                self.set_status(format!("Resumed node: {}", name));
-            }
+        let Some(name) = self
+            .nodes
+            .get(self.selected_node_index)
+            .map(|n| n.name.clone())
+        else {
+            return Ok(());
+        };
+
+        let Some(network) = &self.network else {
+            return Ok(());
+        };
+
+        let node = network.get_node(&name)?;
+        node.resume().await?;
+
+        if let Some(node_info) = self.nodes.get_mut(self.selected_node_index) {
+            node_info.status = NodeStatus::Running;
         }
+        self.set_status(format!("Resumed node: {}", name));
+
         Ok(())
     }
 
@@ -410,7 +430,9 @@ impl App {
 
         // Verify node is responsive.
         self.set_status(format!("Verifying {} is responsive...", name));
-        let is_up = self.wait_node_responsive(name, Duration::from_secs(30)).await;
+        let is_up = self
+            .wait_node_responsive(name, Duration::from_secs(30))
+            .await;
 
         if is_up {
             if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == name) {
@@ -480,7 +502,9 @@ impl App {
                     // Update status: verifying.
                     self.set_status(format!("{} Verifying {} is responsive...", progress, name));
 
-                    let is_up = self.wait_node_responsive(name, Duration::from_secs(30)).await;
+                    let is_up = self
+                        .wait_node_responsive(name, Duration::from_secs(30))
+                        .await;
 
                     if is_up {
                         if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == *name) {
@@ -491,7 +515,8 @@ impl App {
                         if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == *name) {
                             node_info.status = crate::network::NodeStatus::Unknown;
                         }
-                        failed_nodes.push((name.clone(), "Node not responsive after restart".into()));
+                        failed_nodes
+                            .push((name.clone(), "Node not responsive after restart".into()));
                     }
                 },
                 Err(e) => {
@@ -510,10 +535,7 @@ impl App {
         self.refresh_nodes();
 
         if failed_nodes.is_empty() {
-            self.set_status(format!(
-                "Successfully restarted all {} nodes",
-                successful
-            ));
+            self.set_status(format!("Successfully restarted all {} nodes", successful));
         } else {
             let error_summary: String = failed_nodes
                 .iter()
@@ -522,9 +544,7 @@ impl App {
                 .join("; ");
             self.set_status(format!(
                 "Restarted {}/{} nodes. Failures: {}",
-                successful,
-                total,
-                error_summary
+                successful, total, error_summary
             ));
         }
 

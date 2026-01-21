@@ -10,11 +10,7 @@ use support::fs::local::LocalFileSystem;
 pub struct NodeInfo {
     /// Node name (e.g., "alice", "bob").
     pub name: String,
-    /// WebSocket RPC URI.
-    pub ws_uri: String,
-    /// libp2p multiaddress.
-    pub multiaddr: String,
-    /// Parachain ID (if this is a collator).
+    /// Parachain ID.
     pub para_id: Option<u32>,
     /// Node type (relay validator, collator, etc.).
     pub node_type: NodeType,
@@ -167,8 +163,6 @@ pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
         let status = running_state_to_status(node.is_running());
         nodes.push(NodeInfo {
             name: node.name().to_string(),
-            ws_uri: node.ws_uri().to_string(),
-            multiaddr: node.multiaddr().to_string(),
             para_id: None,
             node_type: NodeType::Relay,
             status,
@@ -182,8 +176,6 @@ pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
             let status = running_state_to_status(collator.is_running());
             nodes.push(NodeInfo {
                 name: collator.name().to_string(),
-                ws_uri: collator.ws_uri().to_string(),
-                multiaddr: collator.multiaddr().to_string(),
                 para_id: Some(para.para_id()),
                 node_type: NodeType::Collator,
                 status,

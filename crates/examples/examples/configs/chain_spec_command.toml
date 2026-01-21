@@ -1,0 +1,21 @@
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+post_process_script = "crates/examples/scripts/customize-chain-spec.sh"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 2000
+chain = "asset-hub-rococo-local"
+default_command = "polkadot-parachain"
+
+[[parachains.collators]]
+name = "collator"
+
+[[parachains.collators]]
+name = "collator2"

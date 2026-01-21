@@ -119,6 +119,12 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 (String::new(), Color::DarkGray)
             };
 
+            let block_text = if let Some(block_info) = &node.block_info {
+                format!(" #{}|{}", block_info.best, block_info.finalized)
+            } else {
+                String::new()
+            };
+
             // Build line with colored status indicator.
             let is_selected = i == app.selected_node_index();
             let base_style = if is_selected {
@@ -136,6 +142,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(type_indicator, base_style),
                 Span::styled(format!(" {}", node.name), base_style),
                 Span::styled(para_suffix, Style::default().fg(Color::DarkGray)),
+                Span::styled(block_text, Style::default().fg(Color::Cyan)),
                 Span::styled(storage_text, Style::default().fg(storage_color)),
             ]);
 
@@ -243,6 +250,24 @@ fn render_details_panel(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(
                     data_dir.to_string_lossy().to_string(),
                     Style::default().fg(Color::White),
+                ),
+            ]));
+        }
+
+        // Block info.
+        if let Some(block_info) = &node.block_info {
+            lines.push(Line::from(vec![
+                Span::styled("Best Block: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("#{}", block_info.best),
+                    Style::default().fg(Color::Cyan),
+                ),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("Finalized: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("#{}", block_info.finalized),
+                    Style::default().fg(Color::Green),
                 ),
             ]));
         }

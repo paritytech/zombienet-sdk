@@ -205,7 +205,7 @@ impl App {
         let network = zombienet_sdk::AttachToLiveNetwork::attach_native(path).await?;
 
         // Extract node information.
-        self.nodes = crate::network::extract_nodes(&network);
+        self.nodes = crate::network::extract_nodes(&network).await;
         self.network = Some(network);
 
         self.set_status("Connected to network");
@@ -446,7 +446,7 @@ impl App {
             self.set_status(format!("Restarted {} but node not responsive", name));
         }
 
-        self.refresh_nodes();
+        self.refresh_nodes().await;
         Ok(())
     }
 
@@ -532,7 +532,7 @@ impl App {
             }
         }
 
-        self.refresh_nodes();
+        self.refresh_nodes().await;
 
         if failed_nodes.is_empty() {
             self.set_status(format!("Successfully restarted all {} nodes", successful));
@@ -573,9 +573,9 @@ impl App {
     }
 
     /// Refresh the node list from the network.
-    pub fn refresh_nodes(&mut self) {
+    pub async fn refresh_nodes(&mut self) {
         if let Some(network) = &self.network {
-            self.nodes = crate::network::extract_nodes(network);
+            self.nodes = crate::network::extract_nodes(network).await;
         }
     }
 
@@ -590,6 +590,19 @@ impl App {
             for node in &mut self.nodes {
                 if let Some(status) = status_map.get(&node.name) {
                     node.status = *status;
+                }
+            }
+        }
+    }
+
+    /// Refresh block info (best/finalized blocks) for all nodes.
+    pub async fn refresh_block_info(&mut self) {
+        if let Some(network) = &self.network {
+            let block_info_map = crate::network::fetch_all_nodes_block_info(network).await;
+
+            for node in &mut self.nodes {
+                if let Some(block_info) = block_info_map.get(&node.name) {
+                    node.block_info = Some(block_info.clone());
                 }
             }
         }
@@ -671,7 +684,7 @@ impl App {
             let _ = self.refresh_logs();
         }
 
-        // Pull node statuses (every 5 sec).
+        // Pull node statuses and block info (every 5 sec).
         const STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(5);
         let should_check_status = self
             .last_status_check
@@ -680,6 +693,7 @@ impl App {
 
         if should_check_status && self.network.is_some() {
             self.refresh_node_statuses().await;
+            self.refresh_block_info().await;
             self.last_status_check = Some(Instant::now());
         }
     }

@@ -161,7 +161,7 @@ async fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Result<()> {
 
         // Refresh node list.
         KeyCode::Char('R') => {
-            app.refresh_nodes();
+            app.refresh_nodes().await;
             app.set_status("Node list refreshed");
         },
 

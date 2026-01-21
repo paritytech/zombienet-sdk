@@ -18,6 +18,17 @@ pub struct NodeInfo {
     pub status: NodeStatus,
     /// Storage usage information.
     pub storage: Option<StorageInfo>,
+    /// Block height information.
+    pub block_info: Option<BlockInfo>,
+}
+
+/// Block height information for a node.
+#[derive(Debug, Clone, Default)]
+pub struct BlockInfo {
+    /// Best (head) block number.
+    pub best: u64,
+    /// Finalized block number.
+    pub finalized: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -142,44 +153,44 @@ impl NodeStatus {
     }
 }
 
-/// Convert the internal running state to a NodeStatus.
-fn running_state_to_status(is_running: bool) -> NodeStatus {
-    if is_running {
+fn responsive_state_to_status(is_responsive: bool) -> NodeStatus {
+    if is_responsive {
         NodeStatus::Running
     } else {
-        NodeStatus::Paused
+        NodeStatus::Unknown
     }
 }
 
 /// Extract node information from a running network.
 ///
-/// This reads the current running state from each node. For a more robust
-/// check that verifies nodes are actually responsive, use `check_node_status_async`.
-pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
+/// This checks each node's responsiveness by attempting to connect to its WebSocket endpoint.
+pub async fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
     let mut nodes = Vec::new();
 
-    // Extract relay chain nodes.
     for node in network.relaychain().nodes() {
-        let status = running_state_to_status(node.is_running());
+        let is_responsive = node.is_responsive().await;
+        let status = responsive_state_to_status(is_responsive);
         nodes.push(NodeInfo {
             name: node.name().to_string(),
             para_id: None,
             node_type: NodeType::Relay,
             status,
             storage: None,
+            block_info: None,
         });
     }
 
     // Extract parachain collators.
     for para in network.parachains() {
         for collator in para.collators() {
-            let status = running_state_to_status(collator.is_running());
+            let status = responsive_state_to_status(collator.is_responsive().await);
             nodes.push(NodeInfo {
                 name: collator.name().to_string(),
                 para_id: Some(para.para_id()),
                 node_type: NodeType::Collator,
                 status,
                 storage: None,
+                block_info: None,
             });
         }
     }
@@ -188,18 +199,11 @@ pub fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> {
 }
 
 /// Check node status by verifying RPC connectivity.
-///
-/// This is more robust than the basic `is_running()` check as it actually
-/// attempts to connect to the node's WebSocket endpoint.
 pub async fn check_node_status_async(
     network: &Network<LocalFileSystem>,
     node_name: &str,
 ) -> NodeStatus {
     if let Ok(node) = network.get_node(node_name) {
-        if !node.is_running() {
-            return NodeStatus::Paused;
-        }
-
         if node.is_responsive().await {
             NodeStatus::Running
         } else {
@@ -248,6 +252,69 @@ pub async fn check_all_nodes_status_async(
     }
 
     status_map
+}
+
+/// Prometheus metric names for block heights.
+const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
+const FINALIZED_BLOCK_METRIC: &str = "block_height{status=\"finalized\"}";
+
+/// Fetch block info for a single node.
+///
+/// Returns `None` if the node is not running or metrics are unavailable.
+pub async fn fetch_node_block_info(
+    network: &Network<LocalFileSystem>,
+    node_name: &str,
+) -> Option<BlockInfo> {
+    let node = network.get_node(node_name).ok()?;
+
+    if !node.is_responsive().await {
+        return None;
+    }
+
+    let best = node.reports(BEST_BLOCK_METRIC).await.ok()?;
+    let finalized = node.reports(FINALIZED_BLOCK_METRIC).await.ok()?;
+
+    Some(BlockInfo {
+        best: best as u64,
+        finalized: finalized as u64,
+    })
+}
+
+/// Fetch block info for all nodes in parallel.
+///
+/// Returns a map of node name to block info.
+pub async fn fetch_all_nodes_block_info(
+    network: &Network<LocalFileSystem>,
+) -> std::collections::HashMap<String, BlockInfo> {
+    use futures::future::join_all;
+
+    let mut node_names: Vec<String> = network
+        .relaychain()
+        .nodes()
+        .iter()
+        .map(|n| n.name().to_string())
+        .collect();
+
+    for para in network.parachains() {
+        for collator in para.collators() {
+            node_names.push(collator.name().to_string());
+        }
+    }
+
+    let futures: Vec<_> = node_names
+        .iter()
+        .map(|name| async {
+            let block_info = fetch_node_block_info(network, name).await;
+            (name.clone(), block_info)
+        })
+        .collect();
+
+    let results = join_all(futures).await;
+
+    results
+        .into_iter()
+        .filter_map(|(name, info)| info.map(|i| (name, i)))
+        .collect()
 }
 
 /// Calculate storage for a single node given the base directory.

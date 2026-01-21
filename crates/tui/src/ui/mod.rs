@@ -37,9 +37,6 @@ pub fn render(frame: &mut Frame, app: &App) {
         InputMode::Confirm => {
             render_confirm_dialog(frame, app);
         },
-        InputMode::ConfirmText => {
-            render_confirm_text_dialog(frame, app);
-        },
         InputMode::Search => {
             render_search_input(frame, app);
         },
@@ -433,74 +430,6 @@ fn render_confirm_dialog(frame: &mut Frame, app: &App) {
                 .title(" Confirm ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow)),
-        )
-        .style(Style::default().bg(Color::Black))
-        .wrap(Wrap { trim: true });
-
-    frame.render_widget(dialog, area);
-}
-
-/// Render the text confirmation dialog overlay (requires typing "yes").
-fn render_confirm_text_dialog(frame: &mut Frame, app: &App) {
-    let area = centered_rect(60, 35, frame.area());
-
-    frame.render_widget(Clear, area);
-
-    let message = match app.pending_action() {
-        Some(PendingAction::ShutdownNetwork) => {
-            "Are you sure you want to shutdown the entire network?"
-        },
-        Some(PendingAction::RestartAllNodes) => "Are you sure you want to restart ALL nodes?",
-        Some(PendingAction::RestartNode(_)) => {
-            // Single node restart uses simple confirmation.
-            return render_confirm_dialog(frame, app);
-        },
-        None => "Confirm action?",
-    };
-
-    let input = app.confirmation_input();
-    let is_valid = app.is_confirmation_valid();
-
-    let input_style = if is_valid {
-        Style::default().fg(Color::Green)
-    } else if input.is_empty() {
-        Style::default().fg(Color::White)
-    } else {
-        Style::default().fg(Color::Yellow)
-    };
-
-    let text = vec![
-        Line::from(""),
-        Line::from(Span::styled(message, Style::default().fg(Color::Yellow))),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Type \"yes\" to confirm:",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
-        Line::from(vec![
-            Span::raw("  > "),
-            Span::styled(input, input_style),
-            Span::styled(
-                "_",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "[Enter] Confirm  [Esc] Cancel",
-            Style::default().fg(Color::DarkGray),
-        )),
-    ];
-
-    let dialog = Paragraph::new(text)
-        .block(
-            Block::default()
-                .title(" Confirm (Destructive Action) ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Red)),
         )
         .style(Style::default().bg(Color::Black))
         .wrap(Wrap { trim: true });

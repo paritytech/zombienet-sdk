@@ -36,8 +36,6 @@ pub enum InputMode {
     Normal,
     /// Confirmation dialog (y/n).
     Confirm,
-    /// Text confirmation dialog (type "yes" to confirm).
-    ConfirmText,
     /// Help overlay is visible.
     Help,
     /// Search input mode for logs.
@@ -68,8 +66,6 @@ pub struct App {
     status_message: Option<String>,
     /// Pending confirmation action.
     pending_action: Option<PendingAction>,
-    /// Confirmation text input buffer.
-    confirmation_input: String,
     /// File watcher for log file changes.
     file_watcher: Option<FileWatcher>,
     /// Currently watched log file path.
@@ -90,19 +86,8 @@ pub enum PendingAction {
 }
 
 impl PendingAction {
-    pub fn requires_text_confirm(&self) -> bool {
-        matches!(
-            self,
-            PendingAction::ShutdownNetwork | PendingAction::RestartAllNodes
-        )
-    }
-
     pub fn confirmation_prompt(&self) -> &'static str {
-        match self {
-            PendingAction::RestartNode(_) => "Press 'y' to confirm, 'n' to cancel",
-            PendingAction::RestartAllNodes => "Type 'yes' to confirm, Esc to cancel",
-            PendingAction::ShutdownNetwork => "Type 'yes' to confirm, Esc to cancel",
-        }
+        "Press 'y' to confirm, 'n' to cancel"
     }
 }
 
@@ -123,7 +108,6 @@ impl App {
             search_input: String::new(),
             status_message: None,
             pending_action: None,
-            confirmation_input: String::new(),
             file_watcher,
             watched_log_path: None,
             last_status_check: None,
@@ -183,11 +167,6 @@ impl App {
     /// Get the pending action requiring confirmation.
     pub fn pending_action(&self) -> Option<&PendingAction> {
         self.pending_action.as_ref()
-    }
-
-    /// Get the confirmation text input.
-    pub fn confirmation_input(&self) -> &str {
-        &self.confirmation_input
     }
 
     /// Get the network name.
@@ -345,29 +324,8 @@ impl App {
 
     /// Request confirmation for an action.
     pub fn request_confirmation(&mut self, action: PendingAction) {
-        let requires_text = action.requires_text_confirm();
         self.pending_action = Some(action);
-        self.confirmation_input.clear();
-        self.input_mode = if requires_text {
-            InputMode::ConfirmText
-        } else {
-            InputMode::Confirm
-        };
-    }
-
-    /// Add a character to the confirmation input.
-    pub fn add_confirmation_char(&mut self, c: char) {
-        self.confirmation_input.push(c);
-    }
-
-    /// Remove the last character from the confirmation input.
-    pub fn remove_confirmation_char(&mut self) {
-        self.confirmation_input.pop();
-    }
-
-    /// Check if the text confirmation is valid ("yes").
-    pub fn is_confirmation_valid(&self) -> bool {
-        self.confirmation_input.eq_ignore_ascii_case("yes")
+        self.input_mode = InputMode::Confirm;
     }
 
     /// Confirm the pending action.
@@ -385,7 +343,6 @@ impl App {
                 },
             }
         }
-        self.confirmation_input.clear();
         self.input_mode = InputMode::Normal;
         Ok(())
     }
@@ -393,7 +350,6 @@ impl App {
     /// Cancel the pending action.
     pub fn cancel_action(&mut self) {
         self.pending_action = None;
-        self.confirmation_input.clear();
         self.input_mode = InputMode::Normal;
     }
 
@@ -433,12 +389,37 @@ impl App {
 
     /// Restart a specific node.
     async fn restart_node(&mut self, name: &str) -> Result<()> {
+        if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == name) {
+            node_info.status = crate::network::NodeStatus::Unknown;
+        }
+
+        self.set_status(format!("Restarting {}...", name));
+
+        // Perform the restart.
         if let Some(network) = &self.network {
             let node = network.get_node(name)?;
             node.restart(None).await?;
-            self.set_status(format!("Restarted node: {}", name));
-            self.refresh_nodes();
+        } else {
+            return Err(anyhow::anyhow!("No network connected"));
         }
+
+        // Verify node is responsive.
+        self.set_status(format!("Verifying {} is responsive...", name));
+        let is_up = self.wait_node_responsive(name, Duration::from_secs(30)).await;
+
+        if is_up {
+            if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == name) {
+                node_info.status = crate::network::NodeStatus::Running;
+            }
+            self.set_status(format!("Restarted node: {}", name));
+        } else {
+            if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == name) {
+                node_info.status = crate::network::NodeStatus::Unknown;
+            }
+            self.set_status(format!("Restarted {} but node not responsive", name));
+        }
+
+        self.refresh_nodes();
         Ok(())
     }
 
@@ -453,36 +434,117 @@ impl App {
         Ok(())
     }
 
-    /// Restart all nodes in the network.
+    /// Restart all nodes in the network sequentially.
+    ///
+    /// This method:
+    /// 1. Restarts each node using the SDK's restart method
+    /// 2. Waits for each node to become responsive before proceeding
+    /// 3. Tracks progress and reports errors
     async fn restart_all_nodes(&mut self) -> Result<()> {
         let node_names: Vec<String> = self.nodes.iter().map(|n| n.name.clone()).collect();
         let total = node_names.len();
-        let mut errors: Vec<String> = Vec::new();
+
+        if total == 0 {
+            self.set_status("No nodes to restart");
+            return Ok(());
+        }
+
+        let mut successful = 0;
+        let mut failed_nodes: Vec<(String, String)> = Vec::new();
 
         for (i, name) in node_names.iter().enumerate() {
-            self.set_status(format!("Restarting node {}/{}: {}...", i + 1, total, name));
+            let progress = format!("[{}/{}]", i + 1, total);
 
-            if let Some(network) = &self.network {
-                if let Ok(node) = network.get_node(name) {
-                    if let Err(e) = node.restart(None).await {
-                        errors.push(format!("{}: {}", name, e));
-                    }
+            self.set_status(format!("{} Restarting {}...", progress, name));
+
+            if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == *name) {
+                node_info.status = crate::network::NodeStatus::Unknown;
+            }
+
+            let restart_result = if let Some(network) = &self.network {
+                match network.get_node(name) {
+                    Ok(node) => node.restart(None).await,
+                    Err(e) => Err(e),
                 }
+            } else {
+                Err(anyhow::anyhow!("No network connected"))
+            };
+
+            match restart_result {
+                Ok(()) => {
+                    // Update status: verifying.
+                    self.set_status(format!("{} Verifying {} is responsive...", progress, name));
+
+                    let is_up = self.wait_node_responsive(name, Duration::from_secs(30)).await;
+
+                    if is_up {
+                        if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == *name) {
+                            node_info.status = crate::network::NodeStatus::Running;
+                        }
+                        successful += 1;
+                    } else {
+                        if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == *name) {
+                            node_info.status = crate::network::NodeStatus::Unknown;
+                        }
+                        failed_nodes.push((name.clone(), "Node not responsive after restart".into()));
+                    }
+                },
+                Err(e) => {
+                    failed_nodes.push((name.clone(), e.to_string()));
+                    if let Some(node_info) = self.nodes.iter_mut().find(|n| n.name == *name) {
+                        node_info.status = crate::network::NodeStatus::Unknown;
+                    }
+                },
+            }
+
+            if i < total - 1 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
         }
 
         self.refresh_nodes();
 
-        if errors.is_empty() {
-            self.set_status(format!("Restarted {} nodes", total));
-        } else {
+        if failed_nodes.is_empty() {
             self.set_status(format!(
-                "Restarted {} nodes with {} errors",
-                total - errors.len(),
-                errors.len()
+                "Successfully restarted all {} nodes",
+                successful
+            ));
+        } else {
+            let error_summary: String = failed_nodes
+                .iter()
+                .map(|(name, err)| format!("{}: {}", name, err))
+                .collect::<Vec<_>>()
+                .join("; ");
+            self.set_status(format!(
+                "Restarted {}/{} nodes. Failures: {}",
+                successful,
+                total,
+                error_summary
             ));
         }
+
         Ok(())
+    }
+
+    /// Wait for a node to become responsive with timeout.
+    ///
+    /// Returns true if node becomes responsive within the timeout.
+    async fn wait_node_responsive(&self, node_name: &str, timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        let check_interval = Duration::from_millis(500);
+
+        while start.elapsed() < timeout {
+            if let Some(network) = &self.network {
+                if let Ok(node) = network.get_node(node_name) {
+                    if node.is_responsive().await {
+                        return true;
+                    }
+                }
+            }
+            tokio::time::sleep(check_interval).await;
+        }
+
+        false
     }
 
     /// Refresh the node list from the network.

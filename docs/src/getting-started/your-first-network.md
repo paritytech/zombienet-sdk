@@ -39,8 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_validator(|v| v.with_name("alice"))
                 .with_validator(|v| v.with_name("bob"))
         })
-        .build()
-        .unwrap()
+        .build()?
         .spawn_native()
         .await?;
 
@@ -71,7 +70,6 @@ name = "bob"
 
 [[parachains]]
 id = 1000
-cumulus_based = true
 
     [[parachains.collators]]
     name = "collator01"
@@ -94,14 +92,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_parachain(|p| {
             p.with_id(1000)
-                .cumulus_based(true)
                 .with_collator(|c| {
                     c.with_name("collator01")
                         .with_command("polkadot-parachain")
                 })
         })
-        .build()
-        .unwrap()
+        .build()?
         .spawn_native()
         .await?;
 

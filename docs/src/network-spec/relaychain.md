@@ -29,13 +29,11 @@ balances = [["5GrwvaEF...", 1000000000000]]
 
 [[relaychain.nodes]]
 name = "alice"
-validator = true
 invulnerable = true
 
 [[relaychain.nodes]]
 name = "bob"
-validator = true
-args = ["--bob", "-lparachain=trace"]
+args = ["-lparachain=trace"]
 ```
 
 ### Builder

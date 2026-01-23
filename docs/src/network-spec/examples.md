@@ -15,15 +15,12 @@ default_args = ["-lruntime=debug"]
 
 [[relaychain.nodes]]
 name = "alice"
-validator = true
 
 [[relaychain.nodes]]
 name = "bob"
-validator = true
 
 [[parachains]]
 id = 1000
-cumulus_based = true
 
 [[parachains.collators]]
 name = "collator-1000"
@@ -31,7 +28,6 @@ command = "polkadot-parachain"
 
 [[parachains]]
 id = 2000
-cumulus_based = true
 
 [[parachains.collators]]
 name = "collator-2000"
@@ -62,12 +58,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_parachain(|p| {
             p.with_id(1000)
-                .cumulus_based(true)
                 .with_collator(|c| c.with_name("collator-1000").with_command("polkadot-parachain"))
         })
         .with_parachain(|p| {
             p.with_id(2000)
-                .cumulus_based(true)
                 .with_collator(|c| c.with_name("collator-2000").with_command("polkadot-parachain"))
         })
         .with_hrmp_channel(|h| h.with_sender(1000).with_recipient(2000))

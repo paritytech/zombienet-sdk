@@ -20,7 +20,6 @@ env = [
 ]
 
 # Networking
-ws_port = 9944
 rpc_port = 9933
 prometheus_port = 9615
 p2p_port = 30333
@@ -73,8 +72,7 @@ limit_cpu = "1000m"
 | `invulnerable` | Boolean | `true` | Add to invulnerables set in genesis |
 | `bootnode` | Boolean | `false` | Whether node acts as a bootnode |
 | `initial_balance` | Number | 2000000000000 | Initial account balance (alias: `balance`) |
-| `ws_port` | Number | Auto | WebSocket RPC port |
-| `rpc_port` | Number | Auto | HTTP RPC port |
+| `rpc_port` | Number | Auto | RPC port |
 | `prometheus_port` | Number | Auto | Prometheus metrics port |
 | `p2p_port` | Number | Auto | P2P networking port |
 | `p2p_cert_hash` | String | — | libp2p WebRTC certificate hash |

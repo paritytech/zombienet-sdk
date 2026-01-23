@@ -10750,6 +10750,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "zombie-tui"
+version = "0.4.4"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "futures",
+ "notify",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+ "zombienet-orchestrator",
+ "zombienet-provider",
+ "zombienet-sdk",
+ "zombienet-support",
+]
+
+[[package]]
 name = "zombienet-configuration"
 version = "0.4.4"
 dependencies = [
@@ -10895,30 +10919,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "zombienet-tui"
-version = "0.4.4"
-dependencies = [
- "anyhow",
- "clap",
- "crossterm",
- "futures",
- "notify",
- "ratatui",
- "serde",
- "serde_json",
- "sysinfo",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "walkdir",
- "zombienet-orchestrator",
- "zombienet-provider",
- "zombienet-sdk",
- "zombienet-support",
 ]
 
 [[package]]

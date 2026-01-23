@@ -697,8 +697,8 @@ impl App {
             let _ = self.refresh_logs();
         }
 
-        // Pull node statuses and block info (every 5 sec).
-        const STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+        // Pull node statuses and block info (every 10 sec).
+        const STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(10);
         let should_check_status = self
             .last_status_check
             .map(|t| t.elapsed() >= STATUS_CHECK_INTERVAL)

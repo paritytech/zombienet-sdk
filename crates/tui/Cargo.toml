@@ -1,5 +1,5 @@
 [package]
-name = "zombienet-tui"
+name = "zombie-tui"
 description = "Terminal UI for monitoring and managing zombienet networks"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "zombienet-tui"
+name = "zombie-tui"
 path = "src/main.rs"
 
 [dependencies]

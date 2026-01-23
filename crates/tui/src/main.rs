@@ -1,10 +1,10 @@
 //! Zombienet TUI - Terminal User Interface for monitoring zombienet networks.
 //!
 //! Usage:
-//!   zombienet-tui --attach <path-to-zombie.json>
+//!   zombie-tui --attach <path-to-zombie.json>
 //!
 //! Example:
-//!   zombienet-tui --attach /tmp/zombie-abc123/zombie.json
+//!   zombie-tui --attach /tmp/zombie-abc123/zombie.json
 
 use std::{io, path::PathBuf, time::Duration};
 
@@ -18,11 +18,11 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-use zombienet_tui::{app::App, event, network::StorageThresholds, ui};
+use zombie_tui::{app::App, event, network::StorageThresholds, ui};
 
 /// Zombienet TUI - Monitor and manage running zombienet networks.
 #[derive(Parser, Debug)]
-#[command(name = "zombienet-tui")]
+#[command(name = "zombie-tui")]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to the zombie.json file of a running network.

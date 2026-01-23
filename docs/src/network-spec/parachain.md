@@ -6,7 +6,6 @@
 [[parachains]]
 id = 1000
 chain = "asset-hub-rococo-local"
-cumulus_based = true
 onboard_as_parachain = true
 default_command = "polkadot-parachain"
 balance = 2000000000000
@@ -31,7 +30,6 @@ balances = [["5GrwvaEF...", 1000000000000]]
 [[parachains.collators]]
 name = "collator01"
 command = "polkadot-parachain"
-validator = true
 
 [[parachains.collators]]
 name = "collator02"
@@ -52,7 +50,6 @@ let config = NetworkConfigBuilder::new()
     })
     .with_parachain(|p| {
         p.with_id(1000)
-            .cumulus_based(true)
             .with_collator(|c| c.with_name("collator01").with_command("polkadot-parachain"))
     })
     .build()

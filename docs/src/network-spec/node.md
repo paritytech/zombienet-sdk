@@ -10,11 +10,10 @@ name = "alice"
 command = "polkadot"
 # subcommand = "node"  # Optional: for nested CLI commands
 image = "parity/polkadot:latest"
-validator = true
 invulnerable = true
 bootnode = false
 initial_balance = 5000000000000
-args = ["--alice", "-lruntime=debug"]
+args = ["-lruntime=debug"]
 env = [
     { name = "RUST_LOG", value = "info" }
 ]
@@ -48,9 +47,8 @@ limit_cpu = "1000m"
     node.with_name("alice")
         .with_command("polkadot")
         .with_image("parity/polkadot:latest")
-        .validator(true)
         .invulnerable(true)
-        .with_args(vec!["--alice".into(), "-lruntime=debug".into()])
+        .with_args(vec!["-lruntime=debug".into()])
         .with_env(vec![("RUST_LOG".into(), "info".into())])
         .with_resources(|r| {
             r.with_request_memory("1Gi").with_limit_memory("2Gi")

@@ -1,0 +1,33 @@
+[package]
+name = "zombie-tui"
+description = "Terminal UI for monitoring and managing zombienet networks"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "zombie-tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true, features = ["full", "sync"] }
+futures = { workspace = true }
+zombienet-sdk = { workspace = true }
+provider = { workspace = true }
+orchestrator = { workspace = true }
+support = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+notify = { workspace = true }
+sysinfo = { workspace = true }
+walkdir = { workspace = true }

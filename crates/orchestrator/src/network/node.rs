@@ -162,8 +162,23 @@ impl NetworkNode {
         }
     }
 
-    pub(crate) fn is_running(&self) -> bool {
+    /// Check if the node is currently running (not paused).
+    ///
+    /// This returns the internal running state.
+    pub fn is_running(&self) -> bool {
         self.is_running.load(Ordering::Acquire)
+    }
+
+    /// Check if the node is responsive by attempting to connect to its WebSocket endpoint.
+    ///
+    /// This performs an actual connection attempt with a short timeout (2 seconds).
+    /// Returns `true` if the node is reachable and responding, `false` otherwise.
+    ///
+    /// This is more robust than `is_running()` as it verifies the node is actually alive.
+    pub async fn is_responsive(&self) -> bool {
+        tokio::time::timeout(Duration::from_secs(2), wait_ws_ready(self.ws_uri()))
+            .await
+            .is_ok()
     }
 
     pub(crate) fn set_is_running(&self, is_running: bool) {

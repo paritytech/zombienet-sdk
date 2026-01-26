@@ -319,7 +319,7 @@ where
         .collect();
 
     let spawn_ops = SpawnNodeOptions::new(custom_process.name(), custom_process.command().as_str())
-        .args(args)
+        .args(&args)
         .env(
             custom_process
                 .env()
@@ -333,13 +333,22 @@ where
         spawn_ops
     };
 
-    let _ = ns.spawn_node(&spawn_ops).await.with_context(|| {
+    info!(
+        "🚀 {}, spawning custom process.... with command: {} {}",
+        custom_process.name(),
+        custom_process.command().as_str(),
+        args.join(" ")
+    );
+
+    let running_node = ns.spawn_node(&spawn_ops).await.with_context(|| {
         format!(
             "Failed to spawn node: {} with opts: {:#?}",
             custom_process.name(),
             spawn_ops
         )
     })?;
+
+    info!("📓 logs cmd: {}", running_node.log_cmd());
 
     Ok(())
 }

@@ -520,26 +520,8 @@ where
 
         // start custom processes if needed
         for cp in &network_spec.custom_processes {
-            match spawner::spawn_process::<LocalFileSystem>(cp, ns.clone()).await {
-                Ok(_) => {
-                    let mut msg = format!(
-                        "⚙️  Custom process {} spawned with cmd: {}",
-                        cp.name(),
-                        cp.command().as_str()
-                    );
-                    if !cp.args().is_empty() {
-                        msg = format!("{msg}, args: {:?}", cp.args());
-                    }
-
-                    if !cp.env().is_empty() {
-                        msg = format!("{msg}, env: {:?}", cp.env());
-                    }
-
-                    info!("{msg}")
-                },
-                Err(e) => {
-                    warn!("⚙️  Failed to spawn custom process {}, err: {e}", cp.name())
-                },
+            if let Err(e) = spawner::spawn_process::<LocalFileSystem>(cp, ns.clone()).await {
+                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
             }
         }
 

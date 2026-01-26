@@ -75,11 +75,6 @@ impl NetworkConfig {
         self.parachains = parachains;
     }
 
-    // /// Set the custom process
-    // pub fn set_custom_processes(&mut self, custom_processes: Vec<CustomProcess>) {
-    //     self.custom_processes = custom_processes;
-    // }
-
     /// A helper function to dump the network configuration to a TOML string.
     pub fn dump_to_toml(&self) -> Result<String, toml::ser::Error> {
         // This regex is used to replace the "" enclosed u128 value to a raw u128 because u128 is not supported for TOML serialization/deserialization.

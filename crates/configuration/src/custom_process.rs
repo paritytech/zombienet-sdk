@@ -127,7 +127,7 @@ impl CustomProcessBuilder<WithOutName, WithOutCmd> {
 }
 
 impl<C: Cmd> CustomProcessBuilder<WithOutName, C> {
-    // set the name.
+    /// set the name of the process.
     pub fn with_name<T: Into<String> + Copy>(self, name: T) -> CustomProcessBuilder<WithName, C> {
         let name: String = name.into();
 

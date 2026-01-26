@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use configuration::{GlobalSettings, HrmpChannelConfig, NetworkConfig};
+use configuration::{CustomProcess, GlobalSettings, HrmpChannelConfig, NetworkConfig};
 use futures::future::try_join_all;
 use provider::{DynNamespace, ProviderError, ProviderNamespace};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,9 @@ pub struct NetworkSpec {
 
     /// Global settings
     pub(crate) global_settings: GlobalSettings,
+
+    /// Custom processes
+    pub(crate) custom_processes: Vec<CustomProcess>,
 }
 
 impl NetworkSpec {
@@ -59,6 +62,11 @@ impl NetworkSpec {
                     .cloned()
                     .collect(),
                 global_settings: network_config.global_settings().clone(),
+                custom_processes: network_config
+                    .custom_processes()
+                    .into_iter()
+                    .cloned()
+                    .collect(),
             })
         } else {
             let errs_str = errs
@@ -315,6 +323,7 @@ mod tests {
                     .with_default_command("adder-collator")
                     .with_collator(|c| c.with_name("collator1"))
             })
+            .with_custom_process(|c| c.with_name("eth-rpc").with_command("command"))
             .build()
             .unwrap();
 
@@ -325,6 +334,9 @@ mod tests {
         assert_eq!(bob.command.as_str(), "polkadot1");
         assert!(alice.is_validator);
         assert!(!bob.is_validator);
+        assert_eq!(network_spec.custom_processes.len(), 1);
+        let first_custom_process = network_spec.custom_processes.first().unwrap();
+        assert_eq!(first_custom_process.name(), "eth-rpc");
 
         // paras
         assert_eq!(network_spec.parachains.len(), 1);

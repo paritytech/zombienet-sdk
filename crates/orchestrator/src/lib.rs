@@ -37,11 +37,11 @@ use support::{
         GRAPH_CONTAINS_DEP, GRAPH_CONTAINS_NAME, INDEGREE_CONTAINS_NAME, QUEUE_NOT_EMPTY,
         THIS_IS_A_BUG,
     },
-    fs::{FileSystem, FileSystemError},
+    fs::{local::LocalFileSystem, FileSystem, FileSystemError},
     replacer::{get_tokens_to_replace, has_tokens},
 };
 use tokio::time::timeout;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
@@ -330,7 +330,7 @@ where
                 }
             }
             info!(
-                "🕰 waiting for level: {:?} to be up...",
+                "🕰  waiting for level: {:?} to be up...",
                 level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
             );
 
@@ -428,7 +428,7 @@ where
                     }
                 }
                 info!(
-                    "🕰 waiting for level: {:?} to be up...",
+                    "🕰  waiting for level: {:?} to be up...",
                     level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
                 );
 
@@ -466,7 +466,7 @@ where
                     }
                 }
                 info!(
-                    "🕰 waiting for level: {:?} to be up...",
+                    "🕰  waiting for level: {:?} to be up...",
                     level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
                 );
 
@@ -489,12 +489,6 @@ where
                 network.add_running_node(node, Some(running_para_id)).await;
             }
         }
-
-        // TODO:
-        // - add-ons (introspector/tracing/etc)
-
-        // verify nodes
-        // network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
@@ -522,6 +516,31 @@ where
             };
 
             Parachain::register(register_para_options, &scoped_fs).await?;
+        }
+
+        // start custom processes if needed
+        for cp in &network_spec.custom_processes {
+            match spawner::spawn_process::<LocalFileSystem>(cp, ns.clone()).await {
+                Ok(_) => {
+                    let mut msg = format!(
+                        "⚙️  Custom process {} spawned with cmd: {}",
+                        cp.name(),
+                        cp.command().as_str()
+                    );
+                    if !cp.args().is_empty() {
+                        msg = format!("{msg}, args: {:?}", cp.args());
+                    }
+
+                    if !cp.env().is_empty() {
+                        msg = format!("{msg}, env: {:?}", cp.env());
+                    }
+
+                    info!("{msg}")
+                },
+                Err(e) => {
+                    warn!("⚙️  Failed to spawn custom process {}, err: {e}", cp.name())
+                },
+            }
         }
 
         network.set_start_time_ts(start_time);

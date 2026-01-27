@@ -12,6 +12,7 @@ use support::{
 use tracing::trace;
 
 use crate::{
+    custom_process,
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
@@ -24,7 +25,7 @@ use crate::{
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
     },
     types::ParaId,
-    RegistrationStrategy,
+    CustomProcess, CustomProcessBuilder, RegistrationStrategy,
 };
 
 /// A network configuration, composed of a relaychain, parachains and HRMP channels.
@@ -37,6 +38,8 @@ pub struct NetworkConfig {
     parachains: Vec<ParachainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     hrmp_channels: Vec<HrmpChannelConfig>,
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    custom_processes: Vec<CustomProcess>,
 }
 
 impl NetworkConfig {
@@ -62,6 +65,12 @@ impl NetworkConfig {
         self.hrmp_channels.iter().collect::<Vec<_>>()
     }
 
+    /// The Custom process to spawn
+    pub fn custom_processes(&self) -> Vec<&CustomProcess> {
+        self.custom_processes.iter().collect::<Vec<_>>()
+    }
+
+    /// Set the parachain.
     fn set_parachains(&mut self, parachains: Vec<ParachainConfig>) {
         self.parachains = parachains;
     }
@@ -386,6 +395,7 @@ impl Default for NetworkConfigBuilder<Initial> {
                 relaychain: None,
                 parachains: vec![],
                 hrmp_channels: vec![],
+                custom_processes: vec![],
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -570,6 +580,37 @@ impl NetworkConfigBuilder<WithRelaychain> {
             self.validation_context,
             self.errors,
         )
+    }
+
+    /// Add a custom process using a nested [`CustomProcessBuilder`].
+    pub fn with_custom_process(
+        self,
+        f: impl FnOnce(
+            CustomProcessBuilder<custom_process::WithOutName, custom_process::WithOutCmd>,
+        )
+            -> CustomProcessBuilder<custom_process::WithName, custom_process::WithCmd>,
+    ) -> Self {
+        match f(CustomProcessBuilder::new()).build() {
+            Ok(custom_process) => Self::transition(
+                NetworkConfig {
+                    custom_processes: [self.config.custom_processes, vec![custom_process]].concat(),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err((name, errors)) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
     }
 
     /// Seals the builder and returns a [`NetworkConfig`] if there are no validation errors, else returns errors.
@@ -1058,6 +1099,7 @@ mod tests {
                     .with_max_capacity(200)
                     .with_max_message_size(8000)
             })
+            .with_custom_process(|c| c.with_name("eth-rpc").with_command("eth-rpc"))
             .build()
             .unwrap();
 

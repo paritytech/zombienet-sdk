@@ -41,7 +41,7 @@ use support::{
     replacer::{get_tokens_to_replace, has_tokens},
 };
 use tokio::time::timeout;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
@@ -330,7 +330,7 @@ where
                 }
             }
             info!(
-                "🕰 waiting for level: {:?} to be up...",
+                "🕰  waiting for level: {:?} to be up...",
                 level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
             );
 
@@ -428,7 +428,7 @@ where
                     }
                 }
                 info!(
-                    "🕰 waiting for level: {:?} to be up...",
+                    "🕰  waiting for level: {:?} to be up...",
                     level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
                 );
 
@@ -466,7 +466,7 @@ where
                     }
                 }
                 info!(
-                    "🕰 waiting for level: {:?} to be up...",
+                    "🕰  waiting for level: {:?} to be up...",
                     level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
                 );
 
@@ -489,12 +489,6 @@ where
                 network.add_running_node(node, Some(running_para_id)).await;
             }
         }
-
-        // TODO:
-        // - add-ons (introspector/tracing/etc)
-
-        // verify nodes
-        // network_helper::verifier::verify_nodes(&network.nodes()).await?;
 
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
@@ -522,6 +516,13 @@ where
             };
 
             Parachain::register(register_para_options, &scoped_fs).await?;
+        }
+
+        // start custom processes if needed
+        for cp in &network_spec.custom_processes {
+            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
+                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
+            }
         }
 
         network.set_start_time_ts(start_time);

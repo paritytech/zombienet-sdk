@@ -11,6 +11,7 @@
   - [Parachain](./network-spec/parachain.md)
   - [Node](./network-spec/node.md)
   - [HRMP Channels](./network-spec/hrmp-channels.md)
+  - [Custom Processes](./network-spec/custom-process.md)
   - [Chain Spec](./network-spec/chain-spec.md)
   - [Examples](./network-spec/examples.md)
 - [Providers](./providers.md)

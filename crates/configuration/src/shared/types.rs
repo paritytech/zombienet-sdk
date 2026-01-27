@@ -449,6 +449,20 @@ where
     }
 }
 
+impl Arg {
+    /// Convert Arg to a vec of String
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            Arg::Flag(arg) => vec![arg.to_string()],
+            Arg::Option(k, v) => vec![k.to_string(), v.to_string()],
+            Arg::Array(k, items) => [
+                vec![k.to_string()],
+                items.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+            ]
+            .concat(),
+        }
+    }
+}
 impl Serialize for Arg {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

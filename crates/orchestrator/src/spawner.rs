@@ -1,12 +1,12 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use configuration::GlobalSettings;
+use configuration::{CustomProcess, GlobalSettings};
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
     shared::helpers::running_in_ci,
     types::{SpawnNodeOptions, TransferedFile},
-    DynNamespace,
+    DynNamespace, ProviderNamespace,
 };
 use support::{
     constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_running_network_replacements,
@@ -302,4 +302,49 @@ where
         node.clone(),
         running_node,
     ))
+}
+
+pub async fn spawn_process(
+    custom_process: &CustomProcess,
+    ns: Arc<dyn ProviderNamespace + Send + Sync>,
+) -> Result<(), anyhow::Error> {
+    let args: Vec<String> = custom_process
+        .args()
+        .iter()
+        .flat_map(|arg| arg.to_vec())
+        .collect();
+
+    let spawn_ops = SpawnNodeOptions::new(custom_process.name(), custom_process.command().as_str())
+        .args(&args)
+        .env(
+            custom_process
+                .env()
+                .iter()
+                .map(|var| (var.name.clone(), var.value.clone())),
+        );
+
+    let spawn_ops = if let Some(image) = custom_process.image() {
+        spawn_ops.image(image.as_str())
+    } else {
+        spawn_ops
+    };
+
+    info!(
+        "🚀 {}, spawning custom process.... with command: {} {}",
+        custom_process.name(),
+        custom_process.command().as_str(),
+        args.join(" ")
+    );
+
+    let running_node = ns.spawn_node(&spawn_ops).await.with_context(|| {
+        format!(
+            "Failed to spawn node: {} with opts: {:#?}",
+            custom_process.name(),
+            spawn_ops
+        )
+    })?;
+
+    info!("📓 logs cmd: {}", running_node.log_cmd());
+
+    Ok(())
 }

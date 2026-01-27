@@ -304,18 +304,14 @@ where
     ))
 }
 
-pub async fn spawn_process<'a, T>(
+pub async fn spawn_process(
     custom_process: &CustomProcess,
     ns: Arc<dyn ProviderNamespace + Send + Sync>,
-) -> Result<(), anyhow::Error>
-where
-    T: FileSystem,
-{
+) -> Result<(), anyhow::Error> {
     let args: Vec<String> = custom_process
         .args()
         .iter()
-        .map(|arg| arg.to_vec())
-        .flatten()
+        .flat_map(|arg| arg.to_vec())
         .collect();
 
     let spawn_ops = SpawnNodeOptions::new(custom_process.name(), custom_process.command().as_str())

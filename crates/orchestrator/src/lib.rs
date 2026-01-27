@@ -37,7 +37,7 @@ use support::{
         GRAPH_CONTAINS_DEP, GRAPH_CONTAINS_NAME, INDEGREE_CONTAINS_NAME, QUEUE_NOT_EMPTY,
         THIS_IS_A_BUG,
     },
-    fs::{local::LocalFileSystem, FileSystem, FileSystemError},
+    fs::{FileSystem, FileSystemError},
     replacer::{get_tokens_to_replace, has_tokens},
 };
 use tokio::time::timeout;
@@ -520,7 +520,7 @@ where
 
         // start custom processes if needed
         for cp in &network_spec.custom_processes {
-            if let Err(e) = spawner::spawn_process::<LocalFileSystem>(cp, ns.clone()).await {
+            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
                 warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
             }
         }

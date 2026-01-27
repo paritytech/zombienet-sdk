@@ -104,6 +104,6 @@ recipient = 1000
 max_capacity = 200
 max_message_size = 8000
 
-[[custom_precesses]]
+[[custom_processes]]
 name = "eth-rpc"
 command = "eth-rpc"

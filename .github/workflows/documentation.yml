@@ -12,7 +12,7 @@ env:
 
 jobs:
   build-rust-doc:
-    name: Zombienet SDK - Rust Docs
+    name: Zombienet SDK - Documentation
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,17 +35,111 @@ jobs:
       - name: install_deps
         run: sudo apt-get update && sudo apt-get install protobuf-compiler
 
-      - name: Create docs
+      - name: Install mdBook
         run: |
-          cargo doc --no-deps
-          echo "<meta http-equiv=\"refresh\" content=\"0; url=zombienet_sdk\">" > target/doc/index.html
+          mkdir -p ~/bin
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/bin
+          echo "$HOME/bin" >> $GITHUB_PATH
 
+      - name: Create Rust API docs
+        run: cargo doc --no-deps
 
+      - name: Build mdBook
+        run: |
+          cd docs
+          mdbook build
+
+      - name: Create index pages
+        run: |
+          # Main index page
+          cat > target/doc/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Zombienet SDK Documentation</title>
+              <style>
+                  body {
+                      font-family: sans-serif;
+                      max-width: 800px;
+                      margin: 50px auto;
+                      padding: 20px;
+                  }
+                  h1 { margin-bottom: 30px; }
+                  ul { list-style: none; padding: 0; }
+                  li { margin: 15px 0; }
+                  a {
+                      color: #0066cc;
+                      text-decoration: none;
+                      font-size: 1.2em;
+                  }
+                  a:hover { text-decoration: underline; }
+              </style>
+          </head>
+          <body>
+              <h1>Zombienet SDK Documentation</h1>
+              <ul>
+                  <li><a href="book/">📖 User Guide</a> - Tutorials and examples</li>
+                  <li><a href="api/">🦀 API Reference</a> - Rust documentation</li>
+              </ul>
+          </body>
+          </html>
+          EOF
+
+          # API crates index page
+          cat > target/doc/api-index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Zombienet SDK - API Reference</title>
+              <style>
+                  body {
+                      font-family: sans-serif;
+                      max-width: 800px;
+                      margin: 50px auto;
+                      padding: 20px;
+                  }
+                  h1 { margin-bottom: 30px; }
+                  ul { list-style: none; padding: 0; }
+                  li { margin: 10px 0; }
+                  a {
+                      color: #0066cc;
+                      text-decoration: none;
+                      font-size: 1.1em;
+                  }
+                  a:hover { text-decoration: underline; }
+                  .description { color: #666; margin-left: 10px; }
+              </style>
+          </head>
+          <body>
+              <h1>Zombienet SDK - API Reference</h1>
+              <ul>
+                  <li><a href="zombienet_sdk/">zombienet_sdk</a> <span class="description">- Main SDK crate</span></li>
+                  <li><a href="zombienet_configuration/">zombienet_configuration</a> <span class="description">- Network configuration</span></li>
+                  <li><a href="zombienet_orchestrator/">zombienet_orchestrator</a> <span class="description">- Network orchestration</span></li>
+                  <li><a href="zombienet_provider/">zombienet_provider</a> <span class="description">- Provider implementations</span></li>
+                  <li><a href="zombienet_support/">zombienet_support</a> <span class="description">- Common utilities</span></li>
+                  <li><a href="zombienet_prom_metrics_parser/">zombienet_prom_metrics_parser</a> <span class="description">- Metrics parsing</span></li>
+                  <li><a href="zombienet_file_server/">zombienet_file_server</a> <span class="description">- File server</span></li>
+              </ul>
+          </body>
+          </html>
+          EOF
 
       - name: Move docs
         run: |
           mkdir -p ./doc
-          mv ./target/doc/* ./doc
+          mkdir -p ./doc/api
+          mkdir -p ./doc/book
+          # Move Rust API docs to api/ subdirectory
+          mv ./target/doc/* ./doc/api/ 2>/dev/null || true
+          # Move the main index.html to root
+          mv ./doc/api/index.html ./doc/
+          # Move the API index to api/index.html
+          mv ./doc/api/api-index.html ./doc/api/index.html
+          # Move mdBook output to book/ subdirectory
+          mv ./docs/book/* ./doc/book/
           git config user.email "github-action@users.noreply.github.com"
           git config user.name "GitHub Action"
           git config user.password "${{ secrets.GH_PAGES_TOKEN }}"

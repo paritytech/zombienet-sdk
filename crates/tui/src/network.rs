@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use futures::future::join_all;
 use orchestrator::network::Network;
 use support::fs::local::LocalFileSystem;
 
@@ -263,8 +264,6 @@ pub async fn check_node_status_async(
 pub async fn check_all_nodes_status_async(
     network: &Network<LocalFileSystem>,
 ) -> std::collections::HashMap<String, NodeStatus> {
-    use futures::future::join_all;
-
     let mut status_map = std::collections::HashMap::new();
 
     let mut node_names: Vec<String> = network
@@ -329,8 +328,6 @@ pub async fn fetch_node_block_info(
 pub async fn fetch_all_nodes_block_info(
     network: &Network<LocalFileSystem>,
 ) -> std::collections::HashMap<String, BlockInfo> {
-    use futures::future::join_all;
-
     let mut node_names: Vec<String> = network
         .relaychain()
         .nodes()

@@ -123,7 +123,7 @@ async fn run_app(
             }
         }
 
-        app.tick().await;
+        app.tick();
     }
 
     Ok(())

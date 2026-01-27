@@ -12,7 +12,7 @@ env:
 
 jobs:
   build-rust-doc:
-    name: Zombienet SDK - Rust Docs
+    name: Zombienet SDK - Documentation
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,17 +35,78 @@ jobs:
       - name: install_deps
         run: sudo apt-get update && sudo apt-get install protobuf-compiler
 
-      - name: Create docs
+      - name: Install mdBook
         run: |
-          cargo doc --no-deps
-          echo "<meta http-equiv=\"refresh\" content=\"0; url=zombienet_sdk\">" > target/doc/index.html
+          mkdir -p ~/bin
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/bin
+          echo "$HOME/bin" >> $GITHUB_PATH
 
+      - name: Create Rust API docs
+        run: cargo doc --no-deps
 
+      - name: Build mdBook
+        run: |
+          cd docs
+          mdbook build
+
+      - name: Create index page
+        run: |
+          cat > target/doc/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Zombienet SDK Documentation</title>
+              <style>
+                  body {
+                      font-family: sans-serif;
+                      max-width: 800px;
+                      margin: 50px auto;
+                      padding: 20px;
+                  }
+                  h1 { margin-bottom: 30px; }
+                  ul { list-style: none; padding: 0; }
+                  li { margin: 15px 0; }
+                  a {
+                      color: #0066cc;
+                      text-decoration: none;
+                      font-size: 1.2em;
+                  }
+                  a:hover { text-decoration: underline; }
+              </style>
+          </head>
+          <body>
+              <h1>Zombienet SDK Documentation</h1>
+              <ul>
+                  <li><a href="book/index.html">📖 User Guide</a> - Tutorials and examples</li>
+                  <li><a href="api/zombienet_sdk/index.html">🦀 API Reference</a> - Rust documentation</li>
+              </ul>
+          </body>
+          </html>
+          EOF
 
       - name: Move docs
         run: |
           mkdir -p ./doc
-          mv ./target/doc/* ./doc
+          mkdir -p ./doc/api
+          mkdir -p ./doc/book
+          # Move Rust API docs to api/ subdirectory
+          mv ./target/doc/* ./doc/api/ 2>/dev/null || true
+          # Move the main index.html to root
+          mv ./doc/api/index.html ./doc/
+          # Move mdBook output to book/ subdirectory
+          mv ./docs/book/* ./doc/book/
+
+      - name: Upload documentation artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: documentation
+          path: ./doc
+
+      - name: Publish to gh-pages
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
           git config user.email "github-action@users.noreply.github.com"
           git config user.name "GitHub Action"
           git config user.password "${{ secrets.GH_PAGES_TOKEN }}"
@@ -57,6 +118,5 @@ jobs:
           rm -rf ./to_delete
           git add --all
           git commit -m "Documentation"
+          git push -f origin gh-pages:gh-pages
         shell: bash       # Necessary for `shopt` to work
-      - run: git push -f origin gh-pages:gh-pages
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

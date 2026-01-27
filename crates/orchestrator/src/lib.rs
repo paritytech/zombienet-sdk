@@ -123,6 +123,9 @@ where
             Network::new_with_relay(relay, ns.clone(), self.filesystem.clone(), initial_spec);
 
         for node in relay_nodes {
+            if node.is_responsive().await {
+                node.set_is_running(true);
+            }
             network.insert_node(node);
         }
 
@@ -136,6 +139,9 @@ where
 
         network.set_parachains(parachains_map);
         for node in para_nodes {
+            if node.is_responsive().await {
+                node.set_is_running(true);
+            }
             network.insert_node(node);
         }
 

@@ -455,9 +455,9 @@ impl Arg {
         match self {
             Arg::Flag(arg) => vec![arg.to_string()],
             Arg::Option(k, v) => vec![k.to_string(), v.to_string()],
-            Arg::Array(k, items) => vec![
+            Arg::Array(k, items) => [
                 vec![k.to_string()],
-                items.iter().map(|x| x.to_string()).collect(),
+                items.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
             ]
             .concat(),
         }

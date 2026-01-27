@@ -29,7 +29,7 @@ default-members = [
 [workspace.package]
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
-version = "0.4.4"
+version = "0.4.5"
 rust-version = "1.70.0"
 license = "Apache-2.0 OR GPL-3.0"
 repository = "https://github.com/paritytech/zombienet-sdk"
@@ -84,9 +84,9 @@ sysinfo = "0.32"
 walkdir = "2.5"
 
 # Zombienet workspace crates:
-support = { package = "zombienet-support", version = "0.4.4", path = "crates/support" }
-configuration = { package = "zombienet-configuration", version = "0.4.4", path = "crates/configuration" }
-orchestrator = { package = "zombienet-orchestrator", version = "0.4.4", path = "crates/orchestrator" }
-provider = { package = "zombienet-provider", version = "0.4.4", path = "crates/provider" }
-prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.4.4", path = "crates/prom-metrics-parser" }
-zombienet-sdk = { version = "0.4.4", path = "crates/sdk" }
+support = { package = "zombienet-support", version = "0.4.5", path = "crates/support" }
+configuration = { package = "zombienet-configuration", version = "0.4.5", path = "crates/configuration" }
+orchestrator = { package = "zombienet-orchestrator", version = "0.4.5", path = "crates/orchestrator" }
+provider = { package = "zombienet-provider", version = "0.4.5", path = "crates/provider" }
+prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.4.5", path = "crates/prom-metrics-parser" }
+zombienet-sdk = { version = "0.4.5", path = "crates/sdk" }

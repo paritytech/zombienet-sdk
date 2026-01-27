@@ -33,6 +33,7 @@ pub struct NetworkSpec {
     pub(crate) global_settings: GlobalSettings,
 
     /// Custom processes
+    #[serde(default)]
     pub(crate) custom_processes: Vec<CustomProcess>,
 }
 

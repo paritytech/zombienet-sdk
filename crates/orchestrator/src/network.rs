@@ -870,6 +870,7 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub(crate) fn insert_node(&mut self, node: NetworkNode) {
+        node.set_is_running(true);
         self.nodes_by_name.insert(node.name.clone(), node);
     }
 

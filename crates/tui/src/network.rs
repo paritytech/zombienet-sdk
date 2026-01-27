@@ -198,8 +198,8 @@ impl NodeStatus {
     }
 }
 
-fn responsive_state_to_status(is_responsive: bool) -> NodeStatus {
-    if is_responsive {
+fn parse_node_status(is_running: bool) -> NodeStatus {
+    if is_running {
         NodeStatus::Running
     } else {
         NodeStatus::Unknown
@@ -214,7 +214,7 @@ pub async fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> 
 
     for node in network.relaychain().nodes() {
         let is_responsive = node.is_responsive().await;
-        let status = responsive_state_to_status(is_responsive);
+        let status = parse_node_status(is_responsive);
         nodes.push(NodeInfo {
             name: node.name().to_string(),
             para_id: None,
@@ -228,7 +228,8 @@ pub async fn extract_nodes(network: &Network<LocalFileSystem>) -> Vec<NodeInfo> 
     // Extract parachain collators.
     for para in network.parachains() {
         for collator in para.collators() {
-            let status = responsive_state_to_status(collator.is_responsive().await);
+            let is_responsive = collator.is_responsive().await;
+            let status = parse_node_status(is_responsive);
             nodes.push(NodeInfo {
                 name: collator.name().to_string(),
                 para_id: Some(para.para_id()),
@@ -249,11 +250,8 @@ pub async fn check_node_status_async(
     node_name: &str,
 ) -> NodeStatus {
     if let Ok(node) = network.get_node(node_name) {
-        if node.is_responsive().await {
-            NodeStatus::Running
-        } else {
-            NodeStatus::Unknown
-        }
+        let is_responsive = node.is_responsive().await;
+        parse_node_status(is_responsive)
     } else {
         NodeStatus::Unknown
     }

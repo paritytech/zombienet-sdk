@@ -49,9 +49,8 @@ jobs:
           cd docs
           mdbook build
 
-      - name: Create index pages
+      - name: Create index page
         run: |
-          # Main index page
           cat > target/doc/index.html << 'EOF'
           <!DOCTYPE html>
           <html>
@@ -80,48 +79,7 @@ jobs:
               <h1>Zombienet SDK Documentation</h1>
               <ul>
                   <li><a href="book/">📖 User Guide</a> - Tutorials and examples</li>
-                  <li><a href="api/">🦀 API Reference</a> - Rust documentation</li>
-              </ul>
-          </body>
-          </html>
-          EOF
-
-          # API crates index page
-          cat > target/doc/api-index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <meta charset="utf-8">
-              <title>Zombienet SDK - API Reference</title>
-              <style>
-                  body {
-                      font-family: sans-serif;
-                      max-width: 800px;
-                      margin: 50px auto;
-                      padding: 20px;
-                  }
-                  h1 { margin-bottom: 30px; }
-                  ul { list-style: none; padding: 0; }
-                  li { margin: 10px 0; }
-                  a {
-                      color: #0066cc;
-                      text-decoration: none;
-                      font-size: 1.1em;
-                  }
-                  a:hover { text-decoration: underline; }
-                  .description { color: #666; margin-left: 10px; }
-              </style>
-          </head>
-          <body>
-              <h1>Zombienet SDK - API Reference</h1>
-              <ul>
-                  <li><a href="zombienet_sdk/">zombienet_sdk</a> <span class="description">- Main SDK crate</span></li>
-                  <li><a href="zombienet_configuration/">zombienet_configuration</a> <span class="description">- Network configuration</span></li>
-                  <li><a href="zombienet_orchestrator/">zombienet_orchestrator</a> <span class="description">- Network orchestration</span></li>
-                  <li><a href="zombienet_provider/">zombienet_provider</a> <span class="description">- Provider implementations</span></li>
-                  <li><a href="zombienet_support/">zombienet_support</a> <span class="description">- Common utilities</span></li>
-                  <li><a href="zombienet_prom_metrics_parser/">zombienet_prom_metrics_parser</a> <span class="description">- Metrics parsing</span></li>
-                  <li><a href="zombienet_file_server/">zombienet_file_server</a> <span class="description">- File server</span></li>
+                  <li><a href="api/zombienet_sdk/">🦀 API Reference</a> - Rust documentation</li>
               </ul>
           </body>
           </html>
@@ -136,10 +94,19 @@ jobs:
           mv ./target/doc/* ./doc/api/ 2>/dev/null || true
           # Move the main index.html to root
           mv ./doc/api/index.html ./doc/
-          # Move the API index to api/index.html
-          mv ./doc/api/api-index.html ./doc/api/index.html
           # Move mdBook output to book/ subdirectory
           mv ./docs/book/* ./doc/book/
+
+      - name: Upload documentation artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: documentation
+          path: ./doc
+
+      - name: Publish to gh-pages
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
           git config user.email "github-action@users.noreply.github.com"
           git config user.name "GitHub Action"
           git config user.password "${{ secrets.GH_PAGES_TOKEN }}"
@@ -151,6 +118,5 @@ jobs:
           rm -rf ./to_delete
           git add --all
           git commit -m "Documentation"
+          git push -f origin gh-pages:gh-pages
         shell: bash       # Necessary for `shopt` to work
-      - run: git push -f origin gh-pages:gh-pages
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

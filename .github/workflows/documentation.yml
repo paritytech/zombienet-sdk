@@ -78,8 +78,8 @@ jobs:
           <body>
               <h1>Zombienet SDK Documentation</h1>
               <ul>
-                  <li><a href="book/">📖 User Guide</a> - Tutorials and examples</li>
-                  <li><a href="api/zombienet_sdk/">🦀 API Reference</a> - Rust documentation</li>
+                  <li><a href="book/index.html">📖 User Guide</a> - Tutorials and examples</li>
+                  <li><a href="api/zombienet_sdk/index.html">🦀 API Reference</a> - Rust documentation</li>
               </ul>
           </body>
           </html>

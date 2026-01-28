@@ -1,20 +1,28 @@
 //! Application state and core logic for the TUI.
 
 use std::{
+    collections::HashMap,
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use anyhow::Result;
 use orchestrator::network::Network;
 use support::fs::local::LocalFileSystem;
+use tokio::sync::mpsc;
 use zombienet_sdk::AttachToLive;
 
 use crate::{
     logs::LogViewer,
-    network::{NodeInfo, NodeStatus, StorageThresholds},
+    network::{BlockInfo, NodeInfo, NodeStatus, StorageThresholds},
     watcher::{FileWatcher, WatchEvent},
 };
+
+struct RefreshResults {
+    statuses: HashMap<String, NodeStatus>,
+    block_info: HashMap<String, BlockInfo>,
+}
 
 /// The current view/panel focus in the TUI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -47,7 +55,7 @@ pub struct App {
     /// Whether the application is still running.
     running: bool,
     /// The connected zombienet network (if any).
-    network: Option<Network<LocalFileSystem>>,
+    network: Option<Arc<Network<LocalFileSystem>>>,
     /// Path to the zombie.json file.
     zombie_json_path: Option<PathBuf>,
     /// Current view/panel focus.
@@ -74,6 +82,12 @@ pub struct App {
     last_status_check: Option<Instant>,
     /// Storage thresholds.
     storage_thresholds: StorageThresholds,
+    /// Receiver for background refresh results.
+    refresh_rx: mpsc::Receiver<RefreshResults>,
+    /// Sender for spawning background refresh tasks.
+    refresh_tx: mpsc::Sender<RefreshResults>,
+    /// Whether a background refresh is currently in progress.
+    refresh_in_progress: bool,
 }
 
 /// Actions that require user confirmation.
@@ -97,6 +111,7 @@ impl App {
     /// Create a new App instance.
     pub fn new() -> Self {
         let file_watcher = FileWatcher::new().ok();
+        let (refresh_tx, refresh_rx) = mpsc::channel(1);
 
         Self {
             running: true,
@@ -114,6 +129,9 @@ impl App {
             watched_log_path: None,
             last_status_check: None,
             storage_thresholds: StorageThresholds::default(),
+            refresh_rx,
+            refresh_tx,
+            refresh_in_progress: false,
         }
     }
 
@@ -188,7 +206,7 @@ impl App {
     }
 
     pub fn network(&self) -> Option<&Network<LocalFileSystem>> {
-        self.network.as_ref()
+        self.network.as_ref().map(|n| n.as_ref())
     }
 
     /// Set the zombie.json path for attachment.
@@ -219,7 +237,7 @@ impl App {
 
         // Extract node information.
         self.nodes = crate::network::extract_nodes(&network).await;
-        self.network = Some(network);
+        self.network = Some(Arc::new(network));
 
         self.set_status("Connected to network");
         Ok(())
@@ -466,8 +484,17 @@ impl App {
     /// Shutdown the entire network.
     async fn shutdown_network(&mut self) -> Result<()> {
         if let Some(network) = self.network.take() {
-            network.destroy().await?;
-            self.set_status("Network shutdown complete");
+            self.refresh_in_progress = false;
+            match Arc::try_unwrap(network) {
+                Ok(network) => {
+                    network.destroy().await?;
+                    self.set_status("Network shutdown complete");
+                },
+                Err(_) => {
+                    self.set_status("Cannot shutdown: network still in use");
+                    return Ok(());
+                },
+            }
             self.nodes.clear();
             self.quit();
         }
@@ -668,7 +695,7 @@ impl App {
     }
 
     /// Periodic tick for async updates.
-    pub async fn tick(&mut self) {
+    pub fn tick(&mut self) {
         let events: Vec<WatchEvent> = self
             .file_watcher
             .as_ref()
@@ -697,18 +724,52 @@ impl App {
             let _ = self.refresh_logs();
         }
 
-        // Pull node statuses and block info (every 10 sec).
-        const STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+        while let Ok(results) = self.refresh_rx.try_recv() {
+            for node in &mut self.nodes {
+                if let Some(status) = results.statuses.get(&node.name) {
+                    node.status = *status;
+                }
+                if let Some(block_info) = results.block_info.get(&node.name) {
+                    node.block_info = Some(block_info.clone());
+                }
+            }
+            self.refresh_in_progress = false;
+        }
+
+        const STATUS_CHECK_INTERVAL: Duration = Duration::from_secs(5);
         let should_check_status = self
             .last_status_check
             .map(|t| t.elapsed() >= STATUS_CHECK_INTERVAL)
             .unwrap_or(true);
 
-        if should_check_status && self.network.is_some() {
-            self.refresh_node_statuses().await;
-            self.refresh_block_info().await;
+        if should_check_status && self.network.is_some() && !self.refresh_in_progress {
+            self.spawn_refresh();
             self.last_status_check = Some(Instant::now());
         }
+    }
+
+    /// Spawn a task to refresh node statuses and block info.
+    fn spawn_refresh(&mut self) {
+        let Some(network) = self.network.clone() else {
+            return;
+        };
+
+        self.refresh_in_progress = true;
+        let tx = self.refresh_tx.clone();
+
+        tokio::spawn(async move {
+            let (statuses, block_info) = tokio::join!(
+                crate::network::check_all_nodes_status_async(&network),
+                crate::network::fetch_all_nodes_block_info(&network),
+            );
+
+            let results = RefreshResults {
+                statuses,
+                block_info,
+            };
+
+            let _ = tx.send(results).await;
+        });
     }
 
     /// Calculate storage for all nodes.

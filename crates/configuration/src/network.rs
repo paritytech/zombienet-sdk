@@ -4,9 +4,7 @@ use anyhow::anyhow;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use support::{
-    constants::{
-        NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, RW_FAILED, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX,
-    },
+    constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX},
     replacer::apply_env_replacements,
 };
 use tracing::trace;
@@ -97,7 +95,8 @@ impl NetworkConfig {
 
     /// A helper function to load a network configuration from a TOML file.
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
-        let file_str = fs::read_to_string(path).expect(&format!("{RW_FAILED} {THIS_IS_A_BUG}"));
+        let file_str = fs::read_to_string(path)
+            .map_err(|e| anyhow!("Failed to read configuration file '{}': {}", path, e))?;
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 

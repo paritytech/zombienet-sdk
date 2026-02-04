@@ -94,6 +94,7 @@ pub fn generate_for_cumulus_node(
             Arg::Flag(flag) => flag.eq("--"),
             Arg::Option(..) => false,
             Arg::Array(..) => false,
+            Arg::Positional(..) => false,
         }) {
             (collator_args, full_node_args) = args.split_at(index);
         } else {
@@ -159,6 +160,7 @@ pub fn generate_for_cumulus_node(
                 args.extend(v.to_owned());
                 Some(args)
             },
+            Arg::Positional(value) => Some(vec![value.to_owned()]),
         })
         .flatten()
         .collect::<Vec<String>>();
@@ -212,6 +214,7 @@ pub fn generate_for_cumulus_node(
                 args.extend(v.to_owned());
                 Some(args)
             },
+            Arg::Positional(value) => Some(vec![value.to_owned()]),
         })
         .flatten()
         .collect::<Vec<String>>();
@@ -333,6 +336,7 @@ pub fn generate_for_node(
             }
         },
         Arg::Array(..) => None,
+        Arg::Positional(..) => None,
     }) {
         let mut parts = listen_val.split('/').collect::<Vec<&str>>();
         // TODO: move this to error
@@ -387,6 +391,7 @@ pub fn generate_for_node(
                 args.extend(v.to_owned());
                 Some(args)
             },
+            Arg::Positional(value) => Some(vec![value.to_owned()]),
         })
         .flatten()
         .collect::<Vec<String>>();

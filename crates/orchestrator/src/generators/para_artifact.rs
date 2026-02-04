@@ -160,6 +160,9 @@ impl ParaArtifact {
                     args.push(flag.into());
                     values.iter().for_each(|v| args.push(v.into()));
                 },
+                configuration::types::Arg::Positional(value) => {
+                    args.push(value.into());
+                },
             }
         }
 

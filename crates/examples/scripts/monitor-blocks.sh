@@ -37,7 +37,7 @@ while [ "$COUNT" -lt "$BLOCK_COUNT" ]; do
             "$HTTP_URL" 2>/dev/null | grep -o '"number":"[^"]*"' | cut -d'"' -f4 || echo "0x0")
 
         # Convert hex to decimal
-        BLOCK_NUM=$((16#${BLOCK#0x}))
+        BLOCK_NUM=$((BLOCK))
 
         # Only print if this is a new block
         if [ "$BLOCK_NUM" -gt "$LAST_BLOCK" ]; then

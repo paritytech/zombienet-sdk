@@ -560,7 +560,10 @@ async fn recreate_network_nodes_from_json(
             .get("provider_tag")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                OrchestratorError::InvalidConfig("Missing `provider_tag` in inner node JSON".into())
+                OrchestratorError::InvalidConfig(format!(
+                    "Node '{}' is missing `provider_tag` in inner node JSON",
+                    raw.name
+                ))
             })?;
 
         if provider_tag != provider_name {

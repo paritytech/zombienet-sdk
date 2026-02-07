@@ -109,7 +109,7 @@ pub enum ProviderError {
     #[error("Failed to delete namespace '{0}': {1}")]
     DeleteNamespaceFailed(String, anyhow::Error),
 
-    #[error("Serialization error")]
+    #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
     #[error("Failed to acquire lock: {0}")]

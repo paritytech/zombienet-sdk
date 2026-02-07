@@ -20,11 +20,11 @@ pub enum OrchestratorError {
     GlobalTimeOut(u32),
     #[error("Generator error: {0}")]
     GeneratorError(#[from] generators::errors::GeneratorError),
-    #[error("Provider error")]
+    #[error("Provider error: {0}")]
     ProviderError(#[from] ProviderError),
-    #[error("FileSystem error")]
+    #[error("FileSystem error: {0}")]
     FileSystemError(#[from] FileSystemError),
-    #[error("Serialization error")]
+    #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
     #[error(transparent)]
     SpawnerError(#[from] anyhow::Error),

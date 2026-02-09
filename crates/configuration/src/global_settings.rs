@@ -10,6 +10,7 @@ use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    observability::{ObservabilityConfig, ObservabilityConfigBuilder},
     shared::{
         errors::{ConfigError, FieldError},
         helpers::{merge_errors, merge_errors_vecs},
@@ -17,6 +18,10 @@ use crate::{
     },
     utils::{default_as_true, default_node_spawn_timeout, default_timeout},
 };
+
+fn is_default_observability(config: &ObservabilityConfig) -> bool {
+    *config == ObservabilityConfig::default()
+}
 
 /// Global settings applied to an entire network.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,6 +49,9 @@ pub struct GlobalSettings {
     /// If enabled, will launch a task to monitor nodes' liveness and tear down the network if there are any.
     #[serde(default = "default_as_true")]
     tear_down_on_failure: bool,
+    /// Observability stack configuration (Prometheus + Grafana)
+    #[serde(default, skip_serializing_if = "is_default_observability")]
+    observability: ObservabilityConfig,
 }
 
 impl GlobalSettings {
@@ -82,6 +90,11 @@ impl GlobalSettings {
     pub fn tear_down_on_failure(&self) -> bool {
         self.tear_down_on_failure
     }
+
+    /// Observability stack configuration
+    pub fn observability(&self) -> &ObservabilityConfig {
+        &self.observability
+    }
 }
 
 impl Default for GlobalSettings {
@@ -94,6 +107,7 @@ impl Default for GlobalSettings {
             base_dir: Default::default(),
             spawn_concurrency: Default::default(),
             tear_down_on_failure: true,
+            observability: ObservabilityConfig::default(),
         }
     }
 }
@@ -211,6 +225,21 @@ impl GlobalSettingsBuilder {
         Self::transition(
             GlobalSettings {
                 tear_down_on_failure,
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
+    /// Configure the observability stack (Prometheus + Grafana)
+    pub fn with_observability(
+        self,
+        f: impl FnOnce(ObservabilityConfigBuilder) -> ObservabilityConfigBuilder,
+    ) -> Self {
+        let observability = f(ObservabilityConfigBuilder::new()).build();
+        Self::transition(
+            GlobalSettings {
+                observability,
                 ..self.config
             },
             self.errors,

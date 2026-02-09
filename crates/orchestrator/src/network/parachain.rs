@@ -32,7 +32,9 @@ pub struct Parachain {
     pub(crate) chain_spec_path: Option<PathBuf>,
     #[serde(default, deserialize_with = "default_as_empty_vec")]
     pub(crate) collators: Vec<NetworkNode>,
+    #[serde(default)]
     pub(crate) files_to_inject: Vec<TransferedFile>,
+    #[serde(default)]
     pub(crate) bootnodes_addresses: Vec<multiaddr::Multiaddr>,
 }
 

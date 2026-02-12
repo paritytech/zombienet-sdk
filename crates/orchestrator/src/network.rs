@@ -28,7 +28,7 @@ use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
     generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
-    observability::{self, ObservabilityInfo},
+    observability::{self, ObservabilityInfo, ObservabilityState},
     shared::{
         constants::{NODE_MONITORING_FAILURE_THRESHOLD_SECONDS, NODE_MONITORING_INTERVAL_SECONDS},
         macros,
@@ -55,7 +55,7 @@ pub struct Network<T: FileSystem> {
     #[serde(skip_serializing_if = "Option::is_none")]
     start_time_ts: Option<String>,
     #[serde(skip)]
-    observability: Option<ObservabilityInfo>,
+    observability: ObservabilityState,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -98,7 +98,7 @@ impl<T: FileSystem> Network<T> {
             nodes_by_name: Default::default(),
             nodes_to_watch: Default::default(),
             start_time_ts: Default::default(),
-            observability: None,
+            observability: ObservabilityState::default(),
         }
     }
 
@@ -124,7 +124,11 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub fn observability(&self) -> Option<&ObservabilityInfo> {
-        self.observability.as_ref()
+        self.observability.as_runnnig()
+    }
+
+    pub fn observability_state(&self) -> &ObservabilityState {
+        &self.observability
     }
 
     /// Add a node to the relaychain
@@ -861,8 +865,8 @@ impl<T: FileSystem> Network<T> {
     ///     .with_grafana_port(3000)
     ///     .build();
     ///
-    /// network.start_observability(&obs_config).await?;
-    /// println!("Grafana: {}", network.observability().unwrap().grafana_url);
+    /// let info = network.start_observability(&obs_config).await?;
+    /// println!("Grafana: {}", info.grafana_url);
     /// #   Ok(())
     /// # }
     /// ```
@@ -870,7 +874,7 @@ impl<T: FileSystem> Network<T> {
         &mut self,
         config: &configuration::ObservabilityConfig,
     ) -> Result<&ObservabilityInfo, anyhow::Error> {
-        if self.observability.is_none() {
+        if self.observability().is_some() {
             self.stop_observability().await?;
         }
 
@@ -884,8 +888,9 @@ impl<T: FileSystem> Network<T> {
         )
         .await?;
 
-        self.observability = Some(info);
-        Ok(self.observability().unwrap())
+        self.observability = ObservabilityState::Running(info);
+        self.observability()
+            .ok_or_else(|| anyhow::anyhow!("observability state was just set but is not running"))
     }
 
     /// Stop the observability stack if running
@@ -893,7 +898,9 @@ impl<T: FileSystem> Network<T> {
     /// Removes the Prometheus and Grafana containers. This is safe to call
     /// even if no observability stack is running (it will be a no-op)
     pub async fn stop_observability(&mut self) -> Result<(), anyhow::Error> {
-        if let Some(info) = self.observability.take() {
+        if let ObservabilityState::Running(info) =
+            std::mem::replace(&mut self.observability, ObservabilityState::Stopped)
+        {
             observability::cleanup_observability_stack(&info).await?;
         }
         Ok(())

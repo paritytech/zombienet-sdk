@@ -1,11 +1,23 @@
-use std::{net::TcpListener, path::Path};
+use std::path::Path;
 
 use configuration::ObservabilityConfig;
 use support::fs::FileSystem;
 use tokio::process::Command;
 use tracing::{debug, trace};
 
-use crate::network::node::NetworkNode;
+use crate::{generators, network::node::NetworkNode};
+
+/// Lifecycle state of the observability stack within a network
+#[derive(Debug, Clone, Default)]
+pub enum ObservabilityState {
+    /// Stack has never been started
+    #[default]
+    NotStarted,
+    /// Stack is running
+    Running(ObservabilityInfo),
+    /// Stack was running bu has been stopped
+    Stopped,
+}
 
 /// Information about a running observability stack
 #[derive(Debug, Clone)]
@@ -22,6 +34,15 @@ pub struct ObservabilityInfo {
     container_runtime: String,
 }
 
+impl ObservabilityState {
+    pub fn as_runnnig(&self) -> Option<&ObservabilityInfo> {
+        match self {
+            ObservabilityState::Running(info) => Some(info),
+            _ => None,
+        }
+    }
+}
+
 /// Spawn the observability stack (Prometheus + Grafana) as Docker/Podman containers
 pub async fn spawn_observability_stack<T: FileSystem>(
     config: &ObservabilityConfig,
@@ -35,9 +56,10 @@ pub async fn spawn_observability_stack<T: FileSystem>(
 
     let (host_addr, use_host_network) = get_networking();
 
-    let prom_port = config.prometheus_port().unwrap_or_else(pick_random_port);
-
-    let grafana_port = config.grafana_port().unwrap_or_else(pick_random_port);
+    let prom_parked = generators::generate_node_port(config.prometheus_port())?;
+    let prom_port = prom_parked.0;
+    let grafana_parked = generators::generate_node_port(config.grafana_port())?;
+    let grafana_port = grafana_parked.0;
 
     // Create dirs
     let obs_dir = base_dir.join("observability");
@@ -83,6 +105,8 @@ pub async fn spawn_observability_stack<T: FileSystem>(
     } else {
         prom_cmd.args(["-p", &format!("{prom_port}:9090")]);
     }
+
+    prom_parked.drop_listener();
 
     prom_cmd.args([
         config.prometheus_image(),
@@ -131,6 +155,8 @@ pub async fn spawn_observability_stack<T: FileSystem>(
     }
 
     grafana_cmd.arg(config.grafana_image());
+
+    grafana_parked.drop_listener();
 
     let output = grafana_cmd.output().await?;
     if !output.status.success() {
@@ -187,7 +213,7 @@ pub(crate) fn generate_prometheus_config(nodes: &[&NetworkNode], host_addr: &str
     }
 
     format!(
-        "global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\n\nscrape_configs:\n  - job_name: 'zombienet'\n    metrics_path: /metrics\n    static_configs:\n{targets}"
+        "global:\n  scrape_interval: 5s\n  evaluation_interval: 5s\n\nscrape_configs:\n  - job_name: 'zombienet'\n    metrics_path: /metrics\n    static_configs:\n{targets}"
     )
 }
 
@@ -224,14 +250,6 @@ fn get_networking() -> (String, bool) {
         "linux" => ("127.0.0.1".to_string(), true),
         _ => ("host.docker.internal".to_string(), false),
     }
-}
-
-fn pick_random_port() -> u16 {
-    TcpListener::bind("0.0.0.0")
-        .expect("Failed to bind to a random port")
-        .local_addr()
-        .expect("Failed to get local address")
-        .port()
 }
 
 fn extract_port_from_uri(uri: &str) -> Option<u16> {

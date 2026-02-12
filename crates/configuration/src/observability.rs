@@ -2,11 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::shared::types::Port;
 
+const DEFAULT_PROMETHEUS_IMAGE: &str = "prom/prometheus:latest";
+const DEFAULT_GRAFANA_IMAGE: &str = "grafana/grafana:latest";
+
 /// Configuration for the observability stack (Prometheus + Grafana)
 ///
 /// When enabled, Docker/Podman containers are spawned after the network is up,
 /// auto-configured to scrape all nodes' Prometheus metrics endpoints
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObservabilityConfig {
     /// Whether the observability stack is enabled
     #[serde(default)]
@@ -18,11 +21,31 @@ pub struct ObservabilityConfig {
     #[serde(default)]
     grafana_port: Option<Port>,
     /// Docker image for Prometheus
-    #[serde(default)]
-    prometheus_image: Option<String>,
+    #[serde(default = "default_prometheus_image")]
+    prometheus_image: String,
     /// Docker image for Grafana
-    #[serde(default)]
-    grafana_image: Option<String>,
+    #[serde(default = "default_grafana_image")]
+    grafana_image: String,
+}
+
+fn default_prometheus_image() -> String {
+    DEFAULT_PROMETHEUS_IMAGE.to_string()
+}
+
+fn default_grafana_image() -> String {
+    DEFAULT_GRAFANA_IMAGE.to_string()
+}
+
+impl Default for ObservabilityConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            prometheus_port: None,
+            grafana_port: None,
+            prometheus_image: default_prometheus_image(),
+            grafana_image: default_grafana_image(),
+        }
+    }
 }
 
 impl ObservabilityConfig {
@@ -39,15 +62,11 @@ impl ObservabilityConfig {
     }
 
     pub fn prometheus_image(&self) -> &str {
-        self.prometheus_image
-            .as_deref()
-            .unwrap_or("prom/prometheus:latest")
+        &self.prometheus_image
     }
 
     pub fn grafana_image(&self) -> &str {
-        self.grafana_image
-            .as_deref()
-            .unwrap_or("grafana/grafana:latest")
+        &self.grafana_image
     }
 }
 
@@ -82,13 +101,13 @@ impl ObservabilityConfigBuilder {
 
     /// Set a custom Prometheus Docker image
     pub fn with_prometheus_image(mut self, image: impl Into<String>) -> Self {
-        self.config.prometheus_image = Some(image.into());
+        self.config.prometheus_image = image.into();
         self
     }
 
     /// Set a custom Grafana Docker image
     pub fn with_grafana_image(mut self, image: impl Into<String>) -> Self {
-        self.config.grafana_image = Some(image.into());
+        self.config.grafana_image = image.into();
         self
     }
 

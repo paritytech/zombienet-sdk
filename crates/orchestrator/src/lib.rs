@@ -5,6 +5,7 @@ pub mod errors;
 pub mod generators;
 pub mod network;
 pub mod network_helper;
+pub mod observability;
 pub mod tx_helper;
 
 mod network_spec;
@@ -522,6 +523,21 @@ where
             };
 
             Parachain::register(register_para_options, &scoped_fs).await?;
+        }
+
+        if network_spec.global_settings.observability().enabled() {
+            match network
+                .start_observability(network_spec.global_settings.observability())
+                .await
+            {
+                Ok(obs) => {
+                    info!("📊 Prometheus URL: {}", obs.prometheus_url);
+                    info!("📊 Grafana URL: {}", obs.grafana_url);
+                },
+                Err(e) => {
+                    warn!("⚠️  Failed to spawn observability stack: {e}");
+                },
+            }
         }
 
         // start custom processes if needed

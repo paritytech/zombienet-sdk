@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["GenerateFileCommand","GenerateFilesOptions","ProviderCapabilities","RunCommandOptions","RunScriptOptions","SpawnNodeOptions","TransferedFile"],"type":["ExecutionResult","Port"]};

@@ -1,0 +1,26 @@
+name: Publish to crates.io
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  check-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: install parity-publish
+        run: cargo install parity-publish@0.10.6 --locked -q
+
+      - name: parity-publish check
+        run: parity-publish --color always check --allow-unpublished
+
+        # TODO: remove dry-run once we confirm everything works as expected
+      - name: parity-publish dry-run
+        run: parity-publish --color always apply --dry-run

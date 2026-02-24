@@ -15,7 +15,9 @@ pub use provider::types::{ExecutionResult, RunScriptOptions};
 // Helpers used for interact with the network
 pub mod tx_helper {
     pub use orchestrator::{
-        network::chain_upgrade::ChainUpgrade, shared::types::RuntimeUpgradeOptions,
+        network::chain_upgrade::ChainUpgrade,
+        shared::types::RuntimeUpgradeOptions,
+        tx_helper::{parachain, runtime_upgrade},
     };
 }
 

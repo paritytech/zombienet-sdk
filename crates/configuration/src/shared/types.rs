@@ -650,6 +650,18 @@ mod tests {
         let deserialized: Arg = serde_json::from_str(&serialized).unwrap();
         assert_eq!(arg, deserialized);
     }
+
+    #[test]
+    fn test_urls_as_arg() {
+        let arg = Arg::from("ws://127.0.0.1:10000");
+        assert_eq!(Arg::Flag(String::from("ws://127.0.0.1:10000")), arg);
+    }
+    #[test]
+    fn test_script_as_arg() {
+        let arg = Arg::from("scripts/assign-cores.sh");
+        assert_eq!(Arg::Flag(String::from("scripts/assign-cores.sh")), arg);
+    }
+
     #[test]
     fn test_arg_option_roundtrip() {
         let arg = Arg::from(("mode", "fast"));

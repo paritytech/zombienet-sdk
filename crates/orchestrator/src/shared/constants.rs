@@ -15,3 +15,5 @@ pub const DEFAULT_CHAIN_SPEC_TPL_COMMAND: &str =
 pub const NODE_MONITORING_INTERVAL_SECONDS: u64 = 15;
 // how long to wait before a node is considered unresponsive
 pub const NODE_MONITORING_FAILURE_THRESHOLD_SECONDS: u64 = 5;
+// metric used to check if the node is running
+pub const PROCESS_START_TIME_METRIC: &str = "process_start_time_seconds";

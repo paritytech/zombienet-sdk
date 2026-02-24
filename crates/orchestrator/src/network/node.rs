@@ -22,7 +22,10 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace, warn};
 
-use crate::{network_spec::node::NodeSpec, tx_helper::client::get_client_from_url};
+use crate::{
+    network_spec::node::NodeSpec, shared::constants::PROCESS_START_TIME_METRIC,
+    tx_helper::client::get_client_from_url,
+};
 
 type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
 
@@ -373,9 +376,13 @@ impl NetworkNode {
         predicate: impl Fn(f64) -> bool,
     ) -> Result<(), anyhow::Error> {
         let metric_name = metric_name.into();
-        debug!("waiting until metric {metric_name} pass the predicate");
+        trace!(
+            "[{}] waiting until metric {metric_name} pass the predicate",
+            self.name()
+        );
         loop {
             let res = self.assert_with(&metric_name, &predicate).await;
+            trace!("res: {res:?}");
             match res {
                 Ok(res) => {
                     if res {
@@ -416,7 +423,15 @@ impl NetworkNode {
     ) -> Result<(), anyhow::Error> {
         let metric_name = metric_name.into();
         let secs = timeout_secs.into();
-        debug!("waiting until metric {metric_name} pass the predicate");
+        let log_msg = format!(
+            "[{}] waiting until metric {metric_name} pass the predicate for {secs}s",
+            self.name()
+        );
+        if metric_name == PROCESS_START_TIME_METRIC {
+            trace!("{log_msg}");
+        } else {
+            debug!("{log_msg}");
+        }
         let res = tokio::time::timeout(
             Duration::from_secs(secs),
             self.wait_metric(&metric_name, predicate),
@@ -847,7 +862,7 @@ impl NetworkNode {
         &self,
         timeout_secs: impl Into<u64>,
     ) -> Result<(), anyhow::Error> {
-        self.wait_metric_with_timeout("process_start_time_seconds", |b| b >= 1.0, timeout_secs)
+        self.wait_metric_with_timeout(PROCESS_START_TIME_METRIC, |b| b >= 1.0, timeout_secs)
             .await
             .map_err(|err| anyhow::anyhow!("{}: {:?}", self.name(), err))
     }

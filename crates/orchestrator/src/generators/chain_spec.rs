@@ -1795,18 +1795,25 @@ fn generate_balance_to_add_from_assets_pallet(
     chain_spec_json: &serde_json::Value,
 ) -> Vec<(String, u128)> {
     if let Some(val) = chain_spec_json.pointer(runtime_config_ptr) {
+        // generate the current balance map, to only add missing accounts
+        let balances_map = if let Some(balances) = val.pointer("/balances/balances") {
+            generate_balance_map(balances)
+        } else {
+            Default::default()
+        };
+
         if let Some(assets_accounts) = val.pointer("/assets/accounts") {
             let assets_accounts = assets_accounts
                 .as_array()
                 .expect("assets_accounts config should be an array, qed");
             let accounts_to_add: Vec<(String, u128)> = assets_accounts
                 .iter()
-                .map(|account| {
+                .filter_map(|account| {
                     let account = account
                         .as_array()
                         .expect("assets_accounts config should be an array, qed");
                     // map account / balance
-                    (
+                    let account_balance = (
                         account[1]
                             .as_str()
                             .expect("account should be a valid string. qed")
@@ -1817,7 +1824,13 @@ fn generate_balance_to_add_from_assets_pallet(
                             .to_string()
                             .parse::<u128>()
                             .expect("balance should be a valid u128"),
-                    )
+                    );
+
+                    if balances_map.contains_key(&account_balance.0) {
+                        None
+                    } else {
+                        Some(account_balance)
+                    }
                 })
                 .collect();
             accounts_to_add

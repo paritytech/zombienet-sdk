@@ -343,7 +343,7 @@ where
 
             // Wait for all nodes in the current level to be up
             let waiting_tasks = running_nodes_per_level.iter().map(|node| {
-                node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
+                node.wait_until_is_up(network_spec.global_settings.node_spawn_timeout())
             });
 
             let _ = futures::future::try_join_all(waiting_tasks).await?;

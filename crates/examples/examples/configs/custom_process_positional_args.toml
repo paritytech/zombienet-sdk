@@ -1,0 +1,52 @@
+# Example configuration demonstrating positional arguments in custom processes
+#
+# This config spawns a relay chain with two validators and a custom process
+# that monitors block production using a bash script with positional arguments.
+#
+# IMPORTANT: Run from repo root:
+#   zombie-cli spawn -p native crates/examples/examples/configs/custom_process_positional_args.toml
+#
+# The script path is relative to the repo root.
+
+[settings]
+timeout = 1000
+
+[relaychain]
+chain = "rococo-local"
+command = "polkadot"
+
+  [[relaychain.nodes]]
+  name = "alice"
+  rpc_port = 9944
+  args = [
+    "--alice",                    # Flag
+    "--rpc-methods unsafe",       # Option (K/V with space)
+  ]
+
+  [[relaychain.nodes]]
+  name = "bob"
+  # More argument examples
+  args = [
+    "--bob",                      # Flag
+    "--rpc-cors=all",            # Option (K/V with =)
+  ]
+
+# Simple custom process to verify spawning works
+[[custom_processes]]
+name = "simple-echo"
+command = "sh"
+args = [
+    "-c",                                    # Flag for sh
+    "echo 'Custom process started!' && sleep 30"  # Positional: shell command
+]
+
+# Custom process that runs a monitoring script with positional arguments
+[[custom_processes]]
+name = "block-monitor"
+command = "bash"
+# Positional arguments: script path, WebSocket URL, block count
+args = [
+    "crates/examples/scripts/monitor-blocks.sh", # Run this from repo root or use absolute path
+    "ws://127.0.0.1:9944",
+    "5"
+]

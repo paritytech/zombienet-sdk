@@ -28,6 +28,7 @@ use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
     generators::chain_spec::ChainSpec,
     network_spec::{self, NetworkSpec},
+    observability::{self, ObservabilityInfo, ObservabilityState},
     shared::{
         constants::{NODE_MONITORING_FAILURE_THRESHOLD_SECONDS, NODE_MONITORING_INTERVAL_SECONDS},
         macros,
@@ -53,6 +54,8 @@ pub struct Network<T: FileSystem> {
     nodes_to_watch: Arc<RwLock<Vec<NetworkNode>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     start_time_ts: Option<String>,
+    #[serde(skip)]
+    observability: ObservabilityState,
 }
 
 impl<T: FileSystem> std::fmt::Debug for Network<T> {
@@ -63,6 +66,7 @@ impl<T: FileSystem> std::fmt::Debug for Network<T> {
             .field("initial_spec", &self.initial_spec)
             .field("parachains", &self.parachains)
             .field("nodes_by_name", &self.nodes_by_name)
+            .field("observability", &self.observability)
             .finish()
     }
 }
@@ -94,6 +98,7 @@ impl<T: FileSystem> Network<T> {
             nodes_by_name: Default::default(),
             nodes_to_watch: Default::default(),
             start_time_ts: Default::default(),
+            observability: ObservabilityState::default(),
         }
     }
 
@@ -111,8 +116,19 @@ impl<T: FileSystem> Network<T> {
     }
 
     // Teardown the network
-    pub async fn destroy(self) -> Result<(), ProviderError> {
+    pub async fn destroy(mut self) -> Result<(), ProviderError> {
+        if let Err(e) = self.stop_observability().await {
+            warn!("⚠️  Failed to cleanup observability stack: {e}");
+        }
         self.ns.destroy().await
+    }
+
+    pub fn observability(&self) -> Option<&ObservabilityInfo> {
+        self.observability.as_runnnig()
+    }
+
+    pub fn observability_state(&self) -> &ObservabilityState {
+        &self.observability
     }
 
     /// Add a node to the relaychain
@@ -823,6 +839,70 @@ impl<T: FileSystem> Network<T> {
 
         futures::future::try_join_all(handles).await?;
 
+        Ok(())
+    }
+
+    /// Start the observability stack (Prometheus + Grafana) as an add-on
+    ///
+    /// This can be called on any running network — whether freshly spawned or
+    /// re-attached via [`Orchestrator::attach_to_live`]. If observability is
+    /// already running, it will be stopped first
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem};
+    /// # use zombienet_orchestrator::{errors, Orchestrator};
+    /// # use configuration::{NetworkConfig, ObservabilityConfigBuilder};
+    /// # async fn example() -> Result<(), errors::OrchestratorError> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// let mut network = orchestrator.spawn(config).await?;
+    ///
+    /// let obs_config = ObservabilityConfigBuilder::new()
+    ///     .with_enabled(true)
+    ///     .with_grafana_port(3000)
+    ///     .build();
+    ///
+    /// let info = network.start_observability(&obs_config).await?;
+    /// println!("Grafana: {}", info.grafana_url);
+    /// #   Ok(())
+    /// # }
+    /// ```
+    pub async fn start_observability(
+        &mut self,
+        config: &configuration::ObservabilityConfig,
+    ) -> Result<&ObservabilityInfo, anyhow::Error> {
+        if self.observability().is_some() {
+            self.stop_observability().await?;
+        }
+
+        let nodes = self.nodes();
+        let info = observability::spawn_observability_stack(
+            config,
+            &nodes,
+            self.ns.name(),
+            self.ns.base_dir(),
+            &self.filesystem,
+        )
+        .await?;
+
+        self.observability = ObservabilityState::Running(info);
+        self.observability()
+            .ok_or_else(|| anyhow::anyhow!("observability state was just set but is not running"))
+    }
+
+    /// Stop the observability stack if running
+    ///
+    /// Removes the Prometheus and Grafana containers. This is safe to call
+    /// even if no observability stack is running (it will be a no-op)
+    pub async fn stop_observability(&mut self) -> Result<(), anyhow::Error> {
+        if let ObservabilityState::Running(info) =
+            std::mem::replace(&mut self.observability, ObservabilityState::Stopped)
+        {
+            observability::cleanup_observability_stack(&info).await?;
+        }
         Ok(())
     }
 

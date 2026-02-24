@@ -46,6 +46,10 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: Demonstrates how to remove default command-line arguments from a node's startup command.
     *   **Run**: `cargo run --example arg_removal`
 
+*   **`custom_process_positional_args`**
+    *   **Description**: Shows how to spawn custom processes with positional arguments (arguments without `--` or `-` prefix). The example runs a monitoring script that takes a WebSocket URL and block count as positional arguments.
+    *   **Run**: `cargo run --example custom_process_positional_args`
+
 *   **`db_snapshot`**
     *   **Description**: Illustrates how to start a network, create a database snapshot, and then launch a new network from that snapshot to speed up initialization.
     *   **Run**: `cargo run --example db_snapshot`

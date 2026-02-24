@@ -5,6 +5,7 @@ pub mod errors;
 pub mod generators;
 pub mod network;
 pub mod network_helper;
+pub mod observability;
 pub mod tx_helper;
 
 mod network_spec;
@@ -524,6 +525,21 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
+        if network_spec.global_settings.observability().enabled() {
+            match network
+                .start_observability(network_spec.global_settings.observability())
+                .await
+            {
+                Ok(obs) => {
+                    info!("📊 Prometheus URL: {}", obs.prometheus_url);
+                    info!("📊 Grafana URL: {}", obs.grafana_url);
+                },
+                Err(e) => {
+                    warn!("⚠️  Failed to spawn observability stack: {e}");
+                },
+            }
+        }
+
         // start custom processes if needed
         for cp in &network_spec.custom_processes {
             if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
@@ -560,7 +576,10 @@ async fn recreate_network_nodes_from_json(
             .get("provider_tag")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                OrchestratorError::InvalidConfig("Missing `provider_tag` in inner node JSON".into())
+                OrchestratorError::InvalidConfig(format!(
+                    "Node '{}' is missing `provider_tag` in inner node JSON",
+                    raw.name
+                ))
             })?;
 
         if provider_tag != provider_name {

@@ -101,7 +101,7 @@ async fn run_app(
 ) -> Result<()> {
     // Attempt to attach to the network.
     if let Err(e) = app.attach_to_network().await {
-        app.set_status(format!("Failed to attach: {}. Press 'q' to quit.", e));
+        app.set_status(format!("Failed to attach: {:#}. Press 'q' to quit.", e));
     }
 
     loop {
@@ -123,7 +123,7 @@ async fn run_app(
             }
         }
 
-        app.tick().await;
+        app.tick();
     }
 
     Ok(())

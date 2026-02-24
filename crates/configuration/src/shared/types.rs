@@ -393,8 +393,13 @@ impl<'de> Deserialize<'de> for AssetLocation {
     }
 }
 
-/// A CLI argument passed to an executed command, can be an option with an assigned value or a simple flag to enable/disable a feature.
-/// A flag arg can be constructed from a `&str` and a option arg can be constructed from a `(&str, &str)`.
+/// A CLI argument passed to an executed command.
+///
+/// # Variants
+/// - `Flag(String)`: A command-line flag (e.g., `--verbose`, `-v`)
+/// - `Option(String, String)`: A key-value pair (e.g., `--port 8080`, `--name=alice`)
+/// - `Array(String, Vec<String>)`: A key with multiple values (e.g., `--items [a,b,c]`)
+/// - `Positional(String)`: A positional argument without prefix (e.g., `script.sh`, `ws://127.0.0.1:10000`)
 ///
 /// # Examples:
 /// ```
@@ -411,6 +416,7 @@ pub enum Arg {
     Flag(String),
     Option(String, String),
     Array(String, Vec<String>),
+    Positional(String),
 }
 
 impl From<&str> for Arg {
@@ -460,6 +466,7 @@ impl Arg {
                 items.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
             ]
             .concat(),
+            Arg::Positional(value) => vec![value.to_string()],
         }
     }
 }
@@ -474,6 +481,7 @@ impl Serialize for Arg {
             Arg::Array(option, values) => {
                 serializer.serialize_str(&format!("{}=[{}]", option, values.join(",")))
             },
+            Arg::Positional(value) => serializer.serialize_str(value),
         }
     }
 }
@@ -500,6 +508,7 @@ impl de::Visitor<'_> for ArgVisitor {
         if v.starts_with("-:") {
             return Ok(Arg::Flag(v.to_string()));
         }
+
         let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>\\[[^\\]]*\\]|[^ ]+))?$").unwrap();
 
         let captures = re.captures(v);
@@ -530,9 +539,8 @@ impl de::Visitor<'_> for ArgVisitor {
             }
         }
 
-        Err(de::Error::custom(
-            "the provided argument is invalid and doesn't match Arg::Option, Arg::Flag or Arg::Array",
-        ))
+        // Fallback: treat as positional argument
+        Ok(Arg::Positional(v.to_string()))
     }
 }
 
@@ -728,17 +736,58 @@ mod tests {
     }
 
     #[test]
-    fn test_arg_invalid_input() {
-        // missing = or space
-        let invalid = "\"--foo[bar]\"";
-        let result: Result<Arg, _> = serde_json::from_str(invalid);
-        assert!(result.is_err());
+    fn test_arg_positional_input() {
+        // Strings that don't match flag/option/array patterns are treated as positional
 
-        // value contains space
-        let invalid = "\"--foo=bar baz\"";
-        let result: Result<Arg, _> = serde_json::from_str(invalid);
-        println!("result = {result:?}");
-        assert!(result.is_err());
+        // missing = or space - treated as positional
+        let input = "\"--foo[bar]\"";
+        let result: Result<Arg, _> = serde_json::from_str(input);
+        assert_eq!(result.unwrap(), Arg::Positional("--foo[bar]".to_string()));
+
+        // value contains space - treated as positional
+        let input = "\"--foo=bar baz\"";
+        let result: Result<Arg, _> = serde_json::from_str(input);
+        assert_eq!(
+            result.unwrap(),
+            Arg::Positional("--foo=bar baz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_arg_positional_valid_input() {
+        // Plain strings without prefixes are positional arguments
+        let expected = Arg::Positional("scripts/assign-cores.sh".to_string());
+        let valid = "\"scripts/assign-cores.sh\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // URLs can be positional
+        let expected = Arg::Positional("ws://127.0.0.1:10000".to_string());
+        let valid = "\"ws://127.0.0.1:10000\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+
+        // Numbers can be positional
+        let expected = Arg::Positional("42".to_string());
+        let valid = "\"42\"";
+        let result: Result<Arg, _> = serde_json::from_str(valid);
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_arg_positional_roundtrip() {
+        // Use a value that clearly doesn't match flag pattern (has special chars)
+        let arg = Arg::Positional("script.sh".to_string());
+        let serialized = serde_json::to_string(&arg).unwrap();
+        assert_eq!(serialized, "\"script.sh\"");
+        let deserialized: Arg = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(arg, deserialized);
+    }
+
+    #[test]
+    fn test_arg_positional_to_vec() {
+        let arg = Arg::Positional("scripts/test.sh".to_string());
+        assert_eq!(arg.to_vec(), vec!["scripts/test.sh".to_string()]);
     }
 
     #[test]

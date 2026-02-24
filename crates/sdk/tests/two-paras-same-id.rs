@@ -1,7 +1,7 @@
 use zombienet_sdk::{environment::get_spawn_fn, NetworkConfigBuilder};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn two_paras_same_id() {
+async fn ci_two_paras_same_id() {
     tracing_subscriber::fmt::init();
     let spawn_fn = get_spawn_fn();
     let config = NetworkConfigBuilder::new()

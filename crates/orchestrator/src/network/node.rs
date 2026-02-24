@@ -59,6 +59,7 @@ pub(crate) struct RawNetworkNode {
     pub(crate) prometheus_uri: String,
     pub(crate) multiaddr: String,
     pub(crate) spec: NodeSpec,
+    #[serde(default)]
     pub(crate) inner: serde_json::Value,
 }
 

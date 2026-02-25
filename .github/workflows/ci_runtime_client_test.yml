@@ -1,0 +1,136 @@
+name: Zombienet Runtime-Client Compatibility Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_tag:
+        description: 'Runtime version tag (e.g., v2.0.4). Leave empty for auto-discovery of latest.'
+        required: false
+        type: string
+      binary_tags:
+        description: 'Comma-separated list of 3 client binary tags (e.g., polkadot-stable2503,polkadot-stable2502,polkadot-stable2501). Leave empty for auto-discovery of 3 latest.'
+        required: false
+        type: string
+
+env:
+  RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
+
+jobs:
+  prepare-matrix:
+    runs-on: parity-default
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    outputs:
+      binary_matrix: ${{ steps.set-matrix.outputs.binary_matrix }}
+      runtime_tag: ${{ steps.set-matrix.outputs.runtime_tag }}
+    steps:
+      - name: Fetch Versions
+        id: set-matrix
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RUNTIME_TAG: ${{ inputs.runtime_tag }}
+          INPUT_BINARY_TAGS: ${{ inputs.binary_tags }}
+        run: |
+          # 1. Use provided runtime tag or fetch the single latest from fellows/runtimes (e.g., v2.0.4)
+          if [[ -n "$INPUT_RUNTIME_TAG" ]]; then
+            RUNTIME_TAG="$INPUT_RUNTIME_TAG"
+            echo "Using provided runtime tag: $RUNTIME_TAG"
+          else
+            RUNTIME_TAG=$(gh api graphql -f query='
+              query {
+                repository(owner: "polkadot-fellows", name: "runtimes") {
+                  releases(first: 5, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
+                }
+              }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^v[0-9]+" | head -n 1)
+            echo "Auto-discovered runtime tag: $RUNTIME_TAG"
+          fi
+
+          # 2. Use provided binary tags or fetch 3 latest stable binary tags from paritytech/polkadot-sdk
+          if [[ -n "$INPUT_BINARY_TAGS" ]]; then
+            # Convert comma-separated input to JSON array
+            BINARIES=$(echo "$INPUT_BINARY_TAGS" | tr ',' '\n' | jq -R . | jq -s -c .)
+            echo "Using provided binary tags: $BINARIES"
+          else
+            BINARIES=$(gh api graphql -f query='
+              query {
+                repository(owner: "paritytech", name: "polkadot-sdk") {
+                  releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
+                }
+              }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | grep -v "\-rc" | sort -Vr | head -n 3 | jq -R . | jq -s -c .)
+            echo "Auto-discovered binary tags: $BINARIES"
+          fi
+
+          echo "runtime_tag=$RUNTIME_TAG" >> $GITHUB_OUTPUT
+          echo "binary_matrix=$BINARIES" >> $GITHUB_OUTPUT
+
+  test-mixed-binaries:
+    needs: prepare-matrix
+    runs-on: parity-default
+    name: "Mixed binaries compatibility test"
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Download Binaries
+        shell: bash
+        run: |
+          BIN_TAGS=($(echo '${{ needs.prepare-matrix.outputs.binary_matrix }}' | jq -r '.[]'))
+          mkdir -p ./bin
+          for i in "${!BIN_TAGS[@]}"; do
+            TAG="${BIN_TAGS[$i]}"
+            FILENAME="polkadot-${TAG}"
+            echo "Downloading Polkadot @ $TAG as $FILENAME"
+            curl -fL "https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/polkadot" -o "./bin/$FILENAME"
+            chmod +x "./bin/$FILENAME"
+
+            echo "Downloading workers for $TAG"
+            mkdir -p "./bin/workers-${TAG}"
+            for worker in polkadot-execute-worker polkadot-prepare-worker; do
+              url="https://github.com/paritytech/polkadot-sdk/releases/download/$TAG/$worker"
+              echo "Downloading $worker"
+              curl -fL "$url" -o "./bin/workers-${TAG}/$worker"
+              chmod +x "./bin/workers-${TAG}/$worker"
+            done
+            ls -lh "./bin/workers-${TAG}"
+          done
+          echo "$PWD/bin" >> $GITHUB_PATH
+      - name: Download Latest Runtime
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          gh release download "${{ needs.prepare-matrix.outputs.runtime_tag }}" \
+            -R polkadot-fellows/runtimes \
+            -p "polkadot_runtime-*.compact.compressed.wasm" \
+            --output artifacts/relay_runtime.wasm
+
+      - name: Run Mixed Version Test
+        shell: bash
+        env:
+          RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
+          WORKERS_BASE_PATH: ${{ github.workspace }}/bin
+          ZOMBIE_PROVIDER: native
+          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
+        run: |
+          BIN_TAGS=($(echo '${{ needs.prepare-matrix.outputs.binary_matrix }}' | jq -r '.[]'))
+          
+          export POLKADOT_BIN_LATEST="polkadot-${BIN_TAGS[0]}"
+          export POLKADOT_BIN_LATEST_1="polkadot-${BIN_TAGS[1]}"
+          export POLKADOT_BIN_LATEST_2="polkadot-${BIN_TAGS[2]}"
+          export WORKERS_PATH_LATEST="$WORKERS_BASE_PATH/workers-${BIN_TAGS[0]}"
+          export WORKERS_PATH_LATEST_1="$WORKERS_BASE_PATH/workers-${BIN_TAGS[1]}"
+          export WORKERS_PATH_LATEST_2="$WORKERS_BASE_PATH/workers-${BIN_TAGS[2]}"
+
+          echo "Running mixed network test with:"
+          echo "Alice (Latest)   : $POLKADOT_BIN_LATEST"
+          echo "Bob (Latest-1)   : $POLKADOT_BIN_LATEST_1"
+          echo "Charlie (Latest-2): $POLKADOT_BIN_LATEST_2"
+
+          echo "Running mixed network with 3 latest client versions"
+          cargo test --test client-runtime -- --nocapture

@@ -659,7 +659,7 @@ impl NetworkNode {
         let resolved_metric_name = if metric_name.contains("_bucket") {
             metric_name.to_string()
         } else {
-            format!("{}_bucket", metric_name)
+            format!("{metric_name}_bucket")
         };
 
         // First pass: collect all matching metrics with their label counts

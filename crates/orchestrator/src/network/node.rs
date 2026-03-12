@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
     time::Duration,
@@ -16,7 +16,7 @@ use provider::{
     DynNode,
 };
 use serde::{Deserialize, Serialize, Serializer};
-use subxt::{backend::rpc::RpcClient, OnlineClient};
+use subxt::{backend::rpc::RpcClient, OnlineClient, PolkadotConfig};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -63,22 +63,22 @@ pub(crate) struct RawNetworkNode {
     pub(crate) inner: serde_json::Value,
 }
 
-/// Result of waiting for a certain number of log lines to appear.
+/// Result of waiting for a certain counter (number of log lines or events).
 ///
 /// Indicates whether the log line count condition was met within the timeout period.
 ///
 /// # Variants
 /// - `TargetReached(count)` – The predicate condition was satisfied within the timeout.
-///     * `count`: The number of matching log lines at the time of satisfaction.
+///     * `count`: The number of matching instances at the time of satisfaction.
 /// - `TargetFailed(count)` – The condition was not met within the timeout.
-///     * `count`: The final number of matching log lines at timeout expiration.
+///     * `count`: The final number of matching instances at timeout expiration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogLineCount {
+pub enum WaitCount {
     TargetReached(u32),
     TargetFailed(u32),
 }
 
-impl LogLineCount {
+impl WaitCount {
     pub fn success(&self) -> bool {
         match self {
             Self::TargetReached(..) => true,
@@ -87,26 +87,28 @@ impl LogLineCount {
     }
 }
 
-/// Configuration for controlling log line count waiting behavior.
+pub type LogLineCount = WaitCount;
+
+/// Configuration for controlling  count waiting behavior.
 ///
-/// Allows specifying a custom predicate on the number of matching log lines,
+/// Allows specifying a custom predicate on the number of matchs,
 /// a timeout in seconds, and whether the system should wait the entire timeout duration.
 ///
 /// # Fields
-/// - `predicate`: A function that takes the current number of matching lines and
+/// - `predicate`: A function that takes the current value (metric, log lines) and
 ///   returns `true` if the condition is satisfied.
 /// - `timeout_secs`: Maximum number of seconds to wait.
 /// - `wait_until_timeout_elapses`: If `true`, the system will continue waiting
 ///   for the full timeout duration, even if the condition is already met early.
 ///   Useful when you need to verify sustained absence or stability (e.g., "ensure no new logs appear").
 #[derive(Clone)]
-pub struct LogLineCountOptions {
+pub struct CountOptions {
     pub predicate: Arc<dyn Fn(u32) -> bool + Send + Sync>,
     pub timeout: Duration,
     pub wait_until_timeout_elapses: bool,
 }
 
-impl LogLineCountOptions {
+impl CountOptions {
     pub fn new(
         predicate: impl Fn(u32) -> bool + 'static + Send + Sync,
         timeout: Duration,
@@ -127,22 +129,16 @@ impl LogLineCountOptions {
         Self::new(|count| count >= 1, timeout, false)
     }
 
+    pub fn at_least(target: u32, timeout: Duration) -> Self {
+        Self::new(move |count| count >= target, timeout, false)
+    }
+
     pub fn exactly_once(timeout: Duration) -> Self {
         Self::new(|count| count == 1, timeout, false)
     }
 }
 
-// #[derive(Clone, Debug)]
-// pub struct QueryMetricOptions {
-//     use_cache: bool,
-//     treat_not_found_as_zero: bool,
-// }
-
-// impl Default for QueryMetricOptions {
-//     fn default() -> Self {
-//         Self { use_cache: false, treat_not_found_as_zero: true }
-//     }
-// }
+pub type LogLineCountOptions = CountOptions;
 
 impl NetworkNode {
     /// Create a new NetworkNode
@@ -592,6 +588,125 @@ impl NetworkNode {
         } else {
             Ok(LogLineCount::TargetFailed(q))
         }
+    }
+
+    /// Waits until the number of matching log lines satisfies a custom condition,
+    /// optionally waiting for the entire duration of the timeout.
+    ///
+    /// This method searches log lines for a given substring or glob pattern,
+    /// and evaluates the number of matching lines using a user-provided predicate function.
+    /// Optionally, it can wait for the full timeout duration to ensure the condition
+    /// holds consistently (e.g., for verifying absence of logs).
+    ///
+    /// # Arguments
+    /// * `substring` - The substring or pattern to match within log lines.
+    /// * `is_glob` - Whether to treat `substring` as a glob pattern (`true`) or a regex (`false`).
+    /// * `options` - Configuration for timeout, match count predicate, and full-duration waiting.
+    ///
+    /// # Returns
+    /// * `Ok(LogLineCount::TargetReached(n))` if the predicate was satisfied within the timeout,
+    /// * `Ok(LogLineCount::TargetFails(n))` if the predicate was not satisfied in time,
+    /// * `Err(e)` if an error occurred during log retrieval or matching.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use std::{sync::Arc, time::Duration};
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem};
+    /// # use zombienet_orchestrator::{Orchestrator, network::node::{NetworkNode, LogLineCountOptions}};
+    /// # use configuration::NetworkConfig;
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// #   let network = orchestrator.spawn(config).await?;
+    /// let node = network.get_node("alice")?;
+    /// // Wait (up to 10 seconds) until pattern occurs once
+    /// let options = LogLineCountOptions {
+    ///     predicate: Arc::new(|count| count == 1),
+    ///     timeout: Duration::from_secs(10),
+    ///     wait_until_timeout_elapses: false,
+    /// };
+    /// let result = node
+    ///     .wait_log_line_count_with_timeout("error", false, options)
+    ///     .await?;
+    /// #   Ok(())
+    /// # }
+    /// ```
+    pub async fn wait_event_count_with_timeout(
+        &self,
+        pallet: impl Into<String>,
+        variant: impl Into<String>,
+        options: CountOptions,
+    ) -> Result<WaitCount, anyhow::Error> {
+        let pallet = pallet.into();
+        let variant = variant.into();
+        debug!(
+            "waiting until match event ({pallet} {variant}) count within {} seconds",
+            options.timeout.as_secs_f64()
+        );
+
+        let init_value = Arc::new(AtomicU32::new(0));
+
+        let res = tokio::time::timeout(
+            options.timeout,
+            self.wait_event_count(&pallet, &variant, &options, init_value.clone()),
+        )
+        .await;
+
+        let q = init_value.load(Ordering::Relaxed);
+        if let Ok(inner_res) = res {
+            match inner_res {
+                Ok(_) => Ok(WaitCount::TargetReached(q)),
+                Err(e) => Err(anyhow!("Error waiting for counter: {e}")),
+            }
+        } else {
+            // timeout
+            if options.wait_until_timeout_elapses {
+                let q = init_value.load(Ordering::Relaxed);
+                if (options.predicate)(q) {
+                    Ok(LogLineCount::TargetReached(q))
+                } else {
+                    Ok(LogLineCount::TargetFailed(q))
+                }
+            } else {
+                Err(anyhow!(
+                    "Timeout ({}), waiting for counter",
+                    options.timeout.as_secs()
+                ))
+            }
+        }
+    }
+
+    //
+    async fn wait_event_count(
+        &self,
+        pallet: &str,
+        variant: &str,
+        options: &CountOptions,
+        init_count: Arc<AtomicU32>,
+    ) -> Result<(), anyhow::Error> {
+        let client: OnlineClient<PolkadotConfig> = self.wait_client().await?;
+        let mut blocks_sub: subxt::backend::StreamOf<
+            Result<
+                subxt::blocks::Block<PolkadotConfig, OnlineClient<PolkadotConfig>>,
+                subxt::Error,
+            >,
+        > = client.blocks().subscribe_finalized().await?;
+        while let Some(block) = blocks_sub.next().await {
+            let events = block?.events().await?;
+            for event in events.iter() {
+                let evt = event?;
+                if evt.pallet_name() == pallet && evt.variant_name() == variant {
+                    let old_value = init_count.fetch_add(1, Ordering::Relaxed);
+                    if !options.wait_until_timeout_elapses && (options.predicate)(old_value + 1) {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn fetch_metrics(&self) -> Result<(), anyhow::Error> {

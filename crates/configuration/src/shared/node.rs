@@ -226,10 +226,12 @@ impl GroupNodeConfig {
         let mut used_names = std::collections::HashSet::new();
 
         (0..self.count)
-            .map(|_index| {
+            .map(|i| {
                 let mut node = self.base_config.clone();
+                // append count sufix
+                let node_name = format!("{}-{i}", node.name);
 
-                let unique_name = generate_unique_node_name_from_names(node.name, &mut used_names);
+                let unique_name = generate_unique_node_name_from_names(node_name, &mut used_names);
                 node.name = unique_name;
 
                 // If base config has a log path, generate unique log path for each node
@@ -562,7 +564,7 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
-    /// Set the arguments that will be used when launching the node. Override the default.
+    /// Set the arguments that will be used when launching the node. Override the default_args of the chain context.
     pub fn with_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
             NodeConfig {
@@ -1409,5 +1411,21 @@ mod tests {
         assert!(group_config.base_config.is_validator());
         assert!(group_config.base_config.is_invulnerable());
         assert!(group_config.base_config.is_bootnode());
+    }
+
+    #[test]
+    fn ensure_default_args_are_overrided() {
+        let validation_context = Rc::new(RefCell::new(ValidationContext::default()));
+        let chain_context = ChainDefaultContext {
+            default_args: vec!["-lruntime=trace".into()],
+            ..Default::default()
+        };
+        let node_config = NodeConfigBuilder::new(chain_context, validation_context)
+            .with_name("node")
+            .with_args(vec!["-lruntime=info".into()])
+            .build()
+            .unwrap();
+
+        assert_eq!(node_config.args, vec!["-lruntime=info".into()]);
     }
 }

@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 pub use configuration::{
-    CustomProcess, CustomProcessBuilder, GlobalSettings, GlobalSettingsBuilder, NetworkConfig,
-    NetworkConfigBuilder, RegistrationStrategy, WithRelaychain,
+    types::Arg, CustomProcess, CustomProcessBuilder, GlobalSettings, GlobalSettingsBuilder,
+    NetworkConfig, NetworkConfigBuilder, RegistrationStrategy, WithRelaychain,
 };
 pub use orchestrator::{
     errors::OrchestratorError,

@@ -12,9 +12,11 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
           - os: macos-latest
             target: aarch64-apple-darwin
-     
+
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -26,11 +28,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install protoc on Ubuntu
+      - name: Install protoc / musl-dev on Ubuntu
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -y protobuf-compiler musl-dev
 
       - name: Install protoc on macOS
         if: matrix.os == 'macos-latest'
@@ -61,11 +63,11 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      
+
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum * > checksums.txt    
+          sha256sum * > checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3

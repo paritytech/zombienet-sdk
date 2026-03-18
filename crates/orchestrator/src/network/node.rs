@@ -1,10 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::anyhow;
@@ -50,6 +50,9 @@ pub struct NetworkNode {
     metrics_cache: Arc<RwLock<MetricMap>>,
     #[serde(skip)]
     is_running: Arc<AtomicBool>,
+    // Store the last timestamp when we start the node
+    #[serde(skip)]
+    last_start_ts: Arc<AtomicU64>,
 }
 
 #[derive(Deserialize)]
@@ -159,6 +162,7 @@ impl NetworkNode {
             multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
             is_running: Arc::new(AtomicBool::new(false)),
+            last_start_ts: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -167,6 +171,11 @@ impl NetworkNode {
     /// This returns the internal running state.
     pub fn is_running(&self) -> bool {
         self.is_running.load(Ordering::Acquire)
+    }
+
+    /// Get the last timestamp when the node start.
+    pub fn last_start_ts(&self) -> u64 {
+        self.last_start_ts.load(Ordering::Acquire)
     }
 
     /// Check if the node is responsive by attempting to connect to its WebSocket endpoint.
@@ -183,6 +192,11 @@ impl NetworkNode {
 
     pub(crate) fn set_is_running(&self, is_running: bool) {
         self.is_running.store(is_running, Ordering::Release);
+    }
+
+    /// Set the timestamp when the node was started
+    pub(crate) fn set_last_start_ts(&self, ts: u64) {
+        self.last_start_ts.store(ts, Ordering::Release);
     }
 
     pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
@@ -297,6 +311,7 @@ impl NetworkNode {
         self.set_is_running(false);
         self.inner.restart(after).await?;
         self.set_is_running(true);
+        self.set_last_start_ts(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
         Ok(())
     }
 

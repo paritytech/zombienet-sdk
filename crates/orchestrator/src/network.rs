@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use configuration::{
@@ -752,6 +752,12 @@ impl<T: FileSystem> Network<T> {
         }
         // TODO: we should hold a ref to the node in the vec in the future.
         node.set_is_running(true);
+        node.set_last_start_ts(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Timestamp should be valid")
+                .as_secs(),
+        );
         let node_name = node.name.clone();
         self.nodes_by_name.insert(node_name, node.clone());
         self.nodes_to_watch.write().await.push(node);
@@ -909,15 +915,26 @@ impl<T: FileSystem> Network<T> {
     pub(crate) fn spawn_watching_task(&self) {
         let nodes_to_watch = Arc::clone(&self.nodes_to_watch);
         let ns = Arc::clone(&self.ns);
+        let node_bootstrap_timeout = self.initial_spec.global_settings.node_spawn_timeout();
 
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(NODE_MONITORING_INTERVAL_SECONDS)).await;
 
-                let all_running = {
-                    let guard = nodes_to_watch.read().await;
-                    let nodes = guard.iter().filter(|n| n.is_running()).collect::<Vec<_>>();
+                let guard = nodes_to_watch.read().await;
+                let nodes = guard
+                    .iter()
+                    .filter(|n| {
+                        warn!(
+                            "checking node {}, last_start_ts {}",
+                            n.name(),
+                            n.last_start_ts()
+                        );
+                        n.is_running()
+                    })
+                    .collect::<Vec<_>>();
 
+                let all_running = {
                     let all_running =
                         futures::future::try_join_all(nodes.iter().map(|n| {
                             n.wait_until_is_up(NODE_MONITORING_FAILURE_THRESHOLD_SECONDS)
@@ -933,6 +950,17 @@ impl<T: FileSystem> Network<T> {
                 };
 
                 if let Err(e) = all_running {
+                    // check if the node was restarted and we need to give it more time
+                    if let Some(node) = nodes.iter().find(|n| n.name() == e.to_string()) {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .expect("get current ts should work.")
+                            .as_secs();
+                        if node_bootstrap_timeout as u64 > (now - node.last_start_ts()) {
+                            continue;
+                        }
+                    }
+
                     warn!("\n\t🧟 One of the nodes crashed: {e}. tearing the network down...");
 
                     if let Err(e) = ns.destroy().await {

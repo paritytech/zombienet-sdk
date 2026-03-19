@@ -102,7 +102,7 @@ impl NetworkConfig {
 
     /// A helper function to load a network configuration from a TOML file.
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
-        let file_path = PathBuf::try_from(path)?.canonicalize()?;
+        let file_path = PathBuf::from(path).canonicalize()?;
         let network_definition_dir = file_path
             .parent()
             .ok_or(anyhow!("should have a base dir"))?;
@@ -121,7 +121,7 @@ impl NetworkConfig {
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
             let cmd = maybe_absolute(&caps["value_string"], network_definition_dir);
-            let line = format!("{} = \"{cmd}\"", caps["field_name"].to_string());
+            let line = format!("{} = \"{cmd}\"", &caps["field_name"]);
             trace!("line after replacer: {line}");
             line
         };

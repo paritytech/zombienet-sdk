@@ -186,7 +186,7 @@ pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;
 pub trait ProviderNode: erased_serde::Serialize {
     fn name(&self) -> &str;
 
-    fn args(&self) -> Vec<&str>;
+    fn args(&self) -> Vec<String>;
 
     fn base_dir(&self) -> &PathBuf;
 
@@ -250,6 +250,19 @@ pub trait ProviderNode: erased_serde::Serialize {
     async fn resume(&self) -> Result<(), ProviderError>;
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError>;
+
+    /// Restart the node with a new binary/image, reusing the existing chain database.
+    /// - `program`: new binary path (native) or command (docker/k8s); if None, keep current
+    /// - `args`: new arguments; if None, keep current
+    /// - `image`: new container image (docker/k8s only); if None, keep current
+    /// - `after`: optional delay before restarting
+    async fn restart_with(
+        &self,
+        program: Option<String>,
+        args: Option<Vec<String>>,
+        image: Option<String>,
+        after: Option<Duration>,
+    ) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
 }

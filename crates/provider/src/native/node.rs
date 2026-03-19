@@ -107,8 +107,10 @@ where
     #[serde(skip)]
     namespace: Weak<NativeNamespace<FS>>,
     name: String,
-    program: String,
-    args: Vec<String>,
+    #[serde(serialize_with = "serialize_rwlock_string")]
+    program: std::sync::RwLock<String>,
+    #[serde(serialize_with = "serialize_rwlock_vec_string")]
+    args: std::sync::RwLock<Vec<String>>,
     env: Vec<(String, String)>,
     base_dir: PathBuf,
     config_dir: PathBuf,
@@ -168,8 +170,8 @@ where
         let node = Arc::new(NativeNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
+            program: std::sync::RwLock::new(options.program.to_string()),
+            args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             base_dir,
             config_dir,
@@ -226,8 +228,8 @@ where
         let node = Arc::new(NativeNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
+            program: std::sync::RwLock::new(options.program.to_string()),
+            args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             base_dir,
             config_dir,
@@ -341,8 +343,19 @@ where
             .filter(|(k, _)| k == "TZ" || k == "LANG" || k == "PATH")
             .collect();
 
-        let mut process = Command::new(&self.program)
-            .args(&self.args)
+        let program = self
+            .program
+            .read()
+            .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+            .clone();
+        let args = self
+            .args
+            .read()
+            .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+            .clone();
+
+        let mut process = Command::new(&program)
+            .args(&args)
             .env_clear()
             .envs(&filtered_env) // minimal environment
             .envs(self.env.to_vec())
@@ -499,8 +512,8 @@ where
         &self.name
     }
 
-    fn args(&self) -> Vec<&str> {
-        self.args.iter().map(|arg| arg.as_str()).collect()
+    fn args(&self) -> Vec<String> {
+        self.args.read().map(|a| a.clone()).unwrap_or_default()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -702,6 +715,45 @@ where
         Ok(())
     }
 
+    async fn restart_with(
+        &self,
+        program: Option<String>,
+        args: Option<Vec<String>>,
+        _image: Option<String>,
+        after: Option<Duration>,
+    ) -> Result<(), ProviderError> {
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
+
+        if let Some(new_program) = program {
+            *self
+                .program
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_program;
+        }
+
+        if let Some(new_args) = args {
+            *self
+                .args
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_args;
+        }
+
+        self.abort()
+            .await
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err))?;
+
+        let (stdout, stderr) = self
+            .initialize_process()
+            .await
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+
+        self.initialize_log_writing(stdout, stderr).await;
+
+        Ok(())
+    }
+
     async fn destroy(&self) -> Result<(), ProviderError> {
         self.abort()
             .await
@@ -713,6 +765,32 @@ where
 
         Ok(())
     }
+}
+
+fn serialize_rwlock_string<S>(
+    value: &std::sync::RwLock<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value
+        .read()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
+        .serialize(serializer)
+}
+
+fn serialize_rwlock_vec_string<S>(
+    value: &std::sync::RwLock<Vec<String>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value
+        .read()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
+        .serialize(serializer)
 }
 
 fn serialize_process_handle<S>(

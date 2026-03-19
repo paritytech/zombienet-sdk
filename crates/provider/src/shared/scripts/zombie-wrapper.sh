@@ -108,6 +108,9 @@ restart() {
         $SLEEP "$1"
     fi
 
+    # Re-read CMD from file to pick up any changes (e.g. new binary path)
+    CMD=($(cat $ZOMBIE_CMD_FILE))
+
     start
 }
 

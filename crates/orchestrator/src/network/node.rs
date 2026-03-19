@@ -207,7 +207,7 @@ impl NetworkNode {
         &self.name
     }
 
-    pub fn args(&self) -> Vec<&str> {
+    pub fn args(&self) -> Vec<String> {
         self.inner.args()
     }
 
@@ -310,6 +310,29 @@ impl NetworkNode {
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
         self.set_is_running(false);
         self.inner.restart(after).await?;
+        self.set_is_running(true);
+        self.set_last_start_ts(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
+        Ok(())
+    }
+
+    /// Restart the node with a new binary/image, reusing the existing chain database.
+    ///
+    /// - `program`: new binary path (native) or command (docker); `None` keeps the current one
+    /// - `args`: new arguments; `None` keeps the current ones
+    /// - `image`: new container image (docker only); `None` keeps the current one
+    /// - `after`: optional delay before restarting
+    ///
+    /// For the native provider, the DB lives on the host filesystem and is automatically reused.
+    /// For the docker provider, DB directories are bind-mounted from the host and survive container recreation.
+    pub async fn restart_with(
+        &self,
+        program: Option<String>,
+        args: Option<Vec<String>>,
+        image: Option<String>,
+        after: Option<Duration>,
+    ) -> Result<(), anyhow::Error> {
+        self.set_is_running(false);
+        self.inner.restart_with(program, args, image, after).await?;
         self.set_is_running(true);
         self.set_last_start_ts(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
         Ok(())
@@ -1056,7 +1079,7 @@ mod tests {
             todo!()
         }
 
-        fn args(&self) -> Vec<&str> {
+        fn args(&self) -> Vec<String> {
             todo!()
         }
 

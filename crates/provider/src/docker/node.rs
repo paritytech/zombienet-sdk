@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::AssetLocation;
 use futures::future::try_join_all;
-use serde::{Deserialize, Serialize};
+use serde::{ser::Error as SerError, Deserialize, Serialize, Serializer};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{time::sleep, try_join};
 use tracing::{debug, trace};
@@ -93,9 +93,12 @@ where
     #[serde(skip)]
     namespace: Weak<DockerNamespace<FS>>,
     name: String,
-    image: String,
-    program: String,
-    args: Vec<String>,
+    #[serde(serialize_with = "serialize_rwlock_string")]
+    image: std::sync::RwLock<String>,
+    #[serde(serialize_with = "serialize_rwlock_string")]
+    program: std::sync::RwLock<String>,
+    #[serde(serialize_with = "serialize_rwlock_vec_string")]
+    args: std::sync::RwLock<Vec<String>>,
     env: Vec<(String, String)>,
     base_dir: PathBuf,
     config_dir: PathBuf,
@@ -147,9 +150,9 @@ where
         let node = Arc::new(DockerNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            image: image.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
+            image: std::sync::RwLock::new(image.to_string()),
+            program: std::sync::RwLock::new(options.program.to_string()),
+            args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             base_dir,
             config_dir,
@@ -200,9 +203,9 @@ where
         let node = Arc::new(DockerNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            image: image.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
+            image: std::sync::RwLock::new(image.to_string()),
+            program: std::sync::RwLock::new(options.program.to_string()),
+            args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             base_dir,
             config_dir,
@@ -221,11 +224,26 @@ where
     }
 
     async fn initialize_docker(&self) -> Result<(), ProviderError> {
-        let command = [vec![self.program.to_string()], self.args.to_vec()].concat();
+        let image = self
+            .image
+            .read()
+            .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+            .clone();
+        let program = self
+            .program
+            .read()
+            .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+            .clone();
+        let args = self
+            .args
+            .read()
+            .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+            .clone();
+        let command = [vec![program], args].concat();
 
         self.docker_client
             .container_run(
-                ContainerRunOptions::new(&self.image, command)
+                ContainerRunOptions::new(&image, command)
                     .name(&self.container_name)
                     .env(self.env.clone())
                     .volume_mounts(HashMap::from([
@@ -437,8 +455,8 @@ where
         &self.name
     }
 
-    fn args(&self) -> Vec<&str> {
-        self.args.iter().map(|arg| arg.as_str()).collect()
+    fn args(&self) -> Vec<String> {
+        self.args.read().map(|a| a.clone()).unwrap_or_default()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -701,6 +719,90 @@ where
         Ok(())
     }
 
+    async fn restart_with(
+        &self,
+        program: Option<String>,
+        args: Option<Vec<String>>,
+        image: Option<String>,
+        after: Option<Duration>,
+    ) -> Result<(), ProviderError> {
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
+
+        let image_changed = image.is_some();
+
+        if let Some(new_image) = image {
+            *self
+                .image
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_image;
+        }
+        if let Some(new_program) = program {
+            *self
+                .program
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_program;
+        }
+        if let Some(new_args) = args {
+            *self
+                .args
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_args;
+        }
+
+        if image_changed {
+            // image changed — destroy old container and create a new one with same bind mounts
+            self.docker_client
+                .container_rm(&self.container_name)
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+
+            self.initialize_docker()
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+
+            self.start()
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+        } else {
+            // same image — update the command file inside the container then restart
+            let program = self
+                .program
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+                .clone();
+            let args = self
+                .args
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+                .clone();
+            let new_cmd = [vec![program], args].concat().join(" ");
+            let exec_cmd = format!(
+                "printf '%s' '{}' > /tmp/zombie.cmd && echo restart > /tmp/zombiepipe",
+                new_cmd
+            );
+
+            self.docker_client
+                .container_exec(
+                    &self.container_name,
+                    vec!["sh", "-c", &exec_cmd],
+                    None,
+                    None,
+                )
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?
+                .map_err(|err| {
+                    ProviderError::RestartNodeFailed(
+                        self.name.clone(),
+                        anyhow!("error when restarting node: status {}: {}", err.0, err.1),
+                    )
+                })?;
+        }
+
+        Ok(())
+    }
+
     async fn destroy(&self) -> Result<(), ProviderError> {
         self.docker_client
             .container_rm(&self.container_name)
@@ -713,4 +815,30 @@ where
 
         Ok(())
     }
+}
+
+fn serialize_rwlock_string<S>(
+    value: &std::sync::RwLock<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value
+        .read()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
+        .serialize(serializer)
+}
+
+fn serialize_rwlock_vec_string<S>(
+    value: &std::sync::RwLock<Vec<String>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value
+        .read()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
+        .serialize(serializer)
 }

@@ -1,7 +1,14 @@
-use std::{cell::RefCell, collections::HashSet, fs, marker::PhantomData, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    fs,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use anyhow::anyhow;
-use regex::Regex;
+use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use support::{
     constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX},
@@ -95,12 +102,33 @@ impl NetworkConfig {
 
     /// A helper function to load a network configuration from a TOML file.
     pub fn load_from_toml(path: &str) -> Result<NetworkConfig, anyhow::Error> {
+        let file_path = PathBuf::try_from(path)?.canonicalize()?;
+        let network_definition_dir = file_path
+            .parent()
+            .ok_or(anyhow!("should have a base dir"))?;
+        trace!(
+            "file_dir for replacer: {:?}",
+            network_definition_dir.as_os_str()
+        );
         let file_str = fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read configuration file '{}': {}", path, e))?;
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
+        let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/]+)\""#)
+            .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
+
+        let path_replacer = |caps: &Captures| {
+            trace!("cmd replacer captures: {:?}", caps);
+            let cmd = maybe_absolute(&caps["value_string"], network_definition_dir);
+            let line = format!("{} = \"{cmd}\"", caps["field_name"].to_string());
+            trace!("line after replacer: {line}");
+            line
+        };
+
         let toml_text = re.replace_all(&file_str, "$field_name = \"$u128_value\"");
+        let toml_text = re_paths.replace_all(&toml_text, &path_replacer);
+
         trace!("toml text to parse: {}", toml_text);
         // apply replacements from env in toml
         let toml_text = apply_env_replacements(&toml_text);
@@ -120,6 +148,7 @@ impl NetworkConfig {
         if relaychain_default_command.is_none() {
             relaychain_default_command = network_config.relaychain().command().cloned();
         }
+
         let relaychain_default_image: Option<Image> =
             network_config.relaychain().default_image().cloned();
 
@@ -268,6 +297,23 @@ impl NetworkConfig {
             }
         });
         Ok(network_config)
+    }
+}
+
+fn maybe_absolute(cmd: &str, base_dir: &Path) -> String {
+    if cmd.starts_with(".") {
+        let mut full = PathBuf::from(base_dir);
+        full.push(cmd);
+        trace!("full_path: {:?}", full);
+        std::path::absolute(&full)
+            .expect(&format!(
+                "absolute path shoud be valid: {:?}",
+                full.as_os_str()
+            ))
+            .to_string_lossy()
+            .to_string()
+    } else {
+        cmd.to_string()
     }
 }
 

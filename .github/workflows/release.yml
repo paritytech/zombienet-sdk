@@ -42,7 +42,7 @@ jobs:
 
       - name: Build release binary
         run: |
-          if [ "${{matrix.target }}" == "x86_64-unknown-linux-musl" ]; then
+          if [[ "${{matrix.target }}" == "x86_64-unknown-linux-musl" ]]; then
             export OPENSSL_STATIC=1
           fi;
           cargo build --release --bin zombie-cli --target ${{ matrix.target }}

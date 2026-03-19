@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Volume,
-        VolumeMount,
+        ConfigMapVolumeSource, Container, EnvVar, PersistentVolumeClaimVolumeSource, PodSpec,
+        ResourceRequirements, Volume, VolumeMount,
     },
     apimachinery::pkg::api::resource::Quantity,
 };
@@ -26,7 +26,7 @@ impl PodSpecBuilder {
             containers: vec![Self::build_main_container(
                 name, image, resources, program, args, env,
             )],
-            volumes: Some(Self::build_volumes()),
+            volumes: Some(Self::build_volumes(name)),
             ..Default::default()
         }
     }
@@ -89,7 +89,7 @@ impl PodSpecBuilder {
         }
     }
 
-    fn build_volumes() -> Vec<Volume> {
+    fn build_volumes(name: &str) -> Vec<Volume> {
         vec![
             Volume {
                 name: "cfg".to_string(),
@@ -97,10 +97,18 @@ impl PodSpecBuilder {
             },
             Volume {
                 name: "data".to_string(),
+                persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+                    claim_name: format!("{name}-data"),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             Volume {
                 name: "relay-data".to_string(),
+                persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+                    claim_name: format!("{name}-relay-data"),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             Volume {

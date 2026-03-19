@@ -1166,6 +1166,16 @@ mod tests {
             todo!()
         }
 
+        async fn restart_with(
+            &self,
+            _program: Option<String>,
+            _args: Option<Vec<String>>,
+            _image: Option<String>,
+            _after: Option<Duration>,
+        ) -> Result<(), ProviderError> {
+            todo!()
+        }
+
         async fn destroy(&self) -> Result<(), ProviderError> {
             todo!()
         }

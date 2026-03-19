@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
-use serde::{Deserialize, Serialize};
+use serde::{ser::Error as _, Deserialize, Serialize, Serializer};
 use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -98,9 +98,12 @@ where
     #[serde(skip)]
     namespace: Weak<KubernetesNamespace<FS>>,
     name: String,
-    image: String,
-    program: String,
-    args: Vec<String>,
+    #[serde(serialize_with = "serialize_rwlock_string")]
+    image: std::sync::RwLock<String>,
+    #[serde(serialize_with = "serialize_rwlock_string")]
+    program: std::sync::RwLock<String>,
+    #[serde(serialize_with = "serialize_rwlock_vec_string")]
+    args: std::sync::RwLock<Vec<String>>,
     env: Vec<(String, String)>,
     resources: Option<Resources>,
     base_dir: PathBuf,
@@ -154,9 +157,9 @@ where
         let node = Arc::new(KubernetesNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            image: image.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
+            image: std::sync::RwLock::new(image.to_string()),
+            program: std::sync::RwLock::new(options.program.to_string()),
+            args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
             base_dir,
@@ -208,9 +211,9 @@ where
         let node = Arc::new(KubernetesNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            image: image.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
+            image: std::sync::RwLock::new(image.to_string()),
+            program: std::sync::RwLock::new(options.program.to_string()),
+            args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
             base_dir,
@@ -230,6 +233,24 @@ where
     }
 
     async fn initialize_k8s(&self) -> Result<(), ProviderError> {
+        // Create PVCs for persistent data before creating the pod
+        self.k8s_client
+            .create_pvc(
+                &self.namespace_name(),
+                &format!("{}-data", self.name),
+                "10Gi",
+            )
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
+        self.k8s_client
+            .create_pvc(
+                &self.namespace_name(),
+                &format!("{}-relay-data", self.name),
+                "10Gi",
+            )
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
+
         let labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
@@ -242,14 +263,28 @@ where
         ]);
 
         // Create pod
-        let pod_spec = PodSpecBuilder::build(
-            &self.name,
-            &self.image,
-            self.resources.as_ref(),
-            &self.program,
-            &self.args,
-            &self.env,
-        );
+        let pod_spec = {
+            let image = self
+                .image
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            let program = self
+                .program
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            let args = self
+                .args
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            PodSpecBuilder::build(
+                &self.name,
+                &image,
+                self.resources.as_ref(),
+                &program,
+                &args,
+                &self.env,
+            )
+        };
 
         let manifest = self
             .k8s_client
@@ -573,6 +608,63 @@ where
 
         Ok(())
     }
+
+    async fn recreate_pod(&self) -> Result<(), ProviderError> {
+        let labels = BTreeMap::from([
+            (
+                "app.kubernetes.io/name".to_string(),
+                self.name().to_string(),
+            ),
+            (
+                "x-infra-instance".to_string(),
+                env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()),
+            ),
+        ]);
+
+        let pod_spec = {
+            let image = self
+                .image
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            let program = self
+                .program
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            let args = self
+                .args
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            PodSpecBuilder::build(
+                &self.name,
+                &image,
+                self.resources.as_ref(),
+                &program,
+                &args,
+                &self.env,
+            )
+        };
+
+        let manifest = self
+            .k8s_client
+            .create_pod(&self.namespace_name(), &self.name, pod_spec, labels)
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
+
+        let serialized_manifest = serde_yaml::to_string(&manifest)
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
+
+        let dest_path = PathBuf::from_iter([
+            &self.base_dir,
+            &PathBuf::from(format!("{}_manifest.yaml", &self.name)),
+        ]);
+
+        self.filesystem
+            .write(dest_path, serialized_manifest)
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -585,7 +677,10 @@ where
     }
 
     fn args(&self) -> Vec<String> {
-        self.args.clone()
+        self.args
+            .read()
+            .map(|a| a.clone())
+            .unwrap_or_default()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -873,12 +968,98 @@ where
 
     async fn restart_with(
         &self,
-        _program: Option<String>,
-        _args: Option<Vec<String>>,
-        _image: Option<String>,
-        _after: Option<Duration>,
+        program: Option<String>,
+        args: Option<Vec<String>>,
+        image: Option<String>,
+        after: Option<Duration>,
     ) -> Result<(), ProviderError> {
-        todo!()
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
+
+        let image_changed = image.is_some();
+
+        if let Some(new_image) = image {
+            *self
+                .image
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_image;
+        }
+        if let Some(new_program) = program {
+            *self
+                .program
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_program;
+        }
+        if let Some(new_args) = args {
+            *self
+                .args
+                .write()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_args;
+        }
+
+        if image_changed {
+            // Cancel active port forwards — they're tied to the old pod
+            let mut fwds = self.port_fwds.write().await;
+            for (_, (_, handle)) in fwds.drain() {
+                handle.abort();
+            }
+            drop(fwds);
+
+            // Delete old pod (service and PVCs stay)
+            self.k8s_client
+                .delete_pod(&self.namespace_name(), &self.name)
+                .await
+                .map_err(|err| {
+                    ProviderError::RestartNodeFailed(self.name.clone(), err.into())
+                })?;
+
+            // Create new pod referencing the same PVCs
+            self.recreate_pod()
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+
+            // Signal start
+            self.start()
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+        } else {
+            // Same image: write updated command then signal restart via zombiepipe
+            let program = self
+                .program
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+                .clone();
+            let args = self
+                .args
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+                .clone();
+            let new_cmd = [vec![program], args].concat().join(" ");
+            let exec_cmd = format!(
+                "printf '%s' '{}' > /tmp/zombie.cmd && echo restart > /tmp/zombiepipe",
+                new_cmd
+            );
+
+            self.k8s_client
+                .pod_exec(
+                    &self.namespace_name(),
+                    &self.name,
+                    vec!["sh", "-c", &exec_cmd],
+                )
+                .await
+                .map_err(|err| {
+                    ProviderError::RestartNodeFailed(self.name.clone(), err.into())
+                })?
+                .map_err(|err| {
+                    ProviderError::RestartNodeFailed(
+                        self.name.clone(),
+                        anyhow!("error when restarting node: status {}: {}", err.0, err.1),
+                    )
+                })?;
+        }
+
+        Ok(())
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
@@ -887,10 +1068,45 @@ where
             .await
             .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
 
+        let _ = self
+            .k8s_client
+            .delete_pvc(&self.namespace_name(), &format!("{}-data", self.name))
+            .await;
+        let _ = self
+            .k8s_client
+            .delete_pvc(&self.namespace_name(), &format!("{}-relay-data", self.name))
+            .await;
+
         if let Some(namespace) = self.namespace.upgrade() {
             namespace.nodes.write().await.remove(&self.name);
         }
 
         Ok(())
     }
+}
+
+fn serialize_rwlock_string<S>(
+    value: &std::sync::RwLock<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value
+        .read()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
+        .serialize(serializer)
+}
+
+fn serialize_rwlock_vec_string<S>(
+    value: &std::sync::RwLock<Vec<String>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value
+        .read()
+        .map_err(|_e| S::Error::custom("failed to acquire read lock"))?
+        .serialize(serializer)
 }

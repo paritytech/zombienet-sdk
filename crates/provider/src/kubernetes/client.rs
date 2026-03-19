@@ -5,8 +5,12 @@ use std::{
 
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
-use k8s_openapi::api::core::v1::{
-    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
+use k8s_openapi::{
+    api::core::v1::{
+        ConfigMap, Namespace, PersistentVolumeClaim, PersistentVolumeClaimSpec, Pod, PodSpec,
+        PodStatus, ResourceRequirements, Service, ServiceSpec,
+    },
+    apimachinery::pkg::api::resource::Quantity,
 };
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
@@ -342,6 +346,45 @@ impl KubernetesClient {
                 ))
             })?;
 
+        Ok(())
+    }
+
+    pub(super) async fn create_pvc(
+        &self,
+        namespace: &str,
+        name: &str,
+        storage: &str,
+    ) -> Result<PersistentVolumeClaim> {
+        let pvcs = Api::<PersistentVolumeClaim>::namespaced(self.inner.clone(), namespace);
+        let pvc = PersistentVolumeClaim {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                namespace: Some(namespace.to_string()),
+                ..Default::default()
+            },
+            spec: Some(PersistentVolumeClaimSpec {
+                access_modes: Some(vec!["ReadWriteOnce".to_string()]),
+                resources: Some(ResourceRequirements {
+                    requests: Some(BTreeMap::from([(
+                        "storage".to_string(),
+                        Quantity(storage.to_string()),
+                    )])),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        pvcs.create(&PostParams::default(), &pvc)
+            .await
+            .map_err(|err| Error::from(anyhow!("error creating pvc {name}: {err}")))
+    }
+
+    pub(super) async fn delete_pvc(&self, namespace: &str, name: &str) -> Result<()> {
+        Api::<PersistentVolumeClaim>::namespaced(self.inner.clone(), namespace)
+            .delete(name, &DeleteParams::default())
+            .await
+            .map_err(|err| Error::from(anyhow!("error deleting pvc {name}: {err}")))?;
         Ok(())
     }
 

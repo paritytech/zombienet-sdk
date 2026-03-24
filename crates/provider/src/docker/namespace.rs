@@ -340,6 +340,7 @@ where
             name: &options.name,
             image: options.image.as_ref(),
             program: &options.program,
+            internal_args: &options.internal_args,
             args: &options.args,
             env: &options.env,
             startup_files: &options.injected_files,

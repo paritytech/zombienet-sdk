@@ -45,7 +45,7 @@ pub fn generate_for_cumulus_node(
     node: &NodeSpec,
     options: GenCmdOptions,
     para_id: u32,
-) -> (String, Vec<String>) {
+) -> (String, Vec<String>, Vec<String>) {
     let NodeSpec {
         key,
         args,
@@ -192,7 +192,7 @@ pub fn generate_for_cumulus_node(
         full_node_args_filtered.push(full_prometheus_port.to_string());
     }
 
-    let mut args_filtered = collator_args
+    let args_filtered = collator_args
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
@@ -218,8 +218,6 @@ pub fn generate_for_cumulus_node(
         })
         .flatten()
         .collect::<Vec<String>>();
-
-    tmp_args.append(&mut args_filtered);
 
     let parachain_spec_path = format!("{}/{}.json", options.cfg_path, para_id);
     let mut final_args = vec![
@@ -262,9 +260,9 @@ pub fn generate_for_cumulus_node(
     final_args = apply_arg_removals(final_args, &removals);
 
     if options.use_wrapper {
-        ("/cfg/zombie-wrapper.sh".to_string(), final_args)
+        ("/cfg/zombie-wrapper.sh".to_string(), final_args, args_filtered)
     } else {
-        (final_args.remove(0), final_args)
+        (final_args.remove(0), final_args, args_filtered)
     }
 }
 
@@ -272,7 +270,7 @@ pub fn generate_for_node(
     node: &NodeSpec,
     options: GenCmdOptions,
     para_id: Option<u32>,
-) -> (String, Vec<String>) {
+) -> (String, Vec<String>, Vec<String>) {
     let NodeSpec {
         key,
         args,
@@ -369,7 +367,7 @@ pub fn generate_for_node(
     }
 
     // add the rest of the args
-    let mut args_filtered = args
+    let args_filtered = args
         .iter()
         .filter_map(|arg| match arg {
             Arg::Flag(flag) => {
@@ -395,8 +393,6 @@ pub fn generate_for_node(
         })
         .flatten()
         .collect::<Vec<String>>();
-
-    tmp_args.append(&mut args_filtered);
 
     let chain_spec_path = format!("{}/{}.json", options.cfg_path, options.relay_chain_name);
     let mut final_args = vec![
@@ -429,9 +425,9 @@ pub fn generate_for_node(
     final_args = apply_arg_removals(final_args, &removals);
 
     if options.use_wrapper {
-        ("/cfg/zombie-wrapper.sh".to_string(), final_args)
+        ("/cfg/zombie-wrapper.sh".to_string(), final_args, args_filtered)
     } else {
-        (final_args.remove(0), final_args)
+        (final_args.remove(0), final_args, args_filtered)
     }
 }
 
@@ -484,7 +480,7 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_cumulus_node(&node, opts, 1000);
+        let (program, args, _user_args) = generate_for_cumulus_node(&node, opts, 1000);
         assert_eq!(program.as_str(), "polkadot");
 
         let divider_flag = args.iter().position(|x| x == "--").unwrap();
@@ -531,7 +527,8 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (_, args) = generate_for_cumulus_node(&node, opts, 1000);
+        let (_, internal_args, user_args) = generate_for_cumulus_node(&node, opts, 1000);
+        let args = [internal_args, user_args].concat();
 
         assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
     }
@@ -545,7 +542,7 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_cumulus_node(&node, opts, 1000);
+        let (program, args, _user_args) = generate_for_cumulus_node(&node, opts, 1000);
         assert_eq!(program.as_str(), "polkadot");
 
         let divider_flag = args.iter().position(|x| x == "--").unwrap();
@@ -594,7 +591,7 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        let (program, args, _user_args) = generate_for_node(&node, opts, Some(1000));
         assert_eq!(program.as_str(), "polkadot");
 
         assert!(!args.iter().any(|arg| arg == "--unsafe-rpc-external"));
@@ -609,7 +606,7 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        let (program, args, _user_args) = generate_for_node(&node, opts, Some(1000));
         assert_eq!(program.as_str(), "polkadot");
 
         assert!(args.iter().any(|arg| arg == "--unsafe-rpc-external"));
@@ -629,7 +626,7 @@ mod tests {
             ..GenCmdOptions::default()
         };
 
-        let (program, args) = generate_for_node(&node, opts, Some(1000));
+        let (program, args, _user_args) = generate_for_node(&node, opts, Some(1000));
         assert_eq!(program.as_str(), "polkadot");
         assert!(args.iter().any(|arg| arg == "--validator"));
         assert!(!args

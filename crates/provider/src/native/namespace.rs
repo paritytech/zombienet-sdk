@@ -156,6 +156,7 @@ where
             namespace_base_dir: &self.base_dir,
             name: &options.name,
             program: &options.program,
+            internal_args: &options.internal_args,
             args: &options.args,
             env: &options.env,
             startup_files: &options.injected_files,

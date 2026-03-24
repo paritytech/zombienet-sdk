@@ -35,7 +35,9 @@ pub struct SpawnNodeOptions {
     pub resources: Option<Resources>,
     /// Main command to execute
     pub program: String,
-    /// Arguments to pass to the main command
+    /// Internal arguments (managed by zombienet, e.g. --base-path, --chain, ports)
+    pub internal_args: Vec<String>,
+    /// User-specified arguments (may be replaced on restart_with)
     pub args: Vec<String>,
     /// Environment to set when running the `program`
     pub env: Vec<(String, String)>,
@@ -64,6 +66,7 @@ impl SpawnNodeOptions {
             image: None,
             resources: None,
             program: program.as_ref().to_string(),
+            internal_args: vec![],
             args: vec![],
             env: vec![],
             injected_files: vec![],
@@ -89,6 +92,15 @@ impl SpawnNodeOptions {
 
     pub fn db_snapshot(mut self, db_snap: Option<AssetLocation>) -> Self {
         self.db_snapshot = db_snap;
+        self
+    }
+
+    pub fn internal_args<S, I>(mut self, args: I) -> Self
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = S>,
+    {
+        self.internal_args = args.into_iter().map(|s| s.as_ref().to_string()).collect();
         self
     }
 

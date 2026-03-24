@@ -41,6 +41,7 @@ where
     pub(super) name: &'a str,
     pub(super) image: Option<&'a String>,
     pub(super) program: &'a str,
+    pub(super) internal_args: &'a [String],
     pub(super) args: &'a [String],
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
@@ -67,6 +68,7 @@ where
             name: &deserializable.name,
             image: deserializable.image.as_ref(),
             program: &deserializable.program,
+            internal_args: &deserializable.internal_args,
             args: &deserializable.args,
             env: &deserializable.env,
             startup_files: &[],
@@ -83,6 +85,7 @@ pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) name: String,
     pub(super) image: Option<String>,
     pub(super) program: String,
+    pub(super) internal_args: Vec<String>,
     pub(super) args: Vec<String>,
     pub(super) env: Vec<(String, String)>,
     pub(super) resources: Option<Resources>,
@@ -102,8 +105,9 @@ where
     image: std::sync::RwLock<String>,
     #[serde(serialize_with = "serialize_rwlock_string")]
     program: std::sync::RwLock<String>,
+    internal_args: Vec<String>,
     #[serde(serialize_with = "serialize_rwlock_vec_string")]
-    args: std::sync::RwLock<Vec<String>>,
+    user_args: std::sync::RwLock<Vec<String>>,
     env: Vec<(String, String)>,
     resources: Option<Resources>,
     base_dir: PathBuf,
@@ -159,7 +163,8 @@ where
             name: options.name.to_string(),
             image: std::sync::RwLock::new(image.to_string()),
             program: std::sync::RwLock::new(options.program.to_string()),
-            args: std::sync::RwLock::new(options.args.to_vec()),
+            internal_args: options.internal_args.to_vec(),
+            user_args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
             base_dir,
@@ -213,7 +218,8 @@ where
             name: options.name.to_string(),
             image: std::sync::RwLock::new(image.to_string()),
             program: std::sync::RwLock::new(options.program.to_string()),
-            args: std::sync::RwLock::new(options.args.to_vec()),
+            internal_args: options.internal_args.to_vec(),
+            user_args: std::sync::RwLock::new(options.args.to_vec()),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
             base_dir,
@@ -272,10 +278,11 @@ where
                 .program
                 .read()
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
-            let args = self
-                .args
+            let user_args = self
+                .user_args
                 .read()
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            let args = [self.internal_args.clone(), user_args.clone()].concat();
             PodSpecBuilder::build(
                 &self.name,
                 &image,
@@ -630,10 +637,11 @@ where
                 .program
                 .read()
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
-            let args = self
-                .args
+            let user_args = self
+                .user_args
                 .read()
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+            let args = [self.internal_args.clone(), user_args.clone()].concat();
             PodSpecBuilder::build(
                 &self.name,
                 &image,
@@ -677,10 +685,8 @@ where
     }
 
     fn args(&self) -> Vec<String> {
-        self.args
-            .read()
-            .map(|a| a.clone())
-            .unwrap_or_default()
+        let user_args = self.user_args.read().map(|a| a.clone()).unwrap_or_default();
+        [self.internal_args.clone(), user_args].concat()
     }
 
     fn base_dir(&self) -> &PathBuf {
@@ -992,16 +998,10 @@ where
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_program;
         }
         if let Some(new_args) = args {
-            let current = self
-                .args
-                .read()
-                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
-                .clone();
             *self
-                .args
+                .user_args
                 .write()
-                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? =
-                crate::shared::args::merge_args(&current, &new_args);
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_args;
         }
 
         if image_changed {
@@ -1036,12 +1036,12 @@ where
                 .read()
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
                 .clone();
-            let args = self
-                .args
+            let user_args = self
+                .user_args
                 .read()
                 .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
                 .clone();
-            let new_cmd = [vec![program], args].concat().join(" ");
+            let new_cmd = [vec![program], self.internal_args.clone(), user_args].concat().join(" ");
             let exec_cmd = format!(
                 "printf '%s' '{}' > /tmp/zombie.cmd && echo restart > /tmp/zombiepipe",
                 new_cmd

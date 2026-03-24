@@ -140,7 +140,7 @@ where
     let mut collator_full_node_prom_port: Option<u16> = None;
     let mut collator_full_node_prom_port_external: Option<u16> = None;
 
-    let (program, args) = match ctx.role {
+    let (program, internal_args, user_args) = match ctx.role {
         // Collator should be `non-cumulus` one (e.g adder/undying)
         ZombieRole::Node | ZombieRole::Collator => {
             let maybe_para_id = ctx.parachain.map(|para| para.id);
@@ -160,17 +160,22 @@ where
                               * ZombieRole::Companion => todo!(), */
     };
 
-    // apply running networ replacements
-    let args: Vec<String> = args
+    // apply running network replacements
+    let internal_args: Vec<String> = internal_args
+        .iter()
+        .map(|arg| apply_running_network_replacements(arg, &ctx.nodes_by_name))
+        .collect();
+    let user_args: Vec<String> = user_args
         .iter()
         .map(|arg| apply_running_network_replacements(arg, &ctx.nodes_by_name))
         .collect();
 
     info!(
-        "🚀 {}, spawning.... with command: {} {}",
+        "🚀 {}, spawning.... with command: {} {} {}",
         node.name,
         program,
-        args.join(" ")
+        internal_args.join(" "),
+        user_args.join(" ")
     );
 
     let ports = if ctx.ns.capabilities().use_default_ports_in_cmd {
@@ -189,7 +194,8 @@ where
     };
 
     let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
-        .args(args)
+        .internal_args(internal_args)
+        .args(user_args)
         .env(
             node.env
                 .iter()

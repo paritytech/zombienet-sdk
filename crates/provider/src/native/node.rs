@@ -734,10 +734,16 @@ where
         }
 
         if let Some(new_args) = args {
+            let current = self
+                .args
+                .read()
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))?
+                .clone();
             *self
                 .args
                 .write()
-                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? = new_args;
+                .map_err(|_| ProviderError::FailedToAcquireLock(self.name.clone()))? =
+                crate::shared::args::merge_args(&current, &new_args);
         }
 
         self.abort()

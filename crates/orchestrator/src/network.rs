@@ -922,17 +922,7 @@ impl<T: FileSystem> Network<T> {
                 tokio::time::sleep(Duration::from_secs(NODE_MONITORING_INTERVAL_SECONDS)).await;
 
                 let guard = nodes_to_watch.read().await;
-                let nodes = guard
-                    .iter()
-                    .filter(|n| {
-                        warn!(
-                            "checking node {}, last_start_ts {}",
-                            n.name(),
-                            n.last_start_ts()
-                        );
-                        n.is_running()
-                    })
-                    .collect::<Vec<_>>();
+                let nodes = guard.iter().filter(|n| n.is_running()).collect::<Vec<_>>();
 
                 let all_running = {
                     let all_running =
@@ -957,6 +947,7 @@ impl<T: FileSystem> Network<T> {
                             .expect("get current ts should work.")
                             .as_secs();
                         if node_bootstrap_timeout as u64 > (now - node.last_start_ts()) {
+                            warn!("[{}] still in bootstrap window from last starting ({}), continue waiting...", node.name(), node.last_start_ts());
                             continue;
                         }
                     }

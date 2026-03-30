@@ -35,6 +35,8 @@ pub enum NetworkNodeError {
     MetricNotFound(String),
 }
 
+// Log target for the internal monitor
+const MONITOR_TARGET: &str = "zombie_monitor";
 #[derive(Clone, Serialize)]
 pub struct NetworkNode {
     #[serde(serialize_with = "serialize_provider_node")]
@@ -374,7 +376,12 @@ impl NetworkNode {
         // reload metrics
         self.fetch_metrics().await?;
         let val = self.metric(&metric_name, true).await?;
-        trace!("🔎 Current value {val} passed to the predicated?");
+        let log_msg = format!("🔎 Current value {val} passed to the predicated?");
+        if metric_name == PROCESS_START_TIME_METRIC {
+            trace!(target: MONITOR_TARGET, "{log_msg}");
+        } else {
+            trace!("{log_msg}");
+        }
         Ok(predicate(val))
     }
 
@@ -387,13 +394,19 @@ impl NetworkNode {
         predicate: impl Fn(f64) -> bool,
     ) -> Result<(), anyhow::Error> {
         let metric_name = metric_name.into();
-        trace!(
+        let log_msg = format!(
             "[{}] waiting until metric {metric_name} pass the predicate",
             self.name()
         );
+        if metric_name == PROCESS_START_TIME_METRIC {
+            trace!(target: MONITOR_TARGET, "{log_msg}");
+        } else {
+            trace!("{log_msg}");
+        }
+
         loop {
             let res = self.assert_with(&metric_name, &predicate).await;
-            trace!("res: {res:?}");
+            let log_msg = format!("res: {res:?}");
             match res {
                 Ok(res) => {
                     if res {
@@ -419,6 +432,12 @@ impl NetworkNode {
                 },
             }
 
+            if metric_name == PROCESS_START_TIME_METRIC {
+                trace!(target: MONITOR_TARGET, "{log_msg}");
+            } else {
+                trace!("{log_msg}");
+            }
+
             // sleep to not spam prometheus
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -438,11 +457,13 @@ impl NetworkNode {
             "[{}] waiting until metric {metric_name} pass the predicate for {secs}s",
             self.name()
         );
+
         if metric_name == PROCESS_START_TIME_METRIC {
-            trace!("{log_msg}");
+            trace!(target: MONITOR_TARGET, "{log_msg}");
         } else {
             debug!("{log_msg}");
         }
+
         let res = tokio::time::timeout(
             Duration::from_secs(secs),
             self.wait_metric(&metric_name, predicate),

@@ -159,6 +159,7 @@ pub type LogLineCountOptions = CountOptions;
 
 impl NetworkNode {
     /// Create a new NetworkNode
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new<T: Into<String>>(
         name: T,
         ws_uri: T,
@@ -346,8 +347,8 @@ impl NetworkNode {
 
     /// Restart the node using the optional provided:
     /// - Assets: binaries to download
-    ///     NOTE: if you want to use a diff version of polkadot you need both the
-    ///     main bin (polkadot) and the workers (polkadot-execute-worker/polkadot-prepare-worker)
+    ///   NOTE: if you want to use a diff version of polkadot you need both the
+    ///   main bin (polkadot) and the workers (polkadot-execute-worker/polkadot-prepare-worker)
     /// - cmd: program to exec.
     /// - args: Arguments to override the ones provided in config.
     ///
@@ -1245,9 +1246,9 @@ mod tests {
 
         async fn restart_with(
             &self,
-            _assets: &Vec<AssetLocation>,
+            _assets: &[AssetLocation],
             _cmd: &str,
-            _args: &Vec<String>,
+            _args: &[String],
             _after: Option<Duration>,
         ) -> Result<(), ProviderError> {
             todo!()

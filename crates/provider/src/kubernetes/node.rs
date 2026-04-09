@@ -873,9 +873,9 @@ where
 
     async fn restart_with(
         &self,
-        assets: &Vec<AssetLocation>,
+        assets: &[AssetLocation],
         cmd: &str,
-        args: &Vec<String>,
+        args: &[String],
         after: Option<Duration>,
     ) -> Result<(), ProviderError> {
         // get the assets

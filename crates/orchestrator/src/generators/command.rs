@@ -107,7 +107,7 @@ pub fn generate_for_cumulus_node(
 
     // set our base path
     tmp_args.push("--base-path".into());
-    tmp_args.push(options.data_path.into());
+    tmp_args.push(options.data_path);
 
     let node_specific_bootnodes: Vec<String> = node
         .bootnodes_addresses
@@ -250,7 +250,7 @@ pub fn generate_for_cumulus_node(
     let mut full_node_injected: Vec<String> = vec![
         "--".into(),
         "--base-path".into(),
-        options.relay_data_path.into(),
+        options.relay_data_path,
         "--chain".into(),
         relaychain_spec_path,
         "--execution".into(),
@@ -357,7 +357,7 @@ pub fn generate_for_node(
 
     // set our base path
     tmp_args.push("--base-path".into());
-    tmp_args.push(options.data_path.into());
+    tmp_args.push(options.data_path);
 
     let node_specific_bootnodes: Vec<String> = node
         .bootnodes_addresses

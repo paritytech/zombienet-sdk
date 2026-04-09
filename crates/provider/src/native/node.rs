@@ -339,7 +339,7 @@ where
     async fn initialize_process(
         &self,
         override_program: Option<&str>,
-        override_args: Option<&Vec<String>>,
+        override_args: Option<&[String]>,
     ) -> Result<(ChildStdout, ChildStderr), ProviderError> {
         let filtered_env: HashMap<String, String> = env::vars()
             .filter(|(k, _)| k == "TZ" || k == "LANG" || k == "PATH")
@@ -711,9 +711,9 @@ where
 
     async fn restart_with(
         &self,
-        assets: &Vec<AssetLocation>,
+        assets: &[AssetLocation],
         cmd: &str,
-        args: &Vec<String>,
+        args: &[String],
         after: Option<Duration>,
     ) -> Result<(), ProviderError> {
         // get the assets
@@ -725,7 +725,7 @@ where
             asset
                 .dump_asset(&full_path)
                 .await
-                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err))?;
 
             let _ = self
                 .run_command(RunCommandOptions::new("chmod").args(vec!["0775", &full_path]))

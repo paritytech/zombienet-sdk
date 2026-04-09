@@ -361,8 +361,8 @@ impl AssetLocation {
     pub fn extract_name(&self) -> String {
         match self {
             AssetLocation::Url(url) => {
-                if let Some(segment) = url.path_segments() {
-                    let last = segment.last().unwrap_or(url.as_str());
+                if let Some(mut segment) = url.path_segments() {
+                    let last = segment.next_back().unwrap_or(url.as_str());
                     last.to_string()
                 } else {
                     url.as_str().to_string()

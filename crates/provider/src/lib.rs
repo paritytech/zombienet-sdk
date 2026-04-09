@@ -13,6 +13,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use configuration::types::AssetLocation;
 use shared::{
     constants::LOCALHOST,
     types::{
@@ -250,6 +251,14 @@ pub trait ProviderNode: erased_serde::Serialize {
     async fn resume(&self) -> Result<(), ProviderError>;
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError>;
+
+    async fn restart_with(
+        &self,
+        assets: &Vec<AssetLocation>,
+        cmd: &str,
+        args: &Vec<String>,
+        after: Option<Duration>,
+    ) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
 }

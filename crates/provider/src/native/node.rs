@@ -192,7 +192,7 @@ where
             node.initialize_db_snapshot(db_snap).await?;
         }
 
-        let (stdout, stderr) = node.initialize_process().await?;
+        let (stdout, stderr) = node.initialize_process(None, None).await?;
 
         node.initialize_log_writing(stdout, stderr).await;
 
@@ -336,13 +336,20 @@ where
         Ok(())
     }
 
-    async fn initialize_process(&self) -> Result<(ChildStdout, ChildStderr), ProviderError> {
+    async fn initialize_process(
+        &self,
+        override_program: Option<&str>,
+        override_args: Option<&Vec<String>>,
+    ) -> Result<(ChildStdout, ChildStderr), ProviderError> {
         let filtered_env: HashMap<String, String> = env::vars()
             .filter(|(k, _)| k == "TZ" || k == "LANG" || k == "PATH")
             .collect();
 
-        let mut process = Command::new(&self.program)
-            .args(&self.args)
+        let program = override_program.unwrap_or(&self.program);
+        let args = override_args.unwrap_or(&self.args);
+
+        let mut process = Command::new(program)
+            .args(args)
             .env_clear()
             .envs(&filtered_env) // minimal environment
             .envs(self.env.to_vec())
@@ -693,7 +700,66 @@ where
             .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err))?;
 
         let (stdout, stderr) = self
-            .initialize_process()
+            .initialize_process(None, None)
+            .await
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+
+        self.initialize_log_writing(stdout, stderr).await;
+
+        Ok(())
+    }
+
+    async fn restart_with(
+        &self,
+        assets: &Vec<AssetLocation>,
+        cmd: &str,
+        args: &Vec<String>,
+        after: Option<Duration>,
+    ) -> Result<(), ProviderError> {
+        // get the assets
+        let mut assets_names = vec![];
+        for asset in assets {
+            let filename = asset.extract_name();
+            // make the cmd available in the isolated dir of the node.
+            let full_path = format!("{}/{}", self.scripts_dir.to_string_lossy(), &filename);
+            asset
+                .dump_asset(&full_path)
+                .await
+                .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
+
+            let _ = self
+                .run_command(RunCommandOptions::new("chmod").args(vec!["0775", &full_path]))
+                .await?;
+
+            assets_names.push(filename);
+        }
+
+        // cmd_to_use with this logic
+        // IF we have assets, and some asset name is cmd we just prepend the script_dir
+        // if asset_names doesn't includes cmd, just use cmd.
+        let cmd_to_use = if assets_names.contains(&cmd.to_string()) {
+            format!("{}/{}", self.scripts_dir.to_string_lossy(), &cmd)
+        } else {
+            cmd.to_string()
+        };
+
+        tracing::debug!(
+            "🔄 [{}], restarting with command: {} {}",
+            self.name(),
+            &cmd_to_use,
+            &args.join(" ")
+        );
+
+        if let Some(duration) = after {
+            sleep(duration).await;
+        }
+
+        self.abort()
+            .await
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err))?;
+
+        let (stdout, stderr) = self
+            .initialize_process(Some(cmd_to_use.as_str()), Some(args))
             .await
             .map_err(|err| ProviderError::RestartNodeFailed(self.name.clone(), err.into()))?;
 

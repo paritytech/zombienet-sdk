@@ -15,7 +15,7 @@ use tracing::info;
 
 use crate::{
     generators,
-    network::node::NetworkNode,
+    network::{node::NetworkNode, NodeContext},
     network_spec::{node::NodeSpec, parachain::ParachainSpec},
     shared::constants::{FULL_NODE_PROMETHEUS_PORT, PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
@@ -126,11 +126,11 @@ where
     };
 
     let gen_opts = generators::GenCmdOptions {
-        relay_chain_name: ctx.chain,
-        cfg_path: &cfg_path,               // TODO: get from provider/ns
-        data_path: &data_path,             // TODO: get from provider
-        relay_data_path: &relay_data_path, // TODO: get from provider
-        use_wrapper: false,                // TODO: get from provider
+        relay_chain_name: ctx.chain.to_string(),
+        cfg_path,           // TODO: get from provider/ns
+        data_path,          // TODO: get from provider
+        relay_data_path,    // TODO: get from provider
+        use_wrapper: false, // TODO: get from provider
         bootnode_addr: ctx.bootnodes_addr.clone(),
         use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
         // IFF the provider require an image (e.g k8s) we know this is not native
@@ -145,7 +145,7 @@ where
         ZombieRole::Node | ZombieRole::Collator => {
             let maybe_para_id = ctx.parachain.map(|para| para.id);
 
-            generators::generate_node_command(node, gen_opts, maybe_para_id)
+            generators::generate_node_command(node, gen_opts.clone(), maybe_para_id)
         },
         ZombieRole::CumulusCollator => {
             let para = ctx.parachain.expect(&format!(
@@ -153,7 +153,7 @@ where
             ));
             collator_full_node_prom_port = node.full_node_prometheus_port.as_ref().map(|p| p.0);
 
-            generators::generate_node_command_cumulus(node, gen_opts, para.id)
+            generators::generate_node_command_cumulus(node, gen_opts.clone(), para.id)
         },
         _ => unreachable!(), /* TODO: do we need those?
                               * ZombieRole::Bootnode => todo!(),
@@ -294,6 +294,15 @@ where
 
     info!("📓 logs cmd: {}", running_node.log_cmd());
 
+    let node_ctx = if let Some(parachain) = ctx.parachain {
+        NodeContext::Para {
+            para_id: parachain.id,
+            is_cumulus_based: parachain.is_cumulus_based,
+        }
+    } else {
+        NodeContext::Rc
+    };
+
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,
@@ -301,6 +310,8 @@ where
         multiaddr,
         node.clone(),
         running_node,
+        gen_opts,
+        node_ctx,
     ))
 }
 

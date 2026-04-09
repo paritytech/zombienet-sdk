@@ -871,6 +871,86 @@ where
         Ok(())
     }
 
+    async fn restart_with(
+        &self,
+        assets: &Vec<AssetLocation>,
+        cmd: &str,
+        args: &Vec<String>,
+        after: Option<Duration>,
+    ) -> Result<(), ProviderError> {
+        // get the assets
+        for asset in assets {
+            match asset {
+                AssetLocation::Url(url) => {
+                    let url = url.to_string();
+                    trace!("downloading asset into node {} from {}", self.name, url);
+
+                    let asset_remote_filepath =
+                        format!("{NODE_SCRIPTS_DIR}/{}", asset.extract_name());
+                    let args = &[
+                        url.as_str(),
+                        "-L",
+                        "-O",
+                        "--output-dir",
+                        // use the script dir from the container
+                        NODE_SCRIPTS_DIR,
+                        "&&",
+                        "chmod",
+                        "777",
+                        asset_remote_filepath.as_str(),
+                    ];
+
+                    let opts = RunCommandOptions::new("/cfg/curl").args(args);
+                    let _ = self.run_command(opts).await?;
+                },
+                AssetLocation::FilePath(path) => {
+                    trace!(
+                        "uploading local asset {} into container {}",
+                        path.to_string_lossy(),
+                        self.name()
+                    );
+
+                    let fullpath = format!("{NODE_SCRIPTS_DIR}/{}", asset.extract_name());
+
+                    self.send_file(path.as_path(), Path::new(&fullpath), "0777")
+                        .await?;
+                },
+            }
+        }
+
+        // update zombie.cmd file
+        let scoped_cmd = format!("{NODE_SCRIPTS_DIR}/{}", cmd);
+        let update_cmd = format!(
+            "echo 'update-cmd {} {}' > /tmp/zombiepipe",
+            &scoped_cmd,
+            args.join(" ")
+        );
+
+        self.k8s_client
+            .pod_exec(
+                &self.namespace_name(),
+                &self.name,
+                vec!["sh", "-c", update_cmd.as_str()],
+            )
+            .await
+            .map_err(|err| ProviderError::RestartNodeFailed(self.name.to_string(), err.into()))?
+            .map_err(|err| {
+                ProviderError::RestartNodeFailed(
+                    self.name.to_string(),
+                    anyhow!("error when restarting node: status {}: {}", err.0, err.1),
+                )
+            })?;
+
+        tracing::debug!(
+            "🔄 [{}], restarting with command: {} {}",
+            self.name(),
+            &scoped_cmd,
+            &args.join(" ")
+        );
+        // now restart
+        self.restart(after).await
+    }
+
     async fn destroy(&self) -> Result<(), ProviderError> {
         self.k8s_client
             .delete_pod(&self.namespace_name(), &self.name)

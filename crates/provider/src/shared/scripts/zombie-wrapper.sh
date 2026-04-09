@@ -9,6 +9,7 @@ if [ -f /cfg/coreutils ]; then
     KILL="/cfg/coreutils kill"
     SLEEP="/cfg/coreutils sleep"
     ECHO="/cfg/coreutils echo"
+    CAT="/cfg/coreutils cat"
 elif [ -f /helpers/coreutils ]; then
 # used for docker/podman to have a single volume sharing helper binaries
 # across nodes independent from the /cfg where some files are stored
@@ -20,6 +21,7 @@ elif [ -f /helpers/coreutils ]; then
     KILL="/helpers/coreutils kill"
     SLEEP="/helpers/coreutils sleep"
     ECHO="/helpers/coreutils echo"
+    CAT="/helpers/coreutils cat"
 else
     RM="rm"
     MKFIFO="mkfifo"
@@ -28,6 +30,7 @@ else
     KILL="kill"
     SLEEP="sleep"
     ECHO="echo"
+    CAT="cat"
 fi
 
 echo "COMMANDS DEFINED"
@@ -153,6 +156,14 @@ resume() {
     fi
 }
 
+# update start cmd by reading /tmp/zombie.cmd
+update_zombie_cmd() {
+    local cmd=$1
+    $ECHO -n "$cmd" > $ZOMBIE_CMD_FILE
+    NEW_CMD=$($CAT $ZOMBIE_CMD_FILE)
+    CMD=($NEW_CMD)
+}
+
 # keep listening from the pipe
 while read line <$pipe
 echo "read line: ${line}"
@@ -172,7 +183,14 @@ do
         pause
     elif [[ "$line" == "resume" ]]; then
         resume
+    elif [[ "$line" =~ ^("update-cmd")([[:space:]]*)(.+) ]]; then
+        update_zombie_cmd "${BASH_REMATCH[3]}"
     fi
 done
+
+# exit
+if [ ! -z "${child_pid}" ]; then
+    $KILL -9 "$child_pid"
+fi
 
 exit 0

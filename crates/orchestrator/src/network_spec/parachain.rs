@@ -59,6 +59,9 @@ pub struct ParachainSpec {
     /// Registration strategy to use
     pub(crate) registration_strategy: RegistrationStrategy,
 
+    /// Number of cores to assign at genesis
+    pub(crate) num_cores: Option<u32>,
+
     /// Onboard as parachain or parathread
     pub(crate) onboard_as_parachain: bool,
 
@@ -282,6 +285,7 @@ impl ParachainSpec {
             default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec,
             no_default_bootnodes: config.no_default_bootnodes(),
+            num_cores: config.num_cores(),
             registration_strategy: config
                 .registration_strategy()
                 .unwrap_or(&RegistrationStrategy::InGenesis)

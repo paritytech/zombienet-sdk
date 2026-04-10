@@ -661,11 +661,19 @@ impl NetworkConfigBuilder<WithRelaychain> {
     /// Seals the builder and returns a [`NetworkConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         let mut paras_to_register: HashSet<ParaId> = Default::default();
+        let mut num_of_requested_cores = 0;
         let mut errs: Vec<anyhow::Error> = self
             .config
             .parachains
             .iter()
             .filter_map(|para| {
+                if let Some(cores) = para.num_cores() {
+                    num_of_requested_cores += cores;
+                } else if let Some(RegistrationStrategy::InGenesis) = para.registration_strategy() {
+                    // add 1 by default
+                    num_of_requested_cores += 1;
+                }
+
                 if let Some(RegistrationStrategy::Manual) = para.registration_strategy() {
                     return None;
                 };
@@ -681,6 +689,27 @@ impl NetworkConfigBuilder<WithRelaychain> {
                 }
             })
             .collect();
+
+        // check we have num_validators >= num_requested_cores
+        let rc_config = self.config.relaychain();
+        let mut num_validators = rc_config.nodes().iter().fold(0u32, |mut acc, node| {
+            if node.is_validator {
+                acc += 1;
+            }
+
+            acc
+        });
+
+        let node_groups = rc_config.group_node_configs();
+        for ng in &node_groups {
+            if ng.base_config.is_validator {
+                num_validators += ng.count as u32;
+            }
+        }
+
+        if num_validators < num_of_requested_cores {
+            errs.push(anyhow!("Number of assigned cores at genesis {num_of_requested_cores} is greater than validators ({num_validators})"));
+        }
 
         if !self.errors.is_empty() || !errs.is_empty() {
             let mut ret_errs = self.errors;

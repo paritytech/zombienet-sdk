@@ -10823,6 +10823,7 @@ name = "zombienet-orchestrator"
 version = "0.4.9"
 dependencies = [
  "anyhow",
+ "array-bytes",
  "async-trait",
  "erased-serde",
  "fancy-regex",
@@ -10833,6 +10834,7 @@ dependencies = [
  "libp2p",
  "libsecp256k1",
  "multiaddr 0.18.2",
+ "parity-scale-codec",
  "rand 0.8.5",
  "regex",
  "reqwest",

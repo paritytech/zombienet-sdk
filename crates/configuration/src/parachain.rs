@@ -119,6 +119,9 @@ pub struct ParachainConfig {
         default = "default_as_true"
     )]
     onboard_as_parachain: bool,
+    /// Number of cores to assign
+    /// Only valid for Paras registered in genesis.
+    num_cores: Option<u32>,
     #[serde(rename = "balance", default = "default_initial_balance")]
     initial_balance: U128,
     default_command: Option<Command>,
@@ -200,6 +203,11 @@ impl ParachainConfig {
     /// Whether the parachain should be onboarded or stay a parathread
     pub fn onboard_as_parachain(&self) -> bool {
         self.onboard_as_parachain
+    }
+
+    /// Number of cores to assign (1 assigned autatically at genesis)
+    pub fn num_cores(&self) -> Option<u32> {
+        self.num_cores
     }
 
     /// The initial balance of the parachain account.
@@ -372,6 +380,8 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
                 onboard_as_parachain: true,
+                // 1 core by default
+                num_cores: Some(1),
                 initial_balance: 2_000_000_000_000.into(),
                 default_command: None,
                 default_image: None,
@@ -568,6 +578,19 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         Self::transition(
             ParachainConfig {
                 onboard_as_parachain: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the number of cores to assign at genesis
+    /// NOTE: 1 is the default
+    pub fn with_num_cores(self, cores: u32) -> Self {
+        Self::transition(
+            ParachainConfig {
+                num_cores: Some(cores),
                 ..self.config
             },
             self.validation_context,
@@ -1210,6 +1233,7 @@ mod tests {
             .with_id(1000)
             .with_chain("mychainname")
             .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
+            .with_num_cores(3)
             .onboard_as_parachain(false)
             .with_initial_balance(100_000_042)
             .with_default_image("myrepo:myimage")
@@ -1255,6 +1279,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(parachain_config.id(), 1000);
+        assert_eq!(parachain_config.num_cores(), Some(3));
         assert_eq!(parachain_config.collators().len(), 2);
         let &collator1 = parachain_config.collators().first().unwrap();
         assert_eq!(collator1.name(), "collator1");

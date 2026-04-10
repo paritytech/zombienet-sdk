@@ -380,8 +380,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 chain: None,
                 registration_strategy: Some(RegistrationStrategy::InGenesis),
                 onboard_as_parachain: true,
-                // 1 core by default
-                num_cores: Some(1),
+                num_cores: None,
                 initial_balance: 2_000_000_000_000.into(),
                 default_command: None,
                 default_image: None,

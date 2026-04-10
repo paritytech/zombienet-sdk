@@ -369,11 +369,8 @@ states! {
 ///                     .with_request_memory("1Gi")
 ///                     .with_request_cpu(100_000)
 ///             })
-///             .with_node(|node| {
-///                 node.with_name("node")
-///                     .with_command("command")
-///                     .validator(true)
-///             })
+///             .with_validator(|node| node.with_name("node").with_command("command"))
+///             .with_validator(|node| node.with_name("node1").with_command("command"))
 ///     })
 ///     .with_parachain(|parachain| {
 ///         parachain
@@ -662,6 +659,7 @@ impl NetworkConfigBuilder<WithRelaychain> {
     pub fn build(self) -> Result<NetworkConfig, Vec<anyhow::Error>> {
         let mut paras_to_register: HashSet<ParaId> = Default::default();
         let mut num_of_requested_cores = 0;
+
         let mut errs: Vec<anyhow::Error> = self
             .config
             .parachains
@@ -690,25 +688,28 @@ impl NetworkConfigBuilder<WithRelaychain> {
             })
             .collect();
 
-        // check we have num_validators >= num_requested_cores
-        let rc_config = self.config.relaychain();
-        let mut num_validators = rc_config.nodes().iter().fold(0u32, |mut acc, node| {
-            if node.is_validator {
-                acc += 1;
+        // ensure we can make this check
+        if self.config.relaychain.is_some() {
+            // check we have num_validators >= num_requested_cores
+            let rc_config = self.config.relaychain();
+            let mut num_validators = rc_config.nodes().iter().fold(0u32, |mut acc, node| {
+                if node.is_validator {
+                    acc += 1;
+                }
+
+                acc
+            });
+
+            let node_groups = rc_config.group_node_configs();
+            for ng in &node_groups {
+                if ng.base_config.is_validator {
+                    num_validators += ng.count as u32;
+                }
             }
 
-            acc
-        });
-
-        let node_groups = rc_config.group_node_configs();
-        for ng in &node_groups {
-            if ng.base_config.is_validator {
-                num_validators += ng.count as u32;
+            if num_validators < num_of_requested_cores {
+                errs.push(anyhow!("Number of assigned cores at genesis {num_of_requested_cores} is greater than validators ({num_validators})"));
             }
-        }
-
-        if num_validators < num_of_requested_cores {
-            errs.push(anyhow!("Number of assigned cores at genesis {num_of_requested_cores} is greater than validators ({num_validators})"));
         }
 
         if !self.errors.is_empty() || !errs.is_empty() {
@@ -736,6 +737,7 @@ mod tests {
                     .with_chain("polkadot")
                     .with_random_nominators_count(10)
                     .with_validator(|node| node.with_name("node").with_command("command"))
+                    .with_validator(|node| node.with_name("node-1").with_command("command"))
             })
             .with_parachain(|parachain| {
                 parachain
@@ -785,7 +787,7 @@ mod tests {
 
         // relaychain
         assert_eq!(network_config.relaychain().chain().as_str(), "polkadot");
-        assert_eq!(network_config.relaychain().nodes().len(), 1);
+        assert_eq!(network_config.relaychain().nodes().len(), 2);
         let &node = network_config.relaychain().nodes().first().unwrap();
         assert_eq!(node.name(), "node");
         assert_eq!(node.command().unwrap().as_str(), "command");
@@ -1885,6 +1887,8 @@ mod tests {
                 relaychain
                     .with_chain("polkadot")
                     .with_fullnode(|node| node.with_name("node").with_command("command"))
+                    .with_validator(|n| n.with_name("v"))
+                    .with_validator(|n| n.with_name("v1"))
             })
             .with_parachain(|parachain| {
                 parachain

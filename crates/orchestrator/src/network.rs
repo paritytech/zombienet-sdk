@@ -15,11 +15,11 @@ use std::{
 use configuration::{
     para_states::{Initial, Running},
     shared::{helpers::generate_unique_node_name_from_names, node::EnvVar},
-    types::{Arg, Command, Image, Port, ValidationContext},
+    types::{Arg, Command, Image, ParaId, Port, ValidationContext},
     ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
 use tracing::{error, warn};
@@ -38,6 +38,17 @@ use crate::{
     utils::write_zombie_json,
     ScopedFilesystem, ZombieRole,
 };
+
+/// Context where the node is running
+/// RC or Para
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NodeContext {
+    Rc,
+    Para {
+        para_id: ParaId,
+        is_cumulus_based: bool,
+    },
+}
 
 #[derive(Serialize)]
 pub struct Network<T: FileSystem> {
@@ -708,12 +719,7 @@ impl<T: FileSystem> Network<T> {
             return Ok(node);
         }
 
-        let list = self
-            .nodes_iter()
-            .map(|n| &n.name)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
+        let list = self.node_names().join(", ");
 
         Err(anyhow::anyhow!(
             "can't find node with name: {name:?}, should be one of {list}"
@@ -728,6 +734,13 @@ impl<T: FileSystem> Network<T> {
         self.nodes_iter_mut()
             .find(|n| n.name == name)
             .ok_or(anyhow::anyhow!("can't find node with name: {name:?}"))
+    }
+
+    pub fn node_names(&self) -> Vec<String> {
+        self.nodes_iter()
+            .map(|n| &n.name)
+            .cloned()
+            .collect::<Vec<_>>()
     }
 
     pub fn nodes(&self) -> Vec<&NetworkNode> {

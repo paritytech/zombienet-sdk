@@ -596,6 +596,8 @@ async fn recreate_network_nodes_from_json(
             raw.multiaddr,
             raw.spec,
             inner,
+            raw.cmd_generator_opts,
+            raw.context,
         );
         nodes.push(relay_node);
     }

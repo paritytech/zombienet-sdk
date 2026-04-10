@@ -1,27 +1,29 @@
 use configuration::types::Arg;
+use serde::{Deserialize, Serialize};
 use support::constants::THIS_IS_A_BUG;
 
 use super::arg_filter::{apply_arg_removals, parse_removal_args};
 use crate::{network_spec::node::NodeSpec, shared::constants::*};
 
-pub struct GenCmdOptions<'a> {
-    pub relay_chain_name: &'a str,
-    pub cfg_path: &'a str,
-    pub data_path: &'a str,
-    pub relay_data_path: &'a str,
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GenCmdOptions {
+    pub relay_chain_name: String,
+    pub cfg_path: String,
+    pub data_path: String,
+    pub relay_data_path: String,
     pub use_wrapper: bool,
     pub bootnode_addr: Vec<String>,
     pub use_default_ports_in_cmd: bool,
     pub is_native: bool,
 }
 
-impl Default for GenCmdOptions<'_> {
+impl Default for GenCmdOptions {
     fn default() -> Self {
         Self {
-            relay_chain_name: "rococo-local",
-            cfg_path: "/cfg",
-            data_path: "/data",
-            relay_data_path: "/relay-data",
+            relay_chain_name: "rococo-local".to_string(),
+            cfg_path: "/cfg".to_string(),
+            data_path: "/data".to_string(),
+            relay_data_path: "/relay-data".to_string(),
             use_wrapper: true,
             bootnode_addr: vec![],
             use_default_ports_in_cmd: false,
@@ -105,7 +107,7 @@ pub fn generate_for_cumulus_node(
 
     // set our base path
     tmp_args.push("--base-path".into());
-    tmp_args.push(options.data_path.into());
+    tmp_args.push(options.data_path);
 
     let node_specific_bootnodes: Vec<String> = node
         .bootnodes_addresses
@@ -248,7 +250,7 @@ pub fn generate_for_cumulus_node(
     let mut full_node_injected: Vec<String> = vec![
         "--".into(),
         "--base-path".into(),
-        options.relay_data_path.into(),
+        options.relay_data_path,
         "--chain".into(),
         relaychain_spec_path,
         "--execution".into(),
@@ -355,7 +357,7 @@ pub fn generate_for_node(
 
     // set our base path
     tmp_args.push("--base-path".into());
-    tmp_args.push(options.data_path.into());
+    tmp_args.push(options.data_path);
 
     let node_specific_bootnodes: Vec<String> = node
         .bootnodes_addresses

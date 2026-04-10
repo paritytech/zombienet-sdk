@@ -21,7 +21,7 @@ use crate::{
     ScopedFilesystem,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Parachain {
     pub(crate) chain: Option<String>,
     pub(crate) para_id: u32,

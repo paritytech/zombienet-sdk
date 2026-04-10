@@ -356,6 +356,26 @@ impl AssetLocation {
         fs::write(dst_path.into(), contents).await?;
         Ok(())
     }
+
+    /// Extract name (last part) from asset_location
+    pub fn extract_name(&self) -> String {
+        match self {
+            AssetLocation::Url(url) => {
+                if let Some(mut segment) = url.path_segments() {
+                    let last = segment.next_back().unwrap_or(url.as_str());
+                    last.to_string()
+                } else {
+                    url.as_str().to_string()
+                }
+            },
+            AssetLocation::FilePath(path_buf) => {
+                let name = path_buf.file_name().unwrap_or(path_buf.as_os_str());
+                name.to_str()
+                    .expect("file path should be valid")
+                    .to_string()
+            },
+        }
+    }
 }
 
 impl Serialize for AssetLocation {

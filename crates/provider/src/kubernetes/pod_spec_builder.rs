@@ -9,6 +9,8 @@ use k8s_openapi::{
     apimachinery::pkg::api::resource::Quantity,
 };
 
+use crate::constants::NODE_SCRIPTS_DIR;
+
 pub(super) struct PodSpecBuilder;
 
 impl PodSpecBuilder {
@@ -104,6 +106,10 @@ impl PodSpecBuilder {
                 ..Default::default()
             },
             Volume {
+                name: "scripts".to_string(),
+                ..Default::default()
+            },
+            Volume {
                 name: "zombie-wrapper-volume".to_string(),
                 config_map: Some(ConfigMapVolumeSource {
                     name: Some("zombie-wrapper".to_string()),
@@ -142,6 +148,12 @@ impl PodSpecBuilder {
                 VolumeMount {
                     name: "relay-data".to_string(),
                     mount_path: "/relay-data".to_string(),
+                    read_only: Some(false),
+                    ..Default::default()
+                },
+                VolumeMount {
+                    name: "scripts".to_string(),
+                    mount_path: NODE_SCRIPTS_DIR.to_string(),
                     read_only: Some(false),
                     ..Default::default()
                 },

@@ -697,6 +697,34 @@ impl ChainSpec {
         Ok(())
     }
 
+    // find from genesis.raw.top
+    pub async fn find_raw_key<'a, T>(
+        &self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        key: &str,
+    ) -> Result<bool, GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // first ensure we have the raw version of the chain-spec
+        let Some(_) = self.raw_path else {
+            return Err(GeneratorError::OverridingRawSpec(String::from(
+                "Raw path should be set at this point.",
+            )));
+        };
+
+        let (content, _) = self.read_spec(scoped_fs).await?;
+
+        // read spec to json value
+        let chain_spec_json: serde_json::Value = serde_json::from_str(&content).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+        })?;
+
+        let val = &chain_spec_json["genesis"]["raw"]["top"][key];
+
+        Ok(val == &serde_json::Value::Null)
+    }
+
     pub fn raw_path(&self) -> Option<&Path> {
         self.raw_path.as_deref()
     }
@@ -1000,6 +1028,39 @@ impl ChainSpec {
                 self.chain_spec_name
             );
         }
+        Ok(())
+    }
+
+    pub(crate) async fn apply_genesis_override<'a, T>(
+        &self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        overrides: &serde_json::Value,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        let (content, _) = self.read_spec(scoped_fs).await?;
+        let mut chain_spec_json: serde_json::Value =
+            serde_json::from_str(&content).map_err(|_| {
+                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+            })?;
+
+        // get the config pointer
+        let pointer = get_runtime_config_pointer(&chain_spec_json)
+            .map_err(GeneratorError::ChainSpecGeneration)?;
+
+        let percolated_overrides = percolate_overrides(&pointer, overrides)
+            .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
+        if let Some(patch_section) = chain_spec_json.pointer_mut(&pointer) {
+            merge(patch_section, percolated_overrides);
+        }
+
+        // write spec
+        let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
+        })?;
+        self.write_spec(scoped_fs, content).await?;
+
         Ok(())
     }
 
@@ -1417,7 +1478,8 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
                 }
             } else {
                 // Allow to add keys, see (https://github.com/paritytech/zombienet/issues/1614)
-                warn!(
+                warn!("key: {overrides_key} not present in genesis_obj (adding key)");
+                trace!(
                     "key: {overrides_key} not present in genesis_obj: {:?} (adding key)",
                     genesis_obj
                 );

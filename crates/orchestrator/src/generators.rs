@@ -7,6 +7,7 @@ mod arg_filter;
 mod bootnode_addr;
 mod chain_spec_key_types;
 mod command;
+pub mod core_assignment;
 mod identity;
 mod keystore;
 mod keystore_key_types;

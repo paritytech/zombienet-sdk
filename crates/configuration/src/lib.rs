@@ -22,11 +22,8 @@
 //!                     .with_request_memory("1Gi")
 //!                     .with_request_cpu(100_000)
 //!             })
-//!             .with_node(|node| {
-//!                 node.with_name("node")
-//!                     .with_command("command")
-//!                     .validator(true)
-//!             })
+//!             .with_validator(|node| node.with_name("node").with_command("command"))
+//!             .with_validator(|node| node.with_name("node1").with_command("command"))
 //!     })
 //!     .with_parachain(|parachain| {
 //!         parachain

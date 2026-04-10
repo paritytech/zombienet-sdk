@@ -21,9 +21,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use configuration::{NetworkConfig, RegistrationStrategy};
+use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
-use generators::errors::GeneratorError;
+use generators::{core_assignment, errors::GeneratorError};
 use network::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain, Network};
 // re-exported
 pub use network_spec::NetworkSpec;
@@ -223,7 +223,7 @@ where
             });
 
         let mut para_artifacts = vec![];
-        for para in para_to_register_in_genesis {
+        for para in &para_to_register_in_genesis {
             let genesis_config = para.get_genesis_config()?;
             para_artifacts.push(genesis_config)
         }
@@ -249,6 +249,39 @@ where
                 .await?;
         }
 
+        // Override cores if needed
+        let num_cores = network_spec.parachains_iter().fold(0u32, |mut acc, para| {
+            if let Some(cores) = para.num_cores {
+                acc += cores;
+            } else if &RegistrationStrategy::InGenesis == para.registration_strategy() {
+                // add 1 by default
+                acc += 1;
+            }
+
+            acc
+        });
+
+        if num_cores > para_to_register_in_genesis.len() as u32 {
+            let num_cores_to_set = num_cores - para_to_register_in_genesis.len() as u32;
+            // we should set the correct core config
+            let overrides = json!({
+                "configuration": {
+                    "config": {
+                        "scheduler_params": {
+                            "num_cores": num_cores_to_set,
+                            "max_validators_per_core": 1
+                        },
+                    }
+                }
+            });
+
+            network_spec
+                .relaychain
+                .chain_spec
+                .apply_genesis_override(&scoped_fs, &overrides)
+                .await?;
+        }
+
         // Build raw version (after any post-processing of the plain spec)
         network_spec
             .relaychain
@@ -265,12 +298,69 @@ where
                 .await?;
         }
 
-        // override raw spec if needed
+        // custom override raw spec if needed
         if let Some(ref raw_spec_override) = network_spec.relaychain.raw_spec_override {
             network_spec
                 .relaychain
                 .chain_spec
                 .override_raw_spec(&scoped_fs, raw_spec_override)
+                .await?;
+        }
+
+        // assign extra cores if needed
+        if num_cores > para_to_register_in_genesis.len() as u32 {
+            let mut core_index = 0u32;
+            // we should check with version the runtime is using
+            // could be ParaScheduler or CoretimeAssignmentProvider
+            let scheduler_key = core_assignment::get_parascheduler_storage_key();
+            let is_old = network_spec
+                .relaychain
+                .chain_spec
+                .find_raw_key(&scoped_fs, &scheduler_key)
+                .await?;
+            let mut para_scheduler_value_parts: Vec<String> = vec![];
+            let mut core_json_overrides = json!({});
+            // loop over para and assign cores from 0..
+            for para in &network_spec.parachains {
+                if let Some(mut cores) = para.num_cores {
+                    if &RegistrationStrategy::InGenesis == para.registration_strategy() && is_old {
+                        cores -= 1;
+                    }
+                    for _core in 0..cores {
+                        if is_old {
+                            let (core_assign_key, core_assign_value) =
+                                core_assignment::generate_old(core_index, para.id);
+                            core_json_overrides[core_assign_key] = json!(core_assign_value);
+                        } else {
+                            let part = core_assignment::generate(core_index, para.id);
+                            para_scheduler_value_parts.push(part);
+                        }
+                        core_index += 1;
+                    }
+                }
+            }
+
+            // if not old we need to store the k/v to override
+            if !is_old {
+                let count_prefix = format!("{:02x}", para_scheduler_value_parts.len() * 4);
+                let core_assign_value =
+                    format!("{count_prefix}{}", para_scheduler_value_parts.join(""));
+                core_json_overrides[scheduler_key] = json!(core_assign_value);
+            }
+
+            network_spec
+                .relaychain
+                .chain_spec
+                .override_raw_spec(
+                    &scoped_fs,
+                    &JsonOverrides::Json(json!({
+                        "genesis": {
+                            "raw": {
+                                "top": core_json_overrides
+                            }
+                        }
+                    })),
+                )
                 .await?;
         }
 

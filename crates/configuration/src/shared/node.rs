@@ -980,6 +980,12 @@ impl GroupNodeConfigBuilder<Initial> {
 }
 
 impl GroupNodeConfigBuilder<Buildable> {
+    /// Set the number of nodes in the group.
+    pub fn with_count(mut self, count: usize) -> Self {
+        self.count = count;
+        self
+    }
+
     pub fn build(self) -> Result<GroupNodeConfig, (String, Vec<anyhow::Error>)> {
         if self.count == 0 {
             return Err((

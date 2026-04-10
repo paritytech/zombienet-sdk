@@ -35,6 +35,7 @@ license = "Apache-2.0 OR GPL-3.0"
 repository = "https://github.com/paritytech/zombienet-sdk"
 
 [workspace.dependencies]
+array-bytes = "6.2"
 thiserror = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
@@ -82,6 +83,7 @@ clap = { version = "4.5", features = ["derive"] }
 notify = "7.0"
 sysinfo = "0.32"
 walkdir = "2.5"
+codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.4.9", path = "crates/support" }

@@ -21,6 +21,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use anyhow::anyhow;
 use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use generators::{core_assignment, errors::GeneratorError};
@@ -308,7 +309,10 @@ where
         }
 
         // assign extra cores if needed
-        if num_cores > para_to_register_in_genesis.len() as u32 {
+        debug!("Raw overrides info: num_cores: {}, para_to_register_in_genesis_len: {:?}, override_session_0: {}", num_cores, para_to_register_in_genesis.len(), network_spec.relaychain().override_session_0);
+        if num_cores > para_to_register_in_genesis.len() as u32
+            || network_spec.relaychain().override_session_0
+        {
             let mut core_index = 0u32;
             // we should check with version the runtime is using
             // could be ParaScheduler or CoretimeAssignmentProvider
@@ -319,24 +323,42 @@ where
                 .find_raw_key(&scoped_fs, &scheduler_key)
                 .await?;
             let mut para_scheduler_value_parts: Vec<String> = vec![];
-            let mut core_json_overrides = json!({});
+            let mut raw_json_overrides = json!({});
             // loop over para and assign cores from 0..
             for para in &network_spec.parachains {
-                if let Some(mut cores) = para.num_cores {
+                // cores we need to assign
+                let mut cores_for_para = 0_u32;
+                if let Some(cores) = para.num_cores {
                     if &RegistrationStrategy::InGenesis == para.registration_strategy() && is_old {
-                        cores -= 1;
+                        cores_for_para = cores - 1;
                     }
-                    for _core in 0..cores {
-                        if is_old {
-                            let (core_assign_key, core_assign_value) =
-                                core_assignment::generate_old(core_index, para.id);
-                            core_json_overrides[core_assign_key] = json!(core_assign_value);
-                        } else {
-                            let part = core_assignment::generate(core_index, para.id);
-                            para_scheduler_value_parts.push(part);
-                        }
-                        core_index += 1;
+                } else {
+                    // no num_cores set but we need to check if `override_session_0` is true
+                    // to assign the first core.
+                    if &RegistrationStrategy::InGenesis == para.registration_strategy() && is_old {
+                        cores_for_para += 1;
                     }
+                }
+
+                trace!(
+                    "Assigning cores {cores_for_para} in raw spec for para {}. Using pallet {}",
+                    para.id,
+                    if is_old {
+                        "CoretimeAssignmentProvider"
+                    } else {
+                        "ParaScheduler"
+                    }
+                );
+                for _core in 0..cores_for_para {
+                    if is_old {
+                        let (core_assign_key, core_assign_value) =
+                            core_assignment::generate_old(core_index, para.id);
+                        raw_json_overrides[core_assign_key] = json!(core_assign_value);
+                    } else {
+                        let part = core_assignment::generate(core_index, para.id);
+                        para_scheduler_value_parts.push(part);
+                    }
+                    core_index += 1;
                 }
             }
 
@@ -345,7 +367,24 @@ where
                 let count_prefix = format!("{:02x}", para_scheduler_value_parts.len() * 4);
                 let core_assign_value =
                     format!("{count_prefix}{}", para_scheduler_value_parts.join(""));
-                core_json_overrides[scheduler_key] = json!(core_assign_value);
+                raw_json_overrides[scheduler_key] = json!(core_assign_value);
+            }
+
+            // extra check to ensure we need to override session 0
+            if network_spec.relaychain().override_session_0 {
+                trace!("Overriding pallet ParaSessionInfo.session (0) to allow paras to produce blocks at first session.");
+                let raw_spec = network_spec
+                    .relaychain
+                    .chain_spec
+                    .read_raw_spec(&scoped_fs)
+                    .await?;
+                let overrides = generators::generate_session_0_overrides(&raw_spec, num_cores)?;
+
+                for (k, v) in overrides.as_object().ok_or(anyhow!(
+                    "'generate_session_0_overrides' should be a valid json Object."
+                ))? {
+                    raw_json_overrides[k] = v.clone();
+                }
             }
 
             network_spec
@@ -356,7 +395,7 @@ where
                     &JsonOverrides::Json(json!({
                         "genesis": {
                             "raw": {
-                                "top": core_json_overrides
+                                "top": raw_json_overrides
                             }
                         }
                     })),

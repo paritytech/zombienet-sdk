@@ -655,11 +655,10 @@ impl ChainSpec {
         Ok(())
     }
 
-    pub async fn override_raw_spec<'a, T>(
-        &mut self,
+    pub async fn read_raw_spec<'a, T>(
+        &self,
         scoped_fs: &ScopedFilesystem<'a, T>,
-        raw_spec_overrides: &JsonOverrides,
-    ) -> Result<(), GeneratorError>
+    ) -> Result<serde_json::Value, GeneratorError>
     where
         T: FileSystem,
     {
@@ -672,18 +671,31 @@ impl ChainSpec {
 
         let (content, _) = self.read_spec(scoped_fs).await?;
 
+        // read spec to json value
+        let chain_spec_json: serde_json::Value = serde_json::from_str(&content).map_err(|_| {
+            GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
+        })?;
+
+        Ok(chain_spec_json)
+    }
+
+    pub async fn override_raw_spec<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        raw_spec_overrides: &JsonOverrides,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        // read spec to json value
+        let mut chain_spec_json: serde_json::Value = self.read_raw_spec(scoped_fs).await?;
+
         // read overrides to json value
         let override_content: serde_json::Value = raw_spec_overrides.get().await.map_err(|_| {
             GeneratorError::OverridingRawSpec(format!(
                 "Can not parse raw_spec_override contents as json: {raw_spec_overrides}"
             ))
         })?;
-
-        // read spec to json value
-        let mut chain_spec_json: serde_json::Value =
-            serde_json::from_str(&content).map_err(|_| {
-                GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
-            })?;
 
         // merge overrides with existing spec
         merge(&mut chain_spec_json, &override_content);

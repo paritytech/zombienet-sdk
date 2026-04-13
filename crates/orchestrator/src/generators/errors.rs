@@ -21,4 +21,8 @@ pub enum GeneratorError {
     OverridingWasm(String),
     #[error("Error overriding raw chain-spec, err {0}")]
     OverridingRawSpec(String),
+    #[error("Encode/decode error: {0}")]
+    EncodeDecodeError(String),
+    #[error("Invariant error: {0}")]
+    InvariantError(String),
 }

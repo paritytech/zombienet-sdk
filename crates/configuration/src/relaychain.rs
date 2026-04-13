@@ -58,6 +58,8 @@ pub struct RelaychainConfig {
     /// Optional post-process script to run after chain-spec generation.
     #[serde(skip_serializing_if = "Option::is_none")]
     post_process_script: Option<String>,
+    #[serde(skip_serializing_if = "is_false", default)]
+    override_session_0: bool,
 }
 
 impl RelaychainConfig {
@@ -109,6 +111,10 @@ impl RelaychainConfig {
     /// Does the chain_spec_command needs to be run locally
     pub fn chain_spec_command_is_local(&self) -> bool {
         self.chain_spec_command_is_local
+    }
+
+    pub fn override_session_0(&self) -> bool {
+        self.override_session_0
     }
 
     /// The file where the `chain_spec_command` will write the chain-spec into.
@@ -208,6 +214,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 node_groups: vec![],
                 raw_spec_override: None,
                 post_process_script: None,
+                override_session_0: false,
             },
             validation_context: Default::default(),
             errors: vec![],
@@ -454,6 +461,19 @@ impl RelaychainConfigBuilder<WithChain> {
         Self::transition(
             RelaychainConfig {
                 chain_spec_command_is_local: choice,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set to true to override session 0 and allow paras to produce
+    /// blocks from genesis.
+    pub fn with_override_session_0(self, choice: bool) -> Self {
+        Self::transition(
+            RelaychainConfig {
+                override_session_0: choice,
                 ..self.config
             },
             self.validation_context,

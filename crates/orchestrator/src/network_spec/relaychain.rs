@@ -63,6 +63,10 @@ pub struct RelaychainSpec {
 
     /// Optional post-process script configured for this relaychain
     pub(crate) post_process_script: Option<String>,
+
+    /// Set to true to override session 0 and allow paras to produce
+    /// blocks from genesis.
+    pub(crate) override_session_0: bool,
 }
 
 impl RelaychainSpec {
@@ -172,6 +176,7 @@ impl RelaychainSpec {
             nodes,
             raw_spec_override: config.raw_spec_override().cloned(),
             post_process_script: config.post_process_script().map(str::to_string),
+            override_session_0: config.override_session_0(),
         })
     }
 

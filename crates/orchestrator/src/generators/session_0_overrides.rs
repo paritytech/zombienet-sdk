@@ -52,7 +52,6 @@ pub struct SessionInfo {
     /// NOTE: There might be more authorities in the current session, than validators participating
     /// in parachain consensus. See
     /// [`max_validators`](https://github.com/paritytech/polkadot/blob/a52dca2be7840b23c19c153cf7e110b1e3e475f8/runtime/parachains/src/configuration.rs#L148).
-    ///
     pub assignment_keys: Vec<AccountId32>,
     /// Validators in shuffled ordering - these are the validator groups as produced
     /// by the `Scheduler` module for the session and are typically referred to by

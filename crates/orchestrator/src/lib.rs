@@ -317,11 +317,12 @@ where
             // we should check with version the runtime is using
             // could be ParaScheduler or CoretimeAssignmentProvider
             let scheduler_key = core_assignment::get_parascheduler_storage_key();
-            let is_old = network_spec
+            let is_old = !network_spec
                 .relaychain
                 .chain_spec
                 .find_raw_key(&scoped_fs, &scheduler_key)
                 .await?;
+
             let mut para_scheduler_value_parts: Vec<String> = vec![];
             let mut raw_json_overrides = json!({});
             // loop over para and assign cores from 0..
@@ -329,19 +330,21 @@ where
                 // cores we need to assign
                 let mut cores_for_para = 0_u32;
                 if let Some(cores) = para.num_cores {
-                    if &RegistrationStrategy::InGenesis == para.registration_strategy() && is_old {
-                        cores_for_para = cores - 1;
+                    if &RegistrationStrategy::InGenesis == para.registration_strategy() {
+                        cores_for_para = cores;
                     }
                 } else {
                     // no num_cores set but we need to check if `override_session_0` is true
                     // to assign the first core.
-                    if &RegistrationStrategy::InGenesis == para.registration_strategy() && is_old {
+                    if &RegistrationStrategy::InGenesis == para.registration_strategy()
+                        && network_spec.relaychain().override_session_0
+                    {
                         cores_for_para += 1;
                     }
                 }
 
-                trace!(
-                    "Assigning cores {cores_for_para} in raw spec for para {}. Using pallet {}",
+                debug!(
+                    "Assigning {cores_for_para} cores in raw spec for para {}. Using pallet {}",
                     para.id,
                     if is_old {
                         "CoretimeAssignmentProvider"
@@ -386,6 +389,8 @@ where
                     raw_json_overrides[k] = v.clone();
                 }
             }
+
+            debug!("Raw overrides keys: {:?}", raw_json_overrides);
 
             network_spec
                 .relaychain

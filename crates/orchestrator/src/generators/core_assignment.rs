@@ -39,7 +39,7 @@ pub fn generate_old(core_index: u32, para_id: u32) -> (String, String) {
     );
     let core_descriptor = format!("0x00010402{}00e100e100010000e1", para_hex);
 
-    trace!("{core_descriptor_idx_key}:{core_descriptor}");
+    trace!("CoreDescriptor (raw) - {core_descriptor_idx_key}:{core_descriptor}");
     (core_descriptor_idx_key, core_descriptor)
 }
 
@@ -58,6 +58,29 @@ pub fn generate(core_index: u32, para_id: u32) -> String {
 
     let core_descriptor = format!("{core_index_hex}00010402{para_hex}00e100e100010000e1");
 
-    trace!("core_descriptor part: {core_descriptor}");
+    trace!("CoreDescriptor part (raw): {core_descriptor}");
     core_descriptor
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn generate_old_works() {
+        let (k, v) = generate_old(0, 1000);
+        println!("key: {k}, val: {v}");
+    }
+
+    #[test]
+    fn generate_works() {
+        let part = generate(0, 1000);
+        println!("part: {part}");
+    }
+
+    #[test]
+    fn get_parascheduler_storage_key_works() {
+        let k = get_parascheduler_storage_key();
+        println!("ParaScheduler.CoreDescriptors (key): {k}");
+    }
 }

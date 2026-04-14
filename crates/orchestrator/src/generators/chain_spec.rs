@@ -734,7 +734,7 @@ impl ChainSpec {
 
         let val = &chain_spec_json["genesis"]["raw"]["top"][key];
 
-        Ok(val == &serde_json::Value::Null)
+        Ok(val != &serde_json::Value::Null)
     }
 
     pub fn raw_path(&self) -> Option<&Path> {
@@ -1408,7 +1408,7 @@ fn percolate_overrides<'a>(
     trace!("top_level_key: {top_level_key}");
     let index = pointer_parts.iter().position(|x| *x == top_level_key);
     let Some(i) = index else {
-        warn!("Top level key '{top_level_key}' isn't part of the pointer ({pointer}), returning without percolating");
+        info!("Top level key '{top_level_key}' isn't part of the pointer ({pointer}), returning without percolating");
         return Ok(overrides);
     };
 
@@ -1490,7 +1490,7 @@ fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
                 }
             } else {
                 // Allow to add keys, see (https://github.com/paritytech/zombienet/issues/1614)
-                warn!("key: {overrides_key} not present in genesis_obj (adding key)");
+                info!("key: {overrides_key} not present in genesis_obj (adding key)");
                 trace!(
                     "key: {overrides_key} not present in genesis_obj: {:?} (adding key)",
                     genesis_obj

@@ -82,3 +82,14 @@ Refactor the `CLI` module to use the new `SDK` under the hood.
 - Create UI to create `.zndls` and `network` files.
 - Improve VSCode extension (grammar/snippets/syntax highlighting/file validations) ([repo](https://github.com/paritytech/zombienet-vscode-extension))
 - Create UI app (desktop) to run zombienet without the need of terminal.
+
+# Claude Code plugin
+
+This repo ships a [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin that helps with writing zombienet network configs (TOML), authoring Rust integration tests with `NetworkConfigBuilder`, and debugging failed runs. Install with:
+
+```
+/plugin marketplace add paritytech/zombienet-sdk
+/plugin install zombienet-sdk@zombienet-sdk
+```
+
+See [plugins/zombienet-sdk/README.md](plugins/zombienet-sdk/README.md) for details, local-development tips, and contribution guidelines.

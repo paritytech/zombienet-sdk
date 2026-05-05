@@ -183,10 +183,10 @@ network.add_collator("col02", AddCollatorOptions {
 use zombienet_sdk::AttachToLive;
 use zombienet_sdk::AttachToLiveNetwork;
 
-let net = AttachToLiveNetwork::attach_native("/tmp/zn-test").await?;
+let net = AttachToLiveNetwork::attach_native("/tmp/zn-test/zombie.json").await?;
 ```
 
-Useful for running multiple test suites against one long-lived network during local development.
+Useful for running multiple test suites against one long-lived network during local development. You need to supply the `zombie.json` file of the running network.
 
 ## subxt and subxt_signer
 

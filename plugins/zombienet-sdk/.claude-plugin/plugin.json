@@ -1,0 +1,9 @@
+{
+  "name": "zombienet-sdk",
+  "version": "0.1.0",
+  "description": "Skill for working with zombienet-sdk: TOML network configs, Rust integration tests, and debugging spawns.",
+  "homepage": "https://github.com/paritytech/zombienet-sdk",
+  "repository": "https://github.com/paritytech/zombienet-sdk",
+  "license": "GPL-3.0",
+  "keywords": ["polkadot", "substrate", "zombienet", "testing", "parachain", "relaychain"]
+}

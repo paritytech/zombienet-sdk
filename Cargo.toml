@@ -29,7 +29,7 @@ default-members = [
 [workspace.package]
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
-version = "0.4.11"
+version = "0.4.12"
 rust-version = "1.79.0"
 license = "Apache-2.0 OR GPL-3.0"
 repository = "https://github.com/paritytech/zombienet-sdk"
@@ -49,7 +49,7 @@ tokio-util = "0.7"
 reqwest = "0.12.9"
 regex = "1.8"
 lazy_static = "1.4"
-multiaddr = "0.18"
+multiaddr = "0.18.1"
 url = "2.3"
 uuid = "1.4"
 nix = "0.29.0"
@@ -58,7 +58,7 @@ pest_derive = "2.7"
 rand = "0.8"
 sha2 = { version = "0.10.2", default-features = false }
 hex = "0.4"
-sp-core = "38.1.0"
+sp-core = "41.0.0"
 libp2p = "0.54.1"
 subxt = "0.44.0"
 subxt-signer = { version = "0.44.0", features = ["subxt"] }
@@ -75,7 +75,7 @@ glob-match = "0.2.1"
 libsecp256k1 = { version = "0.7.1", default-features = false }
 flate2 = "1.0"
 fancy-regex = "0.14.0"
-sc-chain-spec = "46.0.0"
+sc-chain-spec = "50.0.0"
 erased-serde = "0.4"
 ratatui = "0.29"
 crossterm = "0.28"
@@ -86,9 +86,9 @@ walkdir = "2.5"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 
 # Zombienet workspace crates:
-support = { package = "zombienet-support", version = "0.4.11", path = "crates/support" }
-configuration = { package = "zombienet-configuration", version = "0.4.11", path = "crates/configuration" }
-orchestrator = { package = "zombienet-orchestrator", version = "0.4.11", path = "crates/orchestrator" }
-provider = { package = "zombienet-provider", version = "0.4.11", path = "crates/provider" }
-prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.4.11", path = "crates/prom-metrics-parser" }
-zombienet-sdk = { version = "0.4.11", path = "crates/sdk" }
+support = { package = "zombienet-support", version = "0.4.12", path = "crates/support" }
+configuration = { package = "zombienet-configuration", version = "0.4.12", path = "crates/configuration" }
+orchestrator = { package = "zombienet-orchestrator", version = "0.4.12", path = "crates/orchestrator" }
+provider = { package = "zombienet-provider", version = "0.4.12", path = "crates/provider" }
+prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.4.12", path = "crates/prom-metrics-parser" }
+zombienet-sdk = { version = "0.4.12", path = "crates/sdk" }

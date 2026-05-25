@@ -19,16 +19,17 @@ impl NetworkNode {
 }
 
 /// Identity-handling policy for [`NetworkNode::snapshot_db`].
+#[derive(Default)]
 pub enum SnapshotKind {
-    /// Includes `keystore/` and `network/`. Safe to load back into a
-    /// single node. If consumed by multiple sibling nodes the shared
-    /// session keys cause equivocation and the libp2p identity causes
-    /// peer-id collisions.
-    Full,
-    /// Strips `keystore/` and `network/`. Safe to load on any number of
-    /// sibling nodes; zombienet re-injects per-node keys at startup via
-    /// `author_insertKey`.
+    /// Strips the node's identity, only DB. Safe to load on any number of sibling
+    /// nodes.
+    #[default]
     Shareable,
+    /// Includes the node's identity (`keystore/` and `network/`). Use
+    /// only when the snapshot will be loaded back into a node that plays
+    /// the same role as the source. Loading a `Full` snapshot on a
+    /// different node causes equivocation and peer-id collisions.
+    Full,
 }
 
 /// Result of [`NetworkNode::snapshot_db`].
@@ -67,22 +68,42 @@ impl<FS> Network<FS> {
 /// ...
 /// manifest.json   // schema: SnapshotManifest
 /// ```
-pub struct BundleBuilder { /* … */ }
+///
+/// Uses a typestate to make [`build`](BundleBuilder::build) unreachable
+/// until at least one archive has been added. Matches the SDK's
+/// `NetworkConfigBuilder<Initial, …>` convention.
+pub struct BundleBuilder<S = Empty> { /* … */ }
 
-impl BundleBuilder {
+/// Typestate marker — no archives added yet.
+pub struct Empty;
+/// Typestate marker — at least one archive has been added.
+pub struct NonEmpty;
+
+impl BundleBuilder<Empty> {
     pub fn new() -> Self;
 
-    /// Add a per-node archive produced by [`NetworkNode::snapshot_db`].
+    /// Add the first per-node archive. Transitions the builder to the
+    /// [`NonEmpty`] state, which is the only state that exposes
+    /// [`build`](BundleBuilder::build).
+    pub fn add(self, snap: NodeSnapshot) -> BundleBuilder<NonEmpty>;
+}
+
+impl BundleBuilder<NonEmpty> {
+    /// Add a subsequent per-node archive.
     pub fn add(self, snap: NodeSnapshot) -> Self;
 
+    /// Produce `out_path` (gzipped tarball). Only callable once at least
+    /// one archive has been added — enforced at compile time via the
+    /// [`NonEmpty`] typestate.
+    pub fn build(self, out_path: impl AsRef<Path>) -> Result<Bundle, anyhow::Error>;
+}
+
+impl<S> BundleBuilder<S> {
     /// Attach an arbitrary serializable blob. Stored as JSON under
     /// `user_data` in the manifest. Test authors put block heights,
-    /// CIDs, release tags, "number of collators", etc. here.
+    /// CIDs, release tags, "number of collators", etc. here. Can be
+    /// called before or after [`add`](BundleBuilder::add); last call wins.
     pub fn user_data<T: serde::Serialize>(self, data: T) -> Self;
-
-    /// Produce `out_path` (gzipped tarball). Fails if no archives were
-    /// added.
-    pub fn build(self, out_path: impl AsRef<Path>) -> Result<Bundle, anyhow::Error>;
 }
 
 /// Result of [`BundleBuilder::build`].

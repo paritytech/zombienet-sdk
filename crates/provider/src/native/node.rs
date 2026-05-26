@@ -1,10 +1,5 @@
 use std::{
-    collections::HashMap,
-    env,
-    path::{Path, PathBuf},
-    process::Stdio,
-    sync::{Arc, Weak},
-    time::Duration,
+    collections::HashMap, env, path::{Path, PathBuf}, process::Stdio, sync::{Arc, Weak}, time::Duration
 };
 
 use anyhow::anyhow;
@@ -18,7 +13,7 @@ use nix::{
 };
 use serde::{ser::Error, Deserialize, Serialize, Serializer};
 use sha2::Digest;
-use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
+use support::{constants::THIS_IS_A_BUG, fs::{FileSystem, FileSystemError}};
 use tar::Archive;
 use tokio::{
     fs,
@@ -297,12 +292,20 @@ where
             self.get_db_snapshot(db_snapshot, &full_path).await?;
         }
 
-        let contents = self.filesystem.read(&full_path).await.unwrap();
+        // copy snap to node base_dir to avoid race conditions
+        // see: https://github.com/paritytech/zombienet-sdk/issues/540
+        let scoped_snap_file = format!("{}/{hashed_location}.tgz", self.base_dir().to_string_lossy());
+        let _ = self.filesystem.copy(&full_path, &scoped_snap_file).await?;
+        let contents = self.filesystem.read(&full_path).await?;
         let gz = GzDecoder::new(&contents[..]);
         let mut archive = Archive::new(gz);
         archive
             .unpack(self.base_dir.to_string_lossy().as_ref())
-            .unwrap();
+            .map_err(|e| FileSystemError::from(anyhow!("Error unpacking tar snapshot: {}", e.to_string())))?;
+
+
+        let res = fs::remove_file(&scoped_snap_file).await;
+        trace!("removing {}, result {:?}", scoped_snap_file, res);
 
         if std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT").is_ok() {
             let res = fs::remove_file(&full_path).await;

@@ -343,7 +343,7 @@ where
             args: &options.args,
             env: &options.env,
             startup_files: &options.injected_files,
-            db_snapshot: options.db_snapshot.as_ref(),
+            db_snapshot: options.db_snapshot.as_deref(),
             docker_client: &self.docker_client,
             container_name: format!("{}-{}", self.name, options.name),
             filesystem: &self.filesystem,

@@ -160,7 +160,7 @@ where
             env: &options.env,
             startup_files: &options.injected_files,
             created_paths: &options.created_paths,
-            db_snapshot: options.db_snapshot.as_ref(),
+            db_snapshot: options.db_snapshot.as_deref(),
             filesystem: &self.filesystem,
             node_log_path: options.node_log_path.as_ref(),
         })

@@ -188,6 +188,21 @@ where
             .populate_nodes_available_args(ns.clone())
             .await?;
 
+        // Resolve every node's `db_snapshot` AssetLocation into a local
+        // cache file once, serially, before any parallel spawn.
+        let all_nodes: Vec<&NodeSpec> = network_spec
+            .relaychain()
+            .nodes
+            .iter()
+            .chain(
+                network_spec
+                    .parachains_iter()
+                    .flat_map(|p| p.collators.iter()),
+            )
+            .collect();
+        let resolved_db_snapshots =
+            generators::resolve_db_snapshots(all_nodes, &ns, &self.filesystem).await?;
+
         let base_dir = ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
         // Create chain-spec for relaychain
@@ -424,6 +439,7 @@ where
             wait_ready: false,
             nodes_by_name: json!({}),
             global_settings: &network_spec.global_settings,
+            resolved_db_snapshots: &resolved_db_snapshots,
         };
 
         let global_files_to_inject = vec![TransferedFile::new(
@@ -688,6 +704,8 @@ where
         if network_spec.global_settings.tear_down_on_failure() {
             network.spawn_watching_task();
         }
+
+        generators::cleanup_db_snapshot_cache(&resolved_db_snapshots).await;
 
         Ok(network)
     }

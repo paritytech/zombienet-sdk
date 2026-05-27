@@ -891,6 +891,26 @@ impl<T: FileSystem> Network<T> {
         Ok(())
     }
 
+    /// Pause every node in the network (SIGSTOP). Issued in parallel.
+    ///
+    /// Note: with the native provider on an attached network, the live
+    /// network has to be running with global setting `teardown_on_failure`
+    /// disabled.
+    pub async fn pause(&self) -> Result<(), anyhow::Error> {
+        futures::future::try_join_all(self.nodes_iter().map(|n| n.pause())).await?;
+        Ok(())
+    }
+
+    /// Resume every node in the network (SIGCONT). Issued in parallel.
+    ///
+    /// Note: with the native provider on an attached network, the live
+    /// network has to be running with global setting `teardown_on_failure`
+    /// disabled.
+    pub async fn resume(&self) -> Result<(), anyhow::Error> {
+        futures::future::try_join_all(self.nodes_iter().map(|n| n.resume())).await?;
+        Ok(())
+    }
+
     /// Start the observability stack (Prometheus + Grafana) as an add-on
     ///
     /// This can be called on any running network — whether freshly spawned or

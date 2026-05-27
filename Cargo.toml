@@ -66,6 +66,7 @@ tracing = "0.1.35"
 kube = "0.87.1"
 k8s-openapi = "0.20.0"
 tar = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 axum = "0.7"
 axum-extra = "0.9"
 tower = "0.4"

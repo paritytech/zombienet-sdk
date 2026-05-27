@@ -13,12 +13,20 @@ keywords = ["zombienet", "sdk"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 lazy_static = { workspace = true }
 subxt = { workspace = true }
 subxt-signer = { workspace = true, features = ["subxt"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true, default-features = false }
+hex = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+chrono = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }
@@ -30,4 +38,6 @@ support = { workspace = true }
 tracing-subscriber = { workspace = true }
 kube = { workspace = true, features = ["ws", "runtime"] }
 k8s-openapi = { workspace = true, features = ["v1_27"] }
-serde_json = {workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+tracing = { workspace = true }

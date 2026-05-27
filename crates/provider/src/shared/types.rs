@@ -4,7 +4,7 @@ use std::{
     process::ExitStatus,
 };
 
-use configuration::{shared::resources::Resources, types::AssetLocation};
+use configuration::shared::resources::Resources;
 use serde::{Deserialize, Serialize};
 
 pub type Port = u16;
@@ -46,9 +46,10 @@ pub struct SpawnNodeOptions {
     /// should be created with `create_dir_all` in order
     /// to create the full path even when we have missing parts
     pub created_paths: Vec<PathBuf>,
-    /// Database snapshot to be injected (should be a tgz file)
-    /// Could be a local or remote asset
-    pub db_snapshot: Option<AssetLocation>,
+    /// Database snapshot to be injected (a local `.tgz` resolved by the
+    /// orchestrator before spawn — providers extract it directly, no
+    /// download). See `orchestrator::generators::resolve_db_snapshots`.
+    pub db_snapshot: Option<PathBuf>,
     pub port_mapping: Option<HashMap<Port, Port>>,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
@@ -87,7 +88,7 @@ impl SpawnNodeOptions {
         self
     }
 
-    pub fn db_snapshot(mut self, db_snap: Option<AssetLocation>) -> Self {
+    pub fn db_snapshot(mut self, db_snap: Option<PathBuf>) -> Self {
         self.db_snapshot = db_snap;
         self
     }

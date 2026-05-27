@@ -17,11 +17,9 @@ use nix::{
     unistd::Pid,
 };
 use serde::{ser::Error, Deserialize, Serialize, Serializer};
-use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
 use tokio::{
-    fs,
     io::{AsyncRead, AsyncReadExt, BufReader},
     process::{Child, ChildStderr, ChildStdout, Command},
     sync::{
@@ -39,7 +37,7 @@ use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     native,
     types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
-    ProviderError, ProviderNamespace, ProviderNode,
+    ProviderError, ProviderNode,
 };
 
 pub(super) struct NativeNodeOptions<'a, FS>
@@ -54,7 +52,7 @@ where
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) created_paths: &'a [PathBuf],
-    pub(super) db_snapshot: Option<&'a AssetLocation>,
+    pub(super) db_snapshot: Option<&'a Path>,
     pub(super) filesystem: &'a FS,
     pub(super) node_log_path: Option<&'a PathBuf>,
 }
@@ -275,64 +273,23 @@ where
         Ok(())
     }
 
-    async fn initialize_db_snapshot(
-        &self,
-        db_snapshot: &AssetLocation,
-    ) -> Result<(), ProviderError> {
-        trace!("snap: {db_snapshot}");
-
-        // check if we need to get the db or is already in the ns
-        let ns_base_dir = self.namespace_base_dir();
-        let hashed_location = match db_snapshot {
-            AssetLocation::Url(location) => hex::encode(sha2::Sha256::digest(location.to_string())),
-            AssetLocation::FilePath(filepath) => {
-                hex::encode(sha2::Sha256::digest(filepath.to_string_lossy().to_string()))
-            },
-        };
-
-        let full_path = format!("{ns_base_dir}/{hashed_location}.tgz");
-        trace!("db_snap fullpath in ns: {full_path}");
-        if !self.filesystem.exists(&full_path).await {
-            // needs to download/copy
-            self.get_db_snapshot(db_snapshot, &full_path).await?;
-        }
-
-        let contents = self.filesystem.read(&full_path).await.unwrap();
+    async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
+        trace!(
+            "extracting db_snapshot {} -> {}",
+            db_snapshot.display(),
+            self.base_dir.display()
+        );
+        let contents = self.filesystem.read(db_snapshot).await?;
         let gz = GzDecoder::new(&contents[..]);
         let mut archive = Archive::new(gz);
         archive
             .unpack(self.base_dir.to_string_lossy().as_ref())
-            .unwrap();
-
-        if std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT").is_ok() {
-            let res = fs::remove_file(&full_path).await;
-            trace!("removing {}, result {:?}", full_path, res);
-        }
-
-        Ok(())
-    }
-
-    async fn get_db_snapshot(
-        &self,
-        location: &AssetLocation,
-        full_path: &str,
-    ) -> Result<(), ProviderError> {
-        trace!("getting db_snapshot from: {:?} to: {full_path}", location);
-        match location {
-            AssetLocation::Url(location) => {
-                let res = reqwest::get(location.as_ref())
-                    .await
-                    .map_err(|err| ProviderError::DownloadFile(location.to_string(), err.into()))?;
-
-                let contents: &[u8] = &res.bytes().await.unwrap();
-                trace!("writing: {full_path}");
-                self.filesystem.write(full_path, contents).await?;
-            },
-            AssetLocation::FilePath(filepath) => {
-                self.filesystem.copy(filepath, full_path).await?;
-            },
-        };
-
+            .map_err(|err| {
+                ProviderError::FileGenerationFailed(anyhow!(
+                    "failed to extract db_snapshot {}: {err}",
+                    db_snapshot.display()
+                ))
+            })?;
         Ok(())
     }
 
@@ -487,13 +444,6 @@ where
         }
 
         Ok(())
-    }
-
-    fn namespace_base_dir(&self) -> String {
-        self.namespace
-            .upgrade()
-            .map(|namespace| namespace.base_dir().to_string_lossy().to_string())
-            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {THIS_IS_A_BUG}"))
     }
 }
 

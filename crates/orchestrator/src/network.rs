@@ -26,7 +26,7 @@ use tracing::{error, warn};
 
 use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
 use crate::{
-    generators::chain_spec::ChainSpec,
+    generators::{self, chain_spec::ChainSpec},
     network_spec::{self, NetworkSpec},
     observability::{self, ObservabilityInfo, ObservabilityState},
     shared::{
@@ -214,6 +214,13 @@ impl<T: FileSystem> Network<T> {
         let base_dir = self.ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
+        let resolved_db_snapshots = generators::resolve_db_snapshots(
+            std::iter::once(&node_spec),
+            &self.ns,
+            &self.filesystem,
+        )
+        .await?;
+
         let ctx = SpawnNodeCtx {
             chain_id: &relaychain.chain_id,
             parachain_id: None,
@@ -226,6 +233,7 @@ impl<T: FileSystem> Network<T> {
             wait_ready: true,
             nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
             global_settings: &self.initial_spec.global_settings,
+            resolved_db_snapshots: &resolved_db_snapshots,
         };
 
         let global_files_to_inject = vec![TransferedFile::new(
@@ -254,6 +262,8 @@ impl<T: FileSystem> Network<T> {
 
         // Dump zombie.json
         self.write_zombie_json().await?;
+
+        generators::cleanup_db_snapshot_cache(&resolved_db_snapshots).await;
 
         Ok(())
     }
@@ -323,21 +333,6 @@ impl<T: FileSystem> Network<T> {
         let base_dir = self.ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
-        // TODO: we want to still supporting spawn a dedicated bootnode??
-        let ctx = SpawnNodeCtx {
-            chain_id: &self.relay.chain_id,
-            parachain_id: parachain.chain_id.as_deref(),
-            chain: &self.relay.chain,
-            role,
-            ns: &self.ns,
-            scoped_fs: &scoped_fs,
-            parachain: Some(spec),
-            bootnodes_addr: &vec![],
-            wait_ready: true,
-            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
-            global_settings: &self.initial_spec.global_settings,
-        };
-
         let relaychain_spec_path = if let Some(chain_spec_custom_path) = &options.chain_spec_relay {
             chain_spec_custom_path.clone()
         } else {
@@ -386,6 +381,29 @@ impl<T: FileSystem> Network<T> {
                 .await?,
         );
 
+        let resolved_db_snapshots = generators::resolve_db_snapshots(
+            std::iter::once(&node_spec),
+            &self.ns,
+            &self.filesystem,
+        )
+        .await?;
+
+        // TODO: we want to still supporting spawn a dedicated bootnode??
+        let ctx = SpawnNodeCtx {
+            chain_id: &self.relay.chain_id,
+            parachain_id: parachain.chain_id.as_deref(),
+            chain: &self.relay.chain,
+            role,
+            ns: &self.ns,
+            scoped_fs: &scoped_fs,
+            parachain: Some(spec),
+            bootnodes_addr: &vec![],
+            wait_ready: true,
+            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
+            global_settings: &self.initial_spec.global_settings,
+            resolved_db_snapshots: &resolved_db_snapshots,
+        };
+
         let node = spawner::spawn_node(&node_spec, global_files_to_inject, &ctx).await?;
 
         // Let's make sure node is up before adding
@@ -396,6 +414,8 @@ impl<T: FileSystem> Network<T> {
 
         // Dump zombie.json
         self.write_zombie_json().await?;
+
+        generators::cleanup_db_snapshot_cache(&resolved_db_snapshots).await;
 
         Ok(())
     }
@@ -550,6 +570,13 @@ impl<T: FileSystem> Network<T> {
             Parachain::from_spec(&para_spec, &global_files_to_inject, &scoped_fs).await?;
         let parachain_id = parachain.chain_id.clone();
 
+        let resolved_db_snapshots = generators::resolve_db_snapshots(
+            para_spec.collators.iter(),
+            &self.ns,
+            &self.filesystem,
+        )
+        .await?;
+
         // Create `ctx` for spawn the nodes
         let ctx_para = SpawnNodeCtx {
             parachain: Some(&para_spec),
@@ -571,6 +598,7 @@ impl<T: FileSystem> Network<T> {
             wait_ready: false,
             nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
             global_settings: &self.initial_spec.global_settings,
+            resolved_db_snapshots: &resolved_db_snapshots,
         };
 
         // Register the parachain to the running network
@@ -633,6 +661,8 @@ impl<T: FileSystem> Network<T> {
 
         // Dump zombie.json
         self.write_zombie_json().await?;
+
+        generators::cleanup_db_snapshot_cache(&resolved_db_snapshots).await;
 
         Ok(())
     }

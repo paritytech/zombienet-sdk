@@ -490,7 +490,7 @@ where
             env: &options.env,
             startup_files: &options.injected_files,
             resources: options.resources.as_ref(),
-            db_snapshot: options.db_snapshot.as_ref(),
+            db_snapshot: options.db_snapshot.as_deref(),
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,
         })

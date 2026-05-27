@@ -14,7 +14,7 @@ use support::{
 use tracing::info;
 
 use crate::{
-    generators,
+    generators::{self, ResolvedDbSnapshots},
     network::{node::NetworkNode, NodeContext},
     network_spec::{node::NodeSpec, parachain::ParachainSpec},
     shared::constants::{FULL_NODE_PROMETHEUS_PORT, PROMETHEUS_PORT, RPC_PORT},
@@ -46,6 +46,11 @@ pub struct SpawnNodeCtx<'a, T: FileSystem> {
     pub(crate) nodes_by_name: serde_json::Value,
     /// A ref to the global settings
     pub(crate) global_settings: &'a GlobalSettings,
+    /// `db_snapshot` `AssetLocation`s resolved to local cache paths,
+    /// populated once before the parallel spawn fanout. The provider's
+    /// `initialize_db_snapshot` reads from these paths only — no
+    /// downloads happen inside the per-node spawn.
+    pub(crate) resolved_db_snapshots: &'a ResolvedDbSnapshots,
 }
 
 pub async fn spawn_node<'a, T>(
@@ -188,6 +193,22 @@ where
         ]
     };
 
+    let resolved_db_snapshot = node
+        .db_snapshot
+        .as_ref()
+        .and_then(|loc| ctx.resolved_db_snapshots.get(loc).cloned());
+    if node.db_snapshot.is_some() && resolved_db_snapshot.is_none() {
+        // Invariant: every NodeSpec.db_snapshot must have been resolved
+        // by orchestrator::generators::resolve_db_snapshots before we
+        // get here. Hitting this path means the resolution step was
+        // skipped for this node.
+        return Err(anyhow::anyhow!(
+            "{THIS_IS_A_BUG}: node {} has db_snapshot {:?} but no resolved cache entry",
+            node.name,
+            node.db_snapshot,
+        ));
+    }
+
     let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
         .args(args)
         .env(
@@ -197,7 +218,7 @@ where
         )
         .injected_files(files_to_inject)
         .created_paths(created_paths)
-        .db_snapshot(node.db_snapshot.clone())
+        .db_snapshot(resolved_db_snapshot)
         .port_mapping(HashMap::from(ports))
         .node_log_path(node.node_log_path.clone());
 

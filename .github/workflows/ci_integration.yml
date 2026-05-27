@@ -81,7 +81,7 @@ jobs:
         run: |
           export ZOMBIE_K8S_CI_NAMESPACE=$(cat /data/namespace)
           mkdir -p /tmp/zombie-1/logs
-          
+
           # Install kubectl if not available
           if ! command -v kubectl &> /dev/null; then
             echo "Installing kubectl..."
@@ -89,7 +89,7 @@ jobs:
             chmod +x kubectl
             mv kubectl /usr/local/bin/
           fi
-          
+
           echo "Listing pods in namespace $ZOMBIE_K8S_CI_NAMESPACE..."
           kubectl get pods -n "$ZOMBIE_K8S_CI_NAMESPACE" -o wide || true
           for pod in $(kubectl get pods -n "$ZOMBIE_K8S_CI_NAMESPACE" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true); do
@@ -109,7 +109,7 @@ jobs:
             /tmp/zombie-1/logs/*
 
   docker-integration-test-smoke:
-    runs-on: parity-default
+    runs-on: parity-zombienet
     needs: build-tests
     timeout-minutes: 60
     steps:

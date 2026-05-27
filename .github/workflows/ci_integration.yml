@@ -173,7 +173,7 @@ jobs:
         run: |
           for bin in polkadot polkadot-execute-worker polkadot-prepare-worker polkadot-omni-node polkadot-parachain; do
             echo "downloading $bin";
-            curl -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2503-1/$bin;
+            curl --retry 3 -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-stable2603-2/$bin;
             chmod 755 /tmp/$bin;
           done
           ls -ltr /tmp

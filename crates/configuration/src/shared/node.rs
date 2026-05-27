@@ -1105,12 +1105,13 @@ mod tests {
 
     #[test]
     fn with_optional_db_snapshot_applies_when_some() {
-        let node_config = NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
-            .with_name("node")
-            .with_command("mycommand")
-            .with_optional_db_snapshot(Some("/tmp/mysnapshot"))
-            .build()
-            .unwrap();
+        let node_config =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
+                .with_name("node")
+                .with_command("mycommand")
+                .with_optional_db_snapshot(Some("/tmp/mysnapshot"))
+                .build()
+                .unwrap();
         assert!(matches!(
             node_config.db_snapshot().unwrap(),
             AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
@@ -1119,12 +1120,13 @@ mod tests {
 
     #[test]
     fn with_optional_db_snapshot_is_noop_when_none() {
-        let node_config = NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
-            .with_name("node")
-            .with_command("mycommand")
-            .with_optional_db_snapshot(None::<&str>)
-            .build()
-            .unwrap();
+        let node_config =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
+                .with_name("node")
+                .with_command("mycommand")
+                .with_optional_db_snapshot(None::<&str>)
+                .build()
+                .unwrap();
         assert!(node_config.db_snapshot().is_none());
     }
 

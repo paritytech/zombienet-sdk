@@ -126,12 +126,22 @@ async fn prepare_bundle(out_dir: &Path) -> (zombienet_sdk::Bundle, Anchors) {
     let para_node = producer.get_node("collator-1").expect("collator-1 exists");
 
     println!("⏳ waiting for both chains to progress + finalize");
-    wait_progress_and_finality(relay_node, PRODUCER_BEST, PRODUCER_FINALIZED, PROGRESS_TIMEOUT_SECS)
-        .await
-        .expect("relay progresses + finalizes");
-    wait_progress_and_finality(para_node, PRODUCER_BEST, PRODUCER_FINALIZED, PROGRESS_TIMEOUT_SECS)
-        .await
-        .expect("para progresses + finalizes");
+    wait_progress_and_finality(
+        relay_node,
+        PRODUCER_BEST,
+        PRODUCER_FINALIZED,
+        PROGRESS_TIMEOUT_SECS,
+    )
+    .await
+    .expect("relay progresses + finalizes");
+    wait_progress_and_finality(
+        para_node,
+        PRODUCER_BEST,
+        PRODUCER_FINALIZED,
+        PROGRESS_TIMEOUT_SECS,
+    )
+    .await
+    .expect("para progresses + finalizes");
 
     // Capture heights *before* pausing (a paused process won't serve
     // Prometheus). These are the anchors the consumer must exceed.
@@ -139,7 +149,10 @@ async fn prepare_bundle(out_dir: &Path) -> (zombienet_sdk::Bundle, Anchors) {
         relay: relay_node.reports(BEST_BLOCK).await.expect("relay height") as u64,
         para: para_node.reports(BEST_BLOCK).await.expect("para height") as u64,
     };
-    println!("📏 snapshot anchors: relay={} para={}", anchors.relay, anchors.para);
+    println!(
+        "📏 snapshot anchors: relay={} para={}",
+        anchors.relay, anchors.para
+    );
 
     println!("⏸  pausing network");
     producer.pause().await.expect("pause");
@@ -260,7 +273,10 @@ async fn consume_bundle(out_dir: &Path, inner_relay: &Path, inner_para: &Path, a
         .get_node("collator-1")
         .expect("collator-1 in consumer");
 
-    println!("⏳ consumer relay must advance + finalize past {}", anchors.relay);
+    println!(
+        "⏳ consumer relay must advance + finalize past {}",
+        anchors.relay
+    );
     wait_progress_and_finality(
         relay2,
         anchors.relay as f64 + RESUME_DELTA,
@@ -270,7 +286,10 @@ async fn consume_bundle(out_dir: &Path, inner_relay: &Path, inner_para: &Path, a
     .await
     .expect("consumer relay resumes + finalizes");
 
-    println!("⏳ consumer para must advance + finalize past {}", anchors.para);
+    println!(
+        "⏳ consumer para must advance + finalize past {}",
+        anchors.para
+    );
     wait_progress_and_finality(
         para2,
         anchors.para as f64 + RESUME_DELTA,

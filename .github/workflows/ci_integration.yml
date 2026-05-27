@@ -109,7 +109,7 @@ jobs:
             /tmp/zombie-1/logs/*
 
   docker-integration-test-smoke:
-    runs-on: parity-zombienet
+    runs-on: parity-zombienet-native-default
     needs: build-tests
     timeout-minutes: 60
     steps:
@@ -131,6 +131,7 @@ jobs:
         timeout-minutes: 45
         run: |
           export ZOMBIE_PROVIDER="docker"
+          export RUST_LOG="zombienet_orchestrator=debug,zombienet_provider=debug,zombienet_provider::docker=trace"
           cd /tmp
           ls -la
           tar xvfz artifacts.tar.gz

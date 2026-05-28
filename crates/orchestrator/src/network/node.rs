@@ -14,11 +14,10 @@ use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::{
-    types::{ExecutionResult, RunScriptOptions},
+    types::{ExecutionResult, InnerSnapshotDb, RunScriptOptions},
     DynNode,
 };
 use serde::{Deserialize, Serialize, Serializer};
-use sha2::Digest;
 use subxt::{backend::rpc::RpcClient, OnlineClient, PolkadotConfig};
 use support::net::{skip_err_while_waiting, wait_ws_ready};
 use thiserror::Error;
@@ -29,7 +28,7 @@ use crate::{
     generators::{generate_node_command, generate_node_command_cumulus, GenCmdOptions},
     network::NodeContext,
     network_spec::node::NodeSpec,
-    shared::constants::PROCESS_START_TIME_METRIC,
+    shared::{constants::PROCESS_START_TIME_METRIC, types::NodeSnapshot},
     tx_helper::client::get_client_from_url,
 };
 
@@ -335,81 +334,41 @@ impl NetworkNode {
         Ok(())
     }
 
-    /// On-disk base directory of the node — root of `data/`, `relay-data/`,
-    /// `cfg/`, etc.
-    pub fn base_dir(&self) -> &PathBuf {
-        self.inner.base_dir()
-    }
-
-    /// Tar the node's database into `out_path` (gzipped) by shelling out to
-    /// the `tar` CLI. Archive layout: `data/` at the top, plus `relay-data/`
-    /// for cumulus collators (auto-detected from the node's context). The
-    /// per-node identity subdirs (`keystore/`, `network/`) are excluded so
-    /// the produced archive is safe to load on any number of sibling nodes.
+    /// Tar the node's database into `out_path` (gzipped).
     ///
-    /// Operates on the node's local base dir, so it's meaningful for the
-    /// native provider only. The caller is responsible for pausing the node
-    /// first; snapshotting a running node risks a torn RocksDB state.
+    /// NOTE: Currently __only__ implemented in native provider. Also,
+    /// the caller is responsible for pausing the node first;
+    /// snapshotting a running node risks a torn RocksDB state.
     pub async fn snapshot_db(
         &self,
         out_path: impl AsRef<Path>,
     ) -> Result<NodeSnapshot, anyhow::Error> {
         let out_path = out_path.as_ref().to_path_buf();
-        let base_dir = self.base_dir();
-        let data_dir = base_dir.join("data");
-        if !data_dir.is_dir() {
-            return Err(anyhow!(
-                "node {} has no data dir at {}",
-                self.name,
-                data_dir.display()
-            ));
-        }
-        let include_relay_data = matches!(
+        let is_cumulus_based = matches!(
             self.context,
             NodeContext::Para {
                 is_cumulus_based: true,
                 ..
             }
-        ) && base_dir.join("relay-data").is_dir();
+        );
 
-        // `tar -C base_dir data [relay-data]` keeps `data/`/`relay-data/` at
-        // the archive root. `--exclude` strips per-node identity. Shelling
-        // out (vs the tar crate) avoids a hand-rolled recursive walk and
-        // matches the existing zombienet snapshot generators.
-        let mut cmd = tokio::process::Command::new("tar");
-        cmd.arg("-czf")
-            .arg(&out_path)
-            .arg("--exclude=keystore")
-            .arg("--exclude=network")
-            .arg("-C")
-            .arg(base_dir)
-            .arg("data");
-        if include_relay_data {
-            cmd.arg("relay-data");
-        }
+        let InnerSnapshotDb {
+            filename,
+            sha256,
+            size,
+        } = self.inner.snapshot_db(is_cumulus_based).await?;
 
-        let status = cmd
-            .status()
-            .await
-            .map_err(|err| anyhow!("spawning tar for node {}: {err}", self.name))?;
-        if !status.success() {
-            return Err(anyhow!(
-                "tar failed for node {} (status {status})",
-                self.name
-            ));
-        }
-
-        let bytes = tokio::fs::read(&out_path)
-            .await
-            .map_err(|err| anyhow!("reading produced {}: {err}", out_path.display()))?;
-        let size = bytes.len() as u64;
-        let sha256 = hex::encode(sha2::Sha256::digest(&bytes));
+        // now we need to _move_ the inner file to the out_path
+        let remote_file_path = PathBuf::from(&filename);
+        self.inner
+            .receive_file(remote_file_path.as_ref(), out_path.as_ref())
+            .await?;
 
         Ok(NodeSnapshot {
             path: out_path,
             sha256,
             size,
-            node_name: self.name.clone(),
+            node_name: self.name().into(),
         })
     }
 
@@ -1198,19 +1157,6 @@ where
     erased_serde::serialize(node.as_ref(), serializer)
 }
 
-/// Result of [`NetworkNode::snapshot_db`].
-#[derive(Debug, Clone)]
-pub struct NodeSnapshot {
-    /// Absolute path to the produced `.tgz`.
-    pub path: PathBuf,
-    /// Hex-encoded SHA-256 of the archive contents.
-    pub sha256: String,
-    /// Size of the archive in bytes.
-    pub size: u64,
-    /// Name of the node this snapshot was taken from.
-    pub node_name: String,
-}
-
 // TODO: mock and impl more unit tests
 #[cfg(test)]
 mod tests {
@@ -1348,6 +1294,10 @@ mod tests {
         }
 
         async fn destroy(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn snapshot_db(&self, _: bool) -> Result<InnerSnapshotDb, ProviderError> {
             todo!()
         }
     }

@@ -97,3 +97,16 @@ pub struct ParachainGenesisArgs {
     pub validation_code: String,
     pub parachain: bool,
 }
+
+/// Result of [`NetworkNode::snapshot_db`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSnapshot {
+    /// Absolute path to the produced `.tgz`.
+    pub path: PathBuf,
+    /// Hex-encoded SHA-256 of the archive contents.
+    pub sha256: String,
+    /// Size of the archive in bytes.
+    pub size: u64,
+    /// Name of the node this snapshot was taken from.
+    pub node_name: String,
+}

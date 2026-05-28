@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
     env,
+    fs::File,
+    io,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, Weak},
@@ -17,6 +19,7 @@ use nix::{
     unistd::Pid,
 };
 use serde::{ser::Error, Deserialize, Serialize, Serializer};
+use sha2::{Digest, Sha256};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
 use tokio::{
@@ -36,7 +39,9 @@ use super::namespace::NativeNamespace;
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     native,
-    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
+    types::{
+        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+    },
     ProviderError, ProviderNode,
 };
 
@@ -609,12 +614,13 @@ where
         remote_file_path: &Path,
         local_file_path: &Path,
     ) -> Result<(), ProviderError> {
-        let namespaced_remote_file_path = PathBuf::from(format!(
-            "{}{}",
-            &self.base_dir.to_string_lossy(),
-            remote_file_path.to_string_lossy()
-        ));
+        let namespaced_remote_file_path = self.path_in_node(remote_file_path);
 
+        trace!(
+            "copy: {} to {}",
+            &namespaced_remote_file_path.to_string_lossy(),
+            &local_file_path.to_string_lossy()
+        );
         self.filesystem
             .copy(namespaced_remote_file_path, local_file_path)
             .await?;
@@ -728,6 +734,74 @@ where
         }
 
         Ok(())
+    }
+
+    // Note: by shelling out to the `tar` CLI we don't need to
+    // manually walk the directory to exclude identity dirs.
+    //
+    // Archive layout: `data/` at the top, plus `relay-data/`
+    // for cumulus collators (auto-detected from the node's context). The
+    // per-node identity subdirs (`keystore/`, `network/`) are excluded so
+    // the produced archive is safe to load on any number of sibling nodes.
+
+    async fn snapshot_db(&self, is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
+        let filename = format!("{}.tgz", self.name());
+        let base_dir = self.base_dir();
+        let data_dir = base_dir.join("data");
+        if !data_dir.is_dir() {
+            return Err(ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("has no data dir at {}", data_dir.display()),
+            ));
+        }
+
+        let out_path = base_dir.join(&filename);
+        let include_relay_data = is_cumulus_based && base_dir.join("relay-data").is_dir();
+
+        println!("1");
+
+        // `tar -C base_dir data [relay-data]` keeps `data/`/`relay-data/` at
+        // the archive root. `--exclude` strips per-node identity. Shelling
+        // out (vs the tar crate) avoids a hand-rolled recursive walk and
+        // matches the existing zombienet snapshot generators.
+        let mut cmd = tokio::process::Command::new("tar");
+        cmd.arg("-czf")
+            .arg(&out_path)
+            .arg("--exclude=keystore")
+            .arg("--exclude=network")
+            .arg("-C")
+            .arg(base_dir)
+            .arg("data");
+        if include_relay_data {
+            cmd.arg("relay-data");
+        }
+
+        let status = cmd.status().await.map_err(|err| {
+            ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("spawning tar for node {}: {err}", self.name),
+            )
+        })?;
+
+        println!("2");
+        if !status.success() {
+            return Err(ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("tar failed for node {} (status {status})", self.name),
+            ));
+        }
+
+        println!("3");
+        let mut file = File::open(&out_path).unwrap();
+        let mut sha256 = Sha256::new();
+        let bytes = io::copy(&mut file, &mut sha256).unwrap();
+        let hash = hex::encode(sha256.finalize());
+        println!("4");
+        Ok(InnerSnapshotDb {
+            filename,
+            sha256: hash,
+            size: bytes,
+        })
     }
 }
 

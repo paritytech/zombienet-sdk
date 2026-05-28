@@ -8,10 +8,7 @@ pub use configuration::{
 };
 pub use orchestrator::{
     errors::OrchestratorError,
-    network::{
-        node::{NetworkNode, NodeSnapshot},
-        Network,
-    },
+    network::{node::NetworkNode, Network},
     sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
 pub use provider::types::{ExecutionResult, RunScriptOptions};
@@ -30,7 +27,7 @@ pub use support::fs::local::LocalFileSystem;
 
 pub mod environment;
 pub mod snapshot;
-pub use snapshot::{ArchiveEntry, Bundle, BundleBuilder, SnapshotManifest};
+pub use snapshot::{Bundle, BundleBuilder, SnapshotManifest};
 pub const PROVIDERS: [&str; 3] = ["k8s", "native", "docker"];
 
 // re-export subxt

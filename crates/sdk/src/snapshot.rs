@@ -29,7 +29,7 @@ use std::{
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use flate2::{write::GzEncoder, Compression};
-use orchestrator::network::node::NodeSnapshot;
+use orchestrator::shared::types::NodeSnapshot;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
@@ -51,6 +51,7 @@ pub struct SnapshotManifest {
     pub schema_version: u32,
     /// RFC 3339 timestamp at bundle-build time.
     pub created_at: String,
+    /// Collection of [`ArchiveEntry`]s
     pub archives: Vec<ArchiveEntry>,
     /// Caller-provided payload from [`BundleBuilder::user_data`]. Free-form;
     /// shape is the test author's responsibility.
@@ -58,6 +59,8 @@ pub struct SnapshotManifest {
 }
 
 /// Per-archive metadata inside a [`SnapshotManifest`].
+/// This is similar to [`NodeSnapshot`] but using the _filename_
+/// instead of the path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveEntry {
     /// Basename inside the bundle (e.g. `"relaychain-db.tgz"`).
@@ -93,7 +96,7 @@ pub struct NonEmpty;
 ///     .build("bundle.tar.gz")?;
 /// ```
 pub struct BundleBuilder<S = Empty> {
-    archives: Vec<NodeSnapshot>,
+    snaps: Vec<NodeSnapshot>,
     user_data: serde_json::Value,
     _state: PhantomData<S>,
 }
@@ -107,7 +110,7 @@ impl Default for BundleBuilder<Empty> {
 impl BundleBuilder<Empty> {
     pub fn new() -> Self {
         Self {
-            archives: Vec::new(),
+            snaps: Vec::new(),
             user_data: serde_json::Value::Null,
             _state: PhantomData,
         }
@@ -118,9 +121,9 @@ impl BundleBuilder<Empty> {
     /// [`build`](BundleBuilder::build).
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, snap: NodeSnapshot) -> BundleBuilder<NonEmpty> {
-        self.archives.push(snap);
+        self.snaps.push(snap);
         BundleBuilder {
-            archives: self.archives,
+            snaps: self.snaps,
             user_data: self.user_data,
             _state: PhantomData,
         }
@@ -131,7 +134,7 @@ impl BundleBuilder<NonEmpty> {
     /// Add a subsequent per-node archive.
     #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, snap: NodeSnapshot) -> Self {
-        self.archives.push(snap);
+        self.snaps.push(snap);
         self
     }
 
@@ -139,7 +142,7 @@ impl BundleBuilder<NonEmpty> {
     /// least one archive has been added — enforced at compile time.
     pub fn build(self, out_path: impl AsRef<Path>) -> anyhow::Result<Bundle> {
         let out_path = out_path.as_ref().to_path_buf();
-        build_bundle(out_path, self.archives, self.user_data)
+        build_bundle(out_path, self.snaps, self.user_data)
     }
 }
 
@@ -156,12 +159,12 @@ impl<S> BundleBuilder<S> {
 
 fn build_bundle(
     out_path: PathBuf,
-    archives: Vec<NodeSnapshot>,
+    snaps: Vec<NodeSnapshot>,
     user_data: serde_json::Value,
 ) -> anyhow::Result<Bundle> {
     // Build the manifest from the per-archive metadata the orchestrator
     // already computed when each .tgz was produced.
-    let entries: Vec<ArchiveEntry> = archives
+    let entries: Vec<ArchiveEntry> = snaps
         .iter()
         .map(|snap| {
             let file = snap
@@ -194,7 +197,7 @@ fn build_bundle(
     let gz = GzEncoder::new(f, Compression::default());
     let mut tar = tar::Builder::new(gz);
 
-    for (snap, entry) in archives.iter().zip(manifest.archives.iter()) {
+    for (snap, entry) in snaps.iter().zip(manifest.archives.iter()) {
         tar.append_path_with_name(&snap.path, &entry.file)
             .with_context(|| format!("appending {} as {}", snap.path.display(), entry.file))?;
     }

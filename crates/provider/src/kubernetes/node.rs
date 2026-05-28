@@ -28,7 +28,9 @@ use crate::{
         PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
     },
     kubernetes,
-    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
+    types::{
+        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+    },
     ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -956,5 +958,9 @@ where
         }
 
         Ok(())
+    }
+
+    async fn snapshot_db(&self, _is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
+        todo!("snapshot db is not implemented yet for k8s");
     }
 }

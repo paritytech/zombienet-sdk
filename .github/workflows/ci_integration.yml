@@ -337,7 +337,7 @@ jobs:
           ls -la
           tar xvfz artifacts.tar.gz
           export ZOMBIE_PROVIDER="native"
-          ./artifacts/snapshot_roundtrip --nocapture
+          ./artifacts/snapshot_roundtrip --ignored --nocapture
           # cargo test --test snapshot_roundtrip -- --ignored --nocapture
 
       - name: collect logs

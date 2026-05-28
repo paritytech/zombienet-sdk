@@ -45,6 +45,7 @@ jobs:
           find /tmp/target/debug/deps/ -maxdepth 1 -name "smoke_native-*" ! -name "*.d" -exec mv {} $(pwd)/smoke_native \;
           find /tmp/target/debug/deps/ -maxdepth 1 -name "chain_spec_runtime_omni_node-*" ! -name "*.d" -exec mv {} $(pwd)/chain_spec_runtime_omni_node \;
           find /tmp/target/debug/deps/ -maxdepth 1 -name "chain_spec_runtime_polkadot-*" ! -name "*.d" -exec mv {} $(pwd)/chain_spec_runtime_polkadot \;
+          find /tmp/target/debug/deps/ -maxdepth 1 -name "snapshot_roundtrip-*" ! -name "*.d" -exec mv {} $(pwd)/snapshot_roundtrip \;
           cd ..
           tar cvfz artifacts.tar.gz artifacts
 
@@ -336,7 +337,8 @@ jobs:
           ls -la
           tar xvfz artifacts.tar.gz
           export ZOMBIE_PROVIDER="native"
-          cargo test --test snapshot_roundtrip -- --ignored --nocapture
+          ./artifacts/snapshot_roundtrip --nocapture
+          # cargo test --test snapshot_roundtrip -- --ignored --nocapture
 
       - name: collect logs
         if: always()

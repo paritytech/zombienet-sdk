@@ -758,8 +758,6 @@ where
         let out_path = base_dir.join(&filename);
         let include_relay_data = is_cumulus_based && base_dir.join("relay-data").is_dir();
 
-        println!("1");
-
         // `tar -C base_dir data [relay-data]` keeps `data/`/`relay-data/` at
         // the archive root. `--exclude` strips per-node identity. Shelling
         // out (vs the tar crate) avoids a hand-rolled recursive walk and
@@ -783,7 +781,6 @@ where
             )
         })?;
 
-        println!("2");
         if !status.success() {
             return Err(ProviderError::SnapshotDb(
                 self.name().into(),
@@ -791,12 +788,11 @@ where
             ));
         }
 
-        println!("3");
         let mut file = File::open(&out_path).unwrap();
         let mut sha256 = Sha256::new();
         let bytes = io::copy(&mut file, &mut sha256).unwrap();
         let hash = hex::encode(sha256.finalize());
-        println!("4");
+
         Ok(InnerSnapshotDb {
             filename,
             sha256: hash,

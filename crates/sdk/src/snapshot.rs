@@ -21,17 +21,18 @@
 
 use std::{
     fs::File,
-    io::Write,
+    io::{self, Write},
     marker::PhantomData,
     path::{Path, PathBuf},
 };
 
 use anyhow::{anyhow, Context};
 use chrono::Utc;
-use flate2::{write::GzEncoder, Compression};
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use orchestrator::shared::types::NodeSnapshot;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
+use sha2::{Digest, Sha256};
+use tar::Archive;
 
 /// Result of [`BundleBuilder::build`].
 #[derive(Debug, Clone)]
@@ -222,16 +223,32 @@ fn build_bundle(
     f.flush().context("flushing bundle file")?;
     drop(f);
 
-    let bytes = std::fs::read(&out_path)
+    let mut file = File::open(&out_path)
         .with_context(|| format!("reading produced bundle {}", out_path.display()))?;
-    let size = bytes.len() as u64;
-    let sha256 = hex::encode(sha2::Sha256::digest(&bytes));
+    let mut sha256 = Sha256::new();
+    let size = io::copy(&mut file, &mut sha256).with_context(|| {
+        format!(
+            "can not copy from file {} to generate hash",
+            out_path.display()
+        )
+    })?;
+    let sha256 = hex::encode(sha256.finalize());
 
     Ok(Bundle {
         path: out_path,
         sha256,
         size,
     })
+}
+
+/// Helper function to untar the produced bundle into a destiantion path.
+pub fn untar_bundle(bundle_path: &Path, out_dir: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(out_dir)?;
+    let f = File::open(bundle_path)?;
+    let gz = GzDecoder::new(f);
+    let mut archive = Archive::new(gz);
+    archive.unpack(out_dir)?;
+    Ok(())
 }
 
 #[cfg(test)]

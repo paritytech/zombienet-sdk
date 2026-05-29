@@ -18,17 +18,15 @@
 //! `cargo test --test snapshot_roundtrip -- --ignored --nocapture`.
 
 use std::{
-    fs::File,
     path::{Path, PathBuf},
     time::Instant,
 };
 
 use configuration::{NetworkConfig, NetworkConfigBuilder};
-use flate2::read::GzDecoder;
 use serde_json::json;
-use tar::Archive;
 use zombienet_sdk::{
-    environment::get_spawn_fn, BundleBuilder, NetworkConfigExt, NetworkNode, SnapshotManifest,
+    environment::get_spawn_fn, snapshot::untar_bundle, BundleBuilder, NetworkConfigExt,
+    NetworkNode, SnapshotManifest,
 };
 
 const BEST_BLOCK: &str = "block_height{status=\"best\"}";
@@ -84,15 +82,6 @@ async fn wait_progress_and_finality(
         .await?;
     node.wait_metric_with_timeout(FINALIZED_BLOCK, move |x| x >= finalized, timeout)
         .await?;
-    Ok(())
-}
-
-fn untar_bundle(bundle_path: &Path, out_dir: &Path) -> anyhow::Result<()> {
-    std::fs::create_dir_all(out_dir)?;
-    let f = File::open(bundle_path)?;
-    let gz = GzDecoder::new(f);
-    let mut archive = Archive::new(gz);
-    archive.unpack(out_dir)?;
     Ok(())
 }
 

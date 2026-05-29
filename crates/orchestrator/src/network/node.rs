@@ -334,6 +334,13 @@ impl NetworkNode {
         Ok(())
     }
 
+    /// On-disk base directory of the node — root of `data/`, `relay-data/`,
+    /// `cfg/`, etc.
+    /// This will be the _base directory_ of the inner (provider) node.
+    pub fn base_dir(&self) -> &PathBuf {
+        self.inner.base_dir()
+    }
+
     /// Tar the node's database into `out_path` (gzipped).
     ///
     /// NOTE: Currently __only__ implemented in native provider. Also,

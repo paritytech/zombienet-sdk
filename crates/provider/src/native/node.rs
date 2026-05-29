@@ -788,9 +788,23 @@ where
             ));
         }
 
-        let mut file = File::open(&out_path).unwrap();
+        let mut file = File::open(&out_path).map_err(|err| {
+            ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("can not open file {}: {err}", out_path.to_string_lossy()),
+            )
+        })?;
+
         let mut sha256 = Sha256::new();
-        let bytes = io::copy(&mut file, &mut sha256).unwrap();
+        let bytes = io::copy(&mut file, &mut sha256).map_err(|err| {
+            ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!(
+                    "can not copy from file {}: {err}",
+                    out_path.to_string_lossy()
+                ),
+            )
+        })?;
         let hash = hex::encode(sha256.finalize());
 
         Ok(InnerSnapshotDb {

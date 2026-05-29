@@ -374,3 +374,14 @@ impl std::fmt::Display for TransferedFile {
         )
     }
 }
+
+/// Result of [`ProviderNode::snapshot_db`].
+/// return the filename, hash and bytes of the generated `{node.name}.tgz`
+pub struct InnerSnapshotDb {
+    /// local filename (scoped in node base_dir)
+    pub filename: String,
+    /// Hex-encoded SHA-256 of the archive contents.
+    pub sha256: String,
+    /// Size of the archive in bytes.
+    pub size: u64,
+}

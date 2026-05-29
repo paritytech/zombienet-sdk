@@ -34,6 +34,8 @@ use provider::{DockerProvider, KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;
 
 pub mod environment;
+pub mod snapshot;
+pub use snapshot::{Bundle, BundleBuilder, SnapshotManifest};
 pub const PROVIDERS: [&str; 3] = ["k8s", "native", "docker"];
 
 // re-export subxt

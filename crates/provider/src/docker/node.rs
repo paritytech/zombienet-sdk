@@ -22,7 +22,9 @@ use super::{
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     docker,
-    types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions, TransferedFile},
+    types::{
+        ExecutionResult, InnerSnapshotDb, Port, RunCommandOptions, RunScriptOptions, TransferedFile,
+    },
     ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -754,5 +756,9 @@ where
         }
 
         Ok(())
+    }
+
+    async fn snapshot_db(&self, _is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
+        todo!("snapshot db is not implemented yet for Docker/Podman");
     }
 }

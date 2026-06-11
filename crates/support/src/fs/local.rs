@@ -35,7 +35,11 @@ impl FileSystem for LocalFileSystem {
     where
         P: AsRef<Path> + Send,
     {
-        tokio::fs::read_to_string(path).await.map_err(Into::into)
+        // use `from_utf8_lossy` to read files, mostly because can be logs with unvalid utf-8
+        let content = tokio::fs::read(path)
+            .await
+            .map_err(Into::<FileSystemError>::into)?;
+        Ok(String::from_utf8_lossy(&content).to_string())
     }
 
     async fn write<P, C>(&self, path: P, contents: C) -> FileSystemResult<()>

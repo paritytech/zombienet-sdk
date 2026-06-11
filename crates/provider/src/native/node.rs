@@ -189,11 +189,12 @@ where
         });
 
         node.initialize_startup_paths(options.created_paths).await?;
-        node.initialize_startup_files(options.startup_files).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
+
+        node.initialize_startup_files(options.startup_files).await?;
 
         let (stdout, stderr) = node.initialize_process(None, None).await?;
 

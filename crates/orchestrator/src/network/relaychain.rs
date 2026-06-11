@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -71,5 +71,9 @@ impl Relaychain {
     /// Get chain name
     pub fn chain(&self) -> &str {
         &self.chain
+    }
+
+    pub fn chain_spec_path(&self) -> &Path {
+        self.chain_spec_path.as_path()
     }
 }

@@ -68,6 +68,16 @@ enum SessionKeyType {
 
 type MaybeExpectedPath = Option<PathBuf>;
 
+/// Represents the different path contexts needed for chain spec generation
+struct ChainSpecPaths {
+    /// Local filesystem path
+    local: String,
+    /// Path inside the pod/container
+    in_pod: String,
+    /// Path to use in command arguments
+    in_args: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CommandInContext {
     Local(String, MaybeExpectedPath),
@@ -456,53 +466,93 @@ impl ChainSpec {
     where
         T: FileSystem,
     {
-        // fallback to use _cmd_ for raw creation
         let temp_name = format!(
             "temp-build-raw-{}-{}",
             self.chain_spec_name,
             rand::random::<u8>()
         );
 
-        let cmd = self
-            .command
+        let cmd = self.get_command_ref()?;
+        let maybe_plain_path = self.get_plain_path_ref()?;
+
+        let paths = self.resolve_chain_spec_paths(ns, maybe_plain_path, &temp_name);
+        let generate_command = self.prepare_raw_spec_command(cmd, &paths, raw_spec_path.clone())?;
+
+        self.execute_generate_command(
+            ns,
+            scoped_fs,
+            cmd,
+            generate_command,
+            &paths,
+            &temp_name,
+        )
+        .await?;
+
+        self.finalize_raw_spec(scoped_fs, raw_spec_path, relay_chain_id)
+            .await?;
+
+        Ok(())
+    }
+
+    fn get_command_ref(&self) -> Result<&CommandInContext, GeneratorError> {
+        self.command
             .as_ref()
             .ok_or(GeneratorError::ChainSpecGeneration(
                 "Invalid command".into(),
-            ))?;
-        let maybe_plain_path =
-            self.maybe_plain_path
-                .as_ref()
-                .ok_or(GeneratorError::ChainSpecGeneration(
-                    "Invalid plain path".into(),
-                ))?;
+            ))
+    }
 
-        // TODO: we should get the full path from the scoped filesystem
-        let chain_spec_path_local = format!(
+    fn get_plain_path_ref(&self) -> Result<&PathBuf, GeneratorError> {
+        self.maybe_plain_path
+            .as_ref()
+            .ok_or(GeneratorError::ChainSpecGeneration(
+                "Invalid plain path".into(),
+            ))
+    }
+
+    fn resolve_chain_spec_paths(
+        &self,
+        ns: &DynNamespace,
+        maybe_plain_path: &PathBuf,
+        temp_name: &str,
+    ) -> ChainSpecPaths {
+        let local = format!(
             "{}/{}",
             ns.base_dir().to_string_lossy(),
             maybe_plain_path.display()
         );
-        // Remote path to be injected
-        let chain_spec_path_in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
-        // Path in the context of the node, this can be different in the context of the providers (e.g native)
-        let chain_spec_path_in_args = if matches!(self.command, Some(CommandInContext::Local(_, _)))
-        {
-            chain_spec_path_local.clone()
+
+        let in_pod = format!("{}/{}", NODE_CONFIG_DIR, maybe_plain_path.display());
+
+        let in_args = if matches!(self.command, Some(CommandInContext::Local(_, _))) {
+            local.clone()
         } else if ns.capabilities().prefix_with_full_path {
-            // In native
             format!(
                 "{}/{}{}",
                 ns.base_dir().to_string_lossy(),
-                &temp_name,
-                &chain_spec_path_in_pod
+                temp_name,
+                &in_pod
             )
         } else {
-            chain_spec_path_in_pod.clone()
+            in_pod.clone()
         };
 
+        ChainSpecPaths {
+            local,
+            in_pod,
+            in_args,
+        }
+    }
+
+    fn prepare_raw_spec_command(
+        &self,
+        cmd: &CommandInContext,
+        paths: &ChainSpecPaths,
+        raw_spec_path: PathBuf,
+    ) -> Result<GenerateFileCommand, GeneratorError> {
         let mut full_cmd = apply_replacements(
             cmd.cmd(),
-            &HashMap::from([("chainName", chain_spec_path_in_args.as_str())]),
+            &HashMap::from([("chainName", paths.in_args.as_str())]),
         );
 
         if !full_cmd.contains("--raw") {
@@ -510,45 +560,67 @@ impl ChainSpec {
         }
         trace!("full_cmd: {:?}", full_cmd);
 
+        let (program, args) = Self::parse_command_string(&full_cmd)?;
+        trace!("cmd: {:?} - args: {:?}", program, args);
+
+        Ok(GenerateFileCommand::new(program, raw_spec_path).args(&args))
+    }
+
+    fn parse_command_string(full_cmd: &str) -> Result<(&str, Vec<&str>), GeneratorError> {
         let parts: Vec<&str> = full_cmd.split_whitespace().collect();
-        let Some((cmd, args)) = parts.split_first() else {
+        let Some((program, args)) = parts.split_first() else {
             return Err(GeneratorError::ChainSpecGeneration(format!(
                 "Invalid generator command: {full_cmd}"
             )));
         };
-        trace!("cmd: {:?} - args: {:?}", cmd, args);
+        Ok((program, args.to_vec()))
+    }
 
-        let generate_command = GenerateFileCommand::new(cmd, raw_spec_path.clone()).args(args);
-
-        if let Some(cmd) = &self.command {
-            match cmd {
-                CommandInContext::Local(_, expected_path) => {
-                    build_locally(generate_command, scoped_fs, expected_path.as_deref()).await?
-                },
-                CommandInContext::Remote(_, expected_path) => {
-                    let options = GenerateFilesOptions::with_files(
-                        vec![generate_command],
-                        self.image.clone(),
-                        &[TransferedFile::new(
-                            chain_spec_path_local,
-                            chain_spec_path_in_pod,
-                        )],
-                        expected_path.clone(),
-                    )
-                    .temp_name(temp_name);
-                    trace!("calling generate_files with options: {:#?}", options);
-                    ns.generate_files(options).await?;
-                },
-            }
+    async fn execute_generate_command<'a, T>(
+        &self,
+        ns: &DynNamespace,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        cmd: &CommandInContext,
+        generate_command: GenerateFileCommand,
+        paths: &ChainSpecPaths,
+        temp_name: &str,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        match cmd {
+            CommandInContext::Local(_, expected_path) => {
+                build_locally(generate_command, scoped_fs, expected_path.as_deref()).await
+            },
+            CommandInContext::Remote(_, expected_path) => {
+                let options = GenerateFilesOptions::with_files(
+                    vec![generate_command],
+                    self.image.clone(),
+                    &[TransferedFile::new(&paths.local, &paths.in_pod)],
+                    expected_path.clone(),
+                )
+                .temp_name(temp_name.to_string());
+                trace!("calling generate_files with options: {:#?}", options);
+                ns.generate_files(options).await.map_err(Into::into)
+            },
         }
+    }
 
-        self.raw_path = Some(raw_spec_path.clone());
+    async fn finalize_raw_spec<'a, T>(
+        &mut self,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        raw_spec_path: PathBuf,
+        relay_chain_id: Option<Chain>,
+    ) -> Result<(), GeneratorError>
+    where
+        T: FileSystem,
+    {
+        self.raw_path = Some(raw_spec_path);
         let (content, _) = self.read_spec(scoped_fs).await?;
         let content = self
             .ensure_para_fields_in_raw(&content, relay_chain_id)
             .await?;
         self.write_spec(scoped_fs, content).await?;
-
         Ok(())
     }
 

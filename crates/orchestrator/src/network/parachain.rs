@@ -249,6 +249,10 @@ impl Parachain {
     pub fn bootnodes_addresses(&self) -> Vec<&multiaddr::Multiaddr> {
         self.bootnodes_addresses.iter().collect()
     }
+
+    pub fn chain_spec_path(&self) -> Option<&Path> {
+        self.chain_spec_path.as_deref()
+    }
 }
 
 #[cfg(test)]

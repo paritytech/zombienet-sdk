@@ -134,6 +134,7 @@ jobs:
         run: |
           docker run -d --name demo docker.io/parity/polkadot:latest
           docker inspect demo
+          docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' demo
           docker stop demo
 
       - name: script

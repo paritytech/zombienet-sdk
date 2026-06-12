@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["parachain","runtime_upgrade"],"struct":["RuntimeUpgradeOptions"],"trait":["ChainUpgrade"]};

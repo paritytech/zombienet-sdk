@@ -485,29 +485,43 @@ impl DockerClient {
         let ip = if self.using_podman {
             "127.0.0.1".into()
         } else {
-            let mut cmd = tokio::process::Command::new("docker");
-            cmd.args(vec![
-                "inspect",
-                "-f",
-                "{{ .NetworkSettings.IPAddress }}",
-                container_name,
-            ]);
-
-            trace!("CMD: {cmd:?}");
-
-            let res = cmd
-                .output()
-                .await
-                .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?;
-
-            String::from_utf8(res.stdout)
-                .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?
-                .trim()
-                .into()
+            // try the old ip template
+            let mut ip_str = self
+                .container_ip_inner(container_name, "{{ .NetworkSettings.IPAddress }}")
+                .await?;
+            if ip_str.is_empty() {
+                // try the new template version
+                ip_str = self
+                    .container_ip_inner(
+                        container_name,
+                        "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                    )
+                    .await?;
+            }
+            ip_str.into()
         };
 
         trace!("IP: {ip}");
         Ok(ip)
+    }
+
+    async fn container_ip_inner(&self, container_name: &str, ip_template: &str) -> Result<String> {
+        let mut cmd = tokio::process::Command::new("docker");
+        cmd.args(vec!["inspect", "-f", ip_template, container_name]);
+
+        trace!("CMD: {cmd:?}");
+
+        let res = cmd
+            .output()
+            .await
+            .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?;
+
+        let ip_str = String::from_utf8(res.stdout)
+            .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?
+            .trim()
+            .into();
+
+        Ok(ip_str)
     }
 
     async fn get_containers(&self) -> Result<Vec<Container>> {

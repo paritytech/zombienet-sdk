@@ -293,7 +293,11 @@ where
     let multiaddr = generators::generate_node_bootnode_addr(
         &node.peer_id,
         &running_node.ip().await?,
-         if ctx.ns.provider_name() == "k8s" { P2P_PORT } else { p2p_external }, // for k8s use always the internal port
+        if ctx.ns.provider_name() == "k8s" {
+            P2P_PORT
+        } else {
+            p2p_external
+        }, // for k8s use always the internal port
         running_node.args().as_ref(),
         &node.p2p_cert_hash,
     )?;

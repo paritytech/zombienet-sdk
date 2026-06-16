@@ -498,7 +498,7 @@ impl DockerClient {
                     )
                     .await?;
             }
-            ip_str.into()
+            ip_str
         };
 
         trace!("IP: {ip}");

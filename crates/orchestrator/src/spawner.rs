@@ -228,6 +228,12 @@ where
         spawn_ops
     };
 
+    let spawn_ops = if let Some(resources) = node.resources.as_ref() {
+        spawn_ops.resources(resources.clone())
+    } else {
+        spawn_ops
+    };
+
     // Drops the port parking listeners before spawn
     node.ws_port.drop_listener();
     node.p2p_port.drop_listener();
@@ -287,7 +293,11 @@ where
     let multiaddr = generators::generate_node_bootnode_addr(
         &node.peer_id,
         &running_node.ip().await?,
-        p2p_external,
+        if ctx.ns.provider_name() == "k8s" {
+            P2P_PORT
+        } else {
+            p2p_external
+        }, // for k8s use always the internal port
         running_node.args().as_ref(),
         &node.p2p_cert_hash,
     )?;

@@ -86,6 +86,7 @@ Scale networks with grouped nodes.
 |---------|-------------|
 | [`from_live`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/from_live.rs) | Attach to running network via `zombie.json` |
 | [`test_run_script`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/test_run_script.rs) | Run scripts on nodes |
+| [`observability`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/observability.rs) | Start Prometheus + Grafana for a spawned network and print the local URLs |
 
 ---
 

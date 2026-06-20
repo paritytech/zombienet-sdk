@@ -11,7 +11,7 @@ The SDK succeeds the original [ZombieNet](https://github.com/paritytech/zombiene
 - **Programmatic Network Spawning** - Define and spawn relay chains and parachains from Rust code
 - **Fluent Builder API** - Compose networks using a chainable builder pattern
 - **Multiple Providers** - Run on Kubernetes, Podman, Docker, or natively
-- **Metrics & Assertions** - Query Prometheus metrics and validate network behavior
+- **Metrics, Assertions & Observability** - Query Prometheus metrics, validate network behavior, and start a local Prometheus + Grafana stack
 - **Subxt Integration** - Interact with networks using [subxt](https://github.com/paritytech/subxt)
 
 ## Use Cases

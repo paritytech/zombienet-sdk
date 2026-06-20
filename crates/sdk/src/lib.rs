@@ -13,7 +13,15 @@ pub use orchestrator::{
 };
 pub use provider::types::{ExecutionResult, RunScriptOptions};
 
-// Helpers used for interact with the network
+/// Generator that could be handy from outside
+pub mod generators {
+    pub use orchestrator::generators::{
+        core_assignment, errors, generate_node_bootnode_addr, generate_node_identity,
+        generate_node_keys,
+    };
+}
+
+/// Helpers used for interact with the network
 pub mod tx_helper {
     pub use orchestrator::{
         network::chain_upgrade::ChainUpgrade,
@@ -26,6 +34,8 @@ use provider::{DockerProvider, KubernetesProvider, NativeProvider};
 pub use support::fs::local::LocalFileSystem;
 
 pub mod environment;
+pub mod snapshot;
+pub use snapshot::{Bundle, BundleBuilder, SnapshotManifest};
 pub const PROVIDERS: [&str; 3] = ["k8s", "native", "docker"];
 
 // re-export subxt

@@ -695,6 +695,19 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
         )
     }
 
+    /// Like [`Self::with_default_db_snapshot`], but a no-op when `location`
+    /// is `None`. Lets a caller parametrise one network builder over both
+    /// "fresh" (`None`) and "from snapshot" (`Some`) without branching.
+    pub fn with_optional_default_db_snapshot(
+        self,
+        location: Option<impl Into<AssetLocation>>,
+    ) -> Self {
+        match location {
+            Some(location) => self.with_default_db_snapshot(location),
+            None => self,
+        }
+    }
+
     /// Set the default arguments that will be used to execute the collator command. Can be overridden.
     pub fn with_default_args(self, args: Vec<Arg>) -> Self {
         Self::transition(
@@ -1708,6 +1721,33 @@ mod tests {
         assert!(!parachain.is_evm_based());
         assert_eq!(parachain.collators().len(), 1);
         assert!(parachain_evm.is_evm_based());
+    }
+
+    #[test]
+    fn with_optional_default_db_snapshot_applies_when_some() {
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .with_optional_default_db_snapshot(Some("https://example.com/snap.tgz"))
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+        assert!(matches!(
+            config.default_db_snapshot().unwrap(),
+            AssetLocation::Url(value) if value.as_str() == "https://example.com/snap.tgz"
+        ));
+    }
+
+    #[test]
+    fn with_optional_default_db_snapshot_is_noop_when_none() {
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(2000)
+            .with_chain("myparachain")
+            .with_optional_default_db_snapshot(None::<&str>)
+            .with_collator(|collator| collator.with_name("collator"))
+            .build()
+            .unwrap();
+        assert!(config.default_db_snapshot().is_none());
     }
 
     #[test]

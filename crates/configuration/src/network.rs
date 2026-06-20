@@ -2022,4 +2022,36 @@ mod tests {
             expected.parachains()[0].raw_spec_override()
         );
     }
+
+    #[test]
+    fn demo_denis() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("westend")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:stable2603-3")
+                    .with_validator(|n| n.with_name("validator-0"))
+                    .with_validator(|n| n.with_name("validator-1"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1004)
+                    .with_chain_spec_path("https://raw.githubusercontent.com/paritytech/polkadot-sdk/104e66f7114ea3322187b4b93255bb9f3f4d5005/cumulus/zombienet/zombienet-sdk/tests/zombie_ci/statement_store/people-westend-local-spec.json")
+                    .with_collator_group(|g| {
+                        g.with_count(100)
+                        .with_base_node(|n|{
+                            n.with_name("collator")
+                            .with_command("polkadot-parachain")
+                            .with_args(vec!["--enable-statement-store".into()])
+                            .with_image("docker.io/parity/polkadot-parachain:stable2603-3")
+                        })
+                })
+            })
+            .build()
+            .unwrap();
+
+        let toml_string = network_config.dump_to_toml().unwrap();
+        println!("{}", toml_string);
+    }
 }

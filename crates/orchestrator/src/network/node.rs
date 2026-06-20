@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
@@ -13,7 +14,7 @@ use fancy_regex::Regex;
 use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::{
-    types::{ExecutionResult, RunScriptOptions},
+    types::{ExecutionResult, InnerSnapshotDb, RunScriptOptions},
     DynNode,
 };
 use serde::{Deserialize, Serialize, Serializer};
@@ -27,7 +28,7 @@ use crate::{
     generators::{generate_node_command, generate_node_command_cumulus, GenCmdOptions},
     network::NodeContext,
     network_spec::node::NodeSpec,
-    shared::constants::PROCESS_START_TIME_METRIC,
+    shared::{constants::PROCESS_START_TIME_METRIC, types::NodeSnapshot},
     tx_helper::client::get_client_from_url,
 };
 
@@ -331,6 +332,51 @@ impl NetworkNode {
         self.set_is_running(true);
         self.inner.resume().await?;
         Ok(())
+    }
+
+    /// On-disk base directory of the node — root of `data/`, `relay-data/`,
+    /// `cfg/`, etc.
+    /// This will be the _base directory_ of the inner (provider) node.
+    pub fn base_dir(&self) -> &PathBuf {
+        self.inner.base_dir()
+    }
+
+    /// Tar the node's database into `out_path` (gzipped).
+    ///
+    /// NOTE: Currently __only__ implemented in native provider. Also,
+    /// the caller is responsible for pausing the node first;
+    /// snapshotting a running node risks a torn RocksDB state.
+    pub async fn snapshot_db(
+        &self,
+        out_path: impl AsRef<Path>,
+    ) -> Result<NodeSnapshot, anyhow::Error> {
+        let out_path = out_path.as_ref().to_path_buf();
+        let is_cumulus_based = matches!(
+            self.context,
+            NodeContext::Para {
+                is_cumulus_based: true,
+                ..
+            }
+        );
+
+        let InnerSnapshotDb {
+            filename,
+            sha256,
+            size,
+        } = self.inner.snapshot_db(is_cumulus_based).await?;
+
+        // now we need to _move_ the inner file to the out_path
+        let remote_file_path = PathBuf::from(&filename);
+        self.inner
+            .receive_file(remote_file_path.as_ref(), out_path.as_ref())
+            .await?;
+
+        Ok(NodeSnapshot {
+            path: out_path,
+            sha256,
+            size,
+            node_name: self.name().into(),
+        })
     }
 
     /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
@@ -1255,6 +1301,10 @@ mod tests {
         }
 
         async fn destroy(&self) -> Result<(), ProviderError> {
+            todo!()
+        }
+
+        async fn snapshot_db(&self, _: bool) -> Result<InnerSnapshotDb, ProviderError> {
             todo!()
         }
     }

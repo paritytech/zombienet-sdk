@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
     env,
+    fs::File,
+    io,
     path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, Weak},
@@ -17,11 +19,10 @@ use nix::{
     unistd::Pid,
 };
 use serde::{ser::Error, Deserialize, Serialize, Serializer};
-use sha2::Digest;
+use sha2::{Digest, Sha256};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tar::Archive;
 use tokio::{
-    fs,
     io::{AsyncRead, AsyncReadExt, BufReader},
     process::{Child, ChildStderr, ChildStdout, Command},
     sync::{
@@ -38,8 +39,10 @@ use super::namespace::NativeNamespace;
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     native,
-    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
-    ProviderError, ProviderNamespace, ProviderNode,
+    types::{
+        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+    },
+    ProviderError, ProviderNode,
 };
 
 pub(super) struct NativeNodeOptions<'a, FS>
@@ -54,7 +57,7 @@ where
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) created_paths: &'a [PathBuf],
-    pub(super) db_snapshot: Option<&'a AssetLocation>,
+    pub(super) db_snapshot: Option<&'a Path>,
     pub(super) filesystem: &'a FS,
     pub(super) node_log_path: Option<&'a PathBuf>,
 }
@@ -186,11 +189,12 @@ where
         });
 
         node.initialize_startup_paths(options.created_paths).await?;
-        node.initialize_startup_files(options.startup_files).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
+
+        node.initialize_startup_files(options.startup_files).await?;
 
         let (stdout, stderr) = node.initialize_process(None, None).await?;
 
@@ -275,64 +279,23 @@ where
         Ok(())
     }
 
-    async fn initialize_db_snapshot(
-        &self,
-        db_snapshot: &AssetLocation,
-    ) -> Result<(), ProviderError> {
-        trace!("snap: {db_snapshot}");
-
-        // check if we need to get the db or is already in the ns
-        let ns_base_dir = self.namespace_base_dir();
-        let hashed_location = match db_snapshot {
-            AssetLocation::Url(location) => hex::encode(sha2::Sha256::digest(location.to_string())),
-            AssetLocation::FilePath(filepath) => {
-                hex::encode(sha2::Sha256::digest(filepath.to_string_lossy().to_string()))
-            },
-        };
-
-        let full_path = format!("{ns_base_dir}/{hashed_location}.tgz");
-        trace!("db_snap fullpath in ns: {full_path}");
-        if !self.filesystem.exists(&full_path).await {
-            // needs to download/copy
-            self.get_db_snapshot(db_snapshot, &full_path).await?;
-        }
-
-        let contents = self.filesystem.read(&full_path).await.unwrap();
+    async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
+        trace!(
+            "extracting db_snapshot {} -> {}",
+            db_snapshot.display(),
+            self.base_dir.display()
+        );
+        let contents = self.filesystem.read(db_snapshot).await?;
         let gz = GzDecoder::new(&contents[..]);
         let mut archive = Archive::new(gz);
         archive
             .unpack(self.base_dir.to_string_lossy().as_ref())
-            .unwrap();
-
-        if std::env::var("ZOMBIE_RM_TGZ_AFTER_EXTRACT").is_ok() {
-            let res = fs::remove_file(&full_path).await;
-            trace!("removing {}, result {:?}", full_path, res);
-        }
-
-        Ok(())
-    }
-
-    async fn get_db_snapshot(
-        &self,
-        location: &AssetLocation,
-        full_path: &str,
-    ) -> Result<(), ProviderError> {
-        trace!("getting db_snapshot from: {:?} to: {full_path}", location);
-        match location {
-            AssetLocation::Url(location) => {
-                let res = reqwest::get(location.as_ref())
-                    .await
-                    .map_err(|err| ProviderError::DownloadFile(location.to_string(), err.into()))?;
-
-                let contents: &[u8] = &res.bytes().await.unwrap();
-                trace!("writing: {full_path}");
-                self.filesystem.write(full_path, contents).await?;
-            },
-            AssetLocation::FilePath(filepath) => {
-                self.filesystem.copy(filepath, full_path).await?;
-            },
-        };
-
+            .map_err(|err| {
+                ProviderError::FileGenerationFailed(anyhow!(
+                    "failed to extract db_snapshot {}: {err}",
+                    db_snapshot.display()
+                ))
+            })?;
         Ok(())
     }
 
@@ -487,13 +450,6 @@ where
         }
 
         Ok(())
-    }
-
-    fn namespace_base_dir(&self) -> String {
-        self.namespace
-            .upgrade()
-            .map(|namespace| namespace.base_dir().to_string_lossy().to_string())
-            .unwrap_or_else(|| panic!("namespace shouldn't be dropped, {THIS_IS_A_BUG}"))
     }
 }
 
@@ -659,12 +615,13 @@ where
         remote_file_path: &Path,
         local_file_path: &Path,
     ) -> Result<(), ProviderError> {
-        let namespaced_remote_file_path = PathBuf::from(format!(
-            "{}{}",
-            &self.base_dir.to_string_lossy(),
-            remote_file_path.to_string_lossy()
-        ));
+        let namespaced_remote_file_path = self.path_in_node(remote_file_path);
 
+        trace!(
+            "copy: {} to {}",
+            &namespaced_remote_file_path.to_string_lossy(),
+            &local_file_path.to_string_lossy()
+        );
         self.filesystem
             .copy(namespaced_remote_file_path, local_file_path)
             .await?;
@@ -778,6 +735,84 @@ where
         }
 
         Ok(())
+    }
+
+    // Note: by shelling out to the `tar` CLI we don't need to
+    // manually walk the directory to exclude identity dirs.
+    //
+    // Archive layout: `data/` at the top, plus `relay-data/`
+    // for cumulus collators (auto-detected from the node's context). The
+    // per-node identity subdirs (`keystore/`, `network/`) are excluded so
+    // the produced archive is safe to load on any number of sibling nodes.
+
+    async fn snapshot_db(&self, is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
+        let filename = format!("{}.tgz", self.name());
+        let base_dir = self.base_dir();
+        let data_dir = base_dir.join("data");
+        if !data_dir.is_dir() {
+            return Err(ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("has no data dir at {}", data_dir.display()),
+            ));
+        }
+
+        let out_path = base_dir.join(&filename);
+        let include_relay_data = is_cumulus_based && base_dir.join("relay-data").is_dir();
+
+        // `tar -C base_dir data [relay-data]` keeps `data/`/`relay-data/` at
+        // the archive root. `--exclude` strips per-node identity. Shelling
+        // out (vs the tar crate) avoids a hand-rolled recursive walk and
+        // matches the existing zombienet snapshot generators.
+        let mut cmd = tokio::process::Command::new("tar");
+        cmd.arg("-czf")
+            .arg(&out_path)
+            .arg("--exclude=keystore")
+            .arg("--exclude=network")
+            .arg("-C")
+            .arg(base_dir)
+            .arg("data");
+        if include_relay_data {
+            cmd.arg("relay-data");
+        }
+
+        let status = cmd.status().await.map_err(|err| {
+            ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("spawning tar for node {}: {err}", self.name),
+            )
+        })?;
+
+        if !status.success() {
+            return Err(ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("tar failed for node {} (status {status})", self.name),
+            ));
+        }
+
+        let mut file = File::open(&out_path).map_err(|err| {
+            ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!("can not open file {}: {err}", out_path.to_string_lossy()),
+            )
+        })?;
+
+        let mut sha256 = Sha256::new();
+        let bytes = io::copy(&mut file, &mut sha256).map_err(|err| {
+            ProviderError::SnapshotDb(
+                self.name().into(),
+                anyhow!(
+                    "can not copy from file {}: {err}",
+                    out_path.to_string_lossy()
+                ),
+            )
+        })?;
+        let hash = hex::encode(sha256.finalize());
+
+        Ok(InnerSnapshotDb {
+            filename,
+            sha256: hash,
+            size: bytes,
+        })
     }
 }
 

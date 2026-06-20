@@ -804,6 +804,16 @@ impl NodeConfigBuilder<Buildable> {
         )
     }
 
+    /// Like [`Self::with_db_snapshot`], but a no-op when `location` is
+    /// `None`. Lets a caller parametrise one node builder over both
+    /// "fresh" (`None`) and "from snapshot" (`Some`) without branching.
+    pub fn with_optional_db_snapshot(self, location: Option<impl Into<AssetLocation>>) -> Self {
+        match location {
+            Some(location) => self.with_db_snapshot(location),
+            None => self,
+        }
+    }
+
     /// Set the node log path that will be used to launch the node.
     pub fn with_log_path(self, log_path: impl Into<PathBuf>) -> Self {
         Self::transition(
@@ -1091,6 +1101,33 @@ mod tests {
             node_config.keystore_path().unwrap().to_str().unwrap(),
             "/tmp/mykeystore"
         ));
+    }
+
+    #[test]
+    fn with_optional_db_snapshot_applies_when_some() {
+        let node_config =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
+                .with_name("node")
+                .with_command("mycommand")
+                .with_optional_db_snapshot(Some("/tmp/mysnapshot"))
+                .build()
+                .unwrap();
+        assert!(matches!(
+            node_config.db_snapshot().unwrap(),
+            AssetLocation::FilePath(value) if value.to_str().unwrap() == "/tmp/mysnapshot"
+        ));
+    }
+
+    #[test]
+    fn with_optional_db_snapshot_is_noop_when_none() {
+        let node_config =
+            NodeConfigBuilder::new(ChainDefaultContext::default(), Default::default())
+                .with_name("node")
+                .with_command("mycommand")
+                .with_optional_db_snapshot(None::<&str>)
+                .build()
+                .unwrap();
+        assert!(node_config.db_snapshot().is_none());
     }
 
     #[test]

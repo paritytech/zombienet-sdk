@@ -22,7 +22,9 @@ use super::{
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     docker,
-    types::{ExecutionResult, Port, RunCommandOptions, RunScriptOptions, TransferedFile},
+    types::{
+        ExecutionResult, InnerSnapshotDb, Port, RunCommandOptions, RunScriptOptions, TransferedFile,
+    },
     ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -38,7 +40,7 @@ where
     pub(super) args: &'a [String],
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
-    pub(super) db_snapshot: Option<&'a AssetLocation>,
+    pub(super) db_snapshot: Option<&'a Path>,
     pub(super) docker_client: &'a DockerClient,
     pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
@@ -271,8 +273,8 @@ where
         Ok(())
     }
 
-    fn build_db_snapshot_command(download_url: Option<&str>) -> RunCommandOptions {
-        let mut args = vec![
+    fn build_db_snapshot_command() -> RunCommandOptions {
+        let args = vec![
             "-p".to_string(),
             "/data/".to_string(),
             "&&".to_string(),
@@ -280,19 +282,6 @@ where
             "-p".to_string(),
             "/relay-data/".to_string(),
             "&&".to_string(),
-        ];
-
-        if let Some(url) = download_url {
-            args.extend([
-                "/helpers/curl".to_string(),
-                url.to_string(),
-                "--output".to_string(),
-                "/data/db.tgz".to_string(),
-                "&&".to_string(),
-            ]);
-        }
-
-        args.extend([
             "cd".to_string(),
             "/".to_string(),
             "&&".to_string(),
@@ -300,47 +289,22 @@ where
             "--skip-old-files".to_string(),
             "-xzvf".to_string(),
             "/data/db.tgz".to_string(),
-        ]);
+        ];
 
         RunCommandOptions::new("mkdir").args(args)
     }
 
-    async fn initialize_db_snapshot(
-        &self,
-        db_snapshot: &AssetLocation,
-    ) -> Result<(), ProviderError> {
+    async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
         trace!(
-            "initializing docker db snapshot for node {}: {db_snapshot}",
-            self.name
+            "initializing docker db snapshot for node {} from {}",
+            self.name,
+            db_snapshot.display()
         );
 
-        match db_snapshot {
-            AssetLocation::Url(url) => {
-                let url_of_snap = url.to_string();
-                trace!(
-                    "downloading snapshot for node {} from {}",
-                    self.name,
-                    url_of_snap
-                );
+        self.send_file(db_snapshot, Path::new("/data/db.tgz"), "0644")
+            .await?;
 
-                let opts = Self::build_db_snapshot_command(Some(&url_of_snap));
-                let _ = self.run_command(opts).await?;
-            },
-            AssetLocation::FilePath(path) => {
-                trace!(
-                    "uploading local snapshot {} into container {}",
-                    path.to_string_lossy(),
-                    self.container_name
-                );
-
-                self.send_file(path.as_path(), Path::new("/data/db.tgz"), "0644")
-                    .await?;
-
-                let opts = Self::build_db_snapshot_command(None);
-                let _ = self.run_command(opts).await?;
-            },
-        }
-
+        let _ = self.run_command(Self::build_db_snapshot_command()).await?;
         Ok(())
     }
 
@@ -792,5 +756,9 @@ where
         }
 
         Ok(())
+    }
+
+    async fn snapshot_db(&self, _is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
+        todo!("snapshot db is not implemented yet for Docker/Podman");
     }
 }

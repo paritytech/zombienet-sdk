@@ -28,7 +28,9 @@ use crate::{
         PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
     },
     kubernetes,
-    types::{ExecutionResult, RunCommandOptions, RunScriptOptions, TransferedFile},
+    types::{
+        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+    },
     ProviderError, ProviderNamespace, ProviderNode,
 };
 
@@ -45,7 +47,7 @@ where
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
-    pub(super) db_snapshot: Option<&'a AssetLocation>,
+    pub(super) db_snapshot: Option<&'a Path>,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -319,18 +321,12 @@ where
         Ok(())
     }
 
-    async fn initialize_db_snapshot(
-        &self,
-        db_snapshot: &AssetLocation,
-    ) -> Result<(), ProviderError> {
-        trace!("snap: {db_snapshot}");
-        let url_of_snap = match db_snapshot {
-            AssetLocation::Url(location) => location.clone(),
-            AssetLocation::FilePath(filepath) => {
-                let (url, _) = self.upload_to_fileserver(filepath).await?;
-                url
-            },
-        };
+    async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
+        trace!("snap: {}", db_snapshot.display());
+        // The orchestrator already downloaded/copied the snapshot into
+        // the namespace cache; we still need the pod to fetch it over
+        // HTTP, so upload to the fileserver and curl from inside.
+        let (url_of_snap, _) = self.upload_to_fileserver(db_snapshot).await?;
 
         // we need to get the snapshot from a public access
         // and extract to /data
@@ -962,5 +958,9 @@ where
         }
 
         Ok(())
+    }
+
+    async fn snapshot_db(&self, _is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
+        todo!("snapshot db is not implemented yet for k8s");
     }
 }

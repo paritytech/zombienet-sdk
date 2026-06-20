@@ -1,4 +1,5 @@
 pub mod chain_spec;
+pub mod db_snapshot;
 pub mod errors;
 pub mod key;
 pub mod para_artifact;
@@ -19,6 +20,7 @@ pub use command::{
     generate_for_cumulus_node as generate_node_command_cumulus,
     generate_for_node as generate_node_command, GenCmdOptions,
 };
+pub use db_snapshot::{cleanup_db_snapshot_cache, resolve_db_snapshots, ResolvedDbSnapshots};
 pub use identity::generate as generate_node_identity;
 pub use key::generate as generate_node_keys;
 pub use keystore::generate as generate_node_keystore;

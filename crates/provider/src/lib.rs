@@ -22,6 +22,9 @@ use shared::{
     },
 };
 use support::fs::FileSystemError;
+use tracing::warn;
+
+use crate::shared::types::InnerSnapshotDb;
 
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -115,6 +118,9 @@ pub enum ProviderError {
 
     #[error("Failed to acquire lock: {0}")]
     FailedToAcquireLock(String),
+
+    #[error("Failed to generate the snapshot for node {0}:  {1}")]
+    SnapshotDb(String, anyhow::Error),
 }
 
 #[async_trait]
@@ -261,6 +267,8 @@ pub trait ProviderNode: erased_serde::Serialize {
     ) -> Result<(), ProviderError>;
 
     async fn destroy(&self) -> Result<(), ProviderError>;
+
+    async fn snapshot_db(&self, is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError>;
 }
 
 pub type DynNode = Arc<dyn ProviderNode + Send + Sync>;
@@ -270,4 +278,3 @@ pub use docker::*;
 pub use kubernetes::*;
 pub use native::*;
 pub use shared::{constants, types};
-use tracing::warn;

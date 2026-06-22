@@ -110,8 +110,8 @@ pub fn generate_session_0_overrides(
     // generate validator groups
 
     // some checks first
-    if num_genesis_cores >= session.validators.len() as u32 {
-        return Err(GeneratorError::InvariantError(format!("Num cores in genesis {num_genesis_cores} should be less than the num of validators ({})", session.validators.len())));
+    if num_genesis_cores > session.validators.len() as u32 {
+        return Err(GeneratorError::InvariantError(format!("Num cores in genesis {num_genesis_cores} should be less than or equal to the num of validators ({})", session.validators.len())));
     }
 
     let groups = genetate_groups(session.validators.len() as u32, num_genesis_cores);

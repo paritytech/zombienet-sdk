@@ -155,7 +155,10 @@ async fn diagnoses_stalled_parachain_with_zombie_json_present() -> anyhow::Resul
 
     live.cleanup().await;
 
-    assert!(zombie_json_written, "zombie.json should be written after spawn");
+    assert!(
+        zombie_json_written,
+        "zombie.json should be written after spawn"
+    );
     assert!(
         collator_stalled,
         "diagnose_run should flag no_block_progress for the collator: {:?}",
@@ -255,9 +258,10 @@ async fn paused_node_is_reported_as_unresponsive() -> anyhow::Result<()> {
         zombie_json_path: live.zombie_json.clone(),
     })
     .await;
-    let downed_rpc_error = report.evidence.iter().any(|e| {
-        e.id.starts_with(&format!("node.{downed}.rpc_")) && e.severity == Severity::Error
-    });
+    let downed_rpc_error = report
+        .evidence
+        .iter()
+        .any(|e| e.id.starts_with(&format!("node.{downed}.rpc_")) && e.severity == Severity::Error);
     let status = report.status;
     let next_steps = report.next_steps.clone();
 

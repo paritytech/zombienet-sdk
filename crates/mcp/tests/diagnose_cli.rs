@@ -74,7 +74,10 @@ fn fail_on_error_flips_exit_code_for_failed_run() {
     let stdout = String::from_utf8(baseline.stdout).expect("stdout is utf-8");
     let report: Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|error| panic!("stdout should be a JSON report ({error}): {stdout}"));
-    assert_eq!(report["status"], "failed", "expected failed status: {stdout}");
+    assert_eq!(
+        report["status"], "failed",
+        "expected failed status: {stdout}"
+    );
     assert!(
         baseline.status.success(),
         "expected exit 0 without --fail-on-error, got {:?}",

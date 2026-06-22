@@ -26,13 +26,19 @@ fn validate_reports_invalid_config() {
     let report: Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|error| panic!("stdout should be a JSON report ({error}): {stdout}"));
 
-    assert_eq!(report["status"], "failed", "expected failed status: {stdout}");
+    assert_eq!(
+        report["status"], "failed",
+        "expected failed status: {stdout}"
+    );
     let has_config_invalid = report["evidence"]
         .as_array()
         .expect("evidence is an array")
         .iter()
         .any(|item| item["id"] == "config.invalid");
-    assert!(has_config_invalid, "expected config.invalid evidence: {stdout}");
+    assert!(
+        has_config_invalid,
+        "expected config.invalid evidence: {stdout}"
+    );
 }
 
 /// `--fail-on-error` turns an invalid config into a non-zero exit (CI gate).

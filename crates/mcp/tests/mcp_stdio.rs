@@ -1,3 +1,5 @@
+#![cfg(feature = "mcp")]
+
 use std::{borrow::Cow, fs, path::PathBuf, time::Duration};
 
 use rmcp::{

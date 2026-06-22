@@ -91,6 +91,19 @@ pub fn next_steps_for(report: &DiagnosticReport) -> Vec<String> {
         ];
     }
 
+    if report
+        .evidence
+        .iter()
+        .any(|item| item.id.ends_with(".no_block_progress"))
+    {
+        return vec![
+            "A node is up but not producing or importing blocks. Check parachain registration, \
+             collator-to-relay connectivity (peer count), and that the registered para id matches \
+             the chain spec."
+                .to_string(),
+        ];
+    }
+
     vec!["No immediate failure detected".to_string()]
 }
 
@@ -101,8 +114,29 @@ mod tests {
     use super::*;
     use crate::{
         diagnostics::test_helpers::{fixture_path, temp_zombie_json, unique_temp_path},
-        report::Status,
+        report::{Evidence, Status},
     };
+
+    #[test]
+    fn next_steps_flags_a_node_stuck_with_no_block_progress() {
+        let mut report = DiagnosticReport::new("test");
+        report.push_evidence(Evidence {
+            id: "node.people-collator.no_block_progress".to_string(),
+            severity: Severity::Warning,
+            category: Category::Liveness,
+            subject: "people-collator".to_string(),
+            message: "Node is up but its best block is still 0".to_string(),
+            source: "http://127.0.0.1:9615/metrics".to_string(),
+            excerpt: None,
+        });
+
+        let steps = next_steps_for(&report);
+
+        assert_eq!(steps.len(), 1);
+        assert_ne!(steps[0], "No immediate failure detected");
+        assert!(steps[0].contains("not producing or importing blocks"));
+        assert!(steps[0].contains("para id"));
+    }
 
     #[tokio::test]
     async fn scans_logs_next_to_missing_zombie_json() {

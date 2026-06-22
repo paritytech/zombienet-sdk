@@ -56,10 +56,21 @@ pub(super) fn validate_input<E: std::fmt::Display>(
     }
 }
 
-/// Recompute `summary` and `status` from the current evidence.
+/// Collapse repeated findings, then recompute `summary` and `status`.
 pub(super) fn finalize(report: &mut DiagnosticReport) {
+    dedupe(&mut report.evidence);
     report.summary = summarize(&report.evidence);
     report.status = status_from_evidence(&report.evidence);
+}
+
+fn dedupe(evidence: &mut Vec<Evidence>) {
+    let mut deduped: Vec<Evidence> = Vec::with_capacity(evidence.len());
+    for item in evidence.drain(..) {
+        if !deduped.contains(&item) {
+            deduped.push(item);
+        }
+    }
+    *evidence = deduped;
 }
 
 pub(super) fn summarize(evidence: &[Evidence]) -> String {
@@ -77,4 +88,45 @@ pub(super) fn summarize(evidence: &[Evidence]) -> String {
         .map(|(severity, count)| format!("{severity:?}: {count}"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finalize_collapses_repeated_findings() {
+        let mut report = DiagnosticReport::new("test");
+        for _ in 0..3 {
+            push(
+                &mut report,
+                Severity::Error,
+                "logs.unexpected argument",
+                Category::Startup,
+                "alice.log",
+                "A node command-line argument appears to be invalid",
+                "alice.log",
+                Some("error: unexpected argument '--bad' found".to_string()),
+            );
+        }
+        push(
+            &mut report,
+            Severity::Warning,
+            "zombie_json.missing",
+            Category::Startup,
+            "zombie.json",
+            "zombie.json file was not found",
+            "zombie.json",
+            None,
+        );
+
+        finalize(&mut report);
+
+        assert_eq!(report.evidence.len(), 2);
+        assert!(report
+            .evidence
+            .iter()
+            .any(|e| e.id == "logs.unexpected argument"));
+        assert_eq!(report.summary, "Warning: 1, Error: 1");
+    }
 }

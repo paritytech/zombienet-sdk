@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, env};
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Volume,
-        VolumeMount, Toleration,
+        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Toleration,
+        Volume, VolumeMount,
     },
     apimachinery::pkg::api::resource::Quantity,
 };

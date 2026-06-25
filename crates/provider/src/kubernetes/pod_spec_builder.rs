@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, env};
 
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
         ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Volume,
-        VolumeMount,
+        VolumeMount, Toleration,
     },
     apimachinery::pkg::api::resource::Quantity,
 };
@@ -22,6 +22,19 @@ impl PodSpecBuilder {
         args: &[String],
         env: &[(String, String)],
     ) -> PodSpec {
+        let tolerations = if let Ok(node_type) = env::var("X_INFRA_NODETYPE") {
+            let t = Toleration {
+                effect: Some("NoExecute".into()),
+                key: Some("nodetype".into()),
+                operator: Some("Equal".into()),
+                value: Some(node_type),
+                ..Default::default()
+            };
+            Some(vec![t])
+        } else {
+            None
+        };
+
         PodSpec {
             hostname: Some(name.to_string()),
             init_containers: Some(vec![Self::build_helper_binaries_setup_container()]),
@@ -29,6 +42,7 @@ impl PodSpecBuilder {
                 name, image, resources, program, args, env,
             )],
             volumes: Some(Self::build_volumes()),
+            tolerations,
             ..Default::default()
         }
     }

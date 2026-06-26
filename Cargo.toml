@@ -12,6 +12,7 @@ members = [
   "crates/file-server",
   "crates/cli",
   "crates/tui",
+  "crates/mcp",
 ]
 
 default-members = [
@@ -84,6 +85,8 @@ clap = { version = "4.5", features = ["derive"] }
 notify = "7.0"
 sysinfo = "0.32"
 walkdir = "2.5"
+rmcp = { version = "0.16", features = ["server", "transport-io"] }
+schemars = "1"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 
 # Zombienet workspace crates:

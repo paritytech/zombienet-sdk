@@ -1,0 +1,40 @@
+[package]
+name = "zombie-mcp"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+repository.workspace = true
+description = "Read-only MCP diagnostics server for Zombienet SDK"
+keywords = ["zombienet", "mcp", "diagnostics"]
+
+[[bin]]
+name = "zombie-mcp"
+path = "src/main.rs"
+
+[features]
+default = ["mcp"]
+mcp = ["dep:rmcp"]
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+prom-metrics-parser = { workspace = true }
+reqwest = { workspace = true }
+rmcp = { workspace = true, optional = true }
+schemars = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+walkdir = { workspace = true }
+zombienet-sdk = { workspace = true }
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client", "transport-child-process"] }
+toml = { workspace = true }

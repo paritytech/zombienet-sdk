@@ -1,0 +1,1422 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Zombienet SDK</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="getting-started/index.html"><strong aria-hidden="true">2.</strong> Getting Started</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="getting-started/setup.html"><strong aria-hidden="true">2.1.</strong> Setup</a></li><li class="chapter-item expanded "><a href="getting-started/your-first-network.html"><strong aria-hidden="true">2.2.</strong> Your First Network</a></li></ol></li><li class="chapter-item expanded "><a href="how-it-works.html"><strong aria-hidden="true">3.</strong> How It Works</a></li><li class="chapter-item expanded "><a href="network-spec/index.html"><strong aria-hidden="true">4.</strong> Network Definition Spec</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="network-spec/global-settings.html"><strong aria-hidden="true">4.1.</strong> Global Settings</a></li><li class="chapter-item expanded "><a href="network-spec/relaychain.html"><strong aria-hidden="true">4.2.</strong> Relaychain</a></li><li class="chapter-item expanded "><a href="network-spec/parachain.html"><strong aria-hidden="true">4.3.</strong> Parachain</a></li><li class="chapter-item expanded "><a href="network-spec/node.html"><strong aria-hidden="true">4.4.</strong> Node</a></li><li class="chapter-item expanded "><a href="network-spec/hrmp-channels.html"><strong aria-hidden="true">4.5.</strong> HRMP Channels</a></li><li class="chapter-item expanded "><a href="network-spec/custom-process.html"><strong aria-hidden="true">4.6.</strong> Custom Processes</a></li><li class="chapter-item expanded "><a href="network-spec/chain-spec.html"><strong aria-hidden="true">4.7.</strong> Chain Spec</a></li><li class="chapter-item expanded "><a href="network-spec/examples.html"><strong aria-hidden="true">4.8.</strong> Examples</a></li></ol></li><li class="chapter-item expanded "><a href="providers.html"><strong aria-hidden="true">5.</strong> Providers</a></li><li class="chapter-item expanded "><a href="cli.html"><strong aria-hidden="true">6.</strong> CLI Usage</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">7.</strong> Examples</a></li><li class="chapter-item expanded "><a href="environment.html"><strong aria-hidden="true">8.</strong> Environment Variables</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Zombienet SDK</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>ZombieNet SDK is a Rust testing framework for <a href="https://github.com/paritytech/polkadot-sdk">Polkadot SDK</a>-based blockchains. It spawns ephemeral blockchain networks programmatically for testing and development.</p>
+<p>The SDK succeeds the original <a href="https://github.com/paritytech/zombienet">ZombieNet</a> (TypeScript), offering a type-safe, composable Rust API.</p>
+<blockquote>
+<p><strong>Migrating from TypeScript ZombieNet?</strong> The TOML configuration format is largely compatible. See <a href="./network-spec/">Network Definition Spec</a> for the full reference.</p>
+</blockquote>
+<h2 id="key-features"><a class="header" href="#key-features">Key Features</a></h2>
+<ul>
+<li><strong>Programmatic Network Spawning</strong> - Define and spawn relay chains and parachains from Rust code</li>
+<li><strong>Fluent Builder API</strong> - Compose networks using a chainable builder pattern</li>
+<li><strong>Multiple Providers</strong> - Run on Kubernetes, Podman, Docker, or natively</li>
+<li><strong>Metrics &amp; Assertions</strong> - Query Prometheus metrics and validate network behavior</li>
+<li><strong>Subxt Integration</strong> - Interact with networks using <a href="https://github.com/paritytech/subxt">subxt</a></li>
+</ul>
+<h2 id="use-cases"><a class="header" href="#use-cases">Use Cases</a></h2>
+<ul>
+<li><strong>Integration Testing</strong> - Test cross-chain functionality with complete networks</li>
+<li><strong>CI/CD Pipelines</strong> - Automate network deployment and testing</li>
+<li><strong>Development</strong> - Spin up local networks for development and debugging</li>
+<li><strong>Parachain Testing</strong> - Test registration, block production etc.</li>
+</ul>
+<h2 id="next"><a class="header" href="#next">Next</a></h2>
+<p>See <a href="./getting-started/">Getting Started</a> to spawn your first network.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
+<p>This guide walks you through setting up ZombieNet SDK and spawning your first network.</p>
+<ol>
+<li><a href="getting-started/./setup.html">Setup</a> - Prerequisites and installation</li>
+<li><a href="getting-started/./your-first-network.html">Your First Network</a> - Spawn a relay chain and parachain</li>
+</ol>
+<h2 id="next-1"><a class="header" href="#next-1">Next</a></h2>
+<ul>
+<li><a href="getting-started/../network-spec/">Network Definition Spec</a> - Configuration reference</li>
+<li><a href="getting-started/../providers.html">Providers</a> - Native, Docker, Kubernetes</li>
+<li><a href="getting-started/../cli.html">CLI Usage</a> - CLI reference</li>
+<li><a href="getting-started/../examples.html">Examples</a> - More configurations and use cases</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="setup"><a class="header" href="#setup">Setup</a></h1>
+<h3 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h3>
+<ul>
+<li><strong>Rust</strong> - Install via <a href="https://rustup.rs/">rustup</a></li>
+<li><strong>A provider</strong> (at least one):
+<ul>
+<li><strong>Native</strong>: Binaries used by your network in PATH (or absolute paths in config), e.g., <code>polkadot</code>, <code>polkadot-parachain</code></li>
+<li><strong>Docker/Podman</strong>: Container runtime installed and running</li>
+<li><strong>Kubernetes</strong>: Cluster access with <code>kubectl</code> configured</li>
+</ul>
+</li>
+</ul>
+<h3 id="installation"><a class="header" href="#installation">Installation</a></h3>
+<h4 id="cli"><a class="header" href="#cli">CLI</a></h4>
+<p>Download pre-built binaries from <a href="https://github.com/paritytech/zombienet-sdk/releases">GitHub Releases</a>, or install via Cargo:</p>
+<pre><code class="language-bash">cargo install zombie-cli
+</code></pre>
+<p>Or build from source:</p>
+<pre><code class="language-bash">git clone https://github.com/paritytech/zombienet-sdk
+cd zombienet-sdk
+cargo build --release -p zombie-cli
+# Binary will be at target/release/zombie-cli
+</code></pre>
+<h4 id="as-a-dependency"><a class="header" href="#as-a-dependency">As a Dependency</a></h4>
+<p>Add to your <code>Cargo.toml</code>:</p>
+<pre><code class="language-toml">[dependencies]
+zombienet-sdk = "0.4"
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="your-first-network"><a class="header" href="#your-first-network">Your First Network</a></h1>
+<h3 id="using-toml"><a class="header" href="#using-toml">Using TOML</a></h3>
+<p>Create <code>network.toml</code>:</p>
+<pre><code class="language-toml">[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+</code></pre>
+<p>Spawn with the CLI:</p>
+<pre><code class="language-bash">zombie-cli spawn network.toml --provider native
+# or: --provider docker
+</code></pre>
+<h3 id="programmatically"><a class="header" href="#programmatically">Programmatically</a></h3>
+<p>The same network in Rust:</p>
+<pre><pre class="playground"><code class="language-rust">use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
+
+#[tokio::main]
+async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let network = NetworkConfigBuilder::new()
+        .with_relaychain(|r| {
+            r.with_chain("rococo-local")
+                .with_default_command("polkadot")
+                .with_validator(|v| v.with_name("alice"))
+                .with_validator(|v| v.with_name("bob"))
+        })
+        .build()?
+        .spawn_native()
+        .await?;
+
+    let alice = network.get_node("alice")?;
+    println!("Alice WS: {}", alice.ws_uri());
+
+    tokio::signal::ctrl_c().await?;
+    Ok(())
+}</code></pre></pre>
+<h3 id="adding-a-parachain"><a class="header" href="#adding-a-parachain">Adding a Parachain</a></h3>
+<h4 id="toml"><a class="header" href="#toml">TOML</a></h4>
+<p>Extend <code>network.toml</code>:</p>
+<pre><code class="language-toml">[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 1000
+
+    [[parachains.collators]]
+    name = "collator01"
+    command = "polkadot-parachain"
+</code></pre>
+<h4 id="programmatically-1"><a class="header" href="#programmatically-1">Programmatically</a></h4>
+<pre><pre class="playground"><code class="language-rust">use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
+
+#[tokio::main]
+async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let network = NetworkConfigBuilder::new()
+        .with_relaychain(|r| {
+            r.with_chain("rococo-local")
+                .with_default_command("polkadot")
+                .with_validator(|v| v.with_name("alice"))
+                .with_validator(|v| v.with_name("bob"))
+        })
+        .with_parachain(|p| {
+            p.with_id(1000)
+                .with_collator(|c| {
+                    c.with_name("collator01")
+                        .with_command("polkadot-parachain")
+                })
+        })
+        .build()?
+        .spawn_native()
+        .await?;
+
+    let collator = network.get_node("collator01")?;
+    println!("Collator WS: {}", collator.ws_uri());
+
+    tokio::signal::ctrl_c().await?;
+    Ok(())
+}</code></pre></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h1>
+<p>This document covers the two core aspects of what ZombieNet does under the hood: <strong>chain spec customization</strong> and <strong>command-line argument generation</strong>.</p>
+<h2 id="chain-spec-customization"><a class="header" href="#chain-spec-customization">Chain Spec Customization</a></h2>
+<p>When spawning a network, ZombieNet modifies chain specifications to configure the test environment. These customizations happen automatically based on your network configuration.</p>
+<h3 id="relay-chain-customizations"><a class="header" href="#relay-chain-customizations">Relay Chain Customizations</a></h3>
+<p>The framework applies these modifications to relay chain specs:</p>
+<div class="table-wrapper"><table><thead><tr><th>Customization</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>Runtime Genesis Patch</strong></td><td>Merges user-provided <code>genesis_overrides</code> JSON (applied first)</td></tr>
+<tr><td><strong>Clear Authorities</strong></td><td>Removes existing authorities from <code>session/keys</code>, <code>aura/authorities</code>, <code>grandpa/authorities</code>, <code>collatorSelection/invulnerables</code>, and <code>staking/invulnerables</code> + <code>staking/stakers</code> (relay only). Also sets <code>validatorCount</code> to 0 unless <code>devStakers</code> is configured.</td></tr>
+<tr><td><strong>Add Balances</strong></td><td>Adds balances for each node's <code>sr</code> and <code>sr_stash</code> accounts. Balance is <code>max(initial_balance, staking_min * 2)</code>. Only nodes with <code>initial_balance &gt; 0</code> receive balances.</td></tr>
+<tr><td><strong>Add Zombie Account</strong></td><td>Adds <code>//Zombie</code> account with 1000 units (in chain denomination, i.e., <code>1000 * 10^token_decimals</code> planck) for internal operations</td></tr>
+<tr><td><strong>Add Staking</strong></td><td>Configures staking for validators with minimum stake</td></tr>
+<tr><td><strong>Add Session Authorities</strong></td><td>Adds validators as session authorities (if <code>session</code> pallet exists)</td></tr>
+<tr><td><strong>Add Aura/Grandpa Authorities</strong></td><td>For chains without session pallet</td></tr>
+<tr><td><strong>Add HRMP Channels</strong></td><td>Configures cross-chain messaging channels</td></tr>
+<tr><td><strong>Register Parachains</strong></td><td>Adds <code>InGenesis</code> parachains to genesis</td></tr>
+</tbody></table>
+</div>
+<h3 id="parachain-customizations"><a class="header" href="#parachain-customizations">Parachain Customizations</a></h3>
+<p>For cumulus-based parachains:</p>
+<div class="table-wrapper"><table><thead><tr><th>Customization</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>Override para_id/paraId</strong></td><td>Sets correct parachain ID in chain spec root (both <code>para_id</code> and <code>paraId</code> variants)</td></tr>
+<tr><td><strong>Override relay_chain</strong></td><td>Sets relay chain ID in chain spec root</td></tr>
+<tr><td><strong>Apply Genesis Overrides</strong></td><td>Merges user-provided JSON overrides</td></tr>
+<tr><td><strong>Clear/Add Authorities</strong></td><td>Clears existing authorities from <code>session/keys</code>, <code>aura/authorities</code>, <code>grandpa/authorities</code>, <code>collatorSelection/invulnerables</code>. Then adds collator session keys (if session pallet exists) or aura authorities.</td></tr>
+<tr><td><strong>Add Collator Selection</strong></td><td>Adds invulnerable collators to <code>collatorSelection/invulnerables</code></td></tr>
+<tr><td><strong>Override parachainInfo</strong></td><td>Sets correct <code>parachainId</code> in <code>/parachainInfo/parachainId</code></td></tr>
+<tr><td><strong>Add Balances</strong></td><td>Extracts accounts from assets pallet metadata and ensures they have native token balances. Adds balances for collator <code>sr</code> accounts.</td></tr>
+</tbody></table>
+</div>
+<p>For EVM-based parachains (<code>is_evm_based = true</code>), Ethereum session keys are generated and used instead of standard keys.</p>
+<h3 id="chain-spec-key-types"><a class="header" href="#chain-spec-key-types">Chain Spec Key Types</a></h3>
+<p>ZombieNet supports customizing session key types and their cryptographic schemes via the <code>chain_spec_key_types</code> configuration option.</p>
+<h4 id="cryptographic-schemes"><a class="header" href="#cryptographic-schemes">Cryptographic Schemes</a></h4>
+<div class="table-wrapper"><table><thead><tr><th>Scheme</th><th>Suffix</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>SR25519</strong></td><td><code>_sr</code></td><td>Schnorr signatures, used by most runtime keys</td></tr>
+<tr><td><strong>ED25519</strong></td><td><code>_ed</code></td><td>Edwards curve signatures, used by grandpa</td></tr>
+<tr><td><strong>ECDSA</strong></td><td><code>_ec</code></td><td>Elliptic curve, used by beefy and Ethereum compatibility</td></tr>
+</tbody></table>
+</div>
+<h4 id="predefined-key-types"><a class="header" href="#predefined-key-types">Predefined Key Types</a></h4>
+<p>These key types have predefined default schemes:</p>
+<div class="table-wrapper"><table><thead><tr><th>Key Type</th><th>Default Scheme</th><th>Notes</th></tr></thead><tbody>
+<tr><td><code>aura</code></td><td>SR25519</td><td>ED25519 on asset-hub-polkadot</td></tr>
+<tr><td><code>babe</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>grandpa</code></td><td>ED25519</td><td></td></tr>
+<tr><td><code>beefy</code></td><td>ECDSA</td><td></td></tr>
+<tr><td><code>im_online</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>authority_discovery</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>para_validator</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>para_assignment</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>parachain_validator</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>nimbus</code></td><td>SR25519</td><td></td></tr>
+<tr><td><code>vrf</code></td><td>SR25519</td><td></td></tr>
+</tbody></table>
+</div>
+<h4 id="syntax"><a class="header" href="#syntax">Syntax</a></h4>
+<p>Two formats are supported:</p>
+<ul>
+<li><strong>Short form</strong>: <code>aura</code> — uses the predefined default scheme</li>
+<li><strong>Long form</strong>: <code>aura_ed</code> — explicitly specifies the scheme</li>
+</ul>
+<p>Unknown key types default to SR25519 when using short form.</p>
+<h4 id="example"><a class="header" href="#example">Example</a></h4>
+<pre><code class="language-toml">[relaychain]
+chain_spec_key_types = ["aura", "grandpa", "beefy"]  # Uses defaults
+
+# Or with explicit schemes:
+chain_spec_key_types = ["aura_ed", "grandpa_sr", "custom_key_ec"]
+</code></pre>
+<h3 id="optional-overrides"><a class="header" href="#optional-overrides">Optional Overrides</a></h3>
+<p>Two additional overrides can be applied after the raw chain spec is generated:</p>
+<ul>
+<li><strong>WASM Override</strong> (<code>wasm_override</code>): Replaces runtime code (<code>:code</code> storage key) with custom WASM</li>
+<li><strong>Raw Spec Override</strong> (<code>raw_spec_override</code>): Applies JSON patch merge to override any part of the raw spec</li>
+</ul>
+<hr />
+<h2 id="command-line-arguments"><a class="header" href="#command-line-arguments">Command-Line Arguments</a></h2>
+<p>ZombieNet generates command-line arguments for each spawned node. Understanding what gets added helps debug issues and customize node behavior.</p>
+<h3 id="framework-managed-arguments"><a class="header" href="#framework-managed-arguments">Framework-Managed Arguments</a></h3>
+<p>These arguments are <strong>always set by the framework</strong> and filtered out if provided by user configuration:</p>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>--chain</code></td><td>Generated chain spec path</td></tr>
+<tr><td><code>--name</code></td><td>Node name from config</td></tr>
+<tr><td><code>--rpc-cors</code></td><td><code>all</code></td></tr>
+<tr><td><code>--rpc-methods</code></td><td><code>unsafe</code></td></tr>
+<tr><td><code>--parachain-id</code></td><td>Parachain ID (relay chain nodes only, when <code>para_id</code> is specified; NOT used for cumulus collators)</td></tr>
+<tr><td><code>--node-key</code></td><td>Deterministic key derived from node name</td></tr>
+</tbody></table>
+</div>
+<p>Additionally, these flags are managed by the framework:</p>
+<div class="table-wrapper"><table><thead><tr><th>Flag</th><th>When Added</th></tr></thead><tbody>
+<tr><td><code>--no-telemetry</code></td><td>Relay chain nodes only (not cumulus collators)</td></tr>
+<tr><td><code>--collator</code></td><td>Cumulus collators with <code>is_validator: true</code></td></tr>
+<tr><td><code>--execution wasm</code></td><td>Embedded relay chain full node (after <code>--</code> separator)</td></tr>
+</tbody></table>
+</div>
+<h3 id="arguments-added-conditionally"><a class="header" href="#arguments-added-conditionally">Arguments Added Conditionally</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Condition</th></tr></thead><tbody>
+<tr><td><code>--validator</code></td><td>Relay chain nodes with <code>is_validator: true</code></td></tr>
+<tr><td><code>--insecure-validator-i-know-what-i-do</code></td><td>Validators, if the binary supports it</td></tr>
+<tr><td><code>--prometheus-external</code></td><td>Unless already in user args</td></tr>
+<tr><td><code>--unsafe-rpc-external</code></td><td>Only for Docker/Kubernetes providers (not native)</td></tr>
+<tr><td><code>--bootnodes</code></td><td>When bootnode addresses are available</td></tr>
+</tbody></table>
+</div>
+<h3 id="port-arguments"><a class="header" href="#port-arguments">Port Arguments</a></h3>
+<p>The framework injects port arguments based on assigned ports:</p>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--prometheus-port</code></td><td>Prometheus metrics port</td></tr>
+<tr><td><code>--rpc-port</code></td><td>RPC/WebSocket port</td></tr>
+<tr><td><code>--listen-addr</code></td><td>P2P listen address (format: <code>/ip4/0.0.0.0/tcp/{port}/ws</code>)</td></tr>
+<tr><td><code>--base-path</code></td><td>Data directory path</td></tr>
+</tbody></table>
+</div>
+<h3 id="cumulus-collator-arguments"><a class="header" href="#cumulus-collator-arguments">Cumulus Collator Arguments</a></h3>
+<p>Cumulus-based collators receive two sets of arguments separated by <code>--</code>:</p>
+<p><strong>Before <code>--</code></strong> (collator arguments):</p>
+<ul>
+<li><code>--chain</code> (parachain spec)</li>
+<li><code>--collator</code></li>
+<li><code>--prometheus-port</code>, <code>--rpc-port</code>, <code>--listen-addr</code></li>
+<li><code>--base-path</code></li>
+<li>User-provided collator args</li>
+</ul>
+<p><strong>After <code>--</code></strong> (embedded relay chain full node):</p>
+<ul>
+<li><code>--base-path</code> (separate relay data directory)</li>
+<li><code>--chain</code> (relay chain spec)</li>
+<li><code>--execution wasm</code> (hardcoded, always WASM execution)</li>
+<li><code>--port</code> (full node P2P port, injected by framework when assigned port differs from default 30333)</li>
+<li><code>--prometheus-port</code> (full node metrics port, injected by framework when assigned port differs from default 9616)</li>
+<li>User-provided full node args</li>
+</ul>
+<h3 id="removing-framework-arguments"><a class="header" href="#removing-framework-arguments">Removing Framework Arguments</a></h3>
+<p>Use the <code>-:</code> prefix to remove arguments that the framework adds:</p>
+<pre><code class="language-toml">[[relaychain.nodes]]
+name = "bob"
+args = ["-:--insecure-validator-i-know-what-i-do"]
+</code></pre>
+<p>This removes <code>--insecure-validator-i-know-what-i-do</code> from bob's command line.</p>
+<p>The removal syntax:</p>
+<ul>
+<li><code>-:--flag-name</code> removes <code>--flag-name</code></li>
+<li><code>-:flag-name</code> also removes <code>--flag-name</code> (normalized automatically)</li>
+<li>Works for both flags and options (the option's value is also removed)</li>
+</ul>
+<h3 id="example-generated-relay-chain-command"><a class="header" href="#example-generated-relay-chain-command">Example: Generated Relay Chain Command</a></h3>
+<pre><code class="language-bash">polkadot \
+  --chain /cfg/rococo-local.json \
+  --name alice \
+  --rpc-cors all \
+  --rpc-methods unsafe \
+  --unsafe-rpc-external \          # omitted for native provider
+  --node-key &lt;deterministic_key&gt; \
+  --prometheus-external \
+  --validator \
+  --insecure-validator-i-know-what-i-do \  # if binary supports it
+  --bootnodes &lt;bootnode_multiaddrs&gt; \
+  --prometheus-port 9615 \
+  --rpc-port 9944 \
+  --listen-addr /ip4/0.0.0.0/tcp/30333/ws \
+  --base-path /data \
+  --no-telemetry \
+  [user_args...]
+</code></pre>
+<h3 id="example-generated-cumulus-collator-command"><a class="header" href="#example-generated-cumulus-collator-command">Example: Generated Cumulus Collator Command</a></h3>
+<pre><code class="language-bash">polkadot-parachain \
+  --chain /cfg/1000.json \
+  --name collator01 \
+  --rpc-cors all \
+  --rpc-methods unsafe \
+  --unsafe-rpc-external \          # omitted for native provider
+  --node-key &lt;deterministic_key&gt; \
+  --prometheus-external \
+  --collator \                     # if is_validator: true
+  --bootnodes &lt;para_bootnode_multiaddrs&gt; \
+  --prometheus-port 9615 \
+  --rpc-port 9944 \
+  --listen-addr /ip4/0.0.0.0/tcp/30333/ws \
+  --base-path /data \
+  [user_collator_args...] \
+  -- \
+  --base-path /relay-data \
+  --chain /cfg/rococo-local.json \
+  --execution wasm \
+  --port 30334 \                   # if assigned port differs from default
+  --prometheus-port 9616 \         # if assigned port differs from default
+  [user_full_node_args...]
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="network-definition-spec"><a class="header" href="#network-definition-spec">Network Definition Spec</a></h1>
+<p>Configuration via TOML files or the builder API.</p>
+<ul>
+<li><a href="network-spec/./global-settings.html">Global Settings</a> - Timeouts, concurrency, base directory</li>
+<li><a href="network-spec/./relaychain.html">Relaychain</a> - Relay chain configuration</li>
+<li><a href="network-spec/./parachain.html">Parachain</a> - Parachain and collator configuration</li>
+<li><a href="network-spec/./node.html">Node</a> - Node, node groups, and resources</li>
+<li><a href="network-spec/./hrmp-channels.html">HRMP Channels</a> - Cross-chain messaging</li>
+<li><a href="network-spec/./custom-process.html">Custom Processes</a> - Custom process to spawn</li>
+<li><a href="network-spec/./chain-spec.html">Chain Spec</a> - Chain spec generation options</li>
+<li><a href="network-spec/./examples.html">Examples</a> - Complete configuration examples</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="global-settings"><a class="header" href="#global-settings">Global Settings</a></h1>
+<h3 id="toml-1"><a class="header" href="#toml-1">TOML</a></h3>
+<pre><code class="language-toml">[settings]
+timeout = 3600
+node_spawn_timeout = 600
+local_ip = "127.0.0.1"
+base_dir = "/tmp/zombienet"
+spawn_concurrency = 4
+tear_down_on_failure = true
+bootnodes_addresses = ["/ip4/127.0.0.1/tcp/30333/p2p/12D3KooW..."]
+</code></pre>
+<h3 id="builder"><a class="header" href="#builder">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use zombienet_sdk::NetworkConfigBuilder;
+
+let config = NetworkConfigBuilder::new()
+    .with_relaychain(|r| {
+        r.with_chain("rococo-local")
+            .with_default_command("polkadot")
+            .with_validator(|v| v.with_name("alice"))
+    })
+    .with_global_settings(|gs| {
+        gs.with_network_spawn_timeout(3600)
+            .with_node_spawn_timeout(600)
+            .with_local_ip("127.0.0.1")
+            .with_base_dir("/tmp/zombienet")
+            .with_spawn_concurrency(4)
+    })
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<h3 id="reference"><a class="header" href="#reference">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>timeout</code></td><td>Number</td><td>3600</td><td>Global timeout (seconds) for network spawn</td></tr>
+<tr><td><code>node_spawn_timeout</code></td><td>Number</td><td>600</td><td>Individual node spawn timeout (seconds). Override with <code>ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS</code> env var</td></tr>
+<tr><td><code>local_ip</code></td><td>String</td><td><code>127.0.0.1</code></td><td>Local IP for exposed services</td></tr>
+<tr><td><code>base_dir</code></td><td>String</td><td>Random temp dir</td><td>Base directory for network artifacts</td></tr>
+<tr><td><code>spawn_concurrency</code></td><td>Number</td><td>—</td><td>Number of concurrent spawn processes. Override with <code>ZOMBIE_SPAWN_CONCURRENCY</code> env var</td></tr>
+<tr><td><code>tear_down_on_failure</code></td><td>Boolean</td><td><code>true</code></td><td>Tear down network if nodes become unresponsive</td></tr>
+<tr><td><code>bootnodes_addresses</code></td><td>Array</td><td>—</td><td>External bootnode multiaddresses</td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="relaychain"><a class="header" href="#relaychain">Relaychain</a></h1>
+<h3 id="toml-2"><a class="header" href="#toml-2">TOML</a></h3>
+<pre><code class="language-toml">[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+default_image = "parity/polkadot:latest"
+default_args = ["-lruntime=debug"]
+
+# Optional: Use a pre-existing chain spec
+# chain_spec_path = "/path/to/chain-spec.json"
+
+# Optional: Generate chain spec with a command
+# chain_spec_command = "polkadot build-spec --chain {chain}"
+
+# Optional: Runtime for chain spec generation
+# chain_spec_runtime.src = "/path/to/runtime.wasm"
+# chain_spec_runtime.preset = "development"
+
+# Genesis configuration
+random_nominators_count = 4
+max_nominations = 16
+
+# Genesis patch (applied to chain spec)
+[relaychain.genesis.balances]
+balances = [["5GrwvaEF...", 1000000000000]]
+
+[[relaychain.nodes]]
+name = "alice"
+invulnerable = true
+
+[[relaychain.nodes]]
+name = "bob"
+args = ["-lparachain=trace"]
+</code></pre>
+<h3 id="builder-1"><a class="header" href="#builder-1">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use zombienet_sdk::NetworkConfigBuilder;
+
+let config = NetworkConfigBuilder::new()
+    .with_relaychain(|r| {
+        r.with_chain("rococo-local")
+            .with_default_command("polkadot")
+            .with_default_image("parity/polkadot:latest")
+            .with_validator(|v| v.with_name("alice").invulnerable(true))
+            .with_validator(|v| v.with_name("bob"))
+    })
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<h3 id="reference-1"><a class="header" href="#reference-1">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>chain</code></td><td>String</td><td><code>rococo-local</code></td><td>Chain name (e.g., <code>polkadot</code>, <code>rococo-local</code>, <code>westend</code>)</td></tr>
+<tr><td><code>default_command</code></td><td>String</td><td><code>polkadot</code></td><td>Default binary command for nodes</td></tr>
+<tr><td><code>default_image</code></td><td>String</td><td>—</td><td>Default container image (Docker/Podman/K8s)</td></tr>
+<tr><td><code>default_args</code></td><td>Array</td><td>—</td><td>Default CLI arguments for all nodes</td></tr>
+<tr><td><code>default_resources</code></td><td>Object</td><td>—</td><td>Default resource limits (see <a href="network-spec/./node.html#resources">Resources</a>)</td></tr>
+<tr><td><code>default_db_snapshot</code></td><td>String</td><td>—</td><td>Default database snapshot path/URL</td></tr>
+<tr><td><code>chain_spec_path</code></td><td>String</td><td>—</td><td>Path or URL to pre-existing chain spec</td></tr>
+<tr><td><code>chain_spec_command</code></td><td>String</td><td>—</td><td>Command template to generate chain spec</td></tr>
+<tr><td><code>chain_spec_command_is_local</code></td><td>Boolean</td><td><code>false</code></td><td>Run chain spec command locally</td></tr>
+<tr><td><code>chain_spec_command_output_path</code></td><td>String</td><td><code>/dev/stdout</code></td><td>Output path for chain spec command</td></tr>
+<tr><td><code>chain_spec_runtime</code></td><td>Object</td><td>—</td><td>Runtime WASM for chain spec generation (see <a href="network-spec/./chain-spec.html">Chain Spec</a>)</td></tr>
+<tr><td><code>random_nominators_count</code></td><td>Number</td><td>—</td><td>Number of random nominators for staking</td></tr>
+<tr><td><code>max_nominations</code></td><td>Number</td><td>—</td><td>Maximum nominations per nominator</td></tr>
+<tr><td><code>genesis</code></td><td>Object</td><td>—</td><td>Genesis overrides as JSON (alias: <code>runtime_genesis_patch</code>)</td></tr>
+<tr><td><code>wasm_override</code></td><td>String</td><td>—</td><td>WASM runtime override path/URL</td></tr>
+<tr><td><code>raw_spec_override</code></td><td>String/Object</td><td>—</td><td>Raw chain spec override (inline JSON or file path)</td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="parachain"><a class="header" href="#parachain">Parachain</a></h1>
+<h3 id="toml-3"><a class="header" href="#toml-3">TOML</a></h3>
+<pre><code class="language-toml">[[parachains]]
+id = 1000
+chain = "asset-hub-rococo-local"
+onboard_as_parachain = true
+default_command = "polkadot-parachain"
+balance = 2000000000000
+
+# Registration strategy (pick one):
+# add_to_genesis = true    # InGenesis (default, fastest)
+# register_para = true     # UsingExtrinsic (via extrinsic after spawn)
+# (neither = Manual, no automatic registration)
+
+# Genesis configuration
+# genesis_wasm_path = "/path/to/para-wasm"
+# genesis_state_path = "/path/to/para-genesis-state"
+
+# Or generate genesis artifacts
+# genesis_wasm_generator = "polkadot-parachain export-genesis-wasm"
+# genesis_state_generator = ["polkadot-parachain", "export-genesis-state"]
+
+# Genesis patch
+[parachains.genesis.balances]
+balances = [["5GrwvaEF...", 1000000000000]]
+
+[[parachains.collators]]
+name = "collator01"
+command = "polkadot-parachain"
+
+[[parachains.collators]]
+name = "collator02"
+args = ["-lparachain=trace"]
+</code></pre>
+<h3 id="builder-2"><a class="header" href="#builder-2">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use zombienet_sdk::{NetworkConfigBuilder, RegistrationStrategy};
+
+let config = NetworkConfigBuilder::new()
+    .with_relaychain(|r| {
+        r.with_chain("rococo-local")
+            .with_default_command("polkadot")
+            .with_validator(|v| v.with_name("alice"))
+            .with_validator(|v| v.with_name("bob"))
+    })
+    .with_parachain(|p| {
+        p.with_id(1000)
+            .with_collator(|c| c.with_name("collator01").with_command("polkadot-parachain"))
+    })
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<h3 id="reference-2"><a class="header" href="#reference-2">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>id</code></td><td>Number</td><td>—</td><td><strong>Required.</strong> Unique parachain ID</td></tr>
+<tr><td><code>chain</code></td><td>String</td><td>—</td><td>Chain name for the parachain</td></tr>
+<tr><td><code>cumulus_based</code></td><td>Boolean</td><td><code>true</code></td><td>Whether parachain uses Cumulus</td></tr>
+<tr><td><code>evm_based</code></td><td>Boolean</td><td><code>false</code></td><td>Whether parachain is EVM-based (e.g., Frontier)</td></tr>
+<tr><td><code>onboard_as_parachain</code></td><td>Boolean</td><td><code>true</code></td><td>Register as parachain (vs parathread)</td></tr>
+<tr><td><code>add_to_genesis</code></td><td>Boolean</td><td>—</td><td>Register in genesis (InGenesis strategy). Mutually exclusive with <code>register_para</code></td></tr>
+<tr><td><code>register_para</code></td><td>Boolean</td><td>—</td><td>Register via extrinsic (UsingExtrinsic strategy). Mutually exclusive with <code>add_to_genesis</code></td></tr>
+<tr><td><code>balance</code></td><td>Number</td><td>2000000000000</td><td>Initial balance for parachain account</td></tr>
+<tr><td><code>default_command</code></td><td>String</td><td>—</td><td>Default collator command</td></tr>
+<tr><td><code>default_image</code></td><td>String</td><td>—</td><td>Default container image</td></tr>
+<tr><td><code>default_args</code></td><td>Array</td><td>—</td><td>Default CLI arguments</td></tr>
+<tr><td><code>default_resources</code></td><td>Object</td><td>—</td><td>Default resource limits (see <a href="network-spec/./node.html#resources">Resources</a>)</td></tr>
+<tr><td><code>default_db_snapshot</code></td><td>String</td><td>—</td><td>Default database snapshot path/URL</td></tr>
+<tr><td><code>genesis_wasm_path</code></td><td>String</td><td>—</td><td>Path/URL to genesis WASM blob</td></tr>
+<tr><td><code>genesis_wasm_generator</code></td><td>String</td><td>—</td><td>Command to generate genesis WASM</td></tr>
+<tr><td><code>genesis_state_path</code></td><td>String</td><td>—</td><td>Path/URL to genesis state</td></tr>
+<tr><td><code>genesis_state_generator</code></td><td>String/Array</td><td>—</td><td>Command with args to generate genesis state</td></tr>
+<tr><td><code>genesis</code></td><td>Object</td><td>—</td><td>Genesis overrides as JSON (alias: <code>runtime_genesis_patch</code>)</td></tr>
+<tr><td><code>chain_spec_path</code></td><td>String</td><td>—</td><td>Path/URL to parachain chain spec</td></tr>
+<tr><td><code>chain_spec_command</code></td><td>String</td><td>—</td><td>Command template to generate chain spec</td></tr>
+<tr><td><code>chain_spec_command_is_local</code></td><td>Boolean</td><td><code>false</code></td><td>Run chain spec command locally</td></tr>
+<tr><td><code>chain_spec_command_output_path</code></td><td>String</td><td><code>/dev/stdout</code></td><td>Output path for chain spec command</td></tr>
+<tr><td><code>chain_spec_runtime</code></td><td>Object</td><td>—</td><td>Runtime WASM for chain spec generation</td></tr>
+<tr><td><code>wasm_override</code></td><td>String</td><td>—</td><td>WASM runtime override path/URL</td></tr>
+<tr><td><code>raw_spec_override</code></td><td>String/Object</td><td>—</td><td>Raw chain spec override (inline JSON or file path)</td></tr>
+<tr><td><code>bootnodes_addresses</code></td><td>Array</td><td>—</td><td>Bootnode multiaddresses</td></tr>
+<tr><td><code>no_default_bootnodes</code></td><td>Boolean</td><td><code>false</code></td><td>Don't auto-assign bootnode role if none specified</td></tr>
+</tbody></table>
+</div>
+<h2 id="registration-strategies"><a class="header" href="#registration-strategies">Registration Strategies</a></h2>
+<ul>
+<li><strong>InGenesis</strong> - In relay chain genesis (fastest)</li>
+<li><strong>UsingExtrinsic</strong> - Via extrinsic after spawn</li>
+<li><strong>Manual</strong> - No automatic registration</li>
+</ul>
+<h2 id="collator-groups"><a class="header" href="#collator-groups">Collator Groups</a></h2>
+<pre><code class="language-toml">[[parachains.collator_groups]]
+name = "collator"
+count = 3
+command = "polkadot-parachain"
+</code></pre>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_parachain(|p| {
+    p.with_id(1000)
+        .with_collator_group(|g| {
+            g.with_count(3)
+                .with_base_node(|n| n.with_name("collator").with_command("polkadot-parachain"))
+        })
+})
+<span class="boring">}</span></code></pre></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="node"><a class="header" href="#node">Node</a></h1>
+<p>Validators, full nodes, and collators share this configuration.</p>
+<h3 id="toml-4"><a class="header" href="#toml-4">TOML</a></h3>
+<pre><code class="language-toml">[[relaychain.nodes]]
+name = "alice"
+command = "polkadot"
+# subcommand = "node"  # Optional: for nested CLI commands
+image = "parity/polkadot:latest"
+invulnerable = true
+bootnode = false
+initial_balance = 5000000000000
+args = ["-lruntime=debug"]
+env = [
+    { name = "RUST_LOG", value = "info" }
+]
+
+# Networking
+rpc_port = 9933
+prometheus_port = 9615
+p2p_port = 30333
+# p2p_cert_hash = "..."  # Optional: libp2p WebRTC cert hash
+bootnodes_addresses = ["/ip4/127.0.0.1/tcp/30333/p2p/12D3KooW..."]
+
+# Storage &amp; Keys
+db_snapshot = "/path/to/snapshot.tar.gz"
+keystore_path = "/path/to/keystore"
+keystore_key_types = ["aura", "gran"]
+# override_eth_key = "0x..."  # Optional: override EVM session key
+node_log_path = "/tmp/alice.log"
+
+# Resources (for container providers)
+[relaychain.nodes.resources]
+request_memory = "1Gi"
+request_cpu = "500m"
+limit_memory = "2Gi"
+limit_cpu = "1000m"
+</code></pre>
+<h3 id="builder-3"><a class="header" href="#builder-3">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_validator(|node| {
+    node.with_name("alice")
+        .with_command("polkadot")
+        .with_image("parity/polkadot:latest")
+        .invulnerable(true)
+        .with_args(vec!["-lruntime=debug".into()])
+        .with_env(vec![("RUST_LOG".into(), "info".into())])
+        .with_resources(|r| {
+            r.with_request_memory("1Gi").with_limit_memory("2Gi")
+        })
+})
+<span class="boring">}</span></code></pre></pre>
+<h3 id="reference-3"><a class="header" href="#reference-3">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>name</code></td><td>String</td><td>—</td><td><strong>Required.</strong> Unique node name</td></tr>
+<tr><td><code>command</code></td><td>String</td><td>Inherited</td><td>Binary command to execute</td></tr>
+<tr><td><code>subcommand</code></td><td>String</td><td>—</td><td>Optional subcommand (e.g., for nested CLI)</td></tr>
+<tr><td><code>image</code></td><td>String</td><td>Inherited</td><td>Container image</td></tr>
+<tr><td><code>args</code></td><td>Array</td><td>—</td><td>CLI arguments</td></tr>
+<tr><td><code>env</code></td><td>Array</td><td>—</td><td>Environment variables as <code>{name, value}</code> pairs</td></tr>
+<tr><td><code>validator</code></td><td>Boolean</td><td><code>true</code></td><td>Whether node is a validator/authority</td></tr>
+<tr><td><code>invulnerable</code></td><td>Boolean</td><td><code>true</code></td><td>Add to invulnerables set in genesis</td></tr>
+<tr><td><code>bootnode</code></td><td>Boolean</td><td><code>false</code></td><td>Whether node acts as a bootnode</td></tr>
+<tr><td><code>initial_balance</code></td><td>Number</td><td>2000000000000</td><td>Initial account balance (alias: <code>balance</code>)</td></tr>
+<tr><td><code>rpc_port</code></td><td>Number</td><td>Auto</td><td>RPC port</td></tr>
+<tr><td><code>prometheus_port</code></td><td>Number</td><td>Auto</td><td>Prometheus metrics port</td></tr>
+<tr><td><code>p2p_port</code></td><td>Number</td><td>Auto</td><td>P2P networking port</td></tr>
+<tr><td><code>p2p_cert_hash</code></td><td>String</td><td>—</td><td>libp2p WebRTC certificate hash</td></tr>
+<tr><td><code>bootnodes_addresses</code></td><td>Array</td><td>—</td><td>Additional bootnode addresses</td></tr>
+<tr><td><code>db_snapshot</code></td><td>String</td><td>—</td><td>Database snapshot path/URL</td></tr>
+<tr><td><code>keystore_path</code></td><td>String</td><td>—</td><td>Custom keystore directory</td></tr>
+<tr><td><code>keystore_key_types</code></td><td>Array</td><td>—</td><td>Key types to generate in keystore (e.g., <code>aura</code>, <code>gran</code>, <code>babe</code>)</td></tr>
+<tr><td><code>chain_spec_key_types</code></td><td>Array</td><td>—</td><td>Session key types to inject into chain spec genesis</td></tr>
+<tr><td><code>override_eth_key</code></td><td>String</td><td>—</td><td>Override auto-generated EVM session key</td></tr>
+<tr><td><code>node_log_path</code></td><td>String</td><td>—</td><td>Path for node log file</td></tr>
+<tr><td><code>resources</code></td><td>Object</td><td>—</td><td>Resource limits (see below)</td></tr>
+</tbody></table>
+</div>
+<h2 id="node-groups"><a class="header" href="#node-groups">Node Groups</a></h2>
+<p>Define multiple nodes with the same configuration. Creates <code>validator-0</code>, <code>validator-1</code>, etc.</p>
+<h3 id="toml-5"><a class="header" href="#toml-5">TOML</a></h3>
+<pre><code class="language-toml">[[relaychain.node_groups]]
+name = "validator"
+count = 5
+command = "polkadot"
+</code></pre>
+<h3 id="builder-4"><a class="header" href="#builder-4">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>.with_relaychain(|r| {
+    r.with_chain("rococo-local")
+        .with_default_command("polkadot")
+        .with_node_group(|g| {
+            g.with_base_node(|node| {
+                node.with_name("validator")
+                    .with_args(vec!["-lruntime=debug".into()])
+            })
+            .with_count(5)
+        })
+})
+<span class="boring">}</span></code></pre></pre>
+<h2 id="resources"><a class="header" href="#resources">Resources</a></h2>
+<p>For container providers (Docker, Podman, Kubernetes).</p>
+<pre><code class="language-toml">[relaychain.default_resources]
+request_memory = "1Gi"
+request_cpu = "500m"
+limit_memory = "2Gi"
+limit_cpu = "1000m"
+</code></pre>
+<h3 id="reference-4"><a class="header" href="#reference-4">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>request_memory</code></td><td>String</td><td>Requested memory (e.g., <code>512Mi</code>, <code>1Gi</code>)</td></tr>
+<tr><td><code>request_cpu</code></td><td>String</td><td>Requested CPU (e.g., <code>250m</code>, <code>1</code>)</td></tr>
+<tr><td><code>limit_memory</code></td><td>String</td><td>Memory limit</td></tr>
+<tr><td><code>limit_cpu</code></td><td>String</td><td>CPU limit</td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="hrmp-channels"><a class="header" href="#hrmp-channels">HRMP Channels</a></h1>
+<p>Cross-chain messaging between parachains.</p>
+<h3 id="toml-6"><a class="header" href="#toml-6">TOML</a></h3>
+<pre><code class="language-toml">[[hrmp_channels]]
+sender = 1000
+recipient = 2000
+max_capacity = 8
+max_message_size = 512
+
+[[hrmp_channels]]
+sender = 2000
+recipient = 1000
+max_capacity = 8
+max_message_size = 512
+</code></pre>
+<h3 id="builder-5"><a class="header" href="#builder-5">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let config = NetworkConfigBuilder::new()
+    .with_relaychain(|r| { /* ... */ })
+    .with_parachain(|p| p.with_id(1000).with_collator(|c| c.with_name("col1")))
+    .with_parachain(|p| p.with_id(2000).with_collator(|c| c.with_name("col2")))
+    .with_hrmp_channel(|h| h.with_sender(1000).with_recipient(2000))
+    .with_hrmp_channel(|h| h.with_sender(2000).with_recipient(1000))
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<h3 id="reference-5"><a class="header" href="#reference-5">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>sender</code></td><td>Number</td><td>—</td><td><strong>Required.</strong> Sending parachain ID</td></tr>
+<tr><td><code>recipient</code></td><td>Number</td><td>—</td><td><strong>Required.</strong> Receiving parachain ID</td></tr>
+<tr><td><code>max_capacity</code></td><td>Number</td><td>8</td><td>Maximum messages in channel</td></tr>
+<tr><td><code>max_message_size</code></td><td>Number</td><td>512</td><td>Maximum message size in bytes</td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="custom-processes"><a class="header" href="#custom-processes">Custom Processes</a></h1>
+<p>Allow to set custom processes to spawn after the network is up.</p>
+<h3 id="toml-7"><a class="header" href="#toml-7">TOML</a></h3>
+<pre><code class="language-toml">[[custom_processes]]
+name = "eth-rpc"
+command = "eth-rpc"
+args = [ "--flag", "--other=1" ]
+env = [
+    { name = "RUST_LOG", value = "info" }
+]
+
+[[custom_processes]]
+name = "other"
+command = "some-binary"
+args = [ "--flag", "--other-flag" ]
+</code></pre>
+<h3 id="builder-6"><a class="header" href="#builder-6">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let config = NetworkConfigBuilder::new()
+    .with_relaychain(|r| { /* ... */ })
+    .with_custom_process(|c| c.with_name("eth-rpc").with_command("eth-rpc"))
+<span class="boring">}</span></code></pre></pre>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let cp = CustomProcessBuilder::new()
+    .with_name("eth-rpc")
+    .with_command("eth-rpc")
+    .with_args(vec!["--flag".into()])
+    .with_env(vec![("Key", "Value")])
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<h3 id="reference-6"><a class="header" href="#reference-6">Reference</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>name</code></td><td>String</td><td>—</td><td><strong>Required.</strong> Name of the process</td></tr>
+<tr><td><code>command</code></td><td>String</td><td>—</td><td><strong>Required.</strong> Command to execute</td></tr>
+<tr><td><code>image</code></td><td>String</td><td>-</td><td>Container image</td></tr>
+<tr><td><code>args</code></td><td>Array</td><td>—</td><td>CLI arguments</td></tr>
+<tr><td><code>env</code></td><td>Array</td><td>—</td><td>Environment variables as <code>{name, value}</code> pairs</td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="chain-spec-generation"><a class="header" href="#chain-spec-generation">Chain Spec Generation</a></h1>
+<p>Priority: <code>chain_spec_path</code> &gt; <code>chain_spec_runtime</code> &gt; <code>chain_spec_command</code> &gt; auto-generation.</p>
+<h3 id="pre-existing"><a class="header" href="#pre-existing">Pre-existing</a></h3>
+<pre><code class="language-toml">chain_spec_path = "/path/to/chain-spec.json"  # or URL
+</code></pre>
+<h3 id="via-command"><a class="header" href="#via-command">Via Command</a></h3>
+<pre><code class="language-toml">chain_spec_command = "polkadot build-spec --chain {chain} --disable-default-bootnode"
+</code></pre>
+<h3 id="via-runtime"><a class="header" href="#via-runtime">Via Runtime</a></h3>
+<pre><code class="language-toml">[relaychain.chain_spec_runtime]
+src = "/path/to/runtime.wasm"
+preset = "development"  # optional
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="complete-example"><a class="header" href="#complete-example">Complete Example</a></h1>
+<p>Relay chain with two parachains and HRMP channels.</p>
+<h3 id="toml-8"><a class="header" href="#toml-8">TOML</a></h3>
+<pre><code class="language-toml">[settings]
+timeout = 600
+
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+default_args = ["-lruntime=debug"]
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 1000
+
+[[parachains.collators]]
+name = "collator-1000"
+command = "polkadot-parachain"
+
+[[parachains]]
+id = 2000
+
+[[parachains.collators]]
+name = "collator-2000"
+command = "polkadot-parachain"
+
+[[hrmp_channels]]
+sender = 1000
+recipient = 2000
+
+[[hrmp_channels]]
+sender = 2000
+recipient = 1000
+</code></pre>
+<h3 id="builder-7"><a class="header" href="#builder-7">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust">use zombienet_sdk::{NetworkConfigBuilder, NetworkConfigExt};
+
+#[tokio::main]
+async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let network = NetworkConfigBuilder::new()
+        .with_relaychain(|r| {
+            r.with_chain("rococo-local")
+                .with_default_command("polkadot")
+                .with_validator(|v| v.with_name("alice"))
+                .with_validator(|v| v.with_name("bob"))
+        })
+        .with_parachain(|p| {
+            p.with_id(1000)
+                .with_collator(|c| c.with_name("collator-1000").with_command("polkadot-parachain"))
+        })
+        .with_parachain(|p| {
+            p.with_id(2000)
+                .with_collator(|c| c.with_name("collator-2000").with_command("polkadot-parachain"))
+        })
+        .with_hrmp_channel(|h| h.with_sender(1000).with_recipient(2000))
+        .with_hrmp_channel(|h| h.with_sender(2000).with_recipient(1000))
+        .build()
+        .unwrap()
+        .spawn_native()
+        .await?;
+
+    Ok(())
+}</code></pre></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="providers"><a class="header" href="#providers">Providers</a></h1>
+<p>Providers determine how ZombieNet spawns and manages nodes. Choose based on your environment and requirements.</p>
+<h2 id="quick-comparison"><a class="header" href="#quick-comparison">Quick Comparison</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Provider</th><th>Runs As</th><th>Image Required</th><th>Resource Limits</th></tr></thead><tbody>
+<tr><td>Native</td><td>Local processes</td><td>No</td><td>No</td></tr>
+<tr><td>Docker</td><td>Containers</td><td>Yes</td><td>No</td></tr>
+<tr><td>Kubernetes</td><td>K8s pods</td><td>Yes</td><td>Yes</td></tr>
+</tbody></table>
+</div>
+<h2 id="provider-selection"><a class="header" href="#provider-selection">Provider Selection</a></h2>
+<p>Set the default provider via environment variable:</p>
+<pre><code class="language-bash">export ZOMBIE_PROVIDER=native  # or: docker, k8s
+</code></pre>
+<p>Or specify per-command with <code>--provider</code> flag. Default is <code>docker</code>.</p>
+<hr />
+<h2 id="native"><a class="header" href="#native">Native</a></h2>
+<p>Runs nodes directly on your machine as local processes.</p>
+<h3 id="requirements"><a class="header" href="#requirements">Requirements</a></h3>
+<ul>
+<li>Node binaries in PATH (e.g., <code>polkadot</code>, <code>polkadot-parachain</code>)</li>
+<li>Or specify absolute paths in configuration</li>
+</ul>
+<h3 id="usage"><a class="header" href="#usage">Usage</a></h3>
+<p><strong>CLI:</strong></p>
+<pre><code class="language-bash">zombie-cli spawn network.toml --provider native
+</code></pre>
+<p><strong>Programmatically:</strong></p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let network = config.spawn_native().await?;
+<span class="boring">}</span></code></pre></pre>
+<h3 id="notes"><a class="header" href="#notes">Notes</a></h3>
+<ul>
+<li>Fastest startup, no container overhead</li>
+<li>No container images needed</li>
+<li>Ports are assigned randomly to avoid conflicts</li>
+<li>Files stored in a temp directory (or <code>base_dir</code> if configured)</li>
+</ul>
+<hr />
+<h2 id="docker"><a class="header" href="#docker">Docker</a></h2>
+<p>Runs nodes in Docker containers.</p>
+<h3 id="requirements-1"><a class="header" href="#requirements-1">Requirements</a></h3>
+<ul>
+<li>Docker or Podman installed and running</li>
+<li>Container images with node binaries</li>
+</ul>
+<h3 id="usage-1"><a class="header" href="#usage-1">Usage</a></h3>
+<p><strong>CLI:</strong></p>
+<pre><code class="language-bash">zombie-cli spawn network.toml --provider docker
+</code></pre>
+<p><strong>Programmatically:</strong></p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let network = config.spawn_docker().await?;
+<span class="boring">}</span></code></pre></pre>
+<h3 id="default-images"><a class="header" href="#default-images">Default Images</a></h3>
+<p>Override via environment variables:</p>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>POLKADOT_IMAGE</code></td><td><code>docker.io/parity/polkadot:latest</code></td><td>Relay chain nodes</td></tr>
+<tr><td><code>CUMULUS_IMAGE</code></td><td><code>docker.io/parity/polkadot-parachain:latest</code></td><td>Parachain collators</td></tr>
+<tr><td><code>MALUS_IMAGE</code></td><td><code>docker.io/paritypr/malus:latest</code></td><td>Malus (malicious node)</td></tr>
+<tr><td><code>COL_IMAGE</code></td><td><code>docker.io/paritypr/colander:latest</code></td><td>Colander</td></tr>
+</tbody></table>
+</div>
+<h2 id="kubernetes"><a class="header" href="#kubernetes">Kubernetes</a></h2>
+<p>Deploys nodes as Kubernetes pods.</p>
+<h3 id="requirements-2"><a class="header" href="#requirements-2">Requirements</a></h3>
+<ul>
+<li>Kubernetes cluster access</li>
+<li><code>kubectl</code> configured with valid kubeconfig</li>
+<li>Container images accessible to the cluster</li>
+</ul>
+<h3 id="usage-2"><a class="header" href="#usage-2">Usage</a></h3>
+<p><strong>CLI:</strong></p>
+<pre><code class="language-bash">zombie-cli spawn network.toml --provider k8s
+</code></pre>
+<p><strong>Programmatically:</strong></p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let network = config.spawn_k8s().await?;
+<span class="boring">}</span></code></pre></pre>
+<h2 id="attaching-to-running-networks"><a class="header" href="#attaching-to-running-networks">Attaching to Running Networks</a></h2>
+<p>Reconnect to a previously spawned network, currently running network using the <code>zombie.json</code> state file:</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use zombienet_sdk::{AttachToLive, AttachToLiveNetwork};
+
+// Native
+let network = AttachToLiveNetwork::attach_native("/tmp/zombie-1/zombie.json".into()).await?;
+
+// Docker
+let network = AttachToLiveNetwork::attach_docker("/tmp/zombie-1/zombie.json".into()).await?;
+
+// Kubernetes
+let network = AttachToLiveNetwork::attach_k8s("/tmp/zombie-1/zombie.json".into()).await?;
+<span class="boring">}</span></code></pre></pre>
+<p>The <code>zombie.json</code> file is written to the network's base directory after spawn completes.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cli-usage"><a class="header" href="#cli-usage">CLI Usage</a></h1>
+<p>The <code>zombie-cli</code> command-line tool spawns and manages ZombieNet networks.</p>
+<h2 id="installation-1"><a class="header" href="#installation-1">Installation</a></h2>
+<p><strong>Pre-built binaries:</strong></p>
+<p>Download from <a href="https://github.com/paritytech/zombienet-sdk/releases">GitHub Releases</a>.</p>
+<p><strong>From source:</strong></p>
+<pre><code class="language-bash">cargo install zombie-cli
+</code></pre>
+<hr />
+<h2 id="spawn"><a class="header" href="#spawn">spawn</a></h2>
+<p>Spawn a network from a configuration file.</p>
+<pre><code class="language-bash">zombie-cli spawn &lt;CONFIG&gt; [OPTIONS]
+</code></pre>
+<h3 id="arguments"><a class="header" href="#arguments">Arguments</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Required</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>CONFIG</code></td><td>Yes</td><td>Path to TOML configuration file</td></tr>
+</tbody></table>
+</div>
+<h3 id="options"><a class="header" href="#options">Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Short</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--provider</code></td><td><code>-p</code></td><td><code>docker</code></td><td>Provider: <code>native</code>, <code>docker</code>, or <code>k8s</code></td></tr>
+<tr><td><code>--dir</code></td><td><code>-d</code></td><td>Random temp</td><td>Base directory for network files</td></tr>
+<tr><td><code>--spawn-concurrency</code></td><td><code>-c</code></td><td>100</td><td>Concurrent node spawn processes</td></tr>
+<tr><td><code>--node-verifier</code></td><td><code>-v</code></td><td><code>metric</code></td><td>Readiness check: <code>metric</code> or <code>none</code></td></tr>
+</tbody></table>
+</div>
+<h3 id="examples"><a class="header" href="#examples">Examples</a></h3>
+<pre><code class="language-bash"># Spawn with native provider
+zombie-cli spawn network.toml --provider native
+
+# Spawn with custom directory
+zombie-cli spawn network.toml --dir /tmp/my-network
+
+# Spawn with Docker (default)
+zombie-cli spawn network.toml
+
+# Spawn on Kubernetes
+zombie-cli spawn network.toml --provider k8s
+</code></pre>
+<h2 id="reproduce"><a class="header" href="#reproduce">reproduce</a></h2>
+<p>Reproduce CI test runs locally in Docker. Downloads nextest archives from GitHub Actions and runs them in a containerized environment matching CI.</p>
+<pre><code class="language-bash">zombie-cli reproduce &lt;REPO&gt; &lt;RUN_ID&gt; [OPTIONS]
+zombie-cli reproduce --archive &lt;PATH&gt; [OPTIONS]
+</code></pre>
+<h3 id="arguments-1"><a class="header" href="#arguments-1">Arguments</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Required</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>REPO</code></td><td>Yes*</td><td>Repository name (e.g., <code>zombienet-sdk</code>)</td></tr>
+<tr><td><code>RUN_ID</code></td><td>Yes*</td><td>GitHub Actions run ID (find in the URL of a workflow run)</td></tr>
+</tbody></table>
+</div>
+<p>*Not required when using <code>--archive</code>.</p>
+<h3 id="options-1"><a class="header" href="#options-1">Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Short</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--archive</code></td><td><code>-a</code></td><td>Path to local nextest archive (.tar.zst)</td></tr>
+<tr><td><code>--artifact-pattern</code></td><td><code>-p</code></td><td>Filter artifact downloads by pattern (default: <code>*zombienet-artifacts*</code>)</td></tr>
+<tr><td><code>--skip</code></td><td><code>-s</code></td><td>Skip tests matching pattern (repeatable)</td></tr>
+<tr><td><code>[TEST_FILTER]</code></td><td></td><td>Additional arguments passed to nextest (use <code>--</code> separator)</td></tr>
+</tbody></table>
+</div>
+<h3 id="requirements-3"><a class="header" href="#requirements-3">Requirements</a></h3>
+<ul>
+<li>Docker installed and running</li>
+<li>GitHub CLI (<code>gh</code>) installed and authenticated (for downloading artifacts)</li>
+<li><code>POLKADOT_SDK_PATH</code> environment variable pointing to your polkadot-sdk workspace</li>
+</ul>
+<h3 id="how-it-works-1"><a class="header" href="#how-it-works-1">How It Works</a></h3>
+<ol>
+<li>Downloads nextest test archives (<code>.tar.zst</code>) from GitHub Actions</li>
+<li>Optionally downloads binary artifacts matching the pattern</li>
+<li>Runs tests inside a Docker container with:
+<ul>
+<li><code>ZOMBIE_PROVIDER=native</code> (native provider inside container)</li>
+<li><code>RUST_LOG=debug</code> for verbose output</li>
+<li>Mounted polkadot-sdk workspace</li>
+</ul>
+</li>
+<li>Extracts binaries to <code>/tmp/binaries</code> inside the container</li>
+</ol>
+<h3 id="examples-1"><a class="header" href="#examples-1">Examples</a></h3>
+<pre><code class="language-bash"># Reproduce from GitHub Actions (requires gh CLI authentication)
+POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
+zombie-cli reproduce zombienet-sdk 123456789
+
+# Reproduce from local archive (no gh CLI needed)
+POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
+zombie-cli reproduce --archive ./my-archive.tar.zst
+
+# Download only artifacts matching "ray" pattern
+zombie-cli reproduce zombienet-sdk 123456789 -p ray
+
+# Skip specific slow tests
+zombie-cli reproduce zombienet-sdk 123456789 --skip "slow_test"
+
+# Pass filters to nextest
+zombie-cli reproduce zombienet-sdk 123456789 -- --test-filter my_test
+</code></pre>
+<h3 id="nextest-archive-format"><a class="header" href="#nextest-archive-format">Nextest Archive Format</a></h3>
+<p>The <code>.tar.zst</code> archive is a <a href="https://nexte.st/">nextest</a> archive containing compiled test binaries and metadata. These are produced by CI runs using <code>cargo nextest archive</code>.</p>
+<hr />
+<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Command</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>RUST_LOG</code></td><td>All</td><td>Logging level (e.g., <code>debug</code>, <code>info</code>)</td></tr>
+<tr><td><code>ZOMBIE_SPAWN_CONCURRENCY</code></td><td>spawn</td><td>Override spawn concurrency</td></tr>
+<tr><td><code>POLKADOT_SDK_PATH</code></td><td>reproduce</td><td>Path to polkadot-sdk workspace</td></tr>
+<tr><td><code>POLKADOT_IMAGE</code></td><td>spawn</td><td>Override Polkadot container image</td></tr>
+<tr><td><code>CUMULUS_IMAGE</code></td><td>spawn</td><td>Override Cumulus container image</td></tr>
+</tbody></table>
+</div>
+<hr />
+<div style="break-before: page; page-break-before: always;"></div><h1 id="examples-2"><a class="header" href="#examples-2">Examples</a></h1>
+<p>All examples are in <a href="https://github.com/paritytech/zombienet-sdk/tree/main/crates/examples"><code>crates/examples/</code></a>.</p>
+<p>Run Rust examples with <code>cargo run --example &lt;example_name&gt;</code>.</p>
+<p>Spawn from config files with <code>zombie-cli spawn -p &lt;provider&gt; &lt;config-file&gt;</code>.</p>
+<hr />
+<h2 id="basic-network-setup"><a class="header" href="#basic-network-setup">Basic Network Setup</a></h2>
+<p>Start here to understand network configuration patterns.</p>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/simple_network_example.rs"><code>simple_network_example</code></a></td><td>Minimal relay chain with two validators using TOML config</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/small_network_with_default.rs"><code>small_network_with_default</code></a></td><td>Override default command and image for all nodes</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/small_network_with_base_dir.rs"><code>small_network_with_base_dir</code></a></td><td>Custom base directory for node data</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/small_network_config.rs"><code>small_network_config</code></a></td><td>Minimal programmatic configuration</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="parachain-lifecycle"><a class="header" href="#parachain-lifecycle">Parachain Lifecycle</a></h2>
+<p>Configure, register, and manage parachains.</p>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/small_network_with_para.rs"><code>small_network_with_para</code></a></td><td>Basic relay + parachain topology</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/register_para.rs"><code>register_para</code></a></td><td>Register parachain via extrinsic</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/add_para.rs"><code>add_para</code></a></td><td>Add parachain to running network</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/para_upgrade.rs"><code>para_upgrade</code></a></td><td>Runtime upgrade on running parachain</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/two_paras_same_id.rs"><code>two_paras_same_id</code></a></td><td>Handling duplicate parachain IDs</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="node-groups-1"><a class="header" href="#node-groups-1">Node Groups</a></h2>
+<p>Scale networks with grouped nodes.</p>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/big_network_with_group_nodes.rs"><code>big_network_with_group_nodes</code></a></td><td>Programmatic network with grouped nodes</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/network_example_with_group_nodes.rs"><code>network_example_with_group_nodes</code></a></td><td>TOML config with group nodes</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="advanced-configuration"><a class="header" href="#advanced-configuration">Advanced Configuration</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/resource_limits.rs"><code>resource_limits</code></a></td><td>CPU and memory limits for containers</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/wasm-override.rs"><code>wasm-override</code></a></td><td>Custom WASM runtime override</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/arg_removal.rs"><code>arg_removal</code></a></td><td>Remove default CLI arguments</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/db_snapshot.rs"><code>db_snapshot</code></a></td><td>Database snapshots for faster init</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/docker_db_snapshot.rs"><code>docker_db_snapshot</code></a></td><td>DB snapshots in Docker environments</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/raw_spec_override.rs"><code>raw_spec_override</code></a></td><td>Override raw chain spec fields</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="chain-spec-generation-1"><a class="header" href="#chain-spec-generation-1">Chain Spec Generation</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/chain_spec_generation.rs"><code>chain_spec_generation</code></a></td><td>Dynamic chain spec generation</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/chain_spec_runtime_kusama.rs"><code>chain_spec_runtime_kusama</code></a></td><td>Kusama with custom runtime WASM</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/polkadot_people_wasm_runtime.rs"><code>polkadot_people_wasm_runtime</code></a></td><td>Polkadot + People parachain with custom runtimes</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/genesis_state_generator_example.rs"><code>genesis_state_generator_example</code></a></td><td>Custom genesis state generator</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="keys-and-security"><a class="header" href="#keys-and-security">Keys and Security</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/keystore_key_types.rs"><code>keystore_key_types</code></a></td><td>Keystore directories and key type validation</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/chain_spec_key_types.rs"><code>chain_spec_key_types</code></a></td><td>Chain spec session key configuration</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/evm_parachain_session_key.rs"><code>evm_parachain_session_key</code></a></td><td>EVM parachain session keys</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="network-utilities"><a class="header" href="#network-utilities">Network Utilities</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Example</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/from_live.rs"><code>from_live</code></a></td><td>Attach to running network via <code>zombie.json</code></td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/test_run_script.rs"><code>test_run_script</code></a></td><td>Run scripts on nodes</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="config-files"><a class="header" href="#config-files">Config Files</a></h2>
+<p>Example TOML configs are in <a href="https://github.com/paritytech/zombienet-sdk/tree/main/crates/examples/examples/configs"><code>crates/examples/examples/configs/</code></a>:</p>
+<div class="table-wrapper"><table><thead><tr><th>Config</th><th>Description</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/simple.toml"><code>simple.toml</code></a></td><td>Basic two-validator relay chain</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/simple-group-nodes.toml"><code>simple-group-nodes.toml</code></a></td><td>Relay chain with node groups</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/resource_limits.toml"><code>resource_limits.toml</code></a></td><td>Container resource limits</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/wasm-override.toml"><code>wasm-override.toml</code></a></td><td>WASM runtime override</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/arg-removal.toml"><code>arg-removal.toml</code></a></td><td>CLI argument removal</td></tr>
+<tr><td><a href="https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/polkadot-ah-chain-spec-runtime.toml"><code>polkadot-ah-chain-spec-runtime.toml</code></a></td><td>Polkadot + Asset Hub with custom runtimes</td></tr>
+</tbody></table>
+</div><div style="break-before: page; page-break-before: always;"></div><h1 id="environment-variables-1"><a class="header" href="#environment-variables-1">Environment Variables</a></h1>
+<p>ZombieNet SDK uses environment variables for configuration overrides, container images, and CI integration.</p>
+<h2 id="container-images"><a class="header" href="#container-images">Container Images</a></h2>
+<p>Override default images for Docker and Kubernetes providers:</p>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>POLKADOT_IMAGE</code></td><td><code>docker.io/parity/polkadot:latest</code></td><td>Relay chain node image</td></tr>
+<tr><td><code>CUMULUS_IMAGE</code></td><td><code>docker.io/parity/polkadot-parachain:latest</code></td><td>Parachain collator image</td></tr>
+<tr><td><code>MALUS_IMAGE</code></td><td><code>docker.io/paritypr/malus:latest</code></td><td>Malus (malicious node) image</td></tr>
+<tr><td><code>COL_IMAGE</code></td><td><code>docker.io/paritypr/colander:latest</code></td><td>Colander image</td></tr>
+</tbody></table>
+</div>
+<p>Example:</p>
+<pre><code class="language-bash">POLKADOT_IMAGE=docker.io/parity/polkadot:v1.5.0 zombie-cli spawn network.toml
+</code></pre>
+<hr />
+<h2 id="provider-selection-1"><a class="header" href="#provider-selection-1">Provider Selection</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Values</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>ZOMBIE_PROVIDER</code></td><td><code>native</code>, <code>k8s</code>, <code>docker</code></td><td><code>docker</code></td><td>Default provider when not specified</td></tr>
+</tbody></table>
+</div>
+<p>Example:</p>
+<pre><code class="language-bash">ZOMBIE_PROVIDER=native zombie-cli spawn network.toml
+</code></pre>
+<hr />
+<h2 id="spawn-control"><a class="header" href="#spawn-control">Spawn Control</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>ZOMBIE_SPAWN_CONCURRENCY</code></td><td>Override spawn concurrency (default: 100). Set to lower values for resource-constrained environments.</td></tr>
+<tr><td><code>ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS</code></td><td>Override per-node spawn timeout in seconds</td></tr>
+</tbody></table>
+</div>
+<p>Example:</p>
+<pre><code class="language-bash">ZOMBIE_SPAWN_CONCURRENCY=10 zombie-cli spawn network.toml
+</code></pre>
+<hr />
+<h2 id="cli-specific"><a class="header" href="#cli-specific">CLI-Specific</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Command</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>POLKADOT_SDK_PATH</code></td><td><code>reproduce</code></td><td>Path to local polkadot-sdk workspace (required for reproduce)</td></tr>
+<tr><td><code>RUST_LOG</code></td><td>All</td><td>Logging level (<code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>)</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="other"><a class="header" href="#other">Other</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>ZOMBIE_RM_TGZ_AFTER_EXTRACT</code></td><td>Remove tgz archives after extraction (used for db snapshot extraction)</td></tr>
+</tbody></table>
+</div>
+<hr />
+<h2 id="toml-template-replacement"><a class="header" href="#toml-template-replacement">TOML Template Replacement</a></h2>
+<p>Environment variables can be referenced in TOML configuration files using <code>{{VAR_NAME}}</code> syntax:</p>
+<pre><code class="language-toml">[relaychain]
+default_image = "{{POLKADOT_IMAGE}}"
+
+[[relaychain.nodes]]
+name = "alice"
+image = "{{CUSTOM_NODE_IMAGE}}"
+</code></pre>
+<p>Any environment variable can be substituted. If the variable is not set, the placeholder remains unchanged.</p>
+<hr />
+<h2 id="runtime-token-replacement"><a class="header" href="#runtime-token-replacement">Runtime Token Replacement</a></h2>
+<p>For dynamic values from running nodes, use <code>{{ZOMBIE:node_name:field}}</code> syntax in node arguments:</p>
+<pre><code class="language-toml">[[relaychain.nodes]]
+name = "bob"
+args = ["--sync-target", "{{ZOMBIE:alice:multiaddr}}"]
+</code></pre>
+<p>Available fields:</p>
+<div class="table-wrapper"><table><thead><tr><th>Field</th><th>Aliases</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>multiaddr</code></td><td><code>multiAddress</code></td><td>Node's libp2p multiaddress</td></tr>
+<tr><td><code>ws_uri</code></td><td><code>wsUri</code></td><td>WebSocket RPC endpoint</td></tr>
+<tr><td><code>prometheus_uri</code></td><td><code>prometheusUri</code></td><td>Prometheus metrics endpoint</td></tr>
+</tbody></table>
+</div>
+<p>When using token replacement, spawn concurrency is automatically set to 1 (serial) to ensure dependencies are resolved correctly.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+    </div>
+    </body>
+</html>

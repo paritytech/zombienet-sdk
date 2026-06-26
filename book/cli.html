@@ -1,0 +1,336 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>CLI Usage - Zombienet SDK</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="getting-started/index.html"><strong aria-hidden="true">2.</strong> Getting Started</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="getting-started/setup.html"><strong aria-hidden="true">2.1.</strong> Setup</a></li><li class="chapter-item expanded "><a href="getting-started/your-first-network.html"><strong aria-hidden="true">2.2.</strong> Your First Network</a></li></ol></li><li class="chapter-item expanded "><a href="how-it-works.html"><strong aria-hidden="true">3.</strong> How It Works</a></li><li class="chapter-item expanded "><a href="network-spec/index.html"><strong aria-hidden="true">4.</strong> Network Definition Spec</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="network-spec/global-settings.html"><strong aria-hidden="true">4.1.</strong> Global Settings</a></li><li class="chapter-item expanded "><a href="network-spec/relaychain.html"><strong aria-hidden="true">4.2.</strong> Relaychain</a></li><li class="chapter-item expanded "><a href="network-spec/parachain.html"><strong aria-hidden="true">4.3.</strong> Parachain</a></li><li class="chapter-item expanded "><a href="network-spec/node.html"><strong aria-hidden="true">4.4.</strong> Node</a></li><li class="chapter-item expanded "><a href="network-spec/hrmp-channels.html"><strong aria-hidden="true">4.5.</strong> HRMP Channels</a></li><li class="chapter-item expanded "><a href="network-spec/custom-process.html"><strong aria-hidden="true">4.6.</strong> Custom Processes</a></li><li class="chapter-item expanded "><a href="network-spec/chain-spec.html"><strong aria-hidden="true">4.7.</strong> Chain Spec</a></li><li class="chapter-item expanded "><a href="network-spec/examples.html"><strong aria-hidden="true">4.8.</strong> Examples</a></li></ol></li><li class="chapter-item expanded "><a href="providers.html"><strong aria-hidden="true">5.</strong> Providers</a></li><li class="chapter-item expanded "><a href="cli.html" class="active"><strong aria-hidden="true">6.</strong> CLI Usage</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">7.</strong> Examples</a></li><li class="chapter-item expanded "><a href="environment.html"><strong aria-hidden="true">8.</strong> Environment Variables</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Zombienet SDK</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="cli-usage"><a class="header" href="#cli-usage">CLI Usage</a></h1>
+<p>The <code>zombie-cli</code> command-line tool spawns and manages ZombieNet networks.</p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<p><strong>Pre-built binaries:</strong></p>
+<p>Download from <a href="https://github.com/paritytech/zombienet-sdk/releases">GitHub Releases</a>.</p>
+<p><strong>From source:</strong></p>
+<pre><code class="language-bash">cargo install zombie-cli
+</code></pre>
+<hr />
+<h2 id="spawn"><a class="header" href="#spawn">spawn</a></h2>
+<p>Spawn a network from a configuration file.</p>
+<pre><code class="language-bash">zombie-cli spawn &lt;CONFIG&gt; [OPTIONS]
+</code></pre>
+<h3 id="arguments"><a class="header" href="#arguments">Arguments</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Required</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>CONFIG</code></td><td>Yes</td><td>Path to TOML configuration file</td></tr>
+</tbody></table>
+</div>
+<h3 id="options"><a class="header" href="#options">Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Short</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--provider</code></td><td><code>-p</code></td><td><code>docker</code></td><td>Provider: <code>native</code>, <code>docker</code>, or <code>k8s</code></td></tr>
+<tr><td><code>--dir</code></td><td><code>-d</code></td><td>Random temp</td><td>Base directory for network files</td></tr>
+<tr><td><code>--spawn-concurrency</code></td><td><code>-c</code></td><td>100</td><td>Concurrent node spawn processes</td></tr>
+<tr><td><code>--node-verifier</code></td><td><code>-v</code></td><td><code>metric</code></td><td>Readiness check: <code>metric</code> or <code>none</code></td></tr>
+</tbody></table>
+</div>
+<h3 id="examples"><a class="header" href="#examples">Examples</a></h3>
+<pre><code class="language-bash"># Spawn with native provider
+zombie-cli spawn network.toml --provider native
+
+# Spawn with custom directory
+zombie-cli spawn network.toml --dir /tmp/my-network
+
+# Spawn with Docker (default)
+zombie-cli spawn network.toml
+
+# Spawn on Kubernetes
+zombie-cli spawn network.toml --provider k8s
+</code></pre>
+<h2 id="reproduce"><a class="header" href="#reproduce">reproduce</a></h2>
+<p>Reproduce CI test runs locally in Docker. Downloads nextest archives from GitHub Actions and runs them in a containerized environment matching CI.</p>
+<pre><code class="language-bash">zombie-cli reproduce &lt;REPO&gt; &lt;RUN_ID&gt; [OPTIONS]
+zombie-cli reproduce --archive &lt;PATH&gt; [OPTIONS]
+</code></pre>
+<h3 id="arguments-1"><a class="header" href="#arguments-1">Arguments</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Argument</th><th>Required</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>REPO</code></td><td>Yes*</td><td>Repository name (e.g., <code>zombienet-sdk</code>)</td></tr>
+<tr><td><code>RUN_ID</code></td><td>Yes*</td><td>GitHub Actions run ID (find in the URL of a workflow run)</td></tr>
+</tbody></table>
+</div>
+<p>*Not required when using <code>--archive</code>.</p>
+<h3 id="options-1"><a class="header" href="#options-1">Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Short</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--archive</code></td><td><code>-a</code></td><td>Path to local nextest archive (.tar.zst)</td></tr>
+<tr><td><code>--artifact-pattern</code></td><td><code>-p</code></td><td>Filter artifact downloads by pattern (default: <code>*zombienet-artifacts*</code>)</td></tr>
+<tr><td><code>--skip</code></td><td><code>-s</code></td><td>Skip tests matching pattern (repeatable)</td></tr>
+<tr><td><code>[TEST_FILTER]</code></td><td></td><td>Additional arguments passed to nextest (use <code>--</code> separator)</td></tr>
+</tbody></table>
+</div>
+<h3 id="requirements"><a class="header" href="#requirements">Requirements</a></h3>
+<ul>
+<li>Docker installed and running</li>
+<li>GitHub CLI (<code>gh</code>) installed and authenticated (for downloading artifacts)</li>
+<li><code>POLKADOT_SDK_PATH</code> environment variable pointing to your polkadot-sdk workspace</li>
+</ul>
+<h3 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h3>
+<ol>
+<li>Downloads nextest test archives (<code>.tar.zst</code>) from GitHub Actions</li>
+<li>Optionally downloads binary artifacts matching the pattern</li>
+<li>Runs tests inside a Docker container with:
+<ul>
+<li><code>ZOMBIE_PROVIDER=native</code> (native provider inside container)</li>
+<li><code>RUST_LOG=debug</code> for verbose output</li>
+<li>Mounted polkadot-sdk workspace</li>
+</ul>
+</li>
+<li>Extracts binaries to <code>/tmp/binaries</code> inside the container</li>
+</ol>
+<h3 id="examples-1"><a class="header" href="#examples-1">Examples</a></h3>
+<pre><code class="language-bash"># Reproduce from GitHub Actions (requires gh CLI authentication)
+POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
+zombie-cli reproduce zombienet-sdk 123456789
+
+# Reproduce from local archive (no gh CLI needed)
+POLKADOT_SDK_PATH=/path/to/polkadot-sdk \
+zombie-cli reproduce --archive ./my-archive.tar.zst
+
+# Download only artifacts matching "ray" pattern
+zombie-cli reproduce zombienet-sdk 123456789 -p ray
+
+# Skip specific slow tests
+zombie-cli reproduce zombienet-sdk 123456789 --skip "slow_test"
+
+# Pass filters to nextest
+zombie-cli reproduce zombienet-sdk 123456789 -- --test-filter my_test
+</code></pre>
+<h3 id="nextest-archive-format"><a class="header" href="#nextest-archive-format">Nextest Archive Format</a></h3>
+<p>The <code>.tar.zst</code> archive is a <a href="https://nexte.st/">nextest</a> archive containing compiled test binaries and metadata. These are produced by CI runs using <code>cargo nextest archive</code>.</p>
+<hr />
+<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Variable</th><th>Command</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>RUST_LOG</code></td><td>All</td><td>Logging level (e.g., <code>debug</code>, <code>info</code>)</td></tr>
+<tr><td><code>ZOMBIE_SPAWN_CONCURRENCY</code></td><td>spawn</td><td>Override spawn concurrency</td></tr>
+<tr><td><code>POLKADOT_SDK_PATH</code></td><td>reproduce</td><td>Path to polkadot-sdk workspace</td></tr>
+<tr><td><code>POLKADOT_IMAGE</code></td><td>spawn</td><td>Override Polkadot container image</td></tr>
+<tr><td><code>CUMULUS_IMAGE</code></td><td>spawn</td><td>Override Cumulus container image</td></tr>
+</tbody></table>
+</div>
+<hr />
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="providers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="examples.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="providers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="examples.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

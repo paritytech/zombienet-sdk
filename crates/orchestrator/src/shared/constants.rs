@@ -9,8 +9,6 @@ pub const RPC_HTTP_PORT: u16 = 9933;
 // P2P default port
 pub const P2P_PORT: u16 = 30333;
 // Default command template to export a chain-spec.
-// `export-chain-spec` replaced the deprecated `build-spec` CLI in polkadot-sdk.
-// Bootnodes are customized after generation, so `--disable-default-bootnode` is unused.
 pub const DEFAULT_CHAIN_SPEC_TPL_COMMAND: &str =
     "{{mainCommand}} export-chain-spec --chain {{chainName}}";
 // interval to determine how often to run node liveness checks

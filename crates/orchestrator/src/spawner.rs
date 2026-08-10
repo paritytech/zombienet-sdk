@@ -115,7 +115,7 @@ where
         created_paths.push(keystore_path);
     }
 
-    let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), &node.name);
+    let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), node.name);
 
     let (cfg_path, data_path, relay_data_path) = if !ctx.ns.capabilities().prefix_with_full_path {
         (
@@ -124,9 +124,9 @@ where
             NODE_RELAY_DATA_DIR.into(),
         )
     } else {
-        let cfg_path = format!("{}{NODE_CONFIG_DIR}", &base_dir);
-        let data_path = format!("{}{NODE_DATA_DIR}", &base_dir);
-        let relay_data_path = format!("{}{NODE_RELAY_DATA_DIR}", &base_dir);
+        let cfg_path = format!("{}{NODE_CONFIG_DIR}", base_dir);
+        let data_path = format!("{}{NODE_DATA_DIR}", base_dir);
+        let relay_data_path = format!("{}{NODE_RELAY_DATA_DIR}", base_dir);
         (cfg_path, data_path, relay_data_path)
     };
 

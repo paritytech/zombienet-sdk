@@ -523,7 +523,7 @@ where
             .await
             .map_err(|err| {
                 ProviderError::RunCommandError(
-                    format!("{} {}", &options.program, &options.args.join(" ")),
+                    format!("{} {}", options.program, options.args.join(" ")),
                     "locally".to_string(),
                     err.into(),
                 )
@@ -586,7 +586,7 @@ where
     ) -> Result<(), ProviderError> {
         let namespaced_remote_file_path = PathBuf::from(format!(
             "{}{}",
-            &self.base_dir.to_string_lossy(),
+            self.base_dir.to_string_lossy(),
             remote_file_path.to_string_lossy()
         ));
 
@@ -678,7 +678,7 @@ where
         for asset in assets {
             let filename = asset.extract_name();
             // make the cmd available in the isolated dir of the node.
-            let full_path = format!("{}/{}", self.scripts_dir.to_string_lossy(), &filename);
+            let full_path = format!("{}/{}", self.scripts_dir.to_string_lossy(), filename);
             asset
                 .dump_asset(&full_path)
                 .await
@@ -695,7 +695,7 @@ where
         // IF we have assets, and some asset name is cmd we just prepend the script_dir
         // if asset_names doesn't includes cmd, just use cmd.
         let cmd_to_use = if assets_names.contains(&cmd.to_string()) {
-            format!("{}/{}", self.scripts_dir.to_string_lossy(), &cmd)
+            format!("{}/{}", self.scripts_dir.to_string_lossy(), cmd)
         } else {
             cmd.to_string()
         };

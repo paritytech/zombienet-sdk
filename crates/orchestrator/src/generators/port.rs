@@ -1,6 +1,7 @@
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
 
 use configuration::shared::types::Port;
+use socket2::{Domain, Protocol, Socket, Type};
 use support::constants::THIS_IS_A_BUG;
 
 use super::errors::GeneratorError;
@@ -15,8 +16,24 @@ enum PortTypes {
 
 pub fn generate(port: Option<Port>) -> Result<ParkedPort, GeneratorError> {
     let port = port.unwrap_or(0);
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
-        .map_err(|_e| GeneratorError::PortGeneration(port, "Can't bind".into()))?;
+    let addr: SocketAddr = format!("[::]:{port}")
+        .parse()
+        .expect("addr should be valid");
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
+        .map_err(|_e| GeneratorError::PortGeneration(port, "Can't create the socket".into()))?;
+
+    // Explicitly disable v6only for dual-stack support
+    socket.set_only_v6(false).map_err(|_e| {
+        GeneratorError::PortGeneration(port, "Can't set v6 only to false in socket".into())
+    })?;
+    socket
+        .bind(&addr.into())
+        .map_err(|_e| GeneratorError::PortGeneration(port, "Can't bind in socket".into()))?;
+    socket
+        .listen(128)
+        .map_err(|_e| GeneratorError::PortGeneration(port, "Can't listen in socket".into()))?;
+
+    let listener: TcpListener = socket.into();
     let port = listener
         .local_addr()
         .expect(&format!(

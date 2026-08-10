@@ -42,6 +42,7 @@ fancy-regex = { workspace = true }
 sc-chain-spec = { workspace = true }
 erased-serde = { workspace = true }
 codec = { workspace = true, default-features = false, features = ["derive"] }
+socket2 = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }

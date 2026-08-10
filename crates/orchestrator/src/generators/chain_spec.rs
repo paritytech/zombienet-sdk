@@ -493,8 +493,8 @@ impl ChainSpec {
             format!(
                 "{}/{}{}",
                 ns.base_dir().to_string_lossy(),
-                &temp_name,
-                &chain_spec_path_in_pod
+                temp_name,
+                chain_spec_path_in_pod
             )
         } else {
             chain_spec_path_in_pod.clone()
@@ -1274,8 +1274,8 @@ where
         .map_err(|err| {
             GeneratorError::ChainSpecGeneration(format!(
                 "Error running cmd: {} args: {}, err: {}",
-                &generate_command.program,
-                &generate_command.args.join(" "),
+                generate_command.program,
+                generate_command.args.join(" "),
                 err
             ))
         })?;
@@ -1302,8 +1302,8 @@ where
     } else {
         Err(GeneratorError::ChainSpecGeneration(format!(
             "Error running cmd: {} args: {}, err: {}",
-            &generate_command.program,
-            &generate_command.args.join(" "),
+            generate_command.program,
+            generate_command.args.join(" "),
             String::from_utf8_lossy(&result.stderr)
         )))
     }

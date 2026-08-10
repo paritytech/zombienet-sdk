@@ -549,7 +549,7 @@ impl<T: FileSystem> Network<T> {
             .genesis_state
             .build(
                 chain_spec_raw_path.as_ref(),
-                format!("{}/genesis-state", &para_path_prefix),
+                format!("{}/genesis-state", para_path_prefix),
                 &self.ns,
                 &scoped_fs,
                 None,
@@ -559,7 +559,7 @@ impl<T: FileSystem> Network<T> {
             .genesis_wasm
             .build(
                 chain_spec_raw_path.as_ref(),
-                format!("{}/para_spec-wasm", &para_path_prefix),
+                format!("{}/para_spec-wasm", para_path_prefix),
                 &self.ns,
                 &scoped_fs,
                 None,

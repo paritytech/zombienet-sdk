@@ -320,11 +320,35 @@ impl ChainSpec {
                 self.command.as_ref().unwrap().cmd().to_owned()
             };
 
-            let full_cmd = apply_replacements(
-                &sanitized_cmd,
-                &HashMap::from([("chainName", replacement_value.as_str())]),
-            );
-            trace!("full_cmd: {:?}", full_cmd);
+            let main_cmd_parts: Vec<&str> = sanitized_cmd.split_whitespace().collect();
+            let main_cmd = main_cmd_parts
+                .first()
+                .expect("main_cmd should be preset to build the expect. qed");
+            debug!("resolving subcommand for: {main_cmd}");
+            let use_export_chain_spec =
+                if *main_cmd == "polkadot-parachain" && replacement_value.is_empty() {
+                    false
+                } else {
+                    let help_output = ns
+                        .get_node_available_args((main_cmd.to_string(), self.image.clone()))
+                        .await?;
+                    help_output.contains("export-chain-spec")
+                };
+
+            let mut replacements = HashMap::from([("chainName", replacement_value.as_str())]);
+
+            if use_export_chain_spec {
+                replacements.insert("subCommand", "export-chain-spec");
+                replacements.insert("disableBootnodes", "");
+            } else {
+                // use build-spec
+                replacements.insert("subCommand", "build-spec");
+                replacements.insert("disableBootnodes", "--disable-default-bootnode");
+            }
+
+            let full_cmd = apply_replacements(&sanitized_cmd, &replacements);
+
+            debug!("full_cmd: {:?}", full_cmd);
 
             let parts: Vec<&str> = full_cmd.split_whitespace().collect();
             let Some((cmd, args)) = parts.split_first() else {

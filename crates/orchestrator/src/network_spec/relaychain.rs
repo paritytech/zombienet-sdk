@@ -89,10 +89,7 @@ impl RelaychainSpec {
             .or(config.nodes().first().and_then(|node| node.image()))
             .map(|image| image.as_str().to_string());
 
-        let replacements = HashMap::from([
-            ("disableBootnodes", "--disable-default-bootnode"),
-            ("mainCommand", main_cmd.as_str()),
-        ]);
+        let replacements = HashMap::from([("mainCommand", main_cmd.as_str())]);
         let tmpl = if let Some(tmpl) = config.chain_spec_command() {
             apply_replacements(tmpl, &replacements)
         } else {

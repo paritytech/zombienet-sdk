@@ -157,10 +157,7 @@ impl ParachainSpec {
             };
             let chain_spec_builder = chain_spec_builder.set_chain_name(chain_name);
 
-            let replacements = HashMap::from([
-                ("disableBootnodes", "--disable-default-bootnode"),
-                ("mainCommand", main_cmd.as_str()),
-            ]);
+            let replacements = HashMap::from([("mainCommand", main_cmd.as_str())]);
             let tmpl = if let Some(tmpl) = config.chain_spec_command() {
                 apply_replacements(tmpl, &replacements)
             } else {

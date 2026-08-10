@@ -10,7 +10,7 @@ pub const RPC_HTTP_PORT: u16 = 9933;
 pub const P2P_PORT: u16 = 30333;
 // default command template to build chain-spec
 pub const DEFAULT_CHAIN_SPEC_TPL_COMMAND: &str =
-    "{{mainCommand}} build-spec --chain {{chainName}} {{disableBootnodes}}";
+    "{{mainCommand}} {{subCommand}} --chain {{chainName}} {{disableBootnodes}}";
 // interval to determine how often to run node liveness checks
 pub const NODE_MONITORING_INTERVAL_SECONDS: u64 = 15;
 // how long to wait before a node is considered unresponsive

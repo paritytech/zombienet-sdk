@@ -597,7 +597,7 @@ impl DockerClient {
             return Err(anyhow!(
                 "Failed to get logs for container '{name}': {logs}",
                 name = container_name,
-                logs = &logs
+                logs = logs
             )
             .into());
         }

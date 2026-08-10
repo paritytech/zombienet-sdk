@@ -375,7 +375,7 @@ where
                     format!(
                         "failed to create dir {} for container {}",
                         remote_dir.to_string_lossy(),
-                        &self.name
+                        self.name
                     ),
                     err.into(),
                 )
@@ -487,7 +487,7 @@ where
             .await
             .map_err(|err| {
                 ProviderError::RunCommandError(
-                    format!("sh -c {}", &command.join(" ")),
+                    format!("sh -c {}", command.join(" ")),
                     format!("in pod {}", self.name),
                     err.into(),
                 )
@@ -716,7 +716,7 @@ where
         let scoped_cmd = format!("{NODE_SCRIPTS_DIR}/{}", cmd);
         let update_cmd = format!(
             "echo 'update-cmd {} {}' > /tmp/zombiepipe",
-            &scoped_cmd,
+            scoped_cmd,
             args.join(" ")
         );
         self.docker_client

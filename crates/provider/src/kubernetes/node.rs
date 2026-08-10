@@ -264,7 +264,7 @@ where
 
         let dest_path = PathBuf::from_iter([
             &self.base_dir,
-            &PathBuf::from(format!("{}_manifest.yaml", &self.name)),
+            &PathBuf::from(format!("{}_manifest.yaml", self.name)),
         ]);
 
         self.filesystem
@@ -311,7 +311,7 @@ where
 
         let service_dest_path = PathBuf::from_iter([
             &self.base_dir,
-            &PathBuf::from(format!("{}_svc_manifest.yaml", &self.name)),
+            &PathBuf::from(format!("{}_svc_manifest.yaml", self.name)),
         ]);
 
         self.filesystem
@@ -918,7 +918,7 @@ where
         let scoped_cmd = format!("{NODE_SCRIPTS_DIR}/{}", cmd);
         let update_cmd = format!(
             "echo 'update-cmd {} {}' > /tmp/zombiepipe",
-            &scoped_cmd,
+            scoped_cmd,
             args.join(" ")
         );
 

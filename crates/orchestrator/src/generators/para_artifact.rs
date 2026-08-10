@@ -115,8 +115,8 @@ impl ParaArtifact {
                 format!(
                     "{}/{}{}",
                     ns.base_dir().to_string_lossy(),
-                    &temp_name,
-                    &chain_spec_path_in_pod
+                    temp_name,
+                    chain_spec_path_in_pod
                 )
             } else {
                 chain_spec_path_in_pod.clone()

@@ -424,7 +424,7 @@ where
                     format!(
                         "failed to create dir {} for pod {}",
                         remote_dir.to_string_lossy(),
-                        &self.name
+                        self.name
                     ),
                     err.into(),
                 )
@@ -686,7 +686,7 @@ where
             .await
             .map_err(|err| {
                 ProviderError::RunCommandError(
-                    format!("sh -c {}", &command.join(" ")),
+                    format!("sh -c {}", command.join(" ")),
                     format!("in pod {}", self.name),
                     err.into(),
                 )

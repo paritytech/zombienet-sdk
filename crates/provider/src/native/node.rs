@@ -523,7 +523,7 @@ where
             .await
             .map_err(|err| {
                 ProviderError::RunCommandError(
-                    format!("{} {}", &options.program, options.args.join(" ")),
+                    format!("{} {}", options.program, options.args.join(" ")),
                     "locally".to_string(),
                     err.into(),
                 )
@@ -678,7 +678,7 @@ where
         for asset in assets {
             let filename = asset.extract_name();
             // make the cmd available in the isolated dir of the node.
-            let full_path = format!("{}/{}", self.scripts_dir.to_string_lossy(), &filename);
+            let full_path = format!("{}/{}", self.scripts_dir.to_string_lossy(), filename);
             asset
                 .dump_asset(&full_path)
                 .await

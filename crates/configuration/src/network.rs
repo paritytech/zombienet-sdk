@@ -112,6 +112,28 @@ impl NetworkConfig {
         );
         let file_str = fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read configuration file '{}': {}", path, e))?;
+
+        Self::load_from_toml_string_with_base_dir(&file_str, network_definition_dir)
+    }
+
+    /// A helper function to load a network configuration from a TOML string.
+    ///
+    /// Relative paths (e.g. `command = "./bin/polkadot"`) are resolved against the current
+    /// working directory, since there is no configuration file to use as base. Use
+    /// [`NetworkConfig::load_from_toml_string_with_base_dir`] to resolve them against a
+    /// specific directory instead.
+    pub fn load_from_toml_string(toml_data: &str) -> Result<NetworkConfig, anyhow::Error> {
+        let base_dir = std::env::current_dir()?;
+
+        Self::load_from_toml_string_with_base_dir(toml_data, &base_dir)
+    }
+
+    /// A helper function to load a network configuration from a TOML string, resolving
+    /// relative paths (e.g. `command = "./bin/polkadot"`) against `base_dir`.
+    pub fn load_from_toml_string_with_base_dir(
+        toml_text: &str,
+        base_dir: &Path,
+    ) -> Result<NetworkConfig, anyhow::Error> {
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
@@ -120,13 +142,13 @@ impl NetworkConfig {
 
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
-            let cmd = maybe_absolute(&caps["value_string"], network_definition_dir);
+            let cmd = maybe_absolute(&caps["value_string"], base_dir);
             let line = format!("{} = \"{cmd}\"", &caps["field_name"]);
             trace!("line after replacer: {line}");
             line
         };
 
-        let toml_text = re.replace_all(&file_str, "$field_name = \"$u128_value\"");
+        let toml_text = re.replace_all(toml_text, "$field_name = \"$u128_value\"");
         let toml_text = re_paths.replace_all(&toml_text, &path_replacer);
 
         trace!("toml text to parse: {}", toml_text);
@@ -298,6 +320,7 @@ impl NetworkConfig {
         });
         Ok(network_config)
     }
+
 }
 
 fn maybe_absolute(cmd: &str, base_dir: &Path) -> String {

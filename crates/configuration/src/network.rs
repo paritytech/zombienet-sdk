@@ -320,7 +320,6 @@ impl NetworkConfig {
         });
         Ok(network_config)
     }
-
 }
 
 fn maybe_absolute(cmd: &str, base_dir: &Path) -> String {

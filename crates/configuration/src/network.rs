@@ -2045,6 +2045,86 @@ mod tests {
         );
     }
 
+    const TOML_WITH_RELATIVE_PATHS: &str = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "./bin/polkadot"
+chain_spec_path = "./rc.json"
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+command = "polkadot"
+"#;
+
+    #[test]
+    fn toml_string_should_resolve_relative_paths_against_the_given_base_dir() {
+        let config = NetworkConfig::load_from_toml_string_with_base_dir(
+            TOML_WITH_RELATIVE_PATHS,
+            Path::new("/tmp/some-base-dir"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.relaychain().default_command().unwrap().as_str(),
+            "/tmp/some-base-dir/bin/polkadot"
+        );
+        assert_eq!(
+            config.relaychain().chain_spec_path().unwrap().to_string(),
+            "/tmp/some-base-dir/rc.json"
+        );
+        // non-relative values are left untouched
+        assert_eq!(
+            config.relaychain().nodes()[0].command().unwrap().as_str(),
+            "polkadot"
+        );
+    }
+
+    #[test]
+    fn toml_string_should_resolve_relative_paths_against_the_cwd_by_default() {
+        let from_cwd = NetworkConfig::load_from_toml_string(TOML_WITH_RELATIVE_PATHS).unwrap();
+        let expected = NetworkConfig::load_from_toml_string_with_base_dir(
+            TOML_WITH_RELATIVE_PATHS,
+            &std::env::current_dir().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(from_cwd, expected);
+    }
+
+    #[test]
+    fn toml_string_and_toml_file_should_produce_the_same_config() {
+        let path = "./testing/snapshots/0006-without-rc-chain-name.toml";
+        let from_file = NetworkConfig::load_from_toml(path).unwrap();
+
+        let file_path = PathBuf::from(path).canonicalize().unwrap();
+        let base_dir = file_path.parent().unwrap();
+        let from_string = NetworkConfig::load_from_toml_string_with_base_dir(
+            &fs::read_to_string(path).unwrap(),
+            base_dir,
+        )
+        .unwrap();
+
+        assert_eq!(from_file, from_string);
+
+        // and the relative paths were actually rewritten, not just rewritten identically
+        assert_eq!(
+            from_string
+                .relaychain()
+                .chain_spec_path()
+                .unwrap()
+                .to_string(),
+            base_dir.join("rc.json").to_string_lossy()
+        );
+        assert_eq!(
+            from_string.parachains()[0]
+                .chain_spec_path()
+                .unwrap()
+                .to_string(),
+            base_dir.join("parachain.json").to_string_lossy()
+        );
+    }
+
     #[test]
     fn demo_denis() {
         let network_config = NetworkConfigBuilder::new()

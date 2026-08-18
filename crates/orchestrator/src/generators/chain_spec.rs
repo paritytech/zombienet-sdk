@@ -115,6 +115,8 @@ pub struct ChainSpec {
     raw_path: Option<PathBuf>,
     // The binary to build the chain-spec
     command: Option<CommandInContext>,
+    // The subcommand to exec e.g. `export-chain-spec`
+    subcommand: Option<String>,
     // Imgae to use for build the chain-spec
     image: Option<String>,
     // Contex of the network (e.g relay or para)
@@ -131,9 +133,33 @@ impl ChainSpec {
             runtime: None,
             raw_path: None,
             command: None,
+            subcommand: None,
             image: None,
             context,
         }
+    }
+
+    async fn resolve_subcommand(&mut self, ns: &DynNamespace) -> Result<(), GeneratorError> {
+        if self.subcommand.is_none() {
+            // SAFETY: we ensure that command is some with the first check of the fn
+            // default as empty
+            let main_cmd_parts: Vec<&str> = self.command.as_ref().unwrap().cmd().split_whitespace().collect();
+            let main_cmd = main_cmd_parts
+                .first()
+                .expect("main_cmd should be preset to build the expect. qed");
+            debug!("resolving subcommand for: {main_cmd}");
+            let help_output = ns
+                .get_node_available_args((main_cmd.to_string(), self.image.clone()))
+                .await?;
+
+            self.subcommand = if help_output.contains("export-chain-spec") {
+                Some("export-chain-spec".to_string())
+            } else {
+                Some("build-spec".to_string())
+            };
+        }
+
+        Ok(())
     }
 
     pub(crate) fn chain_spec_name(&self) -> &str {
@@ -320,24 +346,11 @@ impl ChainSpec {
                 self.command.as_ref().unwrap().cmd().to_owned()
             };
 
-            let main_cmd_parts: Vec<&str> = sanitized_cmd.split_whitespace().collect();
-            let main_cmd = main_cmd_parts
-                .first()
-                .expect("main_cmd should be preset to build the expect. qed");
-            debug!("resolving subcommand for: {main_cmd}");
-            let use_export_chain_spec =
-                if *main_cmd == "polkadot-parachain" && replacement_value.is_empty() {
-                    false
-                } else {
-                    let help_output = ns
-                        .get_node_available_args((main_cmd.to_string(), self.image.clone()))
-                        .await?;
-                    help_output.contains("export-chain-spec")
-                };
+            self.resolve_subcommand(ns).await?;
 
             let mut replacements = HashMap::from([("chainName", replacement_value.as_str())]);
 
-            if use_export_chain_spec {
+            if self.subcommand.as_deref() == Some("export-chain-spec")  {
                 replacements.insert("subCommand", "export-chain-spec");
                 replacements.insert("disableBootnodes", "");
             } else {
@@ -487,6 +500,8 @@ impl ChainSpec {
             rand::random::<u8>()
         );
 
+        self.resolve_subcommand(ns).await?;
+
         let cmd = self
             .command
             .as_ref()
@@ -524,9 +539,21 @@ impl ChainSpec {
             chain_spec_path_in_pod.clone()
         };
 
+
+            let mut replacements = HashMap::from([("chainName", chain_spec_path_in_args.as_str())]);
+
+            if self.subcommand.as_deref() == Some("export-chain-spec")  {
+                replacements.insert("subCommand", "export-chain-spec");
+                replacements.insert("disableBootnodes", "");
+            } else {
+                // use build-spec
+                replacements.insert("subCommand", "build-spec");
+                replacements.insert("disableBootnodes", "--disable-default-bootnode");
+            }
+
         let mut full_cmd = apply_replacements(
             cmd.cmd(),
-            &HashMap::from([("chainName", chain_spec_path_in_args.as_str())]),
+            &replacements
         );
 
         if !full_cmd.contains("--raw") {

@@ -112,6 +112,28 @@ impl NetworkConfig {
         );
         let file_str = fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read configuration file '{}': {}", path, e))?;
+
+        Self::load_from_toml_string_with_base_dir(&file_str, network_definition_dir)
+    }
+
+    /// A helper function to load a network configuration from a TOML string.
+    ///
+    /// Relative paths (e.g. `command = "./bin/polkadot"`) are resolved against the current
+    /// working directory, since there is no configuration file to use as base. Use
+    /// [`NetworkConfig::load_from_toml_string_with_base_dir`] to resolve them against a
+    /// specific directory instead.
+    pub fn load_from_toml_string(toml_data: &str) -> Result<NetworkConfig, anyhow::Error> {
+        let base_dir = std::env::current_dir()?;
+
+        Self::load_from_toml_string_with_base_dir(toml_data, &base_dir)
+    }
+
+    /// A helper function to load a network configuration from a TOML string, resolving
+    /// relative paths (e.g. `command = "./bin/polkadot"`) against `base_dir`.
+    pub fn load_from_toml_string_with_base_dir(
+        toml_text: &str,
+        base_dir: &Path,
+    ) -> Result<NetworkConfig, anyhow::Error> {
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
@@ -120,13 +142,13 @@ impl NetworkConfig {
 
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
-            let cmd = maybe_absolute(&caps["value_string"], network_definition_dir);
+            let cmd = maybe_absolute(&caps["value_string"], base_dir);
             let line = format!("{} = \"{cmd}\"", &caps["field_name"]);
             trace!("line after replacer: {line}");
             line
         };
 
-        let toml_text = re.replace_all(&file_str, "$field_name = \"$u128_value\"");
+        let toml_text = re.replace_all(toml_text, "$field_name = \"$u128_value\"");
         let toml_text = re_paths.replace_all(&toml_text, &path_replacer);
 
         trace!("toml text to parse: {}", toml_text);
@@ -2020,6 +2042,86 @@ mod tests {
         assert_eq!(
             load_from_toml.parachains()[0].raw_spec_override(),
             expected.parachains()[0].raw_spec_override()
+        );
+    }
+
+    const TOML_WITH_RELATIVE_PATHS: &str = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "./bin/polkadot"
+chain_spec_path = "./rc.json"
+
+[[relaychain.nodes]]
+name = "alice"
+validator = true
+command = "polkadot"
+"#;
+
+    #[test]
+    fn toml_string_should_resolve_relative_paths_against_the_given_base_dir() {
+        let config = NetworkConfig::load_from_toml_string_with_base_dir(
+            TOML_WITH_RELATIVE_PATHS,
+            Path::new("/tmp/some-base-dir"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.relaychain().default_command().unwrap().as_str(),
+            "/tmp/some-base-dir/bin/polkadot"
+        );
+        assert_eq!(
+            config.relaychain().chain_spec_path().unwrap().to_string(),
+            "/tmp/some-base-dir/rc.json"
+        );
+        // non-relative values are left untouched
+        assert_eq!(
+            config.relaychain().nodes()[0].command().unwrap().as_str(),
+            "polkadot"
+        );
+    }
+
+    #[test]
+    fn toml_string_should_resolve_relative_paths_against_the_cwd_by_default() {
+        let from_cwd = NetworkConfig::load_from_toml_string(TOML_WITH_RELATIVE_PATHS).unwrap();
+        let expected = NetworkConfig::load_from_toml_string_with_base_dir(
+            TOML_WITH_RELATIVE_PATHS,
+            &std::env::current_dir().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(from_cwd, expected);
+    }
+
+    #[test]
+    fn toml_string_and_toml_file_should_produce_the_same_config() {
+        let path = "./testing/snapshots/0006-without-rc-chain-name.toml";
+        let from_file = NetworkConfig::load_from_toml(path).unwrap();
+
+        let file_path = PathBuf::from(path).canonicalize().unwrap();
+        let base_dir = file_path.parent().unwrap();
+        let from_string = NetworkConfig::load_from_toml_string_with_base_dir(
+            &fs::read_to_string(path).unwrap(),
+            base_dir,
+        )
+        .unwrap();
+
+        assert_eq!(from_file, from_string);
+
+        // and the relative paths were actually rewritten, not just rewritten identically
+        assert_eq!(
+            from_string
+                .relaychain()
+                .chain_spec_path()
+                .unwrap()
+                .to_string(),
+            base_dir.join("rc.json").to_string_lossy()
+        );
+        assert_eq!(
+            from_string.parachains()[0]
+                .chain_spec_path()
+                .unwrap()
+                .to_string(),
+            base_dir.join("parachain.json").to_string_lossy()
         );
     }
 

@@ -143,7 +143,13 @@ impl ChainSpec {
         if self.subcommand.is_none() {
             // SAFETY: we ensure that command is some with the first check of the fn
             // default as empty
-            let main_cmd_parts: Vec<&str> = self.command.as_ref().unwrap().cmd().split_whitespace().collect();
+            let main_cmd_parts: Vec<&str> = self
+                .command
+                .as_ref()
+                .unwrap()
+                .cmd()
+                .split_whitespace()
+                .collect();
             let main_cmd = main_cmd_parts
                 .first()
                 .expect("main_cmd should be preset to build the expect. qed");
@@ -350,7 +356,7 @@ impl ChainSpec {
 
             let mut replacements = HashMap::from([("chainName", replacement_value.as_str())]);
 
-            if self.subcommand.as_deref() == Some("export-chain-spec")  {
+            if self.subcommand.as_deref() == Some("export-chain-spec") {
                 replacements.insert("subCommand", "export-chain-spec");
                 replacements.insert("disableBootnodes", "");
             } else {
@@ -539,22 +545,18 @@ impl ChainSpec {
             chain_spec_path_in_pod.clone()
         };
 
+        let mut replacements = HashMap::from([("chainName", chain_spec_path_in_args.as_str())]);
 
-            let mut replacements = HashMap::from([("chainName", chain_spec_path_in_args.as_str())]);
+        if self.subcommand.as_deref() == Some("export-chain-spec") {
+            replacements.insert("subCommand", "export-chain-spec");
+            replacements.insert("disableBootnodes", "");
+        } else {
+            // use build-spec
+            replacements.insert("subCommand", "build-spec");
+            replacements.insert("disableBootnodes", "--disable-default-bootnode");
+        }
 
-            if self.subcommand.as_deref() == Some("export-chain-spec")  {
-                replacements.insert("subCommand", "export-chain-spec");
-                replacements.insert("disableBootnodes", "");
-            } else {
-                // use build-spec
-                replacements.insert("subCommand", "build-spec");
-                replacements.insert("disableBootnodes", "--disable-default-bootnode");
-            }
-
-        let mut full_cmd = apply_replacements(
-            cmd.cmd(),
-            &replacements
-        );
+        let mut full_cmd = apply_replacements(cmd.cmd(), &replacements);
 
         if !full_cmd.contains("--raw") {
             full_cmd = format!("{full_cmd} --raw");

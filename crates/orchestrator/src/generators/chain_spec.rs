@@ -154,15 +154,27 @@ impl ChainSpec {
                 .first()
                 .expect("main_cmd should be preset to build the expect. qed");
             debug!("resolving subcommand for: {main_cmd}");
-            let help_output = ns
-                .get_node_available_args((main_cmd.to_string(), self.image.clone()))
-                .await?;
-
-            self.subcommand = if help_output.contains("export-chain-spec") {
-                Some("export-chain-spec".to_string())
-            } else {
-                Some("build-spec".to_string())
+            let chain_name_is_empty = match self.chain_name() {
+                None => true,
+                Some(chain) => chain.is_empty(),
             };
+
+            // IFF cmd is polkadot-parachain and chain is empty
+            // we should always use `build-spec`
+            if *main_cmd == "polkadot-parachain" && chain_name_is_empty {
+                self.subcommand = Some("build-spec".to_string())
+            } else {
+                // we should run to check the output
+                let help_output = ns
+                    .get_node_available_args((main_cmd.to_string(), self.image.clone()))
+                    .await?;
+
+                self.subcommand = if help_output.contains("export-chain-spec") {
+                    Some("export-chain-spec".to_string())
+                } else {
+                    Some("build-spec".to_string())
+                };
+            }
         }
 
         Ok(())

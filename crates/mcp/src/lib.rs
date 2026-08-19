@@ -1,0 +1,9 @@
+pub mod diagnostics;
+pub mod input;
+pub mod log_patterns;
+pub mod recent_runs;
+pub mod report;
+#[cfg(feature = "mcp")]
+pub mod server;
+#[cfg(feature = "mcp")]
+pub mod tools;

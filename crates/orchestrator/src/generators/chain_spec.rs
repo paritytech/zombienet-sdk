@@ -1322,7 +1322,7 @@ impl ChainSpec {
 
 type GenesisNodeKey = (String, String, HashMap<String, String>);
 
-async fn build_locally<'a, T>(
+pub async fn build_locally<'a, T>(
     generate_command: GenerateFileCommand,
     scoped_fs: &ScopedFilesystem<'a, T>,
     maybe_output: Option<&Path>,

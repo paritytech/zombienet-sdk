@@ -667,6 +667,125 @@ impl JsonOverrides {
     }
 }
 
+// JAM specific config types
+
+/// A JAM protocol parameter type by name.
+/// It can be constructed for an `&str`, if it fails, it will returns a [`ConversionError`].
+///
+/// Available options are: full / mini / tiny (default)
+/// # Examples:
+/// ```
+/// use zombienet_configuration::shared::types::Chain;
+///
+/// let full: Chain = "full".try_into().unwrap();
+/// let mini: Chain = "mini".try_into().unwrap();
+/// let tiny: Chain = "tiny".try_into().unwrap();
+///
+/// assert_eq!(full.as_str(), "full");
+/// assert_eq!(mini.as_str(), "mini");
+/// assert_eq!(tiny.as_str(), "tiny");
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JamProtocolParameterType {
+    Full,
+    Mini,
+    Tiny,
+}
+
+impl TryFrom<&str> for JamProtocolParameterType {
+    type Error = ConversionError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.contains(char::is_whitespace) {
+            return Err(ConversionError::ContainsWhitespaces(value.to_string()));
+        }
+
+        if value.is_empty() {
+            return Err(ConversionError::CantBeEmpty);
+        }
+
+        let protocol_type = match value.to_ascii_lowercase().as_str() {
+            "full" => JamProtocolParameterType::Full,
+            "mini" => JamProtocolParameterType::Mini,
+            "tiny" => JamProtocolParameterType::Tiny,
+            _ => {
+                return Err(ConversionError::DoesntMatchRegex {
+                    value: value.to_string(),
+                    regex: "full|mini|tiny".to_string(),
+                });
+            },
+        };
+
+        Ok(protocol_type)
+    }
+}
+
+impl JamProtocolParameterType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JamProtocolParameterType::Full => "full",
+            JamProtocolParameterType::Mini => "mini",
+            JamProtocolParameterType::Tiny => "tiny",
+        }
+    }
+
+    pub fn validator_count(&self) -> usize {
+        match self {
+            JamProtocolParameterType::Full => 1023,
+            JamProtocolParameterType::Mini => 78,
+            JamProtocolParameterType::Tiny => 6,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum JamNodeMode {
+    #[default]
+    Validator,
+    Ordinary,
+    Proxy,
+}
+
+impl TryFrom<&str> for JamNodeMode {
+    type Error = ConversionError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.contains(char::is_whitespace) {
+            return Err(ConversionError::ContainsWhitespaces(value.to_string()));
+        }
+
+        if value.is_empty() {
+            return Err(ConversionError::CantBeEmpty);
+        }
+
+        let mode = match value.to_ascii_lowercase().as_str() {
+            "validator" => JamNodeMode::Validator,
+            "ordinary" => JamNodeMode::Ordinary,
+            "proxy" => JamNodeMode::Proxy,
+            _ => {
+                return Err(ConversionError::DoesntMatchRegex {
+                    value: value.to_string(),
+                    regex: "validator|ordinary|proxy".to_string(),
+                });
+            },
+        };
+
+        Ok(mode)
+    }
+}
+
+impl JamNodeMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JamNodeMode::Validator => "validator",
+            JamNodeMode::Ordinary => "ordinary",
+            JamNodeMode::Proxy => "proxy",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

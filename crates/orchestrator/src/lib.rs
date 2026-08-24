@@ -24,14 +24,13 @@ use std::{
 use anyhow::anyhow;
 use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
-use generators::{core_assignment, errors::GeneratorError};
+use generators::{core_assignment, errors::GeneratorError, jam_config};
 use network::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain, Network};
 // re-exported
 pub use network_spec::NetworkSpec;
 use network_spec::{node::NodeSpec, parachain::ParachainSpec};
 use provider::{
-    types::{ProviderCapabilities, TransferedFile},
-    DynNamespace, DynProvider,
+    DynNamespace, DynProvider, types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
 };
 use serde_json::json;
 use support::{
@@ -674,6 +673,29 @@ where
 
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
+
+
+        // spawn jam
+        if let Some(jam_spec) = network_spec.jamchain {
+        // generate config
+        let jam_config = jam_config::generate(&jam_spec)?;
+        // store the config file
+        let _ = scoped_fs.write("jam_config.json", serde_json::to_string_pretty(&jam_config)?).await?;
+        // generate spec
+        let cmd_parts: Vec<&str> = jam_spec.chain_spec_command.split(" ").collect();
+        let cmd = cmd_parts.first().expect("jam chain-spec generator cmd should be valid");
+        let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
+        let jam_spec_full_path = format!("{}/{}", base_dir, "jam_spec.json");
+        let args = vec!["gen-spec", jam_config_full_path.as_str(), jam_spec_full_path.as_str()];
+        let generate_command = GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
+        let _ = generators::chain_spec::build_locally(generate_command, &scoped_fs,Some(&PathBuf::from(jam_spec_full_path))).await?;
+
+        // spawn nodes
+
+
+        }
+
+
 
         if network_spec.global_settings.observability().enabled() {
             match network

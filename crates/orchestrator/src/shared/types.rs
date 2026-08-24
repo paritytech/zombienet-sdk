@@ -1,8 +1,5 @@
 use std::{
-    collections::HashMap,
-    net::TcpListener,
-    path::PathBuf,
-    sync::{Arc, RwLock},
+    collections::HashMap, net::TcpListener, path::PathBuf, sync::{Arc, RwLock},
 };
 
 use configuration::shared::{

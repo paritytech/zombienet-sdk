@@ -18,6 +18,7 @@ use crate::{
         resources::Resources,
         types::{Arg, Port},
     },
+    types::JamNodeMode,
     utils::{default_as_true, default_initial_balance},
 };
 
@@ -62,6 +63,143 @@ impl From<(&str, &str)> for EnvVar {
     }
 }
 
+/// Basic configuration for long running process (e.g nodes)
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+pub struct BaseNodeConfig {
+    pub(crate) name: String,
+    pub(crate) image: Option<Image>,
+    pub(crate) command: Option<Command>,
+    pub(crate) subcommand: Option<Command>,
+    #[serde(default)]
+    pub(crate) args: Vec<Arg>,
+    #[serde(default)]
+    pub(crate) env: Vec<EnvVar>,
+    pub(crate) resources: Option<Resources>,
+    #[serde(default)]
+    // used to skip serialization of fields with defaults to avoid duplication
+    pub(crate) chain_context: ChainDefaultContext,
+}
+
+impl Serialize for BaseNodeConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("BaseNodeConfig", 1)?;
+        state.serialize_field("name", &self.name)?;
+
+        if self.image == self.chain_context.default_image {
+            state.skip_field("image")?;
+        } else {
+            state.serialize_field("image", &self.image)?;
+        }
+
+        if self.command == self.chain_context.default_command {
+            state.skip_field("command")?;
+        } else {
+            state.serialize_field("command", &self.command)?;
+        }
+
+        if self.subcommand.is_none() {
+            state.skip_field("subcommand")?;
+        } else {
+            state.serialize_field("subcommand", &self.subcommand)?;
+        }
+
+        if self.args.is_empty() || self.args == self.chain_context.default_args {
+            state.skip_field("args")?;
+        } else {
+            state.serialize_field("args", &self.args)?;
+        }
+
+        if self.env.is_empty() {
+            state.skip_field("env")?;
+        } else {
+            state.serialize_field("env", &self.env)?;
+        }
+
+        if self.resources == self.chain_context.default_resources {
+            state.skip_field("resources")?;
+        } else {
+            state.serialize_field("resources", &self.resources)?;
+        }
+
+        state.skip_field("chain_context")?;
+        state.end()
+    }
+}
+
+/// Basic configuration for long running process (e.g nodes)
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct JamNodeConfig {
+    #[serde(flatten)]
+    pub(crate) base_config: BaseNodeConfig,
+    /// Mode (validator / ordinary / proxy )
+    pub(crate) mode: JamNodeMode,
+    /// RPC port
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) rpc_port: Option<Port>,
+    /// Telemetry endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) telemetry_endpoint: Option<String>,
+}
+
+impl JamNodeConfig {
+    /// Node name (should be unique).
+    pub fn name(&self) -> &str {
+        &self.base_config.name
+    }
+
+    /// Image to run (only podman/k8s).
+    pub fn image(&self) -> Option<&Image> {
+        self.base_config.image.as_ref()
+    }
+
+    /// Command to run the node.
+    pub fn command(&self) -> Option<&Command> {
+        self.base_config.command.as_ref()
+    }
+
+    /// Subcommand to run the node.
+    pub fn subcommand(&self) -> Option<&Command> {
+        self.base_config.subcommand.as_ref()
+    }
+
+    /// Arguments to use for node.
+    pub fn args(&self) -> Vec<&Arg> {
+        self.base_config.args.iter().collect()
+    }
+
+    /// Arguments to use for node.
+    pub(crate) fn set_args(&mut self, args: Vec<Arg>) {
+        self.base_config.args = args;
+    }
+
+    /// Default resources.
+    pub fn resources(&self) -> Option<&Resources> {
+        self.base_config.resources.as_ref()
+    }
+
+    /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
+    pub fn env(&self) -> Vec<&EnvVar> {
+        self.base_config.env.iter().collect()
+    }
+
+    /// Whether the node is a validator.
+    pub fn mode(&self) -> &JamNodeMode {
+        &self.mode
+    }
+
+    /// RPC port to use.
+    pub fn rpc_port(&self) -> Option<u16> {
+        self.rpc_port
+    }
+
+    /// Telemetry endpoint to use.
+    pub fn telemetry_endpoint(&self) -> Option<&str> {
+        self.telemetry_endpoint.as_deref()
+    }
+}
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct NodeConfig {
@@ -1015,11 +1153,325 @@ impl GroupNodeConfigBuilder<Buildable> {
     }
 }
 
+// JAM
+/// A node configuration builder, used to build a [`JamNodeConfig`] declaratively with fields validation.
+pub struct JamNodeConfigBuilder<S> {
+    config: JamNodeConfig,
+    validation_context: Rc<RefCell<ValidationContext>>,
+    errors: Vec<anyhow::Error>,
+    _state: PhantomData<S>,
+}
+
+impl Default for JamNodeConfigBuilder<Initial> {
+    fn default() -> Self {
+        Self {
+            config: JamNodeConfig {
+                rpc_port: None,
+                base_config: BaseNodeConfig {
+                    name: "".into(), // placeholder
+                    image: None,
+                    command: None,
+                    subcommand: None,
+                    args: vec![],
+                    env: vec![],
+                    resources: None,
+                    chain_context: Default::default(),
+                },
+                mode: JamNodeMode::Validator, //
+                telemetry_endpoint: None,
+            },
+            validation_context: Default::default(),
+            errors: vec![],
+            _state: PhantomData,
+        }
+    }
+}
+
+impl<A> JamNodeConfigBuilder<A> {
+    fn transition<B>(
+        config: JamNodeConfig,
+        validation_context: Rc<RefCell<ValidationContext>>,
+        errors: Vec<anyhow::Error>,
+    ) -> JamNodeConfigBuilder<B> {
+        JamNodeConfigBuilder {
+            config,
+            validation_context,
+            errors,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl JamNodeConfigBuilder<Initial> {
+    pub fn new(
+        chain_context: ChainDefaultContext,
+        validation_context: Rc<RefCell<ValidationContext>>,
+    ) -> Self {
+        let base_config = BaseNodeConfig {
+            command: chain_context.default_command.clone(),
+            image: chain_context.default_image.clone(),
+            resources: chain_context.default_resources.clone(),
+            args: chain_context.default_args.clone(),
+            chain_context,
+            ..Default::default()
+        };
+
+        Self::transition(
+            JamNodeConfig {
+                base_config,
+                ..JamNodeConfig::default()
+            },
+            validation_context,
+            vec![],
+        )
+    }
+
+    /// Set the name of the node.
+    pub fn with_name<T: Into<String> + Copy>(self, name: T) -> JamNodeConfigBuilder<Buildable> {
+        let name: String = generate_unique_node_name(name, self.validation_context.clone());
+
+        match ensure_value_is_not_empty(&name) {
+            Ok(_) => Self::transition(
+                JamNodeConfig {
+                    base_config: BaseNodeConfig {
+                        name,
+                        ..self.config.base_config
+                    },
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(e) => Self::transition(
+                JamNodeConfig {
+                    // we still set the name in error case to display error path
+                    base_config: BaseNodeConfig {
+                        name,
+                        ..self.config.base_config
+                    },
+                    ..self.config
+                },
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Name(e).into()),
+            ),
+        }
+    }
+}
+
+impl JamNodeConfigBuilder<Buildable> {
+    /// Set the command that will be executed to launch the node. Override the default.
+    pub fn with_command<T>(self, command: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + Send + Sync + 'static,
+    {
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                JamNodeConfig {
+                    base_config: BaseNodeConfig {
+                        command: Some(command),
+                        ..self.config.base_config
+                    },
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Command(error.into()).into()),
+            ),
+        }
+    }
+
+    /// Set the subcommand that will be executed to launch the node.
+    pub fn with_subcommand<T>(self, subcommand: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + Send + Sync + 'static,
+    {
+        match subcommand.try_into() {
+            Ok(subcommand) => Self::transition(
+                JamNodeConfig {
+                    base_config: BaseNodeConfig {
+                        subcommand: Some(subcommand),
+                        ..self.config.base_config
+                    },
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Command(error.into()).into()),
+            ),
+        }
+    }
+
+    /// Set the image that will be used for the node (only podman/k8s). Override the default.
+    pub fn with_image<T>(self, image: T) -> Self
+    where
+        T: TryInto<Image>,
+        T::Error: Error + Send + Sync + 'static,
+    {
+        match image.try_into() {
+            Ok(image) => Self::transition(
+                JamNodeConfig {
+                    base_config: BaseNodeConfig {
+                        image: Some(image),
+                        ..self.config.base_config
+                    },
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Image(error.into()).into()),
+            ),
+        }
+    }
+
+    /// Set the arguments that will be used when launching the node. Override the default_args of the chain context.
+    pub fn with_args(self, args: Vec<Arg>) -> Self {
+        Self::transition(
+            JamNodeConfig {
+                base_config: BaseNodeConfig {
+                    args,
+                    ..self.config.base_config
+                },
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the resources limits what will be used for the node (only podman/k8s). Override the default.
+    pub fn with_resources(self, f: impl FnOnce(ResourcesBuilder) -> ResourcesBuilder) -> Self {
+        match f(ResourcesBuilder::new()).build() {
+            Ok(resources) => Self::transition(
+                JamNodeConfig {
+                    base_config: BaseNodeConfig {
+                        resources: Some(resources),
+                        ..self.config.base_config
+                    },
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| FieldError::Resources(error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Set the node environment variables that will be used when launched. Override the default.
+    pub fn with_env(self, env: Vec<impl Into<EnvVar>>) -> Self {
+        let env = env.into_iter().map(|var| var.into()).collect::<Vec<_>>();
+
+        Self::transition(
+            JamNodeConfig {
+                base_config: BaseNodeConfig {
+                    env,
+                    ..self.config.base_config
+                },
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the RPC port that will be exposed. Uniqueness across config will be checked.
+    pub fn with_rpc_port(self, rpc_port: Port) -> Self {
+        match ensure_port_unique(rpc_port, self.validation_context.clone()) {
+            Ok(_) => Self::transition(
+                JamNodeConfig {
+                    rpc_port: Some(rpc_port),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::RpcPort(error).into()),
+            ),
+        }
+    }
+
+    /// Set the Mode of the node.
+    pub fn with_mode(self, mode: JamNodeMode) -> Self {
+        Self::transition(
+            JamNodeConfig {
+                mode,
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Set the Mode of the node.
+    pub fn with_telemetry_endpoint(self, tel_endpoint: impl Into<String>) -> Self {
+        Self::transition(
+            JamNodeConfig {
+                telemetry_endpoint: Some(tel_endpoint.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
+    /// Seals the builder and returns a [`JamNodeConfig`] if there are no validation errors, else returns errors.
+    pub fn build(self) -> Result<JamNodeConfig, (String, Vec<anyhow::Error>)> {
+        if !self.errors.is_empty() {
+            return Err((self.config.base_config.name.clone(), self.errors));
+        }
+
+        Ok(self.config)
+    }
+}
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, println};
 
     use super::*;
+
+    #[test]
+    fn jam_default_node_serialize() {
+        let jam_node = JamNodeConfig::default();
+        let s = serde_json::to_string_pretty(&jam_node);
+        println!("{:?}", s);
+    }
+
+    #[test]
+    fn jam_default_node_deserialize() {
+        let toml_text = r#"
+        name = "alice"
+        mode = "Validator"
+        "#;
+        let jam_node: JamNodeConfig = toml::from_str(&toml_text).unwrap();
+
+        println!("{:?}", jam_node);
+    }
 
     #[test]
     fn node_config_builder_should_succeeds_and_returns_a_node_config() {

@@ -2,6 +2,8 @@ pub mod chain_spec;
 pub mod db_snapshot;
 pub mod errors;
 pub mod key;
+pub mod jam_key;
+pub mod jam_config;
 pub mod para_artifact;
 
 mod arg_filter;
@@ -23,6 +25,9 @@ pub use command::{
 pub use db_snapshot::{cleanup_db_snapshot_cache, resolve_db_snapshots, ResolvedDbSnapshots};
 pub use identity::generate as generate_node_identity;
 pub use key::generate as generate_node_keys;
+pub use jam_key::generate as generate_jam_node_keys;
+pub use jam_config::generate as generate_jam_comfig;
+
 pub use keystore::generate as generate_node_keystore;
 pub use port::generate as generate_node_port;
 pub use session_0_overrides::generate_session_0_overrides;

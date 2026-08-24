@@ -2,7 +2,7 @@ use std::env;
 
 use support::constants::ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS;
 
-use crate::types::{Chain, Command, Duration};
+use crate::types::{Chain, Command, Duration, JamProtocolParameterType};
 
 pub(crate) fn is_true(value: &bool) -> bool {
     *value
@@ -38,13 +38,28 @@ pub(crate) fn default_timeout() -> Duration {
 }
 
 pub(crate) fn default_command_polkadot() -> Option<Command> {
-    TryInto::<Command>::try_into("polkadot").ok()
+    let cmd =
+        TryInto::<Command>::try_into("polkadot").expect("'polkadot' should be a valid command");
+    Some(cmd)
+}
+
+pub(crate) fn default_command_jam() -> Option<Command> {
+    let cmd =
+        TryInto::<Command>::try_into("polkajam").expect("'polkajam' should be a valid command");
+    Some(cmd)
 }
 
 pub(crate) fn default_relaychain_chain() -> Chain {
     TryInto::<Chain>::try_into("rococo-local").expect("'rococo-local' should be a valid chain")
 }
 
+pub(crate) fn default_chain_jam() -> Chain {
+    TryInto::<Chain>::try_into("dev").expect("'dev' should be a valid chain")
+}
+
+pub(crate) fn default_protocol_para_type_jam() -> JamProtocolParameterType {
+    JamProtocolParameterType::Tiny
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,11 +10,13 @@ use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::{debug, trace};
 
-use crate::{errors::OrchestratorError, ScopedFilesystem};
+use crate::{ScopedFilesystem, errors::OrchestratorError, network_spec::jamchain::JamchainSpec};
 
 pub mod node;
+pub mod jamnode;
 pub mod parachain;
 pub mod relaychain;
+pub mod jamchain;
 
 use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec};
 
@@ -22,6 +24,9 @@ use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec}
 pub struct NetworkSpec {
     /// Relaychain configuration.
     pub(crate) relaychain: RelaychainSpec,
+
+    /// Jamchain configuration
+    pub(crate) jamchain: Option<JamchainSpec>,
 
     /// Parachains configurations.
     pub(crate) parachains: Vec<ParachainSpec>,
@@ -43,6 +48,13 @@ impl NetworkSpec {
     ) -> Result<NetworkSpec, OrchestratorError> {
         let mut errs = vec![];
         let relaychain = RelaychainSpec::from_config(network_config.relaychain())?;
+        let jamchain = if let Some(jamchain_config) = network_config.jamchain() {
+            Some(JamchainSpec::from_config(jamchain_config)?)
+        } else {
+            None
+        };
+
+
         let mut parachains = vec![];
 
         // TODO: move to `fold` or map+fold
@@ -56,6 +68,7 @@ impl NetworkSpec {
         if errs.is_empty() {
             Ok(NetworkSpec {
                 relaychain,
+                jamchain,
                 parachains,
                 hrmp_channels: network_config
                     .hrmp_channels()

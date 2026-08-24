@@ -20,6 +20,7 @@ use crate::{
     custom_process,
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
+    jamchain::{self, JamchainConfig, JamchainConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
@@ -39,6 +40,7 @@ pub struct NetworkConfig {
     #[serde(rename = "settings", default = "GlobalSettings::default")]
     global_settings: GlobalSettings,
     relaychain: Option<RelaychainConfig>,
+    jamchain: Option<JamchainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     parachains: Vec<ParachainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -58,6 +60,15 @@ impl NetworkConfig {
         self.relaychain
             .as_ref()
             .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
+    }
+
+    /// The relay chain of the network.
+    pub fn jamchain(&self) -> Option<&JamchainConfig> {
+        if let Some(jamconfig) = &self.jamchain {
+            Some(jamconfig)
+        } else {
+            None
+        }
     }
 
     /// The parachains of the network.
@@ -370,7 +381,7 @@ fn populate_collator_with_defaults(
 
 states! {
     Initial,
-    WithRelaychain
+    Buildable
 }
 
 /// A network configuration builder, used to build a [`NetworkConfig`] declaratively with fields validation.
@@ -457,6 +468,7 @@ impl Default for NetworkConfigBuilder<Initial> {
                     .build()
                     .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}")),
                 relaychain: None,
+                jamchain: None,
                 parachains: vec![],
                 hrmp_channels: vec![],
                 custom_processes: vec![],
@@ -494,7 +506,7 @@ impl NetworkConfigBuilder<Initial> {
     pub fn with_chain_and_nodes(
         relay_name: &str,
         node_names: Vec<String>,
-    ) -> NetworkConfigBuilder<WithRelaychain> {
+    ) -> NetworkConfigBuilder<Buildable> {
         let network_config = NetworkConfigBuilder::new().with_relaychain(|relaychain| {
             let mut relaychain_with_node =
                 relaychain.with_chain(relay_name).with_validator(|node| {
@@ -521,7 +533,7 @@ impl NetworkConfigBuilder<Initial> {
         f: impl FnOnce(
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
-    ) -> NetworkConfigBuilder<WithRelaychain> {
+    ) -> NetworkConfigBuilder<Buildable> {
         match f(RelaychainConfigBuilder::new(
             self.validation_context.clone(),
         ))
@@ -538,9 +550,75 @@ impl NetworkConfigBuilder<Initial> {
             Err(errors) => Self::transition(self.config, self.validation_context, errors),
         }
     }
+
+    /// Set the jam chain using a nested [`JamchainConfigBuilder`].
+    pub fn with_jamchain(
+        self,
+        f: impl FnOnce(
+            JamchainConfigBuilder<jamchain::Initial>,
+        ) -> JamchainConfigBuilder<jamchain::WithAtLeastOneNode>,
+    ) -> NetworkConfigBuilder<Buildable> {
+        match f(JamchainConfigBuilder::new(self.validation_context.clone())).build() {
+            Ok(jamchain) => Self::transition(
+                NetworkConfig {
+                    jamchain: Some(jamchain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
 }
 
-impl NetworkConfigBuilder<WithRelaychain> {
+impl NetworkConfigBuilder<Buildable> {
+    // Allow to set jam/relay in buildable state (override if already set)
+
+    /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
+    pub fn with_relaychain(
+        self,
+        f: impl FnOnce(
+            RelaychainConfigBuilder<relaychain::Initial>,
+        ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
+    ) -> NetworkConfigBuilder<Buildable> {
+        match f(RelaychainConfigBuilder::new(
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(relaychain) => Self::transition(
+                NetworkConfig {
+                    relaychain: Some(relaychain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
+
+    /// Set the jam chain using a nested [`JamchainConfigBuilder`].
+    pub fn with_jamchain(
+        self,
+        f: impl FnOnce(
+            JamchainConfigBuilder<jamchain::Initial>,
+        ) -> JamchainConfigBuilder<jamchain::WithAtLeastOneNode>,
+    ) -> NetworkConfigBuilder<Buildable> {
+        match f(JamchainConfigBuilder::new(self.validation_context.clone())).build() {
+            Ok(jamchain) => Self::transition(
+                NetworkConfig {
+                    jamchain: Some(jamchain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
+
     /// Set the global settings using a nested [`GlobalSettingsBuilder`].
     pub fn with_global_settings(
         self,
@@ -2123,6 +2201,45 @@ command = "polkadot"
                 .to_string(),
             base_dir.join("parachain.json").to_string_lossy()
         );
+    }
+
+    #[test]
+    fn with_jamchain() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("westend")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:stable2603-3")
+                    .with_validator(|n| n.with_name("validator-0"))
+                    .with_validator(|n| n.with_name("validator-1"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1004)
+                    .with_chain_spec_path("https://raw.githubusercontent.com/paritytech/polkadot-sdk/104e66f7114ea3322187b4b93255bb9f3f4d5005/cumulus/zombienet/zombienet-sdk/tests/zombie_ci/statement_store/people-westend-local-spec.json")
+                    .with_collator_group(|g| {
+                        g.with_count(100)
+                        .with_base_node(|n|{
+                            n.with_name("collator")
+                            .with_command("polkadot-parachain")
+                            .with_args(vec!["--enable-statement-store".into()])
+                            .with_image("docker.io/parity/polkadot-parachain:stable2603-3")
+                        })
+                })
+            })
+            .with_jamchain(|jamchain| {
+                jamchain
+                .with_id("dev")
+                .with_validator(|jamnode|{
+                    jamnode.with_name("jam1")
+                })
+            })
+            .build()
+            .unwrap();
+
+        let toml_string = network_config.dump_to_toml().unwrap();
+        println!("{}", toml_string);
     }
 
     #[test]

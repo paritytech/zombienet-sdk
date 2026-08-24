@@ -87,6 +87,11 @@ walkdir = "2.5"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 socket2 = "0.6.5"
 
+# JAM
+jam-std-common = "0.1.28"
+jam-types = "0.1.28"
+
+
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.4.16", path = "crates/support" }
 configuration = { package = "zombienet-configuration", version = "0.4.16", path = "crates/configuration" }

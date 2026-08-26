@@ -3,6 +3,7 @@ use codec::{Decode, Encode};
 use serde_json::json;
 use sp_core::crypto::AccountId32;
 use support::substorage::storage_value_key;
+use tracing::warn;
 
 use crate::generators::errors::GeneratorError;
 
@@ -77,6 +78,10 @@ pub fn generate_session_0_overrides(
     num_genesis_cores: u32,
 ) -> Result<serde_json::Value, GeneratorError> {
     let mut overrides = json!({});
+    if num_genesis_cores == 0 {
+        warn!("'num_genesis_cores' is 0, means that we can not override session_0. Please check your config to ensure you have paras to register in chain-spec.");
+        return Ok(overrides);
+    }
     // get current session 0
     let sessions_prefix = storage_value_key(&b"ParaSessionInfo"[..], b"Sessions");
     let session_0_key = format!(
@@ -149,6 +154,8 @@ fn genetate_groups(num_validators: u32, num_cores: u32) -> Vec<Vec<ValidatorInde
 
 #[cfg(test)]
 mod test {
+    use std::assert_eq;
+
     use tracing::debug;
 
     use super::*;
@@ -210,5 +217,34 @@ mod test {
 
         let overrides = generate_session_0_overrides(&mock_spec, 3).unwrap();
         debug!("{:?}", overrides);
+        // ensure we have 2 keys to override
+        assert_eq!(overrides.as_object().unwrap().keys().len(), 2);
+    }
+
+    #[test]
+    fn generate_should_work_without_cores() {
+        let sessions_prefix = storage_value_key(&b"ParaSessionInfo"[..], b"Sessions");
+        let session_0_key = format!(
+            "{}{}",
+            bytes2hex("0x", &sessions_prefix),
+            bytes2hex("", 0_u32.encode())
+        );
+
+        let session_value = "0x1003000000010000000000000002000000abc3f086f5ac20eaab792c75933b2e196307835a61a955be82aa63bc0ff9617a06000000108eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20000000000000000000000000000000010000000100000000000000";
+        let mock_spec = json!({
+            "genesis": {
+                "raw": {
+                    "top": {
+                        session_0_key: session_value
+                    }
+                }
+            }
+        });
+
+        debug!("mock {:?}", mock_spec);
+
+        let overrides = generate_session_0_overrides(&mock_spec, 0).unwrap();
+        debug!("{:?}", overrides);
+        assert_eq!(overrides.as_object().unwrap().keys().len(), 0);
     }
 }

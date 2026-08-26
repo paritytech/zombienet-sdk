@@ -33,7 +33,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install protobuf-compiler
 
       - name: Init nigthly install for fmt
-        run: rustup update nightly && rustup default nightly && rustup component add rustfmt
+        run: rustup update nightly && rustup component add rustfmt
 
       - name: Check format
         run: cargo +nightly fmt --check --all

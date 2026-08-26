@@ -324,10 +324,10 @@ where
         }
 
         // assign extra cores if needed
-        debug!("Raw overrides info: num_cores: {}, para_to_register_in_genesis_len: {:?}, override_session_0: {}", num_cores, para_to_register_in_genesis.len(), network_spec.relaychain().override_session_0);
         if num_cores > para_to_register_in_genesis.len() as u32
-            || network_spec.relaychain().override_session_0
+            || (network_spec.relaychain().override_session_0 &&  para_to_register_in_genesis.len() > 0)
         {
+            debug!("Raw overrides info: num_cores: {}, para_to_register_in_genesis_len: {:?}, override_session_0: {}", num_cores, para_to_register_in_genesis.len(), network_spec.relaychain().override_session_0);
             let mut core_index = 0u32;
             // we should check with version the runtime is using
             // could be ParaScheduler or CoretimeAssignmentProvider

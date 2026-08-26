@@ -79,7 +79,7 @@ pub fn generate_session_0_overrides(
 ) -> Result<serde_json::Value, GeneratorError> {
     let mut overrides = json!({});
     if num_genesis_cores == 0 {
-        warn!("'num_genesis_cores' is 0, means that we can not override session_0. Please check your config to ensure you have paras to register in chain-spec.");
+        warn!("'num_genesis_cores' is 0, means that we can not override session 0. Please check your config to ensure you have paras to register in chain-spec.");
         return Ok(overrides);
     }
     // get current session 0

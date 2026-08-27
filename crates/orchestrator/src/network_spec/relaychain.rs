@@ -14,7 +14,7 @@ use support::replacer::apply_replacements;
 
 use super::node::NodeSpec;
 use crate::{
-    errors::OrchestratorError,
+    errors::{merge_errs, OrchestratorError},
     generators::chain_spec::{ChainSpec, Context},
     shared::{constants::DEFAULT_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
 };
@@ -137,7 +137,7 @@ impl RelaychainSpec {
         );
 
         let mut names = HashSet::new();
-        let (nodes, mut errs) = nodes
+        let (nodes, errs) = nodes
             .iter()
             .map(|node_config| NodeSpec::from_config(node_config, &chain_context, false, false))
             .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
@@ -154,8 +154,7 @@ impl RelaychainSpec {
             });
 
         if !errs.is_empty() {
-            // TODO: merge errs, maybe return something like Result<Sometype, Vec<OrchestratorError>>
-            return Err(errs.swap_remove(0));
+            return Err(merge_errs(&errs));
         }
 
         Ok(RelaychainSpec {

@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::{debug, trace};
 
-use crate::{errors::OrchestratorError, ScopedFilesystem};
+use crate::{
+    errors::{merge_errs, OrchestratorError},
+    ScopedFilesystem,
+};
 
 pub mod node;
 pub mod parachain;
@@ -70,12 +73,7 @@ impl NetworkSpec {
                     .collect(),
             })
         } else {
-            let errs_str = errs
-                .into_iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<String>>()
-                .join("\n");
-            Err(OrchestratorError::InvalidConfig(errs_str))
+            Err(merge_errs(&errs))
         }
     }
 
@@ -305,6 +303,7 @@ impl NetworkSpec {
 
 #[cfg(test)]
 mod tests {
+    use crate::generators::generate_node_port;
 
     #[tokio::test]
     async fn small_network_config_get_spec() {
@@ -343,5 +342,66 @@ mod tests {
         assert_eq!(network_spec.parachains.len(), 1);
         let para_100 = network_spec.parachains.first().unwrap();
         assert_eq!(para_100.id, 100);
+    }
+
+    #[tokio::test]
+    async fn used_port_in_node_reports_err() {
+        use configuration::NetworkConfigBuilder;
+
+        use super::*;
+        let used_port = generate_node_port(None).unwrap();
+
+        let config = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_validator(|node| node.with_name("alice"))
+                    .with_fullnode(|node| node.with_name("bob").with_command("polkadot1"))
+            })
+            .with_parachain(|p| {
+                p.with_id(100)
+                    .with_default_command("adder-collator")
+                    .with_collator(|c| c.with_name("collator1").with_rpc_port(used_port.0))
+            })
+            .build()
+            .unwrap();
+
+        let network_spec_res = NetworkSpec::from_config(&config).await;
+        assert!(network_spec_res.is_err());
+        assert!(network_spec_res
+            .unwrap_err()
+            .to_string()
+            .contains("err Can\'t bind in socket"));
+    }
+
+    #[tokio::test]
+    async fn used_port_in_multiple_node_reports_err() {
+        use configuration::NetworkConfigBuilder;
+
+        use super::*;
+        let used_port_0 = generate_node_port(None).unwrap();
+        let used_port_1 = generate_node_port(None).unwrap();
+
+        let config = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_validator(|node| node.with_name("alice").with_rpc_port(used_port_0.0))
+                    .with_fullnode(|node| node.with_name("bob").with_rpc_port(used_port_1.0))
+            })
+            .with_parachain(|p| {
+                p.with_id(100)
+                    .with_default_command("adder-collator")
+                    .with_collator(|c| c.with_name("collator1"))
+            })
+            .build()
+            .unwrap();
+
+        let network_spec_res = NetworkSpec::from_config(&config).await;
+        assert!(network_spec_res.is_err());
+        // ensure we report 2 errors
+        let err_str = network_spec_res.unwrap_err().to_string();
+        let socket_errs: Vec<&str> = err_str.matches("err Can\'t bind in socket").collect();
+        assert_eq!(socket_errs.len(), 2);
     }
 }

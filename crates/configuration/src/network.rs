@@ -62,7 +62,7 @@ impl NetworkConfig {
             .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
     }
 
-    /// The relay chain of the network.
+    /// The jam chain of the network.
     pub fn jamchain(&self) -> Option<&JamchainConfig> {
         if let Some(jamconfig) = &self.jamchain {
             Some(jamconfig)

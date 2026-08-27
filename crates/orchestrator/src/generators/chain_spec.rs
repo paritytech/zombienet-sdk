@@ -2136,6 +2136,12 @@ mod tests {
     }
 
     #[test]
+    fn merge_with_empty_b_works() {
+        let mut chain_spec_json = chain_spec_with_stake();
+        merge(&mut chain_spec_json, &json!({}));
+    }
+
+    #[test]
     fn get_min_stake_works() {
         let mut chain_spec_json = chain_spec_with_stake();
 

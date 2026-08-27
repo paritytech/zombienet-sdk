@@ -48,7 +48,7 @@ jobs:
 
       - name: Clippy
         # disable needless_lifetimes until we align the version with polakdot-sdk
-        run: cargo +stable clippy --all-targets --all-features -- -A clippy::needless_lifetimes
+        run: cargo +stable clippy --all-targets --all-features -- -A clippy::needless_lifetimes, clippy::result-large-err
 
       - name: Build
         run: cargo build

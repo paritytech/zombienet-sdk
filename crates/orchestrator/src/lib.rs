@@ -326,7 +326,7 @@ where
         // assign extra cores if needed
         if num_cores > para_to_register_in_genesis.len() as u32
             || (network_spec.relaychain().override_session_0
-                && para_to_register_in_genesis.len() > 0)
+                && !para_to_register_in_genesis.is_empty())
         {
             debug!("Raw overrides info: num_cores: {}, para_to_register_in_genesis_len: {:?}, override_session_0: {}", num_cores, para_to_register_in_genesis.len(), network_spec.relaychain().override_session_0);
             let mut core_index = 0u32;

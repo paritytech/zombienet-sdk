@@ -15,7 +15,7 @@ use tracing::debug;
 
 use super::node::NodeSpec;
 use crate::{
-    errors::OrchestratorError,
+    errors::{merge_errs, OrchestratorError},
     generators::{
         chain_spec::{ChainSpec, Context, ParaGenesisConfig},
         para_artifact::*,
@@ -265,6 +265,10 @@ impl ParachainSpec {
             )
             .image(main_image.clone())
         };
+
+        if !errs.is_empty() {
+            return Err(merge_errs(&errs));
+        }
 
         let para_spec = ParachainSpec {
             id: config.id(),

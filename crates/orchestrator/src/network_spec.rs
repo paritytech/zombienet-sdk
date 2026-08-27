@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::{debug, trace};
 
-use crate::{errors::OrchestratorError, ScopedFilesystem};
+use crate::{
+    errors::{merge_errs, OrchestratorError},
+    ScopedFilesystem,
+};
 
 pub mod node;
 pub mod parachain;
@@ -70,12 +73,7 @@ impl NetworkSpec {
                     .collect(),
             })
         } else {
-            let errs_str = errs
-                .into_iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<String>>()
-                .join("\n");
-            Err(OrchestratorError::InvalidConfig(errs_str))
+            Err(merge_errs(&errs))
         }
     }
 

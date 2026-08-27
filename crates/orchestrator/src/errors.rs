@@ -29,3 +29,14 @@ pub enum OrchestratorError {
     #[error(transparent)]
     SpawnerError(#[from] anyhow::Error),
 }
+
+/// Merge a vector of errs into an InvalidConfig error with all the
+/// errors as string
+pub fn merge_errs(errs: &Vec<OrchestratorError>) -> OrchestratorError {
+    let errs_str = errs
+        .into_iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<String>>()
+        .join("\n");
+    OrchestratorError::InvalidConfig(errs_str)
+}

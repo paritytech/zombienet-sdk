@@ -32,7 +32,7 @@ pub enum OrchestratorError {
 
 /// Merge a vector of errs into an InvalidConfig error with all the
 /// errors as string
-pub fn merge_errs(errs: &Vec<OrchestratorError>) -> OrchestratorError {
+pub fn merge_errs(errs: &[OrchestratorError]) -> OrchestratorError {
     let errs_str = errs
         .iter()
         .map(|e| e.to_string())

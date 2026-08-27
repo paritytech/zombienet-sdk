@@ -34,7 +34,7 @@ pub enum OrchestratorError {
 /// errors as string
 pub fn merge_errs(errs: &Vec<OrchestratorError>) -> OrchestratorError {
     let errs_str = errs
-        .into_iter()
+        .iter()
         .map(|e| e.to_string())
         .collect::<Vec<String>>()
         .join("\n");

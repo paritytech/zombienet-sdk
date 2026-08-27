@@ -33,7 +33,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install protobuf-compiler
 
       - name: Init nigthly install for fmt
-        run: rustup update nightly && rustup component add rustfmt
+        run: rustup update nightly && rustup default nightly && rustup component add rustfmt
 
       - name: Check format
         run: cargo +nightly fmt --check --all
@@ -48,7 +48,7 @@ jobs:
 
       - name: Clippy
         # disable needless_lifetimes until we align the version with polakdot-sdk
-        run: cargo clippy --all-targets --all-features -- -A clippy::needless_lifetimes
+        run: cargo +stable clippy --all-targets --all-features -- -A clippy::needless_lifetimes
 
       - name: Build
         run: cargo build

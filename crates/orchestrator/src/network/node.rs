@@ -1,4 +1,4 @@
-#[allow(clippy::result_large_err)]
+#![allow(clippy::result_large_err)]
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},

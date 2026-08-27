@@ -12,7 +12,7 @@ use tracing::{debug, trace};
 
 use crate::{
     errors::{merge_errs, OrchestratorError},
-    network_spec::jamchain::JamchainSpec
+    network_spec::jamchain::JamchainSpec,
     ScopedFilesystem,
 };
 

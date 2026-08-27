@@ -30,7 +30,9 @@ use network::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain, N
 pub use network_spec::NetworkSpec;
 use network_spec::{node::NodeSpec, parachain::ParachainSpec};
 use provider::{
-    DynNamespace, DynProvider, types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
+    constants::LOCALHOST,
+    types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
+    DynNamespace, DynProvider,
 };
 use serde_json::json;
 use support::{
@@ -674,28 +676,74 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
-
         // spawn jam
         if let Some(jam_spec) = network_spec.jamchain {
-        // generate config
-        let jam_config = jam_config::generate(&jam_spec)?;
-        // store the config file
-        let _ = scoped_fs.write("jam_config.json", serde_json::to_string_pretty(&jam_config)?).await?;
-        // generate spec
-        let cmd_parts: Vec<&str> = jam_spec.chain_spec_command.split(" ").collect();
-        let cmd = cmd_parts.first().expect("jam chain-spec generator cmd should be valid");
-        let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
-        let jam_spec_full_path = format!("{}/{}", base_dir, "jam_spec.json");
-        let args = vec!["gen-spec", jam_config_full_path.as_str(), jam_spec_full_path.as_str()];
-        let generate_command = GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
-        let _ = generators::chain_spec::build_locally(generate_command, &scoped_fs,Some(&PathBuf::from(jam_spec_full_path))).await?;
+            // generate config
+            let jam_config = jam_config::generate(&jam_spec)?;
+            // store the config file
+            let _ = scoped_fs
+                .write(
+                    "jam_config.json",
+                    serde_json::to_string_pretty(&jam_config)?,
+                )
+                .await?;
+            // generate spec
+            let cmd_parts: Vec<&str> = jam_spec.chain_spec_command.split(" ").collect();
+            let cmd = cmd_parts
+                .first()
+                .expect("jam chain-spec generator cmd should be valid");
+            let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
+            let jam_spec_full_path = format!("{}/{}", base_dir, "jam_spec.json");
+            let args = vec![
+                "gen-spec",
+                jam_config_full_path.as_str(),
+                jam_spec_full_path.as_str(),
+            ];
+            let generate_command =
+                GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
+            let _ = generators::chain_spec::build_locally(
+                generate_command,
+                &scoped_fs,
+                Some(&PathBuf::from(jam_spec_full_path)),
+            )
+            .await?;
 
-        // spawn nodes
+            // context setup
+            let jam_ctx = SpawnNodeCtx {
+                chain_id: jam_spec.id.as_str(),
+                parachain_id: None,
+                chain: jam_spec.id.as_str(),
+                role: ZombieRole::Node,
+                ns: &ns,
+                scoped_fs: &scoped_fs,
+                parachain: None,
+                bootnodes_addr: &vec![],
+                wait_ready: false,
+                nodes_by_name: json!({}),
+                global_settings: &network_spec.global_settings,
+                resolved_db_snapshots: &resolved_db_snapshots,
+            };
 
+            let jam_global_files_to_inject = vec![TransferedFile::new(
+                PathBuf::from(format!("{}/jam_spec.json", ns.base_dir().to_string_lossy())),
+                PathBuf::from(format!("/cfg/jam_spec.json")),
+            )];
 
+            let mut bootnodes_addr = vec![];
+            for jam_node in &jam_spec.nodes {
+                let jam_ctx = SpawnNodeCtx {
+                    bootnodes_addr: &bootnodes_addr,
+                    ..jam_ctx.clone()
+                };
+                let _ =
+                    spawner::spawn_jam_node(jam_node, jam_global_files_to_inject.clone(), &jam_ctx)
+                        .await?;
+                bootnodes_addr.push(format!(
+                    "{}@{LOCALHOST}:{}",
+                    jam_node.peer_id, jam_node.port.0
+                ));
+            }
         }
-
-
 
         if network_spec.global_settings.observability().enabled() {
             match network

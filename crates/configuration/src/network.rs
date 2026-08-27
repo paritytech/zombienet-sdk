@@ -493,6 +493,36 @@ impl<A> NetworkConfigBuilder<A> {
             _state: PhantomData,
         }
     }
+
+    /// Set the default tiny configuration for JAM
+    /// id: dev
+    /// 6 validators with names jam0..jam5
+    /// 1 ordinary with name jam-or
+    /// NO corevm builder
+    /// NO corevm monitor
+    fn setup_tiny_jamchain(self) -> NetworkConfigBuilder<Buildable> {
+        let mut builder = JamchainConfigBuilder::new(self.validation_context.clone())
+            .with_id("dev")
+            .with_validator(|n| n.with_name("jam0"));
+
+        for i in 1..6 {
+            builder = builder.with_validator(|n| n.with_name(&format!("jam{i}")));
+        }
+
+        let builder = builder.with_ordinary(|n| n.with_name("jam-or"));
+
+        match builder.build() {
+            Ok(jamchain) => Self::transition(
+                NetworkConfig {
+                    jamchain: Some(jamchain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
 }
 
 impl NetworkConfigBuilder<Initial> {
@@ -570,6 +600,12 @@ impl NetworkConfigBuilder<Initial> {
             Err(errors) => Self::transition(self.config, self.validation_context, errors),
         }
     }
+
+    /// Set the default tiny configuration for JAM
+    /// see [`setup_tiny_jamchain`] fn.
+    pub fn with_tiny_jamchain(self) -> NetworkConfigBuilder<Buildable> {
+        self.setup_tiny_jamchain()
+    }
 }
 
 impl NetworkConfigBuilder<Buildable> {
@@ -617,6 +653,12 @@ impl NetworkConfigBuilder<Buildable> {
             ),
             Err(errors) => Self::transition(self.config, self.validation_context, errors),
         }
+    }
+
+    /// Set the default tiny configuration for JAM
+    /// see [`setup_tiny_jamchain`] fn.
+    pub fn with_tiny_jamchain(self) -> NetworkConfigBuilder<Buildable> {
+        self.setup_tiny_jamchain()
     }
 
     /// Set the global settings using a nested [`GlobalSettingsBuilder`].
@@ -2242,6 +2284,24 @@ command = "polkadot"
         println!("{}", toml_string);
     }
 
+    #[test]
+    fn with_tiny_jamchain() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("westend")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:stable2603-3")
+                    .with_validator(|n| n.with_name("validator-0"))
+                    .with_validator(|n| n.with_name("validator-1"))
+            })
+            .with_tiny_jamchain()
+            .build()
+            .unwrap();
+
+        let toml_string = network_config.dump_to_toml().unwrap();
+        println!("{}", toml_string);
+    }
     #[test]
     fn demo_denis() {
         let network_config = NetworkConfigBuilder::new()

@@ -8,9 +8,7 @@ use crate::{
         errors::{ConfigError, FieldError},
         helpers::{merge_errors, merge_errors_vecs},
         macros::states,
-        node::{
-            self, JamNodeConfig, JamNodeConfigBuilder,
-        },
+        node::{self, JamNodeConfig, JamNodeConfigBuilder},
         resources::{Resources, ResourcesBuilder},
         types::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,

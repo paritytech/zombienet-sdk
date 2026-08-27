@@ -10,13 +10,13 @@ use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tracing::{debug, trace};
 
-use crate::{ScopedFilesystem, errors::OrchestratorError, network_spec::jamchain::JamchainSpec};
+use crate::{errors::OrchestratorError, network_spec::jamchain::JamchainSpec, ScopedFilesystem};
 
-pub mod node;
+pub mod jamchain;
 pub mod jamnode;
+pub mod node;
 pub mod parachain;
 pub mod relaychain;
-pub mod jamchain;
 
 use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec};
 
@@ -53,7 +53,6 @@ impl NetworkSpec {
         } else {
             None
         };
-
 
         let mut parachains = vec![];
 

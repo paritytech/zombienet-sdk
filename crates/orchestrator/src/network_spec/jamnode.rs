@@ -1,20 +1,20 @@
-
-use configuration::{shared::{
-    node::{EnvVar, JamNodeConfig}, resources::Resources, types::{Arg, Command, Image},
-}, types::JamNodeMode};
-use jam_std_common::{PeerId, ed25519};
+use configuration::{
+    shared::{
+        node::{EnvVar, JamNodeConfig},
+        resources::Resources,
+        types::{Arg, Command, Image},
+    },
+    types::JamNodeMode,
+};
+use jam_std_common::{ed25519, PeerId};
 use jam_types::hex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::OrchestratorError,
     generators,
-    shared::{
-        types::{ChainDefaultContext, NodeAccounts, ParkedPort},
-    },
+    shared::types::{ChainDefaultContext, NodeAccounts, ParkedPort},
 };
-
-
 
 /// A node configuration, with fine-grained configuration options.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -49,9 +49,14 @@ pub struct JamNodeSpec {
     /// Default resources. Override the default.
     pub(crate) resources: Option<Resources>,
 
+    /// Port to use.
+    pub(crate) port: ParkedPort,
+
     /// RPC port to use.
     pub(crate) rpc_port: ParkedPort,
 
+    /// Telemetry endpoint
+    pub(crate) telemetry_endpoint: Option<String>,
 }
 
 impl JamNodeSpec {
@@ -91,14 +96,21 @@ impl JamNodeSpec {
         let mut name = node_config.name().to_string();
         let seed = format!("{}{name}", name.remove(0).to_uppercase());
         let accounts = generators::generate_jam_node_keys(&seed)?;
-        let accounts = NodeAccounts { seed: seed.clone(), accounts };
+        let accounts = NodeAccounts {
+            seed: seed.clone(),
+            accounts,
+        };
         println!("{:?}", accounts);
-        let ed25519 = accounts.accounts.get("ed25519").expect("ed25519 key should be present.");
-        let ed25519_b: [u8;32] = hex::from_hex(&ed25519.public_key).expect("ed25519 should be valid").try_into().expect("ed25519 should be valid and convert to [u8;32]");
+        let ed25519 = accounts
+            .accounts
+            .get("ed25519")
+            .expect("ed25519 key should be present.");
+        let ed25519_b: [u8; 32] = hex::from_hex(&ed25519.public_key)
+            .expect("ed25519 should be valid")
+            .try_into()
+            .expect("ed25519 should be valid and convert to [u8;32]");
         let ed25519_pub = ed25519::Public::from(ed25519_b);
         let peer_id = PeerId(ed25519_pub);
-
-
 
         Ok(Self {
             name: node_config.name().to_string(),
@@ -111,7 +123,9 @@ impl JamNodeSpec {
             env: node_config.env().into_iter().cloned().collect(),
             resources: node_config.resources().cloned(),
             accounts,
+            port: generators::generate_node_port(None)?,
             rpc_port: generators::generate_node_port(node_config.rpc_port())?,
+            telemetry_endpoint: node_config.telemetry_endpoint().map(str::to_string),
         })
     }
 

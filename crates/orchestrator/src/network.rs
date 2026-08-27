@@ -48,6 +48,7 @@ pub enum NodeContext {
         para_id: ParaId,
         is_cumulus_based: bool,
     },
+    Jam,
 }
 
 #[derive(Serialize)]

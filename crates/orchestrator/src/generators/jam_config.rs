@@ -41,7 +41,6 @@ use crate::{generators::errors::GeneratorError, network_spec::jamchain::Jamchain
 //     ]
 // }
 ///
-///
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GenesisValidator {
@@ -53,22 +52,31 @@ pub struct GenesisValidator {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GenesisConfig {
     pub id: String,
-    pub genesis_validators: Vec<GenesisValidator>
+    pub genesis_validators: Vec<GenesisValidator>,
 }
 
-pub fn generate(jam_spec: &JamchainSpec ) -> Result<GenesisConfig, GeneratorError>
-{
-    let genesis_validators = jam_spec.nodes.iter().filter_map(|n| {
-        if let JamNodeMode::Validator = n.mode {
-            Some(GenesisValidator {
-                peer_id: n.peer_id.clone(),
-                bandersnatch: n.accounts.accounts.get("bandersnatch").expect("bandersnatch should be present.").public_key.clone(),
-                net_addr: format!("127.0.0.1:{}", n.rpc_port.0),
-            })
-        } else {
-            None
-        }
-    }).collect();
+pub fn generate(jam_spec: &JamchainSpec) -> Result<GenesisConfig, GeneratorError> {
+    let genesis_validators = jam_spec
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            if let JamNodeMode::Validator = n.mode {
+                Some(GenesisValidator {
+                    peer_id: n.peer_id.clone(),
+                    bandersnatch: n
+                        .accounts
+                        .accounts
+                        .get("bandersnatch")
+                        .expect("bandersnatch should be present.")
+                        .public_key
+                        .clone(),
+                    net_addr: format!("127.0.0.1:{}", n.rpc_port.0),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
 
     let gen_config = GenesisConfig {
         id: jam_spec.id.as_str().into(),

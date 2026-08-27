@@ -1,16 +1,21 @@
 use std::collections::{HashMap, HashSet};
 
 use configuration::{
-    JamchainConfig, shared::{
-        helpers::generate_unique_node_name_from_names, node::JamNodeConfig, resources::Resources, types::{Arg, Chain, Command, Image},
+    shared::{
+        helpers::generate_unique_node_name_from_names,
+        node::JamNodeConfig,
+        resources::Resources,
+        types::{Arg, Chain, Command, Image},
     },
+    JamchainConfig,
 };
 use serde::{Deserialize, Serialize};
 use support::replacer::apply_replacements;
 
-
 use crate::{
-    errors::OrchestratorError, network_spec::jamnode::JamNodeSpec, shared::{constants::DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
+    errors::OrchestratorError,
+    network_spec::jamnode::JamNodeSpec,
+    shared::{constants::DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
 };
 
 /// A relaychain configuration spec
@@ -33,13 +38,11 @@ pub struct JamchainSpec {
 
     // chain_spec_path: Option<AssetLocation>,
     // pub(crate) chain_spec: ChainSpec,
-
     /// Chain-spec generator resolved
     pub chain_spec_command: String,
 
     /// Nodes to run.
     pub(crate) nodes: Vec<JamNodeSpec>,
-
 }
 
 impl JamchainSpec {
@@ -57,11 +60,10 @@ impl JamchainSpec {
             ))?;
 
         // TODO: internally we use image as String
-        let main_image = config
-            .default_image()
-            .or(config.nodes().first().and_then(|node| node.image()))
-            .map(|image| image.as_str().to_string());
-
+        // let main_image = config
+        //     .default_image()
+        //     .or(config.nodes().first().and_then(|node| node.image()))
+        //     .map(|image| image.as_str().to_string());
 
         let replacements = HashMap::from([
             ("mainCommand", main_cmd.as_str()),

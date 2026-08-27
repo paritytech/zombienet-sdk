@@ -6,6 +6,7 @@ use std::{
         Arc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
+    unreachable,
 };
 
 use anyhow::anyhow;
@@ -433,6 +434,7 @@ impl NetworkNode {
                 self.cmd_generator_opts.clone(),
                 para_id,
             ),
+            NodeContext::Jam => unreachable!(),
         };
 
         self.inner

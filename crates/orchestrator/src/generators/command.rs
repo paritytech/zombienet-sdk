@@ -1,9 +1,12 @@
-use configuration::types::Arg;
+use configuration::types::{Arg, JamNodeMode};
 use serde::{Deserialize, Serialize};
 use support::constants::THIS_IS_A_BUG;
 
 use super::arg_filter::{apply_arg_removals, parse_removal_args};
-use crate::{network_spec::node::NodeSpec, shared::constants::*};
+use crate::{
+    network_spec::{jamnode::JamNodeSpec, node::NodeSpec},
+    shared::constants::*,
+};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GenCmdOptions {
@@ -435,6 +438,46 @@ pub fn generate_for_node(
     } else {
         (final_args.remove(0), final_args)
     }
+}
+
+pub fn generate_for_jam_node(node: &JamNodeSpec, options: GenCmdOptions) -> (String, Vec<String>) {
+    let mut cmd_args: Vec<String> = vec![
+        "--config-path".into(),
+        options.cfg_path.clone(),
+        "--chain".into(),
+        format!("{}/jam_spec.json", options.cfg_path),
+        "run".into(),
+        "--data-path".into(),
+        options.data_path,
+        "--mode".into(),
+        node.mode.as_str().into(),
+    ];
+
+    match node.mode {
+        JamNodeMode::Validator => {
+            cmd_args.push(format!("--peer-id={}", node.peer_id));
+            cmd_args.push(format!("--port={}", node.port.0));
+        },
+        JamNodeMode::Ordinary => {
+            // TODO: support `--proxy`  config.
+            cmd_args.push(format!("--rpc-port={}", node.rpc_port.0));
+        },
+        JamNodeMode::Proxy => {
+            cmd_args.push(format!("--peer-id={}", node.peer_id));
+            cmd_args.push(format!("--port={}", node.port.0));
+        },
+    }
+
+    for bootnode in options.bootnode_addr {
+        cmd_args.push("--bootnode".into());
+        cmd_args.push(bootnode.clone());
+    }
+    if let Some(tel_endpoint) = node.telemetry_endpoint.as_ref() {
+        cmd_args.push("--telemetry".into());
+        cmd_args.push(tel_endpoint.into())
+    }
+
+    (node.command.as_str().into(), cmd_args)
 }
 
 /// Returns (prometheus, rpc, p2p) ports to use in the command

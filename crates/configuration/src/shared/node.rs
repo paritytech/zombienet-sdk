@@ -170,10 +170,10 @@ impl JamNodeConfig {
         self.base_config.args.iter().collect()
     }
 
-    /// Arguments to use for node.
-    pub(crate) fn set_args(&mut self, args: Vec<Arg>) {
-        self.base_config.args = args;
-    }
+    // /// Arguments to use for node.
+    // pub(crate) fn set_args(&mut self, args: Vec<Arg>) {
+    //     self.base_config.args = args;
+    // }
 
     /// Default resources.
     pub fn resources(&self) -> Option<&Resources> {

@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use subxt::{backend::rpc::RpcClient, OnlineClient};
 
 #[async_trait::async_trait]

@@ -27,3 +27,7 @@ tracing = { workspace = true }
 # zombienet deps
 support = { workspace = true }
 
+[dev-dependencies]
+mockito = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+

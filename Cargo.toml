@@ -86,6 +86,7 @@ sysinfo = "0.32"
 walkdir = "2.5"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 socket2 = "0.6.5"
+mockito = "1.7"
 
 # Zombienet workspace crates:
 support = { package = "zombienet-support", version = "0.4.16", path = "crates/support" }

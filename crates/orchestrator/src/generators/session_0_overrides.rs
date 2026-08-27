@@ -119,7 +119,7 @@ pub fn generate_session_0_overrides(
         return Err(GeneratorError::InvariantError(format!("Num cores in genesis {num_genesis_cores} should be less than or equal to the num of validators ({})", session.validators.len())));
     }
 
-    let groups = genetate_groups(session.validators.len() as u32, num_genesis_cores);
+    let groups = generate_groups(session.validators.len() as u32, num_genesis_cores);
     session.validator_groups = groups.clone();
     session.n_cores = num_genesis_cores;
 
@@ -138,7 +138,7 @@ pub fn generate_session_0_overrides(
     Ok(overrides)
 }
 
-fn genetate_groups(num_validators: u32, num_cores: u32) -> Vec<Vec<ValidatorIndex>> {
+fn generate_groups(num_validators: u32, num_cores: u32) -> Vec<Vec<ValidatorIndex>> {
     let iter = std::iter::repeat(vec![]).take(num_cores as usize);
     let mut groups: Vec<Vec<ValidatorIndex>> = Vec::from_iter(iter);
     for i in 0..num_validators {
@@ -187,7 +187,7 @@ mod test {
     fn val_groups() {
         let num_cores = 3_u32;
         let validators = ["abc", "cds", "qwe", "eds"];
-        let groups = genetate_groups(validators.len() as u32, num_cores);
+        let groups = generate_groups(validators.len() as u32, num_cores);
 
         debug!("{:?}", groups);
         assert_eq!(groups.len(), num_cores as usize);

@@ -22,3 +22,8 @@ pub const THIS_IS_A_BUG: &str =
 
 /// environment variable which can be used to override node spawn timeout
 pub const ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS: &str = "ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS";
+
+/// environment variable which can be used to provide a GitHub PAT for downloading assets from private repos
+pub const ZOMBIE_GITHUB_TOKEN: &str = "ZOMBIE_GITHUB_TOKEN";
+/// standard GitHub Actions env var name, used as a fallback if ZOMBIE_GITHUB_TOKEN isn't set
+pub const GITHUB_TOKEN_ENV: &str = "GITHUB_TOKEN";

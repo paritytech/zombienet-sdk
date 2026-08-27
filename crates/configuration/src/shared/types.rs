@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    env,
     error::Error,
     fmt::{self, Display},
     path::PathBuf,
@@ -13,7 +14,9 @@ use serde::{
     de::{self, IntoDeserializer},
     Deserialize, Deserializer, Serialize,
 };
-use support::constants::{INFAILABLE, SHOULD_COMPILE, THIS_IS_A_BUG};
+use support::constants::{
+    GITHUB_TOKEN_ENV, INFAILABLE, SHOULD_COMPILE, THIS_IS_A_BUG, ZOMBIE_GITHUB_TOKEN,
+};
 use tokio::fs;
 use url::Url;
 
@@ -330,11 +333,23 @@ impl AssetLocation {
     pub async fn get_asset(&self) -> Result<Vec<u8>, anyhow::Error> {
         let contents = match self {
             AssetLocation::Url(location) => {
-                let res = reqwest::get(location.as_ref()).await.map_err(|err| {
-                    anyhow!("Error dowinloding asset from url {location} - {err}")
+                let client = reqwest::Client::new();
+                let mut req = client.get(location.as_ref());
+
+                if let Some(header_value) = github_auth_header(location) {
+                    req = req.header(reqwest::header::AUTHORIZATION, header_value);
+                }
+
+                let res = req.send().await.map_err(|err| {
+                    anyhow!("Error downloading asset from url {location} - {err}")
                 })?;
 
-                res.bytes().await.unwrap().into()
+                res.bytes()
+                    .await
+                    .map_err(|err| {
+                        anyhow!("Error reading asset bytes from url {location} - {err}")
+                    })?
+                    .into()
             },
             AssetLocation::FilePath(filepath) => {
                 tokio::fs::read(filepath).await.map_err(|err| {
@@ -376,6 +391,32 @@ impl AssetLocation {
             },
         }
     }
+}
+
+/// Whether a URL points at a host we should attach a GitHub PAT to, so the token
+/// is never sent to arbitrary third-party asset URLs.
+fn is_github_host(url: &Url) -> bool {
+    matches!(
+        url.host_str(),
+        Some("github.com")
+            | Some("raw.githubusercontent.com")
+            | Some("api.github.com")
+            | Some("codeload.github.com")
+            | Some("objects.githubusercontent.com")
+    )
+}
+
+/// Build the `Authorization` header value to use when downloading an asset from `location`,
+/// if it points at a GitHub host and a PAT is available via `ZOMBIE_GITHUB_TOKEN`/`GITHUB_TOKEN`.
+fn github_auth_header(location: &Url) -> Option<String> {
+    if !is_github_host(location) {
+        return None;
+    }
+
+    env::var(ZOMBIE_GITHUB_TOKEN)
+        .or_else(|_| env::var(GITHUB_TOKEN_ENV))
+        .ok()
+        .map(|token| format!("Bearer {token}"))
 }
 
 impl Serialize for AssetLocation {
@@ -900,6 +941,43 @@ mod tests {
             got,
             AssetLocation::FilePath(value) if value == PathBuf::from_str(filepath).unwrap()
         ));
+    }
+
+    #[test]
+    fn github_auth_header_is_injected_only_for_github_hosts() {
+        let github_url =
+            Url::from_str("https://raw.githubusercontent.com/org/repo/main/asset.tgz").unwrap();
+        let non_github_url =
+            Url::from_str("https://mycloudstorage.com/path/to/my/file.tgz").unwrap();
+
+        // Make sure we start from a clean slate regardless of the ambient environment
+        // (GITHUB_TOKEN is set automatically by GitHub Actions, for example).
+        env::remove_var(ZOMBIE_GITHUB_TOKEN);
+        env::remove_var(GITHUB_TOKEN_ENV);
+
+        // ZOMBIE_GITHUB_TOKEN set + github host -> header injected
+        env::set_var(ZOMBIE_GITHUB_TOKEN, "zombie-pat");
+        assert_eq!(
+            github_auth_header(&github_url),
+            Some("Bearer zombie-pat".to_string())
+        );
+
+        // ZOMBIE_GITHUB_TOKEN set + non-github host -> header NOT injected
+        assert_eq!(github_auth_header(&non_github_url), None);
+
+        env::remove_var(ZOMBIE_GITHUB_TOKEN);
+
+        // GITHUB_TOKEN set + github host -> header injected
+        env::set_var(GITHUB_TOKEN_ENV, "ci-pat");
+        assert_eq!(
+            github_auth_header(&github_url),
+            Some("Bearer ci-pat".to_string())
+        );
+
+        // GITHUB_TOKEN set + non-github host -> header NOT injected
+        assert_eq!(github_auth_header(&non_github_url), None);
+
+        env::remove_var(GITHUB_TOKEN_ENV);
     }
 
     #[test]

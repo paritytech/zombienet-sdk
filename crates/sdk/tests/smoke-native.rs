@@ -11,8 +11,6 @@ fn small_network() -> NetworkConfig {
                 .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
-                .with_validator(|node| node.with_name("charlie"))
-                .with_validator(|node| node.with_name("dave"))
         })
         .with_parachain(|p| {
             p.with_id(2000)
@@ -27,12 +25,6 @@ fn small_network() -> NetworkConfig {
                 .with_chain_spec_runtime("https://github.com/polkadot-fellows/runtimes/releases/download/v1.9.2/asset-hub-polkadot_runtime-v1009002.compact.compressed.wasm", None)
                 .with_collator(|n| n.with_name("collator-omni").with_command("polkadot-omni-node"))
         })
-        .with_parachain(|p| {
-            p.with_id(2001)
-                .with_default_image("docker.io/parity/polkadot-parachain:v1.20.2")
-                .with_collator(|n| n.with_name("collator-test").with_command("test-parachain"))
-        })
-
         .build()
         .unwrap()
 }

@@ -13,6 +13,8 @@ fn small_network() -> NetworkConfig {
                 .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
+                .with_validator(|node| node.with_name("charlie"))
+                .with_validator(|node| node.with_name("dave"))
         })
         .with_parachain(|p| {
             p.with_id(2000).cumulus_based(true).with_collator(|n| {
@@ -27,6 +29,11 @@ fn small_network() -> NetworkConfig {
                     .with_command("polkadot-parachain")
                     .with_image("docker.io/parity/polkadot-parachain:v1.20.2")
             })
+        })
+        .with_parachain(|p| {
+            p.with_id(2001)
+                .with_default_image("docker.io/paritypr/test-parachain:master-d0393007")
+                .with_collator(|n| n.with_name("collator-test").with_command("test-parachain"))
         })
         .with_global_settings(|g| {
             g.with_base_dir(PathBuf::from("/tmp/zombie-1"))

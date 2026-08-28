@@ -35,7 +35,6 @@ fn small_network() -> NetworkConfig {
                 .with_default_image("docker.io/paritypr/test-parachain:master-d0393007")
                 .with_collator(|n| n.with_name("collator-test").with_command("test-parachain"))
         })
-
         .with_global_settings(|g| {
             g.with_base_dir(PathBuf::from("/tmp/zombie-1"))
                 .with_tear_down_on_failure(false)

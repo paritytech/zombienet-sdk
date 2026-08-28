@@ -161,7 +161,9 @@ impl ChainSpec {
 
             // IFF cmd is polkadot-parachain and chain is empty
             // we should always use `build-spec`
-            if *main_cmd == "polkadot-parachain" && chain_name_is_empty {
+            if (*main_cmd == "polkadot-parachain" && chain_name_is_empty)
+                || *main_cmd == "test-parachain"
+            {
                 self.subcommand = Some("build-spec".to_string())
             } else {
                 // we should run to check the output

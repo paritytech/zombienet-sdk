@@ -11,6 +11,8 @@ fn small_network() -> NetworkConfig {
                 .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
                 .with_validator(|node| node.with_name("bob"))
+                .with_validator(|node| node.with_name("charlie"))
+                .with_validator(|node| node.with_name("dave"))
         })
         .with_parachain(|p| {
             p.with_id(2000)

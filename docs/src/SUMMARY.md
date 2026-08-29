@@ -16,5 +16,6 @@
   - [Examples](./network-spec/examples.md)
 - [Providers](./providers.md)
 - [CLI Usage](./cli.md)
+- [MCP Diagnostics](./mcp.md)
 - [Examples](./examples.md)
 - [Environment Variables](./environment.md)

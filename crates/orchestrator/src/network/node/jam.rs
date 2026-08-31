@@ -176,6 +176,13 @@ impl SpawnedNode for JamNetworkNode {
     /// JAM nodes expose no Prometheus endpoint, so readiness is established by
     /// connecting to the port the node binds for its mode.
     async fn wait_until_is_up(&self, timeout_secs: u64) -> Result<(), anyhow::Error> {
+        // Validators and proxies speak QUIC over UDP on their p2p port; a TCP probe can
+        // never succeed there. Only the ordinary node exposes a TCP (RPC) endpoint to wait
+        // on.
+        if !matches!(self.spec.mode, JamNodeMode::Ordinary) {
+            debug!("[{}] validator/proxy p2p is UDP; skipping TCP readiness wait", self.name());
+            return Ok(());
+        }
         let addr = self.probe_addr();
         debug!("[{}] waiting until {addr} is reachable", self.name());
 

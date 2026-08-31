@@ -1466,7 +1466,7 @@ mod tests {
     fn jam_default_node_deserialize() {
         let toml_text = r#"
         name = "alice"
-        mode = "Validator"
+        mode = "validator"
         "#;
         let jam_node: JamNodeConfig = toml::from_str(toml_text).unwrap();
 

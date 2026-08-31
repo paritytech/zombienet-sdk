@@ -16,7 +16,10 @@ use tracing::info;
 
 use crate::{
     generators::{self, ResolvedDbSnapshots},
-    network::{node::NetworkNode, NodeContext},
+    network::{
+        node::{JamNetworkNode, NetworkNode},
+        NodeContext,
+    },
     network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec},
     shared::constants::{FULL_NODE_PROMETHEUS_PORT, JAM_PORT, PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
@@ -396,8 +399,7 @@ pub async fn spawn_jam_node<'a, T>(
     node: &JamNodeSpec,
     mut files_to_inject: Vec<TransferedFile>,
     ctx: &SpawnNodeCtx<'a, T>,
-    // ) -> Result<NetworkNode, anyhow::Error>
-) -> Result<(), anyhow::Error>
+) -> Result<JamNetworkNode, anyhow::Error>
 where
     T: FileSystem,
 {
@@ -419,11 +421,7 @@ where
         .await?;
 
     // 2. set paths to use (local and remote)
-    let keys_remote = PathBuf::from(format!(
-        "{}/{}/keys",
-        NODE_CONFIG_DIR,
-        ctx.chain.to_string()
-    ));
+    let keys_remote = PathBuf::from(format!("{}/{}/keys", NODE_CONFIG_DIR, ctx.chain));
     let seed_local_path = PathBuf::from(format!("{}/{}.seed", base_dir, node.name));
     let seed_remote_path = PathBuf::from(format!(
         "{}/{}.seed",
@@ -451,7 +449,7 @@ where
         ..Default::default()
     };
 
-    let (program, args) = generators::generate_jam_node_command(node, gen_opts);
+    let (program, args) = generators::generate_jam_node_command(node, gen_opts.clone());
     // apply running networ replacements
     let args: Vec<String> = args
         .iter()
@@ -512,62 +510,29 @@ where
         LOCALHOST
     };
 
-    // running in ci is not needed yet.
-    // let (rpc_port_external, port_external);
+    // NOTE: running in ci (k8s) is not supported yet for JAM, so we don't
+    // create port-forwards nor use the internal ip/default ports here.
 
-    // if running_in_ci() && ctx.ns.provider_name() == "k8s" {
-    //     // running kubernets in ci require to use ip and default port
-    //     (rpc_port_external, port_external) = (RPC_PORT, JAM_PORT);
-    //     ip_to_use = running_node.ip().await?;
-    // } else {
-    //     // Create port-forward iff we are not in CI or provider doesn't use the default ports (native)
-    //     let ports = futures::future::try_join_all(vec![
-    //         running_node.create_port_forward(node.rpc_port.0, RPC_PORT),
-    //         running_node.create_port_forward(node.port.0, JAM_PORT),
-    //     ])
-    //     .await?;
-
-    //     (rpc_port_external, port_external) = (
-    //         ports[0].unwrap_or(node.rpc_port.0),
-    //         ports[1].unwrap_or(node.port.0),
-    //     );
-    // }
-
-    // let multiaddr = generators::generate_node_bootnode_addr(
-    //     &node.peer_id,
-    //     &running_node.ip().await?,
-    //     if ctx.ns.provider_name() == "k8s" {
-    //         P2P_PORT
-    //     } else {
-    //         p2p_external
-    //     }, // for k8s use always the internal port
-    //     running_node.args().as_ref(),
-    //     &node.p2p_cert_hash,
-    // )?;
-
-    // let prometheus_uri = format!("http://{ip_to_use}:{prometheus_port_external}/metrics");
     info!("🚀 {}, should be running now", node.name);
-    info!(
-        "💻 {}, peer details {}@{ip_to_use}:{}",
-        node.name, node.peer_id, node.port.0
-    );
-    if node.mode == JamNodeMode::Ordinary {
-        info!("💻 {}, rpc  {ip_to_use}:{}", node.name, node.port.0);
+    match node.mode {
+        JamNodeMode::Ordinary => {
+            info!("💻 {}, rpc  {ip_to_use}:{}", node.name, node.rpc_port.0);
+        },
+        JamNodeMode::Validator | JamNodeMode::Proxy => {
+            info!(
+                "💻 {}, peer details {}@{ip_to_use}:{}",
+                node.name, node.peer_id, node.port.0
+            );
+        },
     }
-    // info!("📊 {}: metrics link {prometheus_uri}", node.name);
 
     info!("📓 logs cmd: {}", running_node.log_cmd());
 
-    // Ok(NetworkNode::new(
-    //     node.name.clone(),
-    //     "",
-    //     "",
-    //     "",
-    //     node.clone(),
-    //     running_node,
-    //     gen_opts,
-    //     node_ctx,
-    // ))
-
-    Ok(())
+    Ok(JamNetworkNode::new(
+        node.name.clone(),
+        running_node,
+        node.clone(),
+        ip_to_use,
+        gen_opts,
+    ))
 }

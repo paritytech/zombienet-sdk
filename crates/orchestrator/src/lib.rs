@@ -18,19 +18,24 @@ use std::{
     env,
     net::IpAddr,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
 use anyhow::anyhow;
-use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
+use configuration::{types::JsonOverrides, GlobalSettings, NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use generators::{core_assignment, errors::GeneratorError, jam_config};
-use network::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain, Network};
+use network::{
+    node::{NetworkNode, SpawnedNode},
+    parachain::Parachain,
+    relaychain::Relaychain,
+    Network,
+};
 // re-exported
 pub use network_spec::NetworkSpec;
 use network_spec::{node::NodeSpec, parachain::ParachainSpec};
 use provider::{
-    constants::LOCALHOST,
     types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
 };
@@ -47,7 +52,13 @@ use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
 use crate::{
-    network::{node::RawNetworkNode, parachain::RawParachain, relaychain::RawRelaychain},
+    network::{
+        jamchain::{Jamchain, RawJamchain},
+        node::{jam::RawJamNetworkNode, JamNetworkNode, RawNetworkNode},
+        parachain::RawParachain,
+        relaychain::RawRelaychain,
+    },
+    network_spec::jamchain::JamchainSpec,
     shared::types::RegisterParachainOptions,
     spawner::SpawnNodeCtx,
     utils::write_zombie_json,
@@ -138,7 +149,7 @@ where
         let para_nodes = parachains_map
             .values()
             .flat_map(|paras| paras.iter().flat_map(|para| para.collators.clone()))
-            .collect::<Vec<NetworkNode>>();
+            .collect::<Vec<Arc<NetworkNode>>>();
 
         network.set_parachains(parachains_map);
         for node in para_nodes {
@@ -146,6 +157,20 @@ where
                 node.set_is_running(true);
             }
             network.insert_node(node);
+        }
+
+        if let Some(jamchain) =
+            recreate_jamchain_from_json(&zombie_json, ns.clone(), self.provider.name()).await?
+        {
+            info!("recreating jamchain...");
+            let jam_nodes = jamchain.nodes.clone();
+            network.set_jamchain(jamchain);
+            for node in jam_nodes {
+                if node.is_responsive().await {
+                    node.core().set_is_running(true);
+                }
+                network.insert_node(node);
+            }
         }
 
         Ok(network)
@@ -545,6 +570,18 @@ where
             }
         }
 
+        // spawm jam
+        if let Some(jam_spec) = &network_spec.jamchain {
+            self.spawn_jam(
+                jam_spec,
+                &ns,
+                &scoped_fs,
+                &network_spec.global_settings,
+                &mut network,
+            )
+            .await?
+        }
+
         // spawn paras
         for para in network_spec.parachains.iter() {
             // Create parachain (in the context of the running network)
@@ -677,75 +714,6 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
-        // spawn jam
-        if let Some(jam_spec) = network_spec.jamchain {
-            // generate config
-            let jam_config = jam_config::generate(&jam_spec)?;
-            // store the config file
-            let _ = scoped_fs
-                .write(
-                    "jam_config.json",
-                    serde_json::to_string_pretty(&jam_config)?,
-                )
-                .await?;
-            // generate spec
-            let cmd_parts: Vec<&str> = jam_spec.chain_spec_command.split(" ").collect();
-            let cmd = cmd_parts
-                .first()
-                .expect("jam chain-spec generator cmd should be valid");
-            let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
-            let jam_spec_full_path = format!("{}/{}", base_dir, "jam_spec.json");
-            let args = vec![
-                "gen-spec",
-                jam_config_full_path.as_str(),
-                jam_spec_full_path.as_str(),
-            ];
-            let generate_command =
-                GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
-            let _ = generators::chain_spec::build_locally(
-                generate_command,
-                &scoped_fs,
-                Some(&PathBuf::from(jam_spec_full_path)),
-            )
-            .await?;
-
-            // context setup
-            let jam_ctx = SpawnNodeCtx {
-                chain_id: jam_spec.id.as_str(),
-                parachain_id: None,
-                chain: jam_spec.id.as_str(),
-                role: ZombieRole::Node,
-                ns: &ns,
-                scoped_fs: &scoped_fs,
-                parachain: None,
-                bootnodes_addr: &vec![],
-                wait_ready: false,
-                nodes_by_name: json!({}),
-                global_settings: &network_spec.global_settings,
-                resolved_db_snapshots: &resolved_db_snapshots,
-            };
-
-            let jam_global_files_to_inject = vec![TransferedFile::new(
-                PathBuf::from(format!("{}/jam_spec.json", ns.base_dir().to_string_lossy())),
-                PathBuf::from(format!("/cfg/jam_spec.json")),
-            )];
-
-            let mut bootnodes_addr = vec![];
-            for jam_node in &jam_spec.nodes {
-                let jam_ctx = SpawnNodeCtx {
-                    bootnodes_addr: &bootnodes_addr,
-                    ..jam_ctx.clone()
-                };
-                let _ =
-                    spawner::spawn_jam_node(jam_node, jam_global_files_to_inject.clone(), &jam_ctx)
-                        .await?;
-                bootnodes_addr.push(format!(
-                    "{}@{LOCALHOST}:{}",
-                    jam_node.peer_id, jam_node.port.0
-                ));
-            }
-        }
-
         if network_spec.global_settings.observability().enabled() {
             match network
                 .start_observability(network_spec.global_settings.observability())
@@ -780,37 +748,134 @@ where
 
         Ok(network)
     }
+
+    async fn spawn_jam<'a>(
+        &self,
+        jam_spec: &JamchainSpec,
+        ns: &DynNamespace,
+        scoped_fs: &ScopedFilesystem<'a, T>,
+        global_settings: &GlobalSettings,
+        network: &mut Network<T>,
+    ) -> Result<(), OrchestratorError> {
+        let base_dir = ns.base_dir().to_string_lossy();
+        // generate config
+        let jam_config = jam_config::generate(&jam_spec)?;
+        // store the config file
+        scoped_fs
+            .write(
+                "jam_config.json",
+                serde_json::to_string_pretty(&jam_config)?,
+            )
+            .await?;
+        // generate spec
+        let cmd_parts: Vec<&str> = jam_spec.chain_spec_command.split(" ").collect();
+        let cmd = cmd_parts
+            .first()
+            .expect("jam chain-spec generator cmd should be valid");
+        let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
+        let jam_spec_full_path = format!("{}/{}", base_dir, "jam_spec.json");
+        let args = vec![
+            "gen-spec",
+            jam_config_full_path.as_str(),
+            jam_spec_full_path.as_str(),
+        ];
+        let generate_command = GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
+        generators::chain_spec::build_locally(
+            generate_command,
+            &scoped_fs,
+            Some(&PathBuf::from(&jam_spec_full_path)),
+        )
+        .await?;
+
+        // context setup
+        let jam_ctx = SpawnNodeCtx {
+            chain_id: jam_spec.id.as_str(),
+            parachain_id: None,
+            chain: jam_spec.id.as_str(),
+            role: ZombieRole::Node,
+            ns: &ns,
+            scoped_fs: &scoped_fs,
+            parachain: None,
+            bootnodes_addr: &vec![],
+            wait_ready: false,
+            nodes_by_name: json!({}),
+            global_settings,
+            resolved_db_snapshots: &Default::default(),
+        };
+
+        let jam_global_files_to_inject = vec![TransferedFile::new(
+            PathBuf::from(format!("{}/jam_spec.json", ns.base_dir().to_string_lossy())),
+            PathBuf::from("/cfg/jam_spec.json"),
+        )];
+
+        network.set_jamchain(Jamchain::new(
+            jam_spec.id.as_str(),
+            PathBuf::from(&jam_spec_full_path),
+        ));
+
+        let mut bootnodes_addr = vec![];
+        for jam_node in &jam_spec.nodes {
+            let jam_ctx = SpawnNodeCtx {
+                bootnodes_addr: &bootnodes_addr,
+                ..jam_ctx.clone()
+            };
+
+            let running_node =
+                spawner::spawn_jam_node(jam_node, jam_global_files_to_inject.clone(), &jam_ctx)
+                    .await?;
+
+            running_node
+                .wait_until_is_up(global_settings.node_spawn_timeout() as u64)
+                .await
+                .map_err(|e| OrchestratorError::InvalidConfig(e.to_string()))?;
+
+            bootnodes_addr.push(running_node.peer_addr().to_string());
+            network.add_running_jam_node(running_node).await;
+        }
+
+        Ok(())
+    }
 }
 
 // Helpers
+
+/// Make sure a node persisted in `zombie.json` was spawned by the provider we
+/// are attaching with.
+fn validate_provider_tag(
+    inner: &serde_json::Value,
+    node_name: &str,
+    provider_name: &str,
+) -> Result<(), OrchestratorError> {
+    let provider_tag = inner
+        .get("provider_tag")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            OrchestratorError::InvalidConfig(format!(
+                "Node '{node_name}' is missing `provider_tag` in inner node JSON"
+            ))
+        })?;
+
+    if provider_tag != provider_name {
+        return Err(OrchestratorError::InvalidConfigForProvider(
+            provider_name.to_string(),
+            provider_tag.to_string(),
+        ));
+    }
+
+    Ok(())
+}
 
 async fn recreate_network_nodes_from_json(
     nodes_json: &serde_json::Value,
     ns: DynNamespace,
     provider_name: &str,
-) -> Result<Vec<NetworkNode>, OrchestratorError> {
+) -> Result<Vec<Arc<NetworkNode>>, OrchestratorError> {
     let raw_nodes: Vec<RawNetworkNode> = serde_json::from_value(nodes_json.clone())?;
 
     let mut nodes = Vec::with_capacity(raw_nodes.len());
     for raw in raw_nodes {
-        // validate provider tag
-        let provider_tag = raw
-            .inner
-            .get("provider_tag")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                OrchestratorError::InvalidConfig(format!(
-                    "Node '{}' is missing `provider_tag` in inner node JSON",
-                    raw.name
-                ))
-            })?;
+        validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
 
-        if provider_tag != provider_name {
-            return Err(OrchestratorError::InvalidConfigForProvider(
-                provider_name.to_string(),
-                provider_tag.to_string(),
-            ));
-        }
         let inner = ns.spawn_node_from_json(&raw.inner).await?;
         let relay_node = NetworkNode::new(
             raw.name,
@@ -822,7 +887,7 @@ async fn recreate_network_nodes_from_json(
             raw.cmd_generator_opts,
             raw.context,
         );
-        nodes.push(relay_node);
+        nodes.push(Arc::new(relay_node));
     }
 
     Ok(nodes)
@@ -857,6 +922,38 @@ async fn recreate_relaychain_from_json(
     relay_raw.inner.nodes = nodes;
 
     Ok((relay_raw.inner, initial_spec))
+}
+
+/// Rebuild the `jamchain` section of a `zombie.json`, if the network had one.
+async fn recreate_jamchain_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+    provider_name: &str,
+) -> Result<Option<Jamchain>, OrchestratorError> {
+    let Some(jamchain_json) = zombie_json.get("jamchain") else {
+        return Ok(None);
+    };
+
+    let mut jamchain_raw: RawJamchain = serde_json::from_value(jamchain_json.clone())?;
+    let raw_nodes: Vec<RawJamNetworkNode> = serde_json::from_value(jamchain_raw.nodes.clone())?;
+
+    let mut nodes = Vec::with_capacity(raw_nodes.len());
+    for raw in raw_nodes {
+        validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
+
+        let inner = ns.spawn_node_from_json(&raw.inner).await?;
+        nodes.push(Arc::new(JamNetworkNode::new(
+            raw.name,
+            inner,
+            raw.spec,
+            raw.ip,
+            raw.cmd_generator_opts,
+        )));
+    }
+
+    jamchain_raw.inner.nodes = nodes;
+
+    Ok(Some(jamchain_raw.inner))
 }
 
 async fn recreate_parachains_from_json(
@@ -926,7 +1023,7 @@ fn generate_bootnode_addr(
         &node.spec.peer_id,
         ip,
         port,
-        node.inner.args().as_ref(),
+        node.args().as_ref(),
         &node.spec.p2p_cert_hash,
     )
 }

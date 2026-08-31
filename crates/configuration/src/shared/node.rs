@@ -1468,7 +1468,7 @@ mod tests {
         name = "alice"
         mode = "Validator"
         "#;
-        let jam_node: JamNodeConfig = toml::from_str(&toml_text).unwrap();
+        let jam_node: JamNodeConfig = toml::from_str(toml_text).unwrap();
 
         println!("{:?}", jam_node);
     }

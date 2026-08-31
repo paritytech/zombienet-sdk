@@ -8,7 +8,11 @@ pub use configuration::{
 };
 pub use orchestrator::{
     errors::OrchestratorError,
-    network::{node::NetworkNode, Network},
+    network::{
+        jamchain::Jamchain,
+        node::{JamNetworkNode, NetworkNode, NodeKind, SpawnedNode},
+        Network,
+    },
     sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,
 };
 pub use provider::types::{ExecutionResult, RunScriptOptions};

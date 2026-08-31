@@ -3,20 +3,17 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, Ordering},
         Arc,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
-    unreachable,
+    time::Duration,
 };
 
 use anyhow::anyhow;
 use configuration::types::{Arg, AssetLocation};
-use fancy_regex::Regex;
-use glob_match::glob_match;
 use prom_metrics_parser::MetricMap;
 use provider::{
-    types::{ExecutionResult, InnerSnapshotDb, RunScriptOptions},
+    types::{ExecutionResult, RunScriptOptions},
     DynNode,
 };
 use serde::{Deserialize, Serialize, Serializer};
@@ -26,12 +23,22 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, trace, warn};
 
+use self::core::NodeCore;
 use crate::{
     generators::{generate_node_command, generate_node_command_cumulus, GenCmdOptions},
     network::NodeContext,
     network_spec::node::NodeSpec,
     shared::{constants::PROCESS_START_TIME_METRIC, types::NodeSnapshot},
     tx_helper::client::get_client_from_url,
+};
+
+pub mod core;
+pub mod jam;
+pub mod spawned;
+
+pub use self::{
+    jam::JamNetworkNode,
+    spawned::{NodeKind, SpawnedNode},
 };
 
 type BoxedClosure = Box<dyn Fn(&str) -> Result<bool, anyhow::Error> + Send + Sync>;
@@ -44,14 +51,19 @@ pub enum NetworkNodeError {
 
 // Log target for the internal monitor
 const MONITOR_TARGET: &str = "zombie_monitor";
+
+/// A substrate-based node (relaychain node or collator).
+///
+/// The provider handle and everything protocol-agnostic lives in
+/// [`NodeCore`]; this type adds the substrate surface on top: the subxt
+/// client, Prometheus metrics assertions and command regeneration from the
+/// [`NodeSpec`].
 #[derive(Clone, Serialize)]
 pub struct NetworkNode {
-    #[serde(serialize_with = "serialize_provider_node")]
-    pub(crate) inner: DynNode,
+    #[serde(flatten)]
+    pub(crate) core: NodeCore,
     // TODO: do we need the full spec here?
-    // Maybe a reduce set of values.
     pub(crate) spec: NodeSpec,
-    pub(crate) name: String,
     pub(crate) ws_uri: String,
     pub(crate) multiaddr: String,
     pub(crate) prometheus_uri: String,
@@ -63,13 +75,7 @@ pub struct NetworkNode {
     pub(crate) context: NodeContext,
     #[serde(skip)]
     metrics_cache: Arc<RwLock<MetricMap>>,
-    #[serde(skip)]
-    is_running: Arc<AtomicBool>,
-    // Store the last timestamp when we start the node
-    #[serde(skip)]
-    last_start_ts: Arc<AtomicU64>,
 }
-
 #[derive(Deserialize)]
 pub(crate) struct RawNetworkNode {
     pub(crate) name: String,
@@ -174,30 +180,150 @@ impl NetworkNode {
         context: NodeContext,
     ) -> Self {
         Self {
-            name: name.into(),
+            core: NodeCore::new(name, inner, NodeKind::Substrate),
             ws_uri: ws_uri.into(),
             prometheus_uri: prometheus_uri.into(),
-            inner,
             spec,
             cmd_generator_opts,
             context,
             multiaddr: multiaddr.into(),
             metrics_cache: Arc::new(Default::default()),
-            is_running: Arc::new(AtomicBool::new(false)),
-            last_start_ts: Arc::new(AtomicU64::new(0)),
         }
     }
+
+    /// The provider-generic part of this node.
+    pub fn core(&self) -> &NodeCore {
+        &self.core
+    }
+
+    // Delegations to `NodeCore` — kept as inherent methods so callers don't
+    // need `SpawnedNode` in scope.
 
     /// Check if the node is currently running (not paused).
     ///
     /// This returns the internal running state.
     pub fn is_running(&self) -> bool {
-        self.is_running.load(Ordering::Acquire)
+        self.core.is_running()
     }
 
     /// Get the last timestamp when the node start.
     pub fn last_start_ts(&self) -> u64 {
-        self.last_start_ts.load(Ordering::Acquire)
+        self.core.last_start_ts()
+    }
+
+    pub(crate) fn set_is_running(&self, is_running: bool) {
+        self.core.set_is_running(is_running);
+    }
+
+    /// Set the timestamp when the node was started
+    pub(crate) fn set_last_start_ts(&self, ts: u64) {
+        self.core.set_last_start_ts(ts);
+    }
+
+    pub fn name(&self) -> &str {
+        self.core.name()
+    }
+
+    /// Args used for bootstrap the node.
+    /// NOTE: this may not be in sync if you restart the node with [`NetworkNode::restart_with`].
+    pub fn args(&self) -> Vec<&str> {
+        self.core.args()
+    }
+
+    /// On-disk base directory of the node — root of `data/`, `relay-data/`,
+    /// `cfg/`, etc.
+    /// This will be the _base directory_ of the inner (provider) node.
+    pub fn base_dir(&self) -> &PathBuf {
+        self.core.base_dir()
+    }
+
+    /// Pause the node, this is implemented by pausing the
+    /// actual process (e.g polkadot) with sending `SIGSTOP` signal
+    ///
+    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
+    /// with global setting `teardown_on_failure` disabled.
+    pub async fn pause(&self) -> Result<(), anyhow::Error> {
+        self.core.pause().await
+    }
+
+    /// Resume the node, this is implemented by resuming the
+    /// actual process (e.g polkadot) with sending `SIGCONT` signal
+    ///
+    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
+    /// with global setting `teardown_on_failure` disabled.
+    pub async fn resume(&self) -> Result<(), anyhow::Error> {
+        self.core.resume().await
+    }
+
+    /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
+    ///
+    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
+    /// with global setting `teardown_on_failure` disabled.
+    pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
+        self.core.restart(after).await
+    }
+
+    /// Run a script inside the node's container/environment
+    ///
+    /// The script will be uploaded to the node, made executable, and executed with
+    /// the provided arguments and environment variables.
+    ///
+    /// Returns `Ok(stdout)` on success, or `Err((exit_status, stderr))` on failure.
+    pub async fn run_script(
+        &self,
+        options: RunScriptOptions,
+    ) -> Result<ExecutionResult, anyhow::Error> {
+        self.core.run_script(options).await
+    }
+
+    /// Get the logs of the node
+    pub async fn logs(&self) -> Result<String, anyhow::Error> {
+        self.core.logs().await
+    }
+
+    /// Wait until a the number of matching log lines is reach
+    pub async fn wait_log_line_count(
+        &self,
+        pattern: impl Into<String>,
+        is_glob: bool,
+        count: usize,
+    ) -> Result<(), anyhow::Error> {
+        self.core.wait_log_line_count(pattern, is_glob, count).await
+    }
+
+    /// Waits until the number of matching log lines satisfies a custom condition,
+    /// optionally waiting for the entire duration of the timeout.
+    ///
+    /// See [`NodeCore::wait_log_line_count_with_timeout`].
+    pub async fn wait_log_line_count_with_timeout(
+        &self,
+        substring: impl Into<String>,
+        is_glob: bool,
+        options: LogLineCountOptions,
+    ) -> Result<LogLineCount, anyhow::Error> {
+        self.core
+            .wait_log_line_count_with_timeout(substring, is_glob, options)
+            .await
+    }
+
+    /// Tar the node's database into `out_path` (gzipped).
+    ///
+    /// NOTE: Currently __only__ implemented in native provider. Also,
+    /// the caller is responsible for pausing the node first;
+    /// snapshotting a running node risks a torn RocksDB state.
+    pub async fn snapshot_db(
+        &self,
+        out_path: impl AsRef<Path>,
+    ) -> Result<NodeSnapshot, anyhow::Error> {
+        let is_cumulus_based = matches!(
+            self.context,
+            NodeContext::Para {
+                is_cumulus_based: true,
+                ..
+            }
+        );
+
+        self.core.snapshot_db(out_path, is_cumulus_based).await
     }
 
     /// Check if the node is responsive by attempting to connect to its WebSocket endpoint.
@@ -210,29 +336,6 @@ impl NetworkNode {
         tokio::time::timeout(Duration::from_secs(2), wait_ws_ready(self.ws_uri()))
             .await
             .is_ok()
-    }
-
-    pub(crate) fn set_is_running(&self, is_running: bool) {
-        self.is_running.store(is_running, Ordering::Release);
-    }
-
-    /// Set the timestamp when the node was started
-    pub(crate) fn set_last_start_ts(&self, ts: u64) {
-        self.last_start_ts.store(ts, Ordering::Release);
-    }
-
-    pub(crate) fn set_multiaddr(&mut self, multiaddr: impl Into<String>) {
-        self.multiaddr = multiaddr.into();
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Args used for bootstrap the node.
-    /// NOTE: this may not be in sync if you restart the node with [`NetworkNode::restart_with`].
-    pub fn args(&self) -> Vec<&str> {
-        self.inner.args()
     }
 
     /// Only include the args provided by the user, filtering all
@@ -312,87 +415,6 @@ impl NetworkNode {
         .await?
     }
 
-    // Commands
-
-    /// Pause the node, this is implemented by pausing the
-    /// actual process (e.g polkadot) with sending `SIGSTOP` signal
-    ///
-    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
-    /// with global setting `teardown_on_failure` disabled.
-    pub async fn pause(&self) -> Result<(), anyhow::Error> {
-        self.set_is_running(false);
-        self.inner.pause().await?;
-        Ok(())
-    }
-
-    /// Resume the node, this is implemented by resuming the
-    /// actual process (e.g polkadot) with sending `SIGCONT` signal
-    ///
-    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
-    /// with global setting `teardown_on_failure` disabled.
-    pub async fn resume(&self) -> Result<(), anyhow::Error> {
-        self.set_is_running(true);
-        self.inner.resume().await?;
-        Ok(())
-    }
-
-    /// On-disk base directory of the node — root of `data/`, `relay-data/`,
-    /// `cfg/`, etc.
-    /// This will be the _base directory_ of the inner (provider) node.
-    pub fn base_dir(&self) -> &PathBuf {
-        self.inner.base_dir()
-    }
-
-    /// Tar the node's database into `out_path` (gzipped).
-    ///
-    /// NOTE: Currently __only__ implemented in native provider. Also,
-    /// the caller is responsible for pausing the node first;
-    /// snapshotting a running node risks a torn RocksDB state.
-    pub async fn snapshot_db(
-        &self,
-        out_path: impl AsRef<Path>,
-    ) -> Result<NodeSnapshot, anyhow::Error> {
-        let out_path = out_path.as_ref().to_path_buf();
-        let is_cumulus_based = matches!(
-            self.context,
-            NodeContext::Para {
-                is_cumulus_based: true,
-                ..
-            }
-        );
-
-        let InnerSnapshotDb {
-            filename,
-            sha256,
-            size,
-        } = self.inner.snapshot_db(is_cumulus_based).await?;
-
-        // now we need to _move_ the inner file to the out_path
-        let remote_file_path = PathBuf::from(&filename);
-        self.inner
-            .receive_file(remote_file_path.as_ref(), out_path.as_ref())
-            .await?;
-
-        Ok(NodeSnapshot {
-            path: out_path,
-            sha256,
-            size,
-            node_name: self.name().into(),
-        })
-    }
-
-    /// Restart the node using the same `cmd`, `args` and `env` (and same isolated dir)
-    ///
-    /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
-    /// with global setting `teardown_on_failure` disabled.
-    pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
-        self.set_is_running(false);
-        self.inner.restart(after).await?;
-        self.set_is_running(true);
-        self.set_last_start_ts(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
-        Ok(())
-    }
-
     /// Restart the node using the optional provided:
     /// - Assets: binaries to download
     ///   NOTE: if you want to use a diff version of polkadot you need both the
@@ -411,7 +433,6 @@ impl NetworkNode {
         args: Option<Vec<Arg>>,
         after: Option<Duration>,
     ) -> Result<(), anyhow::Error> {
-        self.set_is_running(false);
         let mut spec_cloned = self.spec.clone();
 
         if let Some(args) = args {
@@ -435,31 +456,18 @@ impl NetworkNode {
                 self.cmd_generator_opts.clone(),
                 para_id,
             ),
-            NodeContext::Jam => unreachable!(),
+            NodeContext::Jam => {
+                return Err(anyhow!(
+                    "[{}] is a JAM node held as a substrate `NetworkNode`, {}",
+                    self.name(),
+                    support::constants::THIS_IS_A_BUG
+                ))
+            },
         };
 
-        self.inner
+        self.core
             .restart_with(&assets, &program, &args, after)
-            .await?;
-        self.set_is_running(true);
-        self.set_last_start_ts(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs());
-        Ok(())
-    }
-
-    /// Run a script inside the node's container/environment
-    ///
-    /// The script will be uploaded to the node, made executable, and executed with
-    /// the provided arguments and environment variables.
-    ///
-    /// Returns `Ok(stdout)` on success, or `Err((exit_status, stderr))` on failure.
-    pub async fn run_script(
-        &self,
-        options: RunScriptOptions,
-    ) -> Result<ExecutionResult, anyhow::Error> {
-        self.inner
-            .run_script(options)
             .await
-            .map_err(|e| anyhow!("Failed to run script: {e}"))
     }
 
     // Metrics assertions
@@ -613,147 +621,6 @@ impl NetworkNode {
     }
 
     // Logs
-
-    /// Get the logs of the node
-    /// TODO: do we need the `since` param, maybe we could be handy later for loop filtering
-    pub async fn logs(&self) -> Result<String, anyhow::Error> {
-        Ok(self.inner.logs().await?)
-    }
-
-    /// Wait until a the number of matching log lines is reach
-    pub async fn wait_log_line_count(
-        &self,
-        pattern: impl Into<String>,
-        is_glob: bool,
-        count: usize,
-    ) -> Result<(), anyhow::Error> {
-        let pattern = pattern.into();
-        let pattern_clone = pattern.clone();
-        debug!("waiting until we find pattern {pattern} {count} times");
-        let match_fn: BoxedClosure = if is_glob {
-            Box::new(move |line: &str| Ok(glob_match(&pattern, line)))
-        } else {
-            let re = Regex::new(&pattern)?;
-            Box::new(move |line: &str| re.is_match(line).map_err(|e| anyhow!(e.to_string())))
-        };
-
-        loop {
-            let mut q = 0_usize;
-            let logs = self.logs().await?;
-            for line in logs.lines() {
-                trace!("line is {line}");
-                if match_fn(line)? {
-                    trace!("pattern {pattern_clone} match in line {line}");
-                    q += 1;
-                    if q >= count {
-                        return Ok(());
-                    }
-                }
-            }
-
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
-    }
-
-    /// Waits until the number of matching log lines satisfies a custom condition,
-    /// optionally waiting for the entire duration of the timeout.
-    ///
-    /// This method searches log lines for a given substring or glob pattern,
-    /// and evaluates the number of matching lines using a user-provided predicate function.
-    /// Optionally, it can wait for the full timeout duration to ensure the condition
-    /// holds consistently (e.g., for verifying absence of logs).
-    ///
-    /// # Arguments
-    /// * `substring` - The substring or pattern to match within log lines.
-    /// * `is_glob` - Whether to treat `substring` as a glob pattern (`true`) or a regex (`false`).
-    /// * `options` - Configuration for timeout, match count predicate, and full-duration waiting.
-    ///
-    /// # Returns
-    /// * `Ok(LogLineCount::TargetReached(n))` if the predicate was satisfied within the timeout,
-    /// * `Ok(LogLineCount::TargetFails(n))` if the predicate was not satisfied in time,
-    /// * `Err(e)` if an error occurred during log retrieval or matching.
-    ///
-    /// # Example
-    /// ```rust
-    /// # use std::{sync::Arc, time::Duration};
-    /// # use provider::NativeProvider;
-    /// # use support::{fs::local::LocalFileSystem};
-    /// # use zombienet_orchestrator::{Orchestrator, network::node::{NetworkNode, LogLineCountOptions}};
-    /// # use configuration::NetworkConfig;
-    /// # async fn example() -> Result<(), anyhow::Error> {
-    /// #   let provider = NativeProvider::new(LocalFileSystem {});
-    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
-    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
-    /// #   let network = orchestrator.spawn(config).await?;
-    /// let node = network.get_node("alice")?;
-    /// // Wait (up to 10 seconds) until pattern occurs once
-    /// let options = LogLineCountOptions {
-    ///     predicate: Arc::new(|count| count == 1),
-    ///     timeout: Duration::from_secs(10),
-    ///     wait_until_timeout_elapses: false,
-    /// };
-    /// let result = node
-    ///     .wait_log_line_count_with_timeout("error", false, options)
-    ///     .await?;
-    /// #   Ok(())
-    /// # }
-    /// ```
-    pub async fn wait_log_line_count_with_timeout(
-        &self,
-        substring: impl Into<String>,
-        is_glob: bool,
-        options: LogLineCountOptions,
-    ) -> Result<LogLineCount, anyhow::Error> {
-        let substring = substring.into();
-        debug!(
-            "waiting until match lines count within {} seconds",
-            options.timeout.as_secs_f64()
-        );
-
-        let start = tokio::time::Instant::now();
-
-        let match_fn: BoxedClosure = if is_glob {
-            Box::new(move |line: &str| Ok(glob_match(&substring, line)))
-        } else {
-            let re = Regex::new(&substring)?;
-            Box::new(move |line: &str| re.is_match(line).map_err(|e| anyhow!(e.to_string())))
-        };
-
-        if options.wait_until_timeout_elapses {
-            tokio::time::sleep(options.timeout).await;
-        }
-
-        let mut q;
-        loop {
-            q = 0_u32;
-            let logs = self.logs().await?;
-            for line in logs.lines() {
-                if match_fn(line)? {
-                    q += 1;
-
-                    // If `wait_until_timeout_elapses` is set then check the condition just once at the
-                    // end after the whole log file is processed. This is to address the cases when the
-                    // predicate becomes true and false again.
-                    // eg. expected exactly 2 matching lines are expected but 3 are present
-                    if !options.wait_until_timeout_elapses && (options.predicate)(q) {
-                        return Ok(LogLineCount::TargetReached(q));
-                    }
-                }
-            }
-
-            if start.elapsed() >= options.timeout {
-                break;
-            }
-
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
-
-        if (options.predicate)(q) {
-            Ok(LogLineCount::TargetReached(q))
-        } else {
-            Ok(LogLineCount::TargetFailed(q))
-        }
-    }
 
     /// Waits until the number of matching log lines satisfies a custom condition,
     /// optionally waiting for the entire duration of the timeout.
@@ -1148,12 +1015,23 @@ impl NetworkNode {
     }
 }
 
+#[async_trait::async_trait]
+impl SpawnedNode for NetworkNode {
+    fn core(&self) -> &NodeCore {
+        &self.core
+    }
+
+    async fn wait_until_is_up(&self, timeout_secs: u64) -> Result<(), anyhow::Error> {
+        NetworkNode::wait_until_is_up(self, timeout_secs).await
+    }
+}
+
 impl std::fmt::Debug for NetworkNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NetworkNode")
             .field("inner", &"inner_skipped")
             .field("spec", &self.spec)
-            .field("name", &self.name)
+            .field("name", &self.name())
             .field("ws_uri", &self.ws_uri)
             .field("prometheus_uri", &self.prometheus_uri)
             .finish()
@@ -2036,5 +1914,95 @@ mod tests {
             NetworkNode::compare_le_values("1000", "999"),
             Ordering::Greater
         );
+    }
+
+    fn mock_network_node(name: &str) -> NetworkNode {
+        NetworkNode::new(
+            name,
+            "ws://127.0.0.1:9944",
+            "http://127.0.0.1:9615/metrics",
+            "/ip4/127.0.0.1/tcp/30333",
+            NodeSpec::default(),
+            Arc::new(MockNode::new()),
+            GenCmdOptions::default(),
+            NodeContext::Rc,
+        )
+    }
+
+    fn mock_jam_node(name: &str) -> JamNetworkNode {
+        JamNetworkNode::new(
+            name,
+            Arc::new(MockNode::new()),
+            crate::network_spec::jamnode::JamNodeSpec::default(),
+            std::net::IpAddr::from([127, 0, 0, 1]),
+            GenCmdOptions::default(),
+        )
+    }
+
+    /// `NodeCore` is flattened into the node, so `zombie.json` keeps the same
+    /// flat shape the attach path (`RawNetworkNode`) and the `{{node.field}}`
+    /// replacements expect.
+    #[test]
+    fn test_network_node_serializes_flat() -> Result<(), anyhow::Error> {
+        let value = serde_json::to_value(mock_network_node("alice"))?;
+
+        let obj = value.as_object().expect("node serializes as a map");
+        assert_eq!(obj["name"], "alice");
+        assert_eq!(obj["ws_uri"], "ws://127.0.0.1:9944");
+        assert_eq!(obj["kind"], "substrate");
+        assert!(obj.contains_key("inner"), "inner should be flattened in");
+
+        // and it is still readable back by the attach path
+        let raw: RawNetworkNode = serde_json::from_value(value)?;
+        assert_eq!(raw.name, "alice");
+        assert_eq!(raw.ws_uri, "ws://127.0.0.1:9944");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_jam_node_serializes_flat() -> Result<(), anyhow::Error> {
+        let value = serde_json::to_value(mock_jam_node("jam-1"))?;
+
+        let obj = value.as_object().expect("node serializes as a map");
+        assert_eq!(obj["name"], "jam-1");
+        assert_eq!(obj["kind"], "jam");
+
+        let raw: jam::RawJamNetworkNode = serde_json::from_value(value)?;
+        assert_eq!(raw.name, "jam-1");
+
+        Ok(())
+    }
+
+    /// Both node types live in one registry and can be downcast back to their
+    /// concrete type (trait upcasting to `dyn Any`, Rust >= 1.86).
+    #[test]
+    fn test_registry_holds_both_kinds_and_downcasts() {
+        let mut registry: HashMap<String, Arc<dyn SpawnedNode>> = HashMap::new();
+        registry.insert("alice".into(), Arc::new(mock_network_node("alice")));
+        registry.insert("jam-1".into(), Arc::new(mock_jam_node("jam-1")));
+
+        let downcast = |name: &str| -> &dyn std::any::Any { registry[name].as_ref() };
+
+        // right kind -> concrete type back, with its own surface available
+        let alice = downcast("alice")
+            .downcast_ref::<NetworkNode>()
+            .expect("alice is a substrate node");
+        assert_eq!(alice.ws_uri(), "ws://127.0.0.1:9944");
+
+        let jam = downcast("jam-1")
+            .downcast_ref::<JamNetworkNode>()
+            .expect("jam-1 is a jam node");
+        assert_eq!(jam.peer_addr(), "@127.0.0.1:0");
+
+        // wrong kind -> no downcast, and `kind()` says why
+        assert!(downcast("alice").downcast_ref::<JamNetworkNode>().is_none());
+        assert!(downcast("jam-1").downcast_ref::<NetworkNode>().is_none());
+        assert_eq!(registry["alice"].kind(), NodeKind::Substrate);
+        assert_eq!(registry["jam-1"].kind(), NodeKind::Jam);
+
+        // shared behaviour works through the erased type
+        assert_eq!(registry["jam-1"].name(), "jam-1");
+        assert!(!registry["jam-1"].is_running());
     }
 }

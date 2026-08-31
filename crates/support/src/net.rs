@@ -58,3 +58,21 @@ pub fn skip_err_while_waiting(e: &reqwest::Error) -> bool {
     // 'connection error: Connection reset by peer (os error 54)'
     e.is_connect() || e.is_request()
 }
+
+/// Wait until `addr` (`host:port`) accepts a TCP connection.
+///
+/// Useful to probe for readiness of services that don't expose an http/ws
+/// endpoint we can `OPTIONS` (e.g JAM nodes).
+pub async fn wait_tcp_ready(addr: &str) -> Result<()> {
+    loop {
+        match tokio::net::TcpStream::connect(addr).await {
+            Ok(_) => break,
+            Err(e) => {
+                trace!("tcp connect to {addr} err: {e}, continuing...");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            },
+        }
+    }
+
+    Ok(())
+}

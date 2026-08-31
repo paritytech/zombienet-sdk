@@ -451,21 +451,16 @@ pub fn generate_for_jam_node(node: &JamNodeSpec, options: GenCmdOptions) -> (Str
         options.data_path,
         "--mode".into(),
         node.mode.as_str().into(),
+        // always set peer-id and port
+        // This is not extrictly necesary for ordinary
+        // nodes, but we are already reserving the ports
+        format!("--peer-id={}", node.peer_id),
+        format!("--port={}", node.port.0),
     ];
 
-    match node.mode {
-        JamNodeMode::Validator => {
-            cmd_args.push(format!("--peer-id={}", node.peer_id));
-            cmd_args.push(format!("--port={}", node.port.0));
-        },
-        JamNodeMode::Ordinary => {
-            // TODO: support `--proxy`  config.
-            cmd_args.push(format!("--rpc-port={}", node.rpc_port.0));
-        },
-        JamNodeMode::Proxy => {
-            cmd_args.push(format!("--peer-id={}", node.peer_id));
-            cmd_args.push(format!("--port={}", node.port.0));
-        },
+    if node.mode == JamNodeMode::Ordinary {
+        // TODO: support `--proxy`  config.
+        cmd_args.push(format!("--rpc-port={}", node.rpc_port.0));
     }
 
     for bootnode in options.bootnode_addr {

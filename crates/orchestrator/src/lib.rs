@@ -759,7 +759,7 @@ where
     ) -> Result<(), OrchestratorError> {
         let base_dir = ns.base_dir().to_string_lossy();
         // generate config
-        let jam_config = jam_config::generate(&jam_spec)?;
+        let jam_config = jam_config::generate(jam_spec)?;
         // store the config file
         scoped_fs
             .write(
@@ -782,7 +782,7 @@ where
         let generate_command = GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
         generators::chain_spec::build_locally(
             generate_command,
-            &scoped_fs,
+            scoped_fs,
             Some(&PathBuf::from(&jam_spec_full_path)),
         )
         .await?;
@@ -793,8 +793,8 @@ where
             parachain_id: None,
             chain: jam_spec.id.as_str(),
             role: ZombieRole::Node,
-            ns: &ns,
-            scoped_fs: &scoped_fs,
+            ns,
+            scoped_fs,
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: false,

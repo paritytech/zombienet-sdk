@@ -154,29 +154,21 @@ impl ChainSpec {
                 .first()
                 .expect("main_cmd should be preset to build the expect. qed");
             debug!("resolving subcommand for: {main_cmd}");
-            let chain_name_is_empty = match self.chain_name() {
-                None => true,
-                Some(chain) => chain.is_empty(),
-            };
 
-            // IFF cmd is polkadot-parachain and chain is empty
-            // we should always use `build-spec`
-            if (*main_cmd == "polkadot-parachain" && chain_name_is_empty)
-                || *main_cmd == "test-parachain"
-            {
-                self.subcommand = Some("build-spec".to_string())
+            // Prefer `export-chain-spec` when the binary exposes it (see #561), otherwise
+            // fall back to `build-spec` for older nodes. Do not special-case
+            // `test-parachain` / empty-chain `polkadot-parachain`: those binaries in
+            // current polkadot-sdk only ship `export-chain-spec`, and hardcoding
+            // `build-spec` breaks chain-spec generation for them.
+            let help_output = ns
+                .get_node_available_args((main_cmd.to_string(), self.image.clone()))
+                .await?;
+
+            self.subcommand = if help_output.contains("export-chain-spec") {
+                Some("export-chain-spec".to_string())
             } else {
-                // we should run to check the output
-                let help_output = ns
-                    .get_node_available_args((main_cmd.to_string(), self.image.clone()))
-                    .await?;
-
-                self.subcommand = if help_output.contains("export-chain-spec") {
-                    Some("export-chain-spec".to_string())
-                } else {
-                    Some("build-spec".to_string())
-                };
-            }
+                Some("build-spec".to_string())
+            };
         }
 
         Ok(())

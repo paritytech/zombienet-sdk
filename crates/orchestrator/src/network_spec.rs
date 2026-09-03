@@ -64,21 +64,22 @@ impl NetworkSpec {
             None
         };
 
+        // The chain the parachains are anchored to, either the relaychain or the JAM chain.
+        let root_chain = relaychain
+            .as_ref()
+            .map(|relaychain| relaychain.chain.clone())
+            .or_else(|| jamchain.as_ref().map(|jamchain| jamchain.id.clone()));
+
         let mut parachains = vec![];
 
-        if let Some(relaychain) = relaychain.as_ref() {
+        if let Some(root_chain) = root_chain {
             // TODO: move to `fold` or map+fold
             for para_config in network_config.parachains() {
-                match ParachainSpec::from_config(para_config, relaychain.chain.clone()) {
+                match ParachainSpec::from_config(para_config, root_chain.clone()) {
                     Ok(para) => parachains.push(para),
                     Err(err) => errs.push(err),
                 }
             }
-        } else if !network_config.parachains().is_empty() {
-            // TODO: parachains on top of a JAM chain aren't wired up yet.
-            errs.push(OrchestratorError::InvalidConfig(
-                "Parachains are not supported yet with a JAM chain.".to_string(),
-            ));
         }
 
         if errs.is_empty() {
@@ -384,6 +385,46 @@ mod tests {
         assert_eq!(network_spec.parachains.len(), 1);
         let para_100 = network_spec.parachains.first().unwrap();
         assert_eq!(para_100.id, 100);
+    }
+
+    #[tokio::test]
+    async fn jam_network_with_parachain_get_spec() {
+        use configuration::NetworkConfig;
+
+        use super::*;
+
+        let config = NetworkConfig::load_from_toml_string(
+            r#"
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"
+
+[[parachains]]
+id = 100
+default_command = "polkadot-omni-node"
+default_args = ["--jam-rpc-url http://{{ZOMBIE:jam-or:rpc_uri}}"]
+
+[[parachains.collators]]
+name = "collator"
+"#,
+        )
+        .unwrap();
+
+        let network_spec = NetworkSpec::from_config(&config).await.unwrap();
+
+        assert!(network_spec.try_relaychain().is_none());
+        assert_eq!(network_spec.jamchain.as_ref().unwrap().nodes.len(), 1);
+
+        // the parachain is anchored to the JAM chain
+        assert_eq!(network_spec.parachains.len(), 1);
+        let para = network_spec.parachains.first().unwrap();
+        assert_eq!(para.id, 100);
+        let collator = para.collators.first().unwrap();
+        assert_eq!(collator.command.as_str(), "polkadot-omni-node");
     }
 
     #[tokio::test]

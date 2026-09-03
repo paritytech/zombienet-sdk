@@ -219,13 +219,13 @@ where
             let jam_spec =
                 network_spec
                     .jamchain
-                    .as_ref()
+                    .clone()
                     .ok_or(OrchestratorError::InvalidConfig(
                         "A network needs either a relaychain or a jamchain.".to_string(),
                     ))?;
 
             return self
-                .spawn_jam(jam_spec, &network_spec, ns, start_time)
+                .spawn_jam(&jam_spec, &mut network_spec, ns, start_time)
                 .await;
         }
 
@@ -298,10 +298,10 @@ where
             .await?;
 
         // Run post-process script if configured for the relaychain (run against plain spec before building raw)
-        if let Some(script_cmd) = relaychain.post_process_script.clone() {
+        if let Some(script_cmd) = relaychain.post_process_script.as_deref() {
             relaychain
                 .chain_spec
-                .run_post_process_script(&script_cmd, &scoped_fs)
+                .run_post_process_script(script_cmd, &scoped_fs)
                 .await?;
         }
 
@@ -344,18 +344,18 @@ where
             .await?;
 
         // override wasm if needed
-        if let Some(wasm_override) = relaychain.wasm_override.clone() {
+        if let Some(ref wasm_override) = relaychain.wasm_override {
             relaychain
                 .chain_spec
-                .override_code(&scoped_fs, &wasm_override)
+                .override_code(&scoped_fs, wasm_override)
                 .await?;
         }
 
         // custom override raw spec if needed
-        if let Some(raw_spec_override) = relaychain.raw_spec_override.clone() {
+        if let Some(ref raw_spec_override) = relaychain.raw_spec_override {
             relaychain
                 .chain_spec
-                .override_raw_spec(&scoped_fs, &raw_spec_override)
+                .override_raw_spec(&scoped_fs, raw_spec_override)
                 .await?;
         }
 
@@ -577,108 +577,14 @@ where
         }
 
         // spawn paras
-        for para in network_spec.parachains.iter() {
-            // Create parachain (in the context of the running network)
-            let parachain = Parachain::from_spec(para, &global_files_to_inject, &scoped_fs).await?;
-            let parachain_id = parachain.chain_id.clone();
-
-            let (bootnodes, collators) =
-                split_nodes_by_bootnodes(&para.collators, para.no_default_bootnodes);
-
-            // Create `ctx` for spawn parachain nodes
-            let mut ctx_para = SpawnNodeCtx {
-                parachain: Some(para),
-                parachain_id: parachain_id.as_deref(),
-                role: if para.is_cumulus_based {
-                    ZombieRole::CumulusCollator
-                } else {
-                    ZombieRole::Collator
-                },
-                bootnodes_addr: &vec![],
-                ..ctx.clone()
-            };
-
-            // Calculate the bootnodes addr from the running nodes
-            let mut bootnodes_addr: Vec<String> = vec![];
-            let mut running_nodes: Vec<NetworkNode> = vec![];
-
-            for level in dependency_levels_among(&bootnodes)? {
-                let mut running_nodes_per_level = vec![];
-                for chunk in level.chunks(spawn_concurrency) {
-                    let spawning_tasks = chunk.iter().map(|node| {
-                        spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-                    });
-
-                    for node in futures::future::try_join_all(spawning_tasks).await? {
-                        let bootnode_multiaddr = node.multiaddr();
-
-                        bootnodes_addr.push(bootnode_multiaddr.to_string());
-
-                        running_nodes_per_level.push(node);
-                    }
-                }
-                info!(
-                    "🕰  waiting for level: {:?} to be up...",
-                    level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
-                );
-
-                // Wait for all nodes in the current level to be up
-                let waiting_tasks = running_nodes_per_level.iter().map(|node| {
-                    node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
-                });
-
-                let _ = futures::future::try_join_all(waiting_tasks).await?;
-
-                for node in running_nodes_per_level {
-                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                    running_nodes.push(node);
-                }
-            }
-
-            if let Some(para_chain_spec) = para.chain_spec.as_ref() {
-                para_chain_spec
-                    .add_bootnodes(&scoped_fs, &bootnodes_addr)
-                    .await?;
-            }
-
-            ctx_para.bootnodes_addr = &bootnodes_addr;
-
-            // Spawn the rest of the nodes
-            for level in dependency_levels_among(&collators)? {
-                let mut running_nodes_per_level = vec![];
-                for chunk in level.chunks(spawn_concurrency) {
-                    let spawning_tasks = chunk.iter().map(|node| {
-                        spawner::spawn_node(node, parachain.files_to_inject.clone(), &ctx_para)
-                    });
-
-                    for node in futures::future::try_join_all(spawning_tasks).await? {
-                        running_nodes_per_level.push(node);
-                    }
-                }
-                info!(
-                    "🕰  waiting for level: {:?} to be up...",
-                    level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
-                );
-
-                // Wait for all nodes in the current level to be up
-                let waiting_tasks = running_nodes_per_level.iter().map(|node| {
-                    node.wait_until_is_up(network_spec.global_settings.network_spawn_timeout())
-                });
-
-                let _ = futures::future::try_join_all(waiting_tasks).await?;
-
-                for node in running_nodes_per_level {
-                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
-                    running_nodes.push(node);
-                }
-            }
-
-            let running_para_id = parachain.para_id;
-            network.add_para(parachain);
-            for node in running_nodes {
-                network.add_running_node(node, Some(running_para_id)).await;
-            }
-        }
+        self.spawn_parachains(
+            &network_spec.parachains,
+            &ctx,
+            &global_files_to_inject,
+            spawn_concurrency,
+            &mut network,
+        )
+        .await?;
 
         // Now we need to register the paras with extrinsic from the Vec collected before;
         for para in para_to_register_with_extrinsic {
@@ -743,17 +649,127 @@ where
         Ok(network)
     }
 
+    /// Spawn the collators of every parachain, in the context of an already running network.
+    ///
+    /// `ctx` is the context of the chain the parachains are anchored to (relaychain or JAM
+    /// chain); the per-parachain context is derived from it.
+    async fn spawn_parachains<'a>(
+        &self,
+        parachains: &[ParachainSpec],
+        ctx: &SpawnNodeCtx<'a, T>,
+        files_to_inject: &[TransferedFile],
+        spawn_concurrency: usize,
+        network: &mut Network<T>,
+    ) -> Result<(), OrchestratorError> {
+        let scoped_fs = ctx.scoped_fs;
+
+        for para in parachains {
+            // Create parachain (in the context of the running network)
+            let parachain = Parachain::from_spec(para, files_to_inject, scoped_fs).await?;
+            let parachain_id = parachain.chain_id.clone();
+
+            let (bootnodes, collators) =
+                split_nodes_by_bootnodes(&para.collators, para.no_default_bootnodes);
+
+            // Create `ctx` for spawn parachain nodes
+            let mut ctx_para = SpawnNodeCtx {
+                parachain: Some(para),
+                parachain_id: parachain_id.as_deref(),
+                role: if para.is_cumulus_based {
+                    ZombieRole::CumulusCollator
+                } else {
+                    ZombieRole::Collator
+                },
+                bootnodes_addr: &vec![],
+                ..ctx.clone()
+            };
+
+            // Calculate the bootnodes addr from the running nodes
+            let mut bootnodes_addr: Vec<String> = vec![];
+            let mut running_nodes: Vec<NetworkNode> = vec![];
+
+            for level in dependency_levels_among(&bootnodes)? {
+                for node in self
+                    .spawn_parachain_level(&level, &parachain, &ctx_para, spawn_concurrency)
+                    .await?
+                {
+                    bootnodes_addr.push(node.multiaddr().to_string());
+                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                    running_nodes.push(node);
+                }
+            }
+
+            if let Some(para_chain_spec) = para.chain_spec.as_ref() {
+                para_chain_spec
+                    .add_bootnodes(scoped_fs, &bootnodes_addr)
+                    .await?;
+            }
+
+            ctx_para.bootnodes_addr = &bootnodes_addr;
+
+            // Spawn the rest of the nodes
+            for level in dependency_levels_among(&collators)? {
+                for node in self
+                    .spawn_parachain_level(&level, &parachain, &ctx_para, spawn_concurrency)
+                    .await?
+                {
+                    ctx_para.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
+                    running_nodes.push(node);
+                }
+            }
+
+            let running_para_id = parachain.para_id;
+            network.add_para(parachain);
+            for node in running_nodes {
+                network.add_running_node(node, Some(running_para_id)).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Spawn one dependency level of collators, concurrently, and wait until they are up.
+    async fn spawn_parachain_level<'a>(
+        &self,
+        level: &[&NodeSpec],
+        parachain: &Parachain,
+        ctx: &SpawnNodeCtx<'a, T>,
+        spawn_concurrency: usize,
+    ) -> Result<Vec<NetworkNode>, OrchestratorError> {
+        let mut running_nodes = vec![];
+        for chunk in level.chunks(spawn_concurrency) {
+            let spawning_tasks = chunk
+                .iter()
+                .map(|node| spawner::spawn_node(node, parachain.files_to_inject.clone(), ctx));
+
+            running_nodes.extend(futures::future::try_join_all(spawning_tasks).await?);
+        }
+
+        info!(
+            "🕰  waiting for level: {:?} to be up...",
+            level.iter().map(|n| n.name.clone()).collect::<Vec<_>>()
+        );
+
+        // Wait for all nodes in the current level to be up
+        let waiting_tasks = running_nodes
+            .iter()
+            .map(|node| node.wait_until_is_up(ctx.global_settings.network_spawn_timeout()));
+
+        let _ = futures::future::try_join_all(waiting_tasks).await?;
+
+        Ok(running_nodes)
+    }
+
     /// Spawn a network whose root chain is a JAM chain instead of a relaychain.
     async fn spawn_jam(
         &self,
         jam_spec: &JamchainSpec,
-        network_spec: &NetworkSpec,
+        network_spec: &mut NetworkSpec,
         ns: DynNamespace,
         start_time: SystemTime,
     ) -> Result<Network<T>, OrchestratorError> {
         let base_dir = ns.base_dir().to_string_lossy().to_string();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
-        let global_settings = &network_spec.global_settings;
 
         // generate config
         let jam_config = jam_config::generate(jam_spec)?;
@@ -784,6 +800,30 @@ where
         )
         .await?;
 
+        // Create parachain artifacts (chain-spec, wasm, state). The parachains are anchored
+        // to the JAM chain, so its id is the one written into their chain-spec.
+        let base_dir_exists = network_spec.global_settings.base_dir().is_some();
+        network_spec
+            .build_parachain_artifacts(
+                ns.clone(),
+                &scoped_fs,
+                jam_spec.id.as_str(),
+                base_dir_exists,
+            )
+            .await?;
+
+        // Resolve every collator's `db_snapshot` AssetLocation into a local cache file once,
+        // serially, before any parallel spawn.
+        let collators: Vec<&NodeSpec> = network_spec
+            .parachains_iter()
+            .flat_map(|para| para.collators.iter())
+            .collect();
+        let resolved_db_snapshots =
+            generators::resolve_db_snapshots(collators, &ns, &self.filesystem).await?;
+
+        let (spawn_concurrency, _) = calculate_concurrency(network_spec)?;
+        let global_settings = &network_spec.global_settings;
+
         // context setup
         let jam_ctx = SpawnNodeCtx {
             chain_id: jam_spec.id.as_str(),
@@ -797,7 +837,7 @@ where
             wait_ready: false,
             nodes_by_name: json!({}),
             global_settings,
-            resolved_db_snapshots: &Default::default(),
+            resolved_db_snapshots: &resolved_db_snapshots,
         };
 
         let jam_global_files_to_inject = vec![TransferedFile::new(
@@ -837,6 +877,31 @@ where
             network.add_running_jam_node(running_node).await;
         }
 
+        // spawn paras
+        for para in network_spec.parachains.iter() {
+            if para.registration_strategy() != &RegistrationStrategy::Manual {
+                warn!(
+                    "⚠️  Parachain {} can't be registered automatically on a JAM chain, it needs to be registered manually.",
+                    para.id
+                );
+            }
+        }
+
+        // the JAM nodes are already running, so the collators can reference them
+        let jam_ctx = SpawnNodeCtx {
+            nodes_by_name,
+            ..jam_ctx
+        };
+
+        self.spawn_parachains(
+            &network_spec.parachains,
+            &jam_ctx,
+            &jam_global_files_to_inject,
+            spawn_concurrency,
+            &mut network,
+        )
+        .await?;
+
         // start custom processes if needed
         for cp in &network_spec.custom_processes {
             if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
@@ -851,6 +916,8 @@ where
         if network_spec.global_settings.tear_down_on_failure() {
             network.spawn_watching_task();
         }
+
+        generators::cleanup_db_snapshot_cache(&resolved_db_snapshots).await;
 
         Ok(network)
     }

@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use support::{
-    constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX},
+    constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALID_REGEX},
     replacer::apply_env_replacements,
 };
 use tracing::trace;
@@ -178,104 +178,84 @@ impl NetworkConfig {
         let mut network_config: NetworkConfig = toml::from_str(&toml_text)?;
         trace!("parsed config {network_config:#?}");
 
-        // All unwraps below are safe, because we ensure that the relaychain is not None at this point
-        if network_config.relaychain.is_none() {
-            // A JAM chain replaces the relaychain, none of the validation below applies.
-            if network_config.jamchain.is_some() {
-                if !network_config.parachains.is_empty() {
-                    // TODO: parachains on top of a JAM chain aren't wired up yet.
-                    Err(anyhow!(
-                        "Parachains are not supported yet with a JAM chain."
-                    ))?
-                }
-                return Ok(network_config);
+        // A network is rooted either in a relaychain or in a JAM chain.
+        if network_config.relaychain.is_none() && network_config.jamchain.is_none() {
+            Err(anyhow!("Relay chain or Jam definition does not exist."))?
+        }
+
+        // Keep track of node names to ensure uniqueness, shared between the nodes of the
+        // root chain and the collators.
+        let mut names = HashSet::new();
+
+        if let Some(relaychain) = network_config.relaychain.as_mut() {
+            // retrieve the defaults relaychain for assigning to nodes if needed
+            let mut relaychain_default_command: Option<Command> =
+                relaychain.default_command().cloned();
+
+            if relaychain_default_command.is_none() {
+                relaychain_default_command = relaychain.command().cloned();
             }
 
-            Err(anyhow!("Relay chain does not exist."))?
-        }
+            let relaychain_default_image: Option<Image> = relaychain.default_image().cloned();
 
-        // retrieve the defaults relaychain for assigning to nodes if needed
-        let mut relaychain_default_command: Option<Command> =
-            network_config.relaychain().default_command().cloned();
+            let relaychain_default_db_snapshot: Option<AssetLocation> =
+                relaychain.default_db_snapshot().cloned();
 
-        if relaychain_default_command.is_none() {
-            relaychain_default_command = network_config.relaychain().command().cloned();
-        }
+            let default_args: Vec<Arg> = relaychain.default_args().into_iter().cloned().collect();
 
-        let relaychain_default_image: Option<Image> =
-            network_config.relaychain().default_image().cloned();
+            let mut nodes: Vec<NodeConfig> = relaychain.nodes().into_iter().cloned().collect();
 
-        let relaychain_default_db_snapshot: Option<AssetLocation> =
-            network_config.relaychain().default_db_snapshot().cloned();
+            let group_nodes: Vec<GroupNodeConfig> = relaychain
+                .group_node_configs()
+                .into_iter()
+                .cloned()
+                .collect();
 
-        let default_args: Vec<Arg> = network_config
-            .relaychain()
-            .default_args()
-            .into_iter()
-            .cloned()
-            .collect();
+            if let Some(group) = group_nodes.iter().find(|n| n.count == 0) {
+                return Err(anyhow!(
+                    "Group node '{}' must have a count greater than 0.",
+                    group.base_config.name()
+                ));
+            }
 
-        let mut nodes: Vec<NodeConfig> = network_config
-            .relaychain()
-            .nodes()
-            .into_iter()
-            .cloned()
-            .collect();
+            // Validation checks for relay
+            TryInto::<Chain>::try_into(relaychain.chain().as_str())?;
+            if let Some(default_image) = &relaychain_default_image {
+                TryInto::<Image>::try_into(default_image.clone())?;
+            }
+            if let Some(default_command) = &relaychain_default_command {
+                TryInto::<Command>::try_into(default_command.clone())?;
+            }
 
-        let group_nodes: Vec<GroupNodeConfig> = network_config
-            .relaychain()
-            .group_node_configs()
-            .into_iter()
-            .cloned()
-            .collect();
+            for node in nodes.iter_mut() {
+                if relaychain_default_command.is_some() {
+                    // we modify only nodes which don't already have a command
+                    if node.command.is_none() {
+                        node.command.clone_from(&relaychain_default_command);
+                    }
+                }
 
-        if let Some(group) = group_nodes.iter().find(|n| n.count == 0) {
-            return Err(anyhow!(
-                "Group node '{}' must have a count greater than 0.",
-                group.base_config.name()
-            ));
+                if relaychain_default_image.is_some() && node.image.is_none() {
+                    node.image.clone_from(&relaychain_default_image);
+                }
+
+                if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
+                    node.db_snapshot.clone_from(&relaychain_default_db_snapshot);
+                }
+
+                if !default_args.is_empty() && node.args().is_empty() {
+                    node.set_args(default_args.clone());
+                }
+
+                let unique_name = generate_unique_node_name_from_names(node.name(), &mut names);
+                node.name = unique_name;
+            }
+
+            relaychain.set_nodes(nodes);
         }
 
         let mut parachains: Vec<ParachainConfig> =
             network_config.parachains().into_iter().cloned().collect();
-
-        // Validation checks for relay
-        TryInto::<Chain>::try_into(network_config.relaychain().chain().as_str())?;
-        if relaychain_default_image.is_some() {
-            TryInto::<Image>::try_into(relaychain_default_image.clone().expect(VALIDATION_CHECK))?;
-        }
-        if relaychain_default_command.is_some() {
-            TryInto::<Command>::try_into(
-                relaychain_default_command.clone().expect(VALIDATION_CHECK),
-            )?;
-        }
-
-        // Keep track of node names to ensure uniqueness
-        let mut names = HashSet::new();
-
-        for node in nodes.iter_mut() {
-            if relaychain_default_command.is_some() {
-                // we modify only nodes which don't already have a command
-                if node.command.is_none() {
-                    node.command.clone_from(&relaychain_default_command);
-                }
-            }
-
-            if relaychain_default_image.is_some() && node.image.is_none() {
-                node.image.clone_from(&relaychain_default_image);
-            }
-
-            if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
-                node.db_snapshot.clone_from(&relaychain_default_db_snapshot);
-            }
-
-            if !default_args.is_empty() && node.args().is_empty() {
-                node.set_args(default_args.clone());
-            }
-
-            let unique_name = generate_unique_node_name_from_names(node.name(), &mut names);
-            node.name = unique_name;
-        }
 
         for para in parachains.iter_mut() {
             // retrieve the defaults parachain for assigning to collators if needed
@@ -317,8 +297,7 @@ impl NetworkConfig {
 
             para.collators = collators;
 
-            if para.collator.is_some() {
-                let mut collator = para.collator.clone().unwrap();
+            if let Some(mut collator) = para.collator.clone() {
                 populate_collator_with_defaults(
                     &mut collator,
                     &parachain_default_command,
@@ -332,21 +311,15 @@ impl NetworkConfig {
             }
         }
 
-        network_config
-            .relaychain
-            .as_mut()
-            .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}"))
-            .set_nodes(nodes);
-
         network_config.set_parachains(parachains);
 
         // Validation checks for parachains
         network_config.parachains().iter().for_each(|parachain| {
-            if parachain.default_image().is_some() {
-                let _ = TryInto::<Image>::try_into(parachain.default_image().unwrap().as_str());
+            if let Some(default_image) = parachain.default_image() {
+                let _ = TryInto::<Image>::try_into(default_image.as_str());
             }
-            if parachain.default_command().is_some() {
-                let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
+            if let Some(default_command) = parachain.default_command() {
+                let _ = TryInto::<Command>::try_into(default_command.as_str());
             }
         });
         Ok(network_config)
@@ -851,9 +824,8 @@ impl NetworkConfigBuilder<Buildable> {
             .collect();
 
         // ensure we can make this check
-        if self.config.relaychain.is_some() {
+        if let Some(rc_config) = self.config.relaychain.as_ref() {
             // check we have num_validators >= num_requested_cores
-            let rc_config = self.config.relaychain();
             let mut num_validators = rc_config.nodes().iter().fold(0u32, |mut acc, node| {
                 if node.is_validator {
                     acc += 1;
@@ -889,7 +861,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::parachain::RegistrationStrategy;
+    use crate::{parachain::RegistrationStrategy, types::JamNodeMode};
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -2302,6 +2274,97 @@ command = "polkadot"
 
         let toml_string = network_config.dump_to_toml().unwrap();
         println!("{}", toml_string);
+    }
+
+    #[test]
+    fn jamchain_toml_without_relaychain_works() {
+        let config = NetworkConfig::load_from_toml_string(
+            r#"
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.try_relaychain().is_none());
+        let jamchain = config.jamchain().unwrap();
+        assert_eq!(jamchain.id().as_str(), "dev");
+        assert_eq!(jamchain.nodes().len(), 2);
+        assert_eq!(jamchain.nodes()[1].mode(), &JamNodeMode::Ordinary);
+    }
+
+    #[test]
+    fn jamchain_toml_with_parachains_works() {
+        let config = NetworkConfig::load_from_toml_string(
+            r#"
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"
+
+[[parachains]]
+id = 1000
+default_command = "polkadot-omni-node"
+default_args = ["--jam-rpc-url http://{{ZOMBIE:jam-or:rpc_uri}}"]
+
+[[parachains.collators]]
+name = "collator"
+
+[[parachains.collators]]
+name = "collator"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.try_relaychain().is_none());
+        assert!(config.jamchain().is_some());
+
+        let para = config.parachains()[0];
+        assert_eq!(para.id(), 1000);
+
+        // the parachain defaults are applied to the collators, and their names deduplicated
+        let collators = para.collators();
+        assert_eq!(collators.len(), 2);
+        assert_eq!(collators[0].name(), "collator");
+        assert_eq!(collators[1].name(), "collator-1");
+        for collator in collators {
+            assert_eq!(collator.command().unwrap().as_str(), "polkadot-omni-node");
+            assert_eq!(
+                collator.args(),
+                vec![&Arg::Option(
+                    "--jam-rpc-url".into(),
+                    "http://{{ZOMBIE:jam-or:rpc_uri}}".into()
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn toml_without_relaychain_nor_jamchain_fails() {
+        let err = NetworkConfig::load_from_toml_string(
+            r#"
+[[parachains]]
+id = 1000
+"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Relay chain or Jam definition does not exist."
+        );
     }
 
     #[test]

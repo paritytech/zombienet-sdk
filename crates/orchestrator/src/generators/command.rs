@@ -481,6 +481,23 @@ pub fn generate_for_jam_node(node: &JamNodeSpec, options: GenCmdOptions) -> (Str
         cmd_args.push(tel_endpoint.into())
     }
 
+    // Args set in the config, appended last so they can't clash with the ones above.
+    // TODO: ensure that we are not overwriting the args zombienet add automatically.
+    for arg in &node.args {
+        match arg {
+            Arg::Flag(flag) => cmd_args.push(flag.clone()),
+            Arg::Option(k, v) => {
+                cmd_args.push(k.clone());
+                cmd_args.push(v.clone());
+            },
+            Arg::Array(k, v) => {
+                cmd_args.push(k.clone());
+                cmd_args.extend(v.iter().cloned());
+            },
+            Arg::Positional(value) => cmd_args.push(value.clone()),
+        }
+    }
+
     (node.command.as_str().into(), cmd_args)
 }
 

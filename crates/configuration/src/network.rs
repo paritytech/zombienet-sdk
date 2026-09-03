@@ -2284,6 +2284,54 @@ command = "polkadot"
         println!("{}", toml_string);
     }
 
+    /// A network file is the other way to describe a jamchain, and the override is plain data,
+    /// so a `[jamchain.genesis_overrides]` table has to come back as the same JSON the builder
+    /// would have been given — and survive being dumped and loaded again.
+    #[test]
+    fn jamchain_genesis_overrides_round_trip_through_toml() {
+        let toml = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[jamchain]
+id = "dev"
+
+[jamchain.genesis_overrides]
+auth_queues = { "0" = "2bbda8cb" }
+assigners = { "0" = 5 }
+
+[[jamchain.genesis_overrides.services]]
+id = 5
+code = "/blobs/parasim-service.jam"
+preimages = ["/blobs/parachain-authorizer-sr25519.jam"]
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+"#;
+        let expected = serde_json::json!({
+            "auth_queues": { "0": "2bbda8cb" },
+            "assigners": { "0": 5 },
+            "services": [{
+                "id": 5,
+                "code": "/blobs/parasim-service.jam",
+                "preimages": ["/blobs/parachain-authorizer-sr25519.jam"],
+            }],
+        });
+
+        let loaded = NetworkConfig::load_from_toml_string(toml).unwrap();
+        let jamchain = loaded.jamchain().expect("the file has a jamchain");
+        assert_eq!(jamchain.genesis_overrides(), Some(&expected));
+
+        let reloaded =
+            NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
+        assert_eq!(reloaded.jamchain(), Some(jamchain));
+    }
+
     #[test]
     fn with_tiny_jamchain() {
         let network_config = NetworkConfigBuilder::new()

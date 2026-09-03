@@ -1529,7 +1529,7 @@ fn construct_runtime_pointer_from_overrides(
 }
 
 // Merge `patch_section` with `overrides`.
-fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
+pub(crate) fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     trace!("patch: {:?}", patch_section);
     trace!("overrides: {:?}", overrides);
     if let (Some(genesis_obj), Some(overrides_obj)) =

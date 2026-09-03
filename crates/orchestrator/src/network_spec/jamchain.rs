@@ -43,6 +43,9 @@ pub struct JamchainSpec {
 
     /// Nodes to run.
     pub(crate) nodes: Vec<JamNodeSpec>,
+
+    /// Genesis state beyond the validator set, merged into the config `gen-spec` reads.
+    pub(crate) genesis_overrides: Option<serde_json::Value>,
 }
 
 impl JamchainSpec {
@@ -58,6 +61,15 @@ impl JamchainSpec {
                 "Relaychain, either default_command or first node with a command needs to be set."
                     .to_string(),
             ))?;
+
+        if config
+            .genesis_overrides()
+            .is_some_and(|overrides| !overrides.is_object())
+        {
+            return Err(OrchestratorError::InvalidConfig(
+                "Jamchain, genesis_overrides must be a JSON object.".to_string(),
+            ));
+        }
 
         // TODO: support podman/docker/k8s
         // let main_image = config
@@ -125,6 +137,7 @@ impl JamchainSpec {
             default_args: config.default_args().into_iter().cloned().collect(),
             chain_spec_command: chain_spec_cmd_augmented,
             nodes,
+            genesis_overrides: config.genesis_overrides().cloned(),
         })
     }
 
@@ -159,6 +172,26 @@ mod tests {
         let spec = JamchainSpec::from_config(&config).expect("the spec builds");
 
         assert_eq!(spec.chain_spec_command, "/bin/spec-binary");
+    }
+
+    /// The override is merged key by key into the generated config, so anything but an object
+    /// has nothing to merge into — and silently writing the config without it would surface
+    /// only as a chain missing its services.
+    #[test]
+    fn a_genesis_override_that_is_not_an_object_is_refused() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_default_command("/bin/node-binary")
+            .with_genesis_overrides(serde_json::json!(["services"]))
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        let error = JamchainSpec::from_config(&config)
+            .err()
+            .expect("the spec is refused");
+
+        assert!(error.to_string().contains("genesis_overrides"), "{error}");
     }
 
     /// With nothing named, the node binary generates its own spec — which is the arrangement

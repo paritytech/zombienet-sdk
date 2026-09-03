@@ -313,6 +313,31 @@ impl JamchainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the command that generates the chain spec, when it is not the node binary itself.
+    ///
+    /// Only the command is used: the orchestrator appends `gen-spec <config> <spec>` itself.
+    pub fn with_chain_spec_command<T>(self, command: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + Send + Sync + 'static,
+    {
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                JamchainConfig {
+                    chain_spec_command: Some(command),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Command(error.into()).into()),
+            ),
+        }
+    }
+
     /// Set the command used for corevm monitor.
     pub fn with_corevm_monitor_command<T>(self, command: T) -> Self
     where

@@ -154,29 +154,21 @@ impl ChainSpec {
                 .first()
                 .expect("main_cmd should be preset to build the expect. qed");
             debug!("resolving subcommand for: {main_cmd}");
-            let chain_name_is_empty = match self.chain_name() {
-                None => true,
-                Some(chain) => chain.is_empty(),
-            };
 
-            // IFF cmd is polkadot-parachain and chain is empty
-            // we should always use `build-spec`
-            if (*main_cmd == "polkadot-parachain" && chain_name_is_empty)
-                || *main_cmd == "test-parachain"
-            {
-                self.subcommand = Some("build-spec".to_string())
+            // Prefer `export-chain-spec` when the binary exposes it (see #561), otherwise
+            // fall back to `build-spec` for older nodes. Do not special-case
+            // `test-parachain` / empty-chain `polkadot-parachain`: those binaries in
+            // current polkadot-sdk only ship `export-chain-spec`, and hardcoding
+            // `build-spec` breaks chain-spec generation for them.
+            let help_output = ns
+                .get_node_available_args((main_cmd.to_string(), self.image.clone()))
+                .await?;
+
+            self.subcommand = if help_output.contains("export-chain-spec") {
+                Some("export-chain-spec".to_string())
             } else {
-                // we should run to check the output
-                let help_output = ns
-                    .get_node_available_args((main_cmd.to_string(), self.image.clone()))
-                    .await?;
-
-                self.subcommand = if help_output.contains("export-chain-spec") {
-                    Some("export-chain-spec".to_string())
-                } else {
-                    Some("build-spec".to_string())
-                };
-            }
+                Some("build-spec".to_string())
+            };
         }
 
         Ok(())
@@ -357,20 +349,31 @@ impl ChainSpec {
                 }
             };
 
+            self.resolve_subcommand(ns).await?;
+
             // SAFETY: we ensure that command is some with the first check of the fn
             // default as empty
-            let sanitized_cmd = if replacement_value.is_empty() {
-                // we need to remove the `--chain` flag
-                self.command.as_ref().unwrap().cmd().replace("--chain", "")
-            } else {
-                self.command.as_ref().unwrap().cmd().to_owned()
-            };
+            let cmd_tpl = self.command.as_ref().unwrap().cmd();
+            let is_export_chain_spec = self.subcommand.as_deref() == Some("export-chain-spec");
 
-            self.resolve_subcommand(ns).await?;
+            let sanitized_cmd = if !replacement_value.is_empty() {
+                cmd_tpl.to_owned()
+            } else if is_export_chain_spec {
+                // Some released node binaries default `export-chain-spec --chain` to the
+                // literal string `"local"` (fixed in newer polkadot-sdk, but older/released
+                // images still carry the bug), which isn't a valid preset for most
+                // parachains and fails with "Error opening spec file `local`". Pass an
+                // explicit empty id instead of omitting `--chain`, so behavior doesn't
+                // depend on the target binary's own default value.
+                cmd_tpl.replace("--chain {{chainName}}", "--chain=")
+            } else {
+                // build-spec: we need to remove the `--chain` flag
+                cmd_tpl.replace("--chain", "")
+            };
 
             let mut replacements = HashMap::from([("chainName", replacement_value.as_str())]);
 
-            if self.subcommand.as_deref() == Some("export-chain-spec") {
+            if is_export_chain_spec {
                 replacements.insert("subCommand", "export-chain-spec");
                 replacements.insert("disableBootnodes", "");
             } else {

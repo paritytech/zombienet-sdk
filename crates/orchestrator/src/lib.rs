@@ -814,9 +814,12 @@ where
         ));
 
         let mut bootnodes_addr = vec![];
+        // Nodes spawned so far, so the args of the next ones can reference them.
+        let mut nodes_by_name = json!({});
         for jam_node in &jam_spec.nodes {
             let jam_ctx = SpawnNodeCtx {
                 bootnodes_addr: &bootnodes_addr,
+                nodes_by_name: nodes_by_name.clone(),
                 ..jam_ctx.clone()
             };
 
@@ -830,6 +833,7 @@ where
                 .map_err(|e| OrchestratorError::InvalidConfig(e.to_string()))?;
 
             bootnodes_addr.push(running_node.peer_addr().to_string());
+            nodes_by_name[running_node.name().to_owned()] = serde_json::to_value(&running_node)?;
             network.add_running_jam_node(running_node).await;
         }
 

@@ -39,7 +39,7 @@ use provider::{
     types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use support::{
     constants::{
         GRAPH_CONTAINS_DEP, GRAPH_CONTAINS_NAME, INDEGREE_CONTAINS_NAME, QUEUE_NOT_EMPTY,
@@ -577,6 +577,7 @@ where
                 &ns,
                 &scoped_fs,
                 &network_spec.global_settings,
+                &mut ctx.nodes_by_name,
                 &mut network,
             )
             .await?
@@ -755,6 +756,7 @@ where
         ns: &DynNamespace,
         scoped_fs: &ScopedFilesystem<'a, T>,
         global_settings: &GlobalSettings,
+        nodes_by_name: &mut Value,
         network: &mut Network<T>,
     ) -> Result<(), OrchestratorError> {
         let base_dir = ns.base_dir().to_string_lossy();
@@ -798,7 +800,7 @@ where
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: false,
-            nodes_by_name: json!({}),
+            nodes_by_name: nodes_by_name.clone(),
             global_settings,
             resolved_db_snapshots: &Default::default(),
         };
@@ -830,7 +832,9 @@ where
                 .map_err(|e| OrchestratorError::InvalidConfig(e.to_string()))?;
 
             bootnodes_addr.push(running_node.peer_addr().to_string());
-            network.add_running_jam_node(running_node).await;
+            network.add_running_jam_node(running_node.clone()).await;
+            // Add the node to the  context (through nodes_by_name)
+            nodes_by_name[running_node.name().to_owned()] = serde_json::to_value(&running_node)?;
         }
 
         Ok(())

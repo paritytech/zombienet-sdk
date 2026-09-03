@@ -1,6 +1,7 @@
 use configuration::types::{Arg, JamNodeMode};
 use serde::{Deserialize, Serialize};
 use support::constants::THIS_IS_A_BUG;
+use tracing::info;
 
 use super::arg_filter::{apply_arg_removals, parse_removal_args};
 use crate::{
@@ -249,19 +250,27 @@ pub fn generate_for_cumulus_node(
 
     final_args.append(&mut tmp_args);
 
-    let relaychain_spec_path = format!("{}/{}.json", options.cfg_path, options.relay_chain_name);
-    let mut full_node_injected: Vec<String> = vec![
-        "--".into(),
-        "--base-path".into(),
-        options.relay_data_path,
-        "--chain".into(),
-        relaychain_spec_path,
-        "--execution".into(),
-        "wasm".into(),
-    ];
+    if final_args
+        .iter()
+        .any(|arg_str| arg_str.contains("jam-rpc-url"))
+    {
+        info!("🖋 skipping rc args since jam-rpc-url arg is present!");
+    } else {
+        let relaychain_spec_path =
+            format!("{}/{}.json", options.cfg_path, options.relay_chain_name);
+        let mut full_node_injected: Vec<String> = vec![
+            "--".into(),
+            "--base-path".into(),
+            options.relay_data_path,
+            "--chain".into(),
+            relaychain_spec_path,
+            "--execution".into(),
+            "wasm".into(),
+        ];
 
-    final_args.append(&mut full_node_injected);
-    final_args.append(&mut full_node_args_filtered);
+        final_args.append(&mut full_node_injected);
+        final_args.append(&mut full_node_args_filtered);
+    }
 
     let removals = parse_removal_args(args);
     final_args = apply_arg_removals(final_args, &removals);

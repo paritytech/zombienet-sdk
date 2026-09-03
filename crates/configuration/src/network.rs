@@ -34,7 +34,11 @@ use crate::{
     CustomProcess, CustomProcessBuilder, RegistrationStrategy,
 };
 
-/// A network configuration, composed of a relaychain, parachains and HRMP channels.
+/// A network configuration, composed of a relaychain (or a JAM chain), parachains and HRMP
+/// channels.
+///
+/// The JAM chain takes the place of the relaychain, so a network has one or the other, never
+/// both.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkConfig {
     #[serde(rename = "settings", default = "GlobalSettings::default")]
@@ -60,6 +64,11 @@ impl NetworkConfig {
         self.relaychain
             .as_ref()
             .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
+    }
+
+    /// The relay chain of the network, `None` for a JAM network.
+    pub fn try_relaychain(&self) -> Option<&RelaychainConfig> {
+        self.relaychain.as_ref()
     }
 
     /// The jam chain of the network.
@@ -171,6 +180,17 @@ impl NetworkConfig {
 
         // All unwraps below are safe, because we ensure that the relaychain is not None at this point
         if network_config.relaychain.is_none() {
+            // A JAM chain replaces the relaychain, none of the validation below applies.
+            if network_config.jamchain.is_some() {
+                if !network_config.parachains.is_empty() {
+                    // TODO: parachains on top of a JAM chain aren't wired up yet.
+                    Err(anyhow!(
+                        "Parachains are not supported yet with a JAM chain."
+                    ))?
+                }
+                return Ok(network_config);
+            }
+
             Err(anyhow!("Relay chain does not exist."))?
         }
 

@@ -23,7 +23,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::JsonOverrides, GlobalSettings, NetworkConfig, RegistrationStrategy};
+use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
 use generators::{core_assignment, errors::GeneratorError, jam_config};
 use network::{
@@ -34,7 +34,7 @@ use network::{
 };
 // re-exported
 pub use network_spec::NetworkSpec;
-use network_spec::{node::NodeSpec, parachain::ParachainSpec};
+use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
 use provider::{
     types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
@@ -58,7 +58,6 @@ use crate::{
         parachain::RawParachain,
         relaychain::RawRelaychain,
     },
-    network_spec::jamchain::JamchainSpec,
     shared::types::RegisterParachainOptions,
     spawner::SpawnNodeCtx,
     utils::write_zombie_json,
@@ -214,6 +213,22 @@ where
             .populate_nodes_available_args(ns.clone())
             .await?;
 
+        // A JAM chain takes the place of the relaychain and has its own, much simpler,
+        // spawn flow.
+        if network_spec.try_relaychain().is_none() {
+            let jam_spec =
+                network_spec
+                    .jamchain
+                    .as_ref()
+                    .ok_or(OrchestratorError::InvalidConfig(
+                        "A network needs either a relaychain or a jamchain.".to_string(),
+                    ))?;
+
+            return self
+                .spawn_jam(jam_spec, &network_spec, ns, start_time)
+                .await;
+        }
+
         // Resolve every node's `db_snapshot` AssetLocation into a local
         // cache file once, serially, before any parallel spawn.
         let all_nodes: Vec<&NodeSpec> = network_spec
@@ -231,22 +246,23 @@ where
 
         let base_dir = ns.base_dir().to_string_lossy();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
-        // Create chain-spec for relaychain
-        network_spec
+
+        // The relaychain spec is moved out of the network spec while we set it up, so that
+        // it can be mutated independently of the parachains. It's put back before the nodes
+        // are spawned.
+        let mut relaychain = network_spec
             .relaychain
-            .chain_spec
-            .build(&ns, &scoped_fs)
-            .await?;
+            .take()
+            .expect("checked to be `Some` above; qed");
+
+        // Create chain-spec for relaychain
+        relaychain.chain_spec.build(&ns, &scoped_fs).await?;
 
         debug!("relaychain spec built!");
         // Create parachain artifacts (chain-spec, wasm, state)
-        let relay_chain_id = network_spec
-            .relaychain
-            .chain_spec
-            .read_chain_id(&scoped_fs)
-            .await?;
+        let relay_chain_id = relaychain.chain_spec.read_chain_id(&scoped_fs).await?;
 
-        let relay_chain_name = network_spec.relaychain.chain.as_str().to_owned();
+        let relay_chain_name = relaychain.chain.as_str().to_owned();
         let base_dir_exists = network_spec.global_settings.base_dir().is_some();
         network_spec
             .build_parachain_artifacts(ns.clone(), &scoped_fs, &relay_chain_id, base_dir_exists)
@@ -271,11 +287,10 @@ where
         }
 
         // Customize relaychain
-        network_spec
-            .relaychain
+        relaychain
             .chain_spec
             .customize_relay(
-                &network_spec.relaychain,
+                &relaychain,
                 &network_spec.hrmp_channels,
                 para_artifacts,
                 &scoped_fs,
@@ -283,11 +298,10 @@ where
             .await?;
 
         // Run post-process script if configured for the relaychain (run against plain spec before building raw)
-        if let Some(script_cmd) = network_spec.relaychain.post_process_script.as_deref() {
-            network_spec
-                .relaychain
+        if let Some(script_cmd) = relaychain.post_process_script.clone() {
+            relaychain
                 .chain_spec
-                .run_post_process_script(script_cmd, &scoped_fs)
+                .run_post_process_script(&script_cmd, &scoped_fs)
                 .await?;
         }
 
@@ -317,50 +331,44 @@ where
                 }
             });
 
-            network_spec
-                .relaychain
+            relaychain
                 .chain_spec
                 .apply_genesis_override(&scoped_fs, &overrides)
                 .await?;
         }
 
         // Build raw version (after any post-processing of the plain spec)
-        network_spec
-            .relaychain
+        relaychain
             .chain_spec
             .build_raw(&ns, &scoped_fs, None)
             .await?;
 
         // override wasm if needed
-        if let Some(ref wasm_override) = network_spec.relaychain.wasm_override {
-            network_spec
-                .relaychain
+        if let Some(wasm_override) = relaychain.wasm_override.clone() {
+            relaychain
                 .chain_spec
-                .override_code(&scoped_fs, wasm_override)
+                .override_code(&scoped_fs, &wasm_override)
                 .await?;
         }
 
         // custom override raw spec if needed
-        if let Some(ref raw_spec_override) = network_spec.relaychain.raw_spec_override {
-            network_spec
-                .relaychain
+        if let Some(raw_spec_override) = relaychain.raw_spec_override.clone() {
+            relaychain
                 .chain_spec
-                .override_raw_spec(&scoped_fs, raw_spec_override)
+                .override_raw_spec(&scoped_fs, &raw_spec_override)
                 .await?;
         }
 
         // assign extra cores if needed
         if num_cores > para_to_register_in_genesis.len() as u32
-            || (network_spec.relaychain().override_session_0
-                && !para_to_register_in_genesis.is_empty())
+            || (relaychain.override_session_0 && !para_to_register_in_genesis.is_empty())
         {
-            debug!("Raw overrides info: num_cores: {}, para_to_register_in_genesis_len: {:?}, override_session_0: {}", num_cores, para_to_register_in_genesis.len(), network_spec.relaychain().override_session_0);
+            debug!("Raw overrides info: num_cores: {}, para_to_register_in_genesis_len: {:?}, override_session_0: {}", num_cores, para_to_register_in_genesis.len(), relaychain.override_session_0);
             let mut core_index = 0u32;
             // we should check with version the runtime is using
             // could be ParaScheduler or CoretimeAssignmentProvider
             let scheduler_key = core_assignment::get_parascheduler_storage_key();
-            let is_old = !network_spec
-                .relaychain
+            let is_old = !relaychain
                 .chain_spec
                 .find_raw_key(&scoped_fs, &scheduler_key)
                 .await?;
@@ -379,7 +387,7 @@ where
                     // no num_cores set but we need to check if `override_session_0` is true
                     // to assign the first core.
                     if &RegistrationStrategy::InGenesis == para.registration_strategy()
-                        && network_spec.relaychain().override_session_0
+                        && relaychain.override_session_0
                     {
                         cores_for_para += 1;
                     }
@@ -416,13 +424,9 @@ where
             }
 
             // extra check to ensure we need to override session 0
-            if network_spec.relaychain().override_session_0 {
+            if relaychain.override_session_0 {
                 trace!("Overriding pallet ParaSessionInfo.session (0) to allow paras to produce blocks at first session.");
-                let raw_spec = network_spec
-                    .relaychain
-                    .chain_spec
-                    .read_raw_spec(&scoped_fs)
-                    .await?;
+                let raw_spec = relaychain.chain_spec.read_raw_spec(&scoped_fs).await?;
                 let overrides = generators::generate_session_0_overrides(&raw_spec, num_cores)?;
 
                 for (k, v) in overrides.as_object().ok_or(anyhow!(
@@ -434,8 +438,7 @@ where
 
             debug!("Raw overrides keys: {:?}", raw_json_overrides);
 
-            network_spec
-                .relaychain
+            relaychain
                 .chain_spec
                 .override_raw_spec(
                     &scoped_fs,
@@ -450,8 +453,11 @@ where
                 .await?;
         }
 
+        // The relaychain is fully set up now, put it back into the network spec.
+        network_spec.relaychain = Some(relaychain);
+
         let (bootnodes, relaynodes) =
-            split_nodes_by_bootnodes(&network_spec.relaychain.nodes, false);
+            split_nodes_by_bootnodes(&network_spec.relaychain().nodes, false);
 
         // TODO: we want to still supporting spawn a dedicated bootnode??
         let mut ctx = SpawnNodeCtx {
@@ -480,7 +486,7 @@ where
         let r = Relaychain::new(
             relay_chain_name.to_string(),
             relay_chain_id.clone(),
-            PathBuf::from(network_spec.relaychain.chain_spec.raw_path().ok_or(
+            PathBuf::from(network_spec.relaychain().chain_spec.raw_path().ok_or(
                 OrchestratorError::InvariantError("chain-spec raw path should be set now"),
             )?),
         );
@@ -534,7 +540,7 @@ where
 
         // Add the bootnodes to the relaychain spec file and ctx
         network_spec
-            .relaychain
+            .relaychain()
             .chain_spec
             .add_bootnodes(&scoped_fs, &bootnodes_addr)
             .await?;
@@ -568,18 +574,6 @@ where
                 ctx.nodes_by_name[node.name().to_owned()] = serde_json::to_value(&node)?;
                 network.add_running_node(node, None).await;
             }
-        }
-
-        // spawm jam
-        if let Some(jam_spec) = &network_spec.jamchain {
-            self.spawn_jam(
-                jam_spec,
-                &ns,
-                &scoped_fs,
-                &network_spec.global_settings,
-                &mut network,
-            )
-            .await?
         }
 
         // spawn paras
@@ -749,15 +743,18 @@ where
         Ok(network)
     }
 
-    async fn spawn_jam<'a>(
+    /// Spawn a network whose root chain is a JAM chain instead of a relaychain.
+    async fn spawn_jam(
         &self,
         jam_spec: &JamchainSpec,
-        ns: &DynNamespace,
-        scoped_fs: &ScopedFilesystem<'a, T>,
-        global_settings: &GlobalSettings,
-        network: &mut Network<T>,
-    ) -> Result<(), OrchestratorError> {
-        let base_dir = ns.base_dir().to_string_lossy();
+        network_spec: &NetworkSpec,
+        ns: DynNamespace,
+        start_time: SystemTime,
+    ) -> Result<Network<T>, OrchestratorError> {
+        let base_dir = ns.base_dir().to_string_lossy().to_string();
+        let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
+        let global_settings = &network_spec.global_settings;
+
         // generate config
         let jam_config = jam_config::generate(jam_spec)?;
         // store the config file
@@ -782,7 +779,7 @@ where
         let generate_command = GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
         generators::chain_spec::build_locally(
             generate_command,
-            scoped_fs,
+            &scoped_fs,
             Some(&PathBuf::from(&jam_spec_full_path)),
         )
         .await?;
@@ -793,8 +790,8 @@ where
             parachain_id: None,
             chain: jam_spec.id.as_str(),
             role: ZombieRole::Node,
-            ns,
-            scoped_fs,
+            ns: &ns,
+            scoped_fs: &scoped_fs,
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: false,
@@ -804,9 +801,12 @@ where
         };
 
         let jam_global_files_to_inject = vec![TransferedFile::new(
-            PathBuf::from(format!("{}/jam_spec.json", ns.base_dir().to_string_lossy())),
+            PathBuf::from(format!("{base_dir}/jam_spec.json")),
             PathBuf::from("/cfg/jam_spec.json"),
         )];
+
+        let mut network =
+            Network::new_without_relay(ns.clone(), self.filesystem.clone(), network_spec.clone());
 
         network.set_jamchain(Jamchain::new(
             jam_spec.id.as_str(),
@@ -833,7 +833,22 @@ where
             network.add_running_jam_node(running_node).await;
         }
 
-        Ok(())
+        // start custom processes if needed
+        for cp in &network_spec.custom_processes {
+            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
+                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
+            }
+        }
+
+        network.set_start_time_ts(start_time);
+
+        write_zombie_json(serde_json::to_value(&network)?, scoped_fs, ns.name()).await?;
+
+        if network_spec.global_settings.tear_down_on_failure() {
+            network.spawn_watching_task();
+        }
+
+        Ok(network)
     }
 }
 
@@ -1036,13 +1051,15 @@ fn validate_spec_with_provider_capabilities(
 
     if capabilities.requires_image {
         // Relaychain
-        if network_spec.relaychain.default_image.is_none() {
-            // we should check if each node have an image
-            let nodes = &network_spec.relaychain.nodes;
-            if nodes.iter().any(|node| node.image.is_none()) {
-                errs.push(String::from(
-                    "Missing image for node, and not default is set at relaychain",
-                ));
+        if let Some(relaychain) = network_spec.try_relaychain() {
+            if relaychain.default_image.is_none() {
+                // we should check if each node have an image
+                let nodes = &relaychain.nodes;
+                if nodes.iter().any(|node| node.image.is_none()) {
+                    errs.push(String::from(
+                        "Missing image for node, and not default is set at relaychain",
+                    ));
+                }
             }
         };
 
@@ -1062,11 +1079,19 @@ fn validate_spec_with_provider_capabilities(
         // native
         // We need to get all the `cmds` and verify if are part of the path
         let mut cmds: HashSet<&str> = Default::default();
-        if let Some(cmd) = network_spec.relaychain.default_command.as_ref() {
-            cmds.insert(cmd.as_str());
+        if let Some(relaychain) = network_spec.try_relaychain() {
+            if let Some(cmd) = relaychain.default_command.as_ref() {
+                cmds.insert(cmd.as_str());
+            }
+            for node in relaychain.nodes.iter() {
+                cmds.insert(node.command());
+            }
         }
-        for node in network_spec.relaychain().nodes.iter() {
-            cmds.insert(node.command());
+
+        if let Some(jamchain) = network_spec.jamchain.as_ref() {
+            for node in jamchain.nodes.iter() {
+                cmds.insert(node.command());
+            }
         }
 
         // Paras
@@ -1593,7 +1618,7 @@ mod tests {
             .unwrap();
 
         spec.set_global_settings(global_settings);
-        let node = spec.relaychain.nodes.first_mut().unwrap();
+        let node = spec.relaychain_mut().nodes.first_mut().unwrap();
         node.args
             .push("--bootnodes {{ZOMBIE:bob:multiAddress')}}".into());
         let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
@@ -1620,7 +1645,7 @@ mod tests {
 
         let network_config = generate(false, Some("cargo")).unwrap();
         let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
-        let node = spec.relaychain.nodes.first_mut().unwrap();
+        let node = spec.relaychain_mut().nodes.first_mut().unwrap();
         node.args
             .push("--bootnodes {{ZOMBIE:bob:multiAddress')}}".into());
         let (concurrency, limited) = calculate_concurrency(&spec).unwrap();

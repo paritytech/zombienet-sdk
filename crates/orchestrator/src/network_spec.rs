@@ -7,7 +7,10 @@ use configuration::{CustomProcess, GlobalSettings, HrmpChannelConfig, NetworkCon
 use futures::future::try_join_all;
 use provider::{DynNamespace, ProviderError, ProviderNamespace};
 use serde::{Deserialize, Serialize};
-use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
+use support::{
+    constants::{RELAY_NOT_NONE, THIS_IS_A_BUG},
+    fs::FileSystem,
+};
 use tracing::{debug, trace};
 
 use crate::{
@@ -26,10 +29,10 @@ use self::{node::NodeSpec, parachain::ParachainSpec, relaychain::RelaychainSpec}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkSpec {
-    /// Relaychain configuration.
-    pub(crate) relaychain: RelaychainSpec,
+    /// Relaychain configuration, `None` for a JAM network.
+    pub(crate) relaychain: Option<RelaychainSpec>,
 
-    /// Jamchain configuration
+    /// Jamchain configuration, takes the place of the relaychain
     pub(crate) jamchain: Option<JamchainSpec>,
 
     /// Parachains configurations.
@@ -51,7 +54,10 @@ impl NetworkSpec {
         network_config: &NetworkConfig,
     ) -> Result<NetworkSpec, OrchestratorError> {
         let mut errs = vec![];
-        let relaychain = RelaychainSpec::from_config(network_config.relaychain())?;
+        let relaychain = network_config
+            .try_relaychain()
+            .map(RelaychainSpec::from_config)
+            .transpose()?;
         let jamchain = if let Some(jamchain_config) = network_config.jamchain() {
             Some(JamchainSpec::from_config(jamchain_config)?)
         } else {
@@ -60,12 +66,19 @@ impl NetworkSpec {
 
         let mut parachains = vec![];
 
-        // TODO: move to `fold` or map+fold
-        for para_config in network_config.parachains() {
-            match ParachainSpec::from_config(para_config, relaychain.chain.clone()) {
-                Ok(para) => parachains.push(para),
-                Err(err) => errs.push(err),
+        if let Some(relaychain) = relaychain.as_ref() {
+            // TODO: move to `fold` or map+fold
+            for para_config in network_config.parachains() {
+                match ParachainSpec::from_config(para_config, relaychain.chain.clone()) {
+                    Ok(para) => parachains.push(para),
+                    Err(err) => errs.push(err),
+                }
             }
+        } else if !network_config.parachains().is_empty() {
+            // TODO: parachains on top of a JAM chain aren't wired up yet.
+            errs.push(OrchestratorError::InvalidConfig(
+                "Parachains are not supported yet with a JAM chain.".to_string(),
+            ));
         }
 
         if errs.is_empty() {
@@ -123,7 +136,11 @@ impl NetworkSpec {
         };
 
         // check if we already had computed the args output for this cmd/[image]
-        let node = self.relaychain.nodes.iter().find(cmp_fn);
+        let node = self
+            .relaychain
+            .iter()
+            .flat_map(|relaychain| relaychain.nodes.iter())
+            .find(cmp_fn);
         let node = if let Some(node) = node {
             Some(node)
         } else {
@@ -154,11 +171,20 @@ impl NetworkSpec {
     }
 
     pub fn relaychain(&self) -> &RelaychainSpec {
-        &self.relaychain
+        self.relaychain
+            .as_ref()
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
     }
 
     pub fn relaychain_mut(&mut self) -> &mut RelaychainSpec {
-        &mut self.relaychain
+        self.relaychain
+            .as_mut()
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
+    }
+
+    /// The relaychain spec, `None` for a JAM network.
+    pub fn try_relaychain(&self) -> Option<&RelaychainSpec> {
+        self.relaychain.as_ref()
     }
 
     pub fn parachains_iter(&self) -> impl Iterator<Item = &ParachainSpec> {
@@ -227,7 +253,10 @@ impl NetworkSpec {
     // collect mutable references to all nodes from relaychain and parachains
     fn collect_network_nodes(&mut self) -> Vec<&mut NodeSpec> {
         vec![
-            self.relaychain.nodes.iter_mut().collect::<Vec<_>>(),
+            self.relaychain
+                .iter_mut()
+                .flat_map(|relaychain| relaychain.nodes.iter_mut())
+                .collect::<Vec<_>>(),
             self.parachains
                 .iter_mut()
                 .flat_map(|para| para.collators.iter_mut())
@@ -341,8 +370,8 @@ mod tests {
             .unwrap();
 
         let network_spec = NetworkSpec::from_config(&config).await.unwrap();
-        let alice = network_spec.relaychain.nodes.first().unwrap();
-        let bob = network_spec.relaychain.nodes.get(1).unwrap();
+        let alice = network_spec.relaychain().nodes.first().unwrap();
+        let bob = network_spec.relaychain().nodes.get(1).unwrap();
         assert_eq!(alice.command.as_str(), "polkadot");
         assert_eq!(bob.command.as_str(), "polkadot1");
         assert!(alice.is_validator);

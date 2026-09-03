@@ -21,7 +21,10 @@ use configuration::{
 };
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::{Deserialize, Serialize};
-use support::fs::FileSystem;
+use support::{
+    constants::{RELAY_NOT_NONE, THIS_IS_A_BUG},
+    fs::FileSystem,
+};
 use tokio::sync::RwLock;
 use tracing::{error, warn};
 
@@ -63,7 +66,8 @@ pub struct Network<T: FileSystem> {
     ns: DynNamespace,
     #[serde(skip)]
     filesystem: T,
-    relay: Relaychain,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay: Option<Relaychain>,
     initial_spec: NetworkSpec,
     parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,6 +119,15 @@ impl<T: FileSystem> Network<T> {
         fs: T,
         initial_spec: NetworkSpec,
     ) -> Self {
+        Self::new(Some(relay), ns, fs, initial_spec)
+    }
+
+    /// Create a network whose root chain is a JAM chain instead of a relaychain.
+    pub(crate) fn new_without_relay(ns: DynNamespace, fs: T, initial_spec: NetworkSpec) -> Self {
+        Self::new(None, ns, fs, initial_spec)
+    }
+
+    fn new(relay: Option<Relaychain>, ns: DynNamespace, fs: T, initial_spec: NetworkSpec) -> Self {
         Self {
             ns,
             filesystem: fs,
@@ -139,7 +152,20 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub fn relaychain(&self) -> &Relaychain {
-        &self.relay
+        self.relay
+            .as_ref()
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
+    }
+
+    /// The relaychain of the network, `None` for a JAM network.
+    pub fn try_relaychain(&self) -> Option<&Relaychain> {
+        self.relay.as_ref()
+    }
+
+    fn relaychain_mut(&mut self) -> &mut Relaychain {
+        self.relay
+            .as_mut()
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
     }
 
     // Teardown the network
@@ -206,11 +232,11 @@ impl<T: FileSystem> Network<T> {
         };
 
         let chain_context = ChainDefaultContext {
-            default_command: self.initial_spec.relaychain.default_command.as_ref(),
-            default_image: self.initial_spec.relaychain.default_image.as_ref(),
-            default_resources: self.initial_spec.relaychain.default_resources.as_ref(),
-            default_db_snapshot: self.initial_spec.relaychain.default_db_snapshot.as_ref(),
-            default_args: self.initial_spec.relaychain.default_args.iter().collect(),
+            default_command: self.initial_spec.relaychain().default_command.as_ref(),
+            default_image: self.initial_spec.relaychain().default_image.as_ref(),
+            default_resources: self.initial_spec.relaychain().default_resources.as_ref(),
+            default_db_snapshot: self.initial_spec.relaychain().default_db_snapshot.as_ref(),
+            default_args: self.initial_spec.relaychain().default_args.iter().collect(),
         };
 
         let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
@@ -339,6 +365,9 @@ impl<T: FileSystem> Network<T> {
             default_args: spec.default_args.iter().collect(),
         };
 
+        let relay_chain = self.relaychain().chain.clone();
+        let relay_chain_id = self.relaychain().chain_id.clone();
+
         let parachain = self
             .parachains
             .get_mut(&para_id)
@@ -355,13 +384,13 @@ impl<T: FileSystem> Network<T> {
             PathBuf::from(format!(
                 "{}/{}.json",
                 self.ns.base_dir().to_string_lossy(),
-                self.relay.chain
+                relay_chain
             ))
         };
 
         let mut global_files_to_inject = vec![TransferedFile::new(
             relaychain_spec_path,
-            PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
+            PathBuf::from(format!("/cfg/{}.json", relay_chain)),
         )];
 
         let para_chain_spec_local_path = if let Some(para_chain_spec_custom) = &options.chain_spec {
@@ -406,9 +435,9 @@ impl<T: FileSystem> Network<T> {
 
         // TODO: we want to still supporting spawn a dedicated bootnode??
         let ctx = SpawnNodeCtx {
-            chain_id: &self.relay.chain_id,
+            chain_id: &relay_chain_id,
             parachain_id: parachain.chain_id.as_deref(),
-            chain: &self.relay.chain,
+            chain: &relay_chain,
             role,
             ns: &self.ns,
             scoped_fs: &scoped_fs,
@@ -535,7 +564,7 @@ impl<T: FileSystem> Network<T> {
                 )),
                 PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
             ));
-            self.relay.chain_id.clone()
+            self.relaychain().chain_id.clone()
         };
 
         let mut para_spec = network_spec::parachain::ParachainSpec::from_config(
@@ -844,7 +873,7 @@ impl<T: FileSystem> Network<T> {
                 unreachable!()
             }
         } else {
-            self.relay.nodes.push(node.clone());
+            self.relaychain_mut().nodes.push(node.clone());
         }
 
         self.register_running_node(node).await;
@@ -930,8 +959,8 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
         self.relay
-            .nodes
             .iter()
+            .flat_map(|relay| relay.nodes.iter())
             .chain(
                 self.parachains
                     .values()
@@ -952,7 +981,8 @@ impl<T: FileSystem> Network<T> {
     /// * `Err(e)` if timeout or other error occurred while waiting.
     pub async fn wait_until_is_up(&self, timeout_secs: u64) -> Result<(), anyhow::Error> {
         let handles = self
-            .nodes_iter()
+            .nodes_by_name
+            .values()
             .map(|node| node.wait_until_is_up(timeout_secs));
 
         futures::future::try_join_all(handles).await?;

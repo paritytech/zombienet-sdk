@@ -180,7 +180,10 @@ impl SpawnedNode for JamNetworkNode {
         // never succeed there. Only the ordinary node exposes a TCP (RPC) endpoint to wait
         // on.
         if !matches!(self.spec.mode, JamNodeMode::Ordinary) {
-            debug!("[{}] validator/proxy p2p is UDP; skipping TCP readiness wait", self.name());
+            debug!(
+                "[{}] validator/proxy p2p is UDP; skipping TCP readiness wait",
+                self.name()
+            );
             return Ok(());
         }
         let addr = self.probe_addr();

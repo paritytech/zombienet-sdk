@@ -349,16 +349,30 @@ impl ChainSpec {
                 }
             };
 
+            self.resolve_subcommand(ns).await?;
+
             // SAFETY: we ensure that command is some with the first check of the fn
             // default as empty
             let sanitized_cmd = if replacement_value.is_empty() {
-                // we need to remove the `--chain` flag
-                self.command.as_ref().unwrap().cmd().replace("--chain", "")
+                if self.subcommand.as_deref() == Some("export-chain-spec") {
+                    // Some released node binaries default `export-chain-spec --chain` to the
+                    // literal string `"local"` (fixed in newer polkadot-sdk, but older/released
+                    // images still carry the bug), which isn't a valid preset for most
+                    // parachains and fails with "Error opening spec file `local`". Pass an
+                    // explicit empty id instead of omitting `--chain`, so behavior doesn't
+                    // depend on the target binary's own default value.
+                    self.command
+                        .as_ref()
+                        .unwrap()
+                        .cmd()
+                        .replace("--chain {{chainName}}", "--chain=")
+                } else {
+                    // build-spec: we need to remove the `--chain` flag
+                    self.command.as_ref().unwrap().cmd().replace("--chain", "")
+                }
             } else {
                 self.command.as_ref().unwrap().cmd().to_owned()
             };
-
-            self.resolve_subcommand(ns).await?;
 
             let mut replacements = HashMap::from([("chainName", replacement_value.as_str())]);
 

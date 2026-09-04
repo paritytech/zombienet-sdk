@@ -1,7 +1,10 @@
 use configuration::types::JamNodeMode;
 use serde::{Deserialize, Serialize};
 
-use crate::{generators::errors::GeneratorError, network_spec::jamchain::JamchainSpec};
+use crate::{
+    generators::{chain_spec::merge, errors::GeneratorError},
+    network_spec::jamchain::JamchainSpec,
+};
 
 /// Generate config file used to get the chain-spec
 /// Using this json format:
@@ -53,6 +56,9 @@ pub struct GenesisValidator {
 pub struct GenesisConfig {
     pub id: String,
     pub genesis_validators: Vec<GenesisValidator>,
+    /// Whatever the genesis overrides add beyond the generated keys, passed to `gen-spec` as is.
+    #[serde(flatten)]
+    pub overrides: serde_json::Map<String, serde_json::Value>,
 }
 
 pub fn generate(jam_spec: &JamchainSpec) -> Result<GenesisConfig, GeneratorError> {
@@ -84,9 +90,20 @@ pub fn generate(jam_spec: &JamchainSpec) -> Result<GenesisConfig, GeneratorError
     let gen_config = GenesisConfig {
         id: jam_spec.id.as_str().into(),
         genesis_validators,
+        overrides: Default::default(),
     };
 
-    Ok(gen_config)
+    let Some(overrides) = &jam_spec.genesis_overrides else {
+        return Ok(gen_config);
+    };
+    // Merged as JSON and read back, so the generated keys keep their place in the file.
+    let mut merged = serde_json::to_value(gen_config).map_err(encode_error)?;
+    merge(&mut merged, overrides);
+    serde_json::from_value(merged).map_err(encode_error)
+}
+
+fn encode_error(error: serde_json::Error) -> GeneratorError {
+    GeneratorError::EncodeDecodeError(error.to_string())
 }
 
 #[cfg(test)]
@@ -127,7 +144,75 @@ mod tests {
             default_args: vec![],
             chain_spec_command: String::new(),
             nodes,
+            genesis_overrides: None,
         }
+    }
+
+    /// Exactly what `serde_json::to_string_pretty` wrote for a one-validator network before the
+    /// overrides existed. Every existing user's `jam_config.json` is this file.
+    const ALICE_ALONE: &str = r#"{
+  "id": "dev",
+  "genesis_validators": [
+    {
+      "peer_id": "peer-alice",
+      "bandersnatch": "pub-alice",
+      "net_addr": "127.0.0.1:40001"
+    }
+  ]
+}"#;
+
+    fn alice_alone(genesis_overrides: Option<serde_json::Value>) -> JamchainSpec {
+        JamchainSpec {
+            genesis_overrides,
+            ..jam_spec(vec![jam_node("alice", JamNodeMode::Validator, 40001, 9944)])
+        }
+    }
+
+    fn written(spec: &JamchainSpec) -> String {
+        serde_json::to_string_pretty(&generate(spec).unwrap()).unwrap()
+    }
+
+    /// The overrides are how a caller puts services, authorizer queues and privileges into
+    /// genesis; the generator knows nothing about those keys and must pass every one of them
+    /// through, next to what it generated itself.
+    #[test]
+    fn genesis_overrides_are_added_to_the_generated_config() {
+        let overrides = serde_json::json!({
+            "services": [{
+                "id": 5,
+                "code": "/blobs/parasim-service.jam",
+                "balance": "18446744073709551615",
+            }],
+            "auth_queues": { "0": "2bbda8cb" },
+            "assigners": { "0": 5 },
+            "privileges": { "bless": 0, "assign": { "0": 5 } },
+        });
+
+        let config: serde_json::Value =
+            serde_json::from_str(&written(&alice_alone(Some(overrides.clone())))).unwrap();
+
+        for key in ["services", "auth_queues", "assigners", "privileges"] {
+            assert_eq!(
+                config[key], overrides[key],
+                "{key} did not reach the config"
+            );
+        }
+        assert_eq!(config["id"], "dev");
+        assert_eq!(
+            config["genesis_validators"][0]["net_addr"],
+            "127.0.0.1:40001"
+        );
+    }
+
+    /// Nobody who does not use the overrides should see their file change — not even in key
+    /// order, which is what a naive detour through `serde_json::Value` would reshuffle.
+    #[test]
+    fn without_overrides_the_config_is_written_exactly_as_before() {
+        assert_eq!(written(&alice_alone(None)), ALICE_ALONE);
+        assert_eq!(
+            written(&alice_alone(Some(serde_json::json!({})))),
+            ALICE_ALONE
+        );
     }
 
     // The nodes dial each other using the addresses in the genesis validator set, so

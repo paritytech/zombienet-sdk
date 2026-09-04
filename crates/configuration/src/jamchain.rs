@@ -43,6 +43,9 @@ pub struct JamchainConfig {
     corevm_monitor_command: Option<Command>,
     /// Command to spawn corevm builder (if present)
     corevm_builder_command: Option<Command>,
+    /// Genesis state beyond the validator set, merged into the config `gen-spec` reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    genesis_overrides: Option<serde_json::Value>,
     /// A list of nodes to run in this chain.
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<JamNodeConfig>,
@@ -99,6 +102,11 @@ impl JamchainConfig {
         self.corevm_builder_command.as_ref()
     }
 
+    /// The genesis overrides merged into the config `gen-spec` reads (if set).
+    pub fn genesis_overrides(&self) -> Option<&serde_json::Value> {
+        self.genesis_overrides.as_ref()
+    }
+
     /// The nodes of the relay chain.
     pub fn nodes(&self) -> Vec<&JamNodeConfig> {
         self.nodes.iter().collect::<Vec<&JamNodeConfig>>()
@@ -139,6 +147,7 @@ impl Default for JamchainConfigBuilder<Initial> {
                 chain_spec_command: None,
                 corevm_monitor_command: None,
                 corevm_builder_command: None,
+                genesis_overrides: None,
                 nodes: vec![],
             },
             validation_context: Default::default(),
@@ -313,6 +322,44 @@ impl JamchainConfigBuilder<WithId> {
         )
     }
 
+    /// Set the command that generates the chain spec, when it is not the node binary itself.
+    ///
+    /// Only the command is used: the orchestrator appends `gen-spec <config> <spec>` itself.
+    pub fn with_chain_spec_command<T>(self, command: T) -> Self
+    where
+        T: TryInto<Command>,
+        T::Error: Error + Send + Sync + 'static,
+    {
+        match command.try_into() {
+            Ok(command) => Self::transition(
+                JamchainConfig {
+                    chain_spec_command: Some(command),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::Command(error.into()).into()),
+            ),
+        }
+    }
+
+    /// Set the genesis overrides: a JSON object merged into the config `gen-spec` reads, on top
+    /// of the generated `id` and `genesis_validators`. Its keys are `gen-spec`'s business.
+    pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
+        Self::transition(
+            JamchainConfig {
+                genesis_overrides: Some(genesis_overrides.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Set the command used for corevm monitor.
     pub fn with_corevm_monitor_command<T>(self, command: T) -> Self
     where
@@ -479,6 +526,19 @@ impl JamchainConfigBuilder<WithId> {
 }
 
 impl JamchainConfigBuilder<WithAtLeastOneNode> {
+    /// Set the genesis overrides: a JSON object merged into the config `gen-spec` reads, on top
+    /// of the generated `id` and `genesis_validators`. Its keys are `gen-spec`'s business.
+    pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
+        Self::transition(
+            JamchainConfig {
+                genesis_overrides: Some(genesis_overrides.into()),
+                ..self.config
+            },
+            self.validation_context,
+            self.errors,
+        )
+    }
+
     /// Add a new validator node using a nested [`JamNodeConfigBuilder`].
     /// The node will be configured as a validator (authority).
     pub fn with_validator(
@@ -587,5 +647,57 @@ impl JamchainConfigBuilder<WithAtLeastOneNode> {
         }
 
         Ok(self.config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn overrides() -> serde_json::Value {
+        json!({
+            "services": [{ "id": 5, "code": "/blobs/parasim-service.jam" }],
+            "assigners": { "0": 5 },
+        })
+    }
+
+    /// The override is the caller's business: it reaches `gen-spec` untouched, so nothing here
+    /// knows or checks what its keys mean.
+    #[test]
+    fn genesis_overrides_are_kept_as_given() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_genesis_overrides(overrides())
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        assert_eq!(config.genesis_overrides(), Some(&overrides()));
+    }
+
+    /// Callers set the override after the nodes as naturally as before them.
+    #[test]
+    fn genesis_overrides_can_follow_the_nodes() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_validator(|node| node.with_name("jam0"))
+            .with_genesis_overrides(overrides())
+            .build()
+            .expect("the chain config builds");
+
+        assert_eq!(config.genesis_overrides(), Some(&overrides()));
+    }
+
+    #[test]
+    fn genesis_overrides_are_absent_by_default() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        assert_eq!(config.genesis_overrides(), None);
     }
 }

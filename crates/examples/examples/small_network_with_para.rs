@@ -15,6 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_parachain(|p| {
             p.with_id(100)
                 .cumulus_based(true)
+                .with_chain("asset-hub-rococo")
                 .with_collator(|n| n.with_name("collator").with_command("polkadot-parachain"))
         })
         .build()

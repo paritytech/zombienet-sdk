@@ -157,8 +157,8 @@ mod tests {
             }
         });
 
-        let res = apply_running_network_replacements("{{ZOMBIE:alice:multiaddr}}", &network);
-        assert_eq!(res.as_str(), "some/demo/127.0.0.1");
+        let res = apply_running_network_replacements("ws://{{ZOMBIE:alice:multiaddr}}", &network);
+        assert_eq!(res.as_str(), "ws://some/demo/127.0.0.1");
     }
 
     #[test]

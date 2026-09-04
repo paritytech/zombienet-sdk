@@ -11,7 +11,8 @@ pub async fn upgrade(
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Upgrading runtime, using node: {} with endpoting {}",
-        node.name, node.ws_uri
+        node.name(),
+        node.ws_uri
     );
     let api: OnlineClient<SubstrateConfig> = node.wait_client().await?;
 

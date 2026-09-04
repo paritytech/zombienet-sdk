@@ -1,0 +1,212 @@
+use std::collections::{HashMap, HashSet};
+
+use configuration::{
+    shared::{
+        helpers::generate_unique_node_name_from_names,
+        node::JamNodeConfig,
+        resources::Resources,
+        types::{Arg, Chain, Command, Image},
+    },
+    JamchainConfig,
+};
+use serde::{Deserialize, Serialize};
+use support::replacer::apply_replacements;
+
+use crate::{
+    errors::OrchestratorError,
+    network_spec::jamnode::JamNodeSpec,
+    shared::{constants::DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
+};
+
+/// A relaychain configuration spec
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JamchainSpec {
+    /// Id to use (e.g. dev).
+    pub(crate) id: Chain,
+
+    /// Default command to run the node. Can be overridden on each node.
+    pub(crate) default_command: Option<Command>,
+
+    /// Default image to use (only podman/k8s). Can be overridden on each node.
+    pub(crate) default_image: Option<Image>,
+
+    /// Default resources. Can be overridden on each node.
+    pub(crate) default_resources: Option<Resources>,
+
+    /// Default arguments to use in nodes. Can be overridden on each node.
+    pub(crate) default_args: Vec<Arg>,
+
+    // chain_spec_path: Option<AssetLocation>,
+    // pub(crate) chain_spec: ChainSpec,
+    /// Chain-spec generator resolved
+    pub chain_spec_command: String,
+
+    /// Nodes to run.
+    pub(crate) nodes: Vec<JamNodeSpec>,
+
+    /// Genesis state beyond the validator set, merged into the config `gen-spec` reads.
+    pub(crate) genesis_overrides: Option<serde_json::Value>,
+}
+
+impl JamchainSpec {
+    pub fn from_config(config: &JamchainConfig) -> Result<JamchainSpec, OrchestratorError> {
+        // main command to use, in order:
+        // set as `default_command` or
+        // use the command of the first node.
+        // If non of those is set, return an error.
+        let main_cmd = config
+            .default_command()
+            .or(config.nodes().first().and_then(|node| node.command()))
+            .ok_or(OrchestratorError::InvalidConfig(
+                "Relaychain, either default_command or first node with a command needs to be set."
+                    .to_string(),
+            ))?;
+
+        if config
+            .genesis_overrides()
+            .is_some_and(|overrides| !overrides.is_object())
+        {
+            return Err(OrchestratorError::InvalidConfig(
+                "Jamchain, genesis_overrides must be a JSON object.".to_string(),
+            ));
+        }
+
+        // TODO: support podman/docker/k8s
+        // let main_image = config
+        //     .default_image()
+        //     .or(config.nodes().first().and_then(|node| node.image()))
+        //     .map(|image| image.as_str().to_string());
+
+        let replacements = HashMap::from([
+            ("mainCommand", main_cmd.as_str()),
+            ("subCommand", "gen-spec"),
+        ]);
+
+        let chain_spec_cmd_augmented = if let Some(tmpl) = config.chain_spec_command() {
+            apply_replacements(tmpl.as_str(), &replacements)
+        } else {
+            apply_replacements(DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND, &replacements)
+        };
+
+        // TODO: handle chain-spec build/customization
+
+        // build the `node_specs`
+        let chain_context = ChainDefaultContext {
+            default_command: config.default_command(),
+            default_image: config.default_image(),
+            default_resources: config.default_resources(),
+            default_db_snapshot: None,
+            default_args: config.default_args(),
+        };
+
+        let nodes: Vec<JamNodeConfig> = config.nodes().into_iter().cloned().collect();
+        // nodes.extend(
+        //     config
+        //         .group_node_configs()
+        //         .into_iter()
+        //         .flat_map(|node_group| node_group.expand_group_configs()),
+        // );
+
+        let mut names = HashSet::new();
+        let (nodes, mut errs) = nodes
+            .iter()
+            .map(|node_config| JamNodeSpec::from_config(node_config, &chain_context))
+            .fold((vec![], vec![]), |(mut nodes, mut errs), result| {
+                match result {
+                    Ok(mut node) => {
+                        let unique_name =
+                            generate_unique_node_name_from_names(node.name, &mut names);
+                        node.name = unique_name;
+                        nodes.push(node);
+                    },
+                    Err(err) => errs.push(err),
+                }
+                (nodes, errs)
+            });
+
+        if !errs.is_empty() {
+            // TODO: merge errs, maybe return something like Result<Sometype, Vec<OrchestratorError>>
+            return Err(errs.swap_remove(0));
+        }
+
+        Ok(JamchainSpec {
+            id: config.id().clone(),
+            default_command: config.default_command().cloned(),
+            default_image: config.default_image().cloned(),
+            default_resources: config.default_resources().cloned(),
+            default_args: config.default_args().into_iter().cloned().collect(),
+            chain_spec_command: chain_spec_cmd_augmented,
+            nodes,
+            genesis_overrides: config.genesis_overrides().cloned(),
+        })
+    }
+
+    // pub fn chain_spec(&self) -> &ChainSpec {
+    //     &self.chain_spec
+    // }
+
+    // pub fn chain_spec_mut(&mut self) -> &mut ChainSpec {
+    //     &mut self.chain_spec
+    // }
+}
+
+#[cfg(test)]
+mod tests {
+    use configuration::JamchainConfigBuilder;
+
+    use super::*;
+
+    /// The chain spec is not always generated by the binary that runs the nodes: the two are
+    /// separate commands here, and only the first token of the template is used because the
+    /// orchestrator appends `gen-spec <config> <spec>` itself.
+    #[test]
+    fn a_chain_spec_command_of_its_own_overrides_the_node_binary() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_default_command("/bin/node-binary")
+            .with_chain_spec_command("/bin/spec-binary")
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        let spec = JamchainSpec::from_config(&config).expect("the spec builds");
+
+        assert_eq!(spec.chain_spec_command, "/bin/spec-binary");
+    }
+
+    /// The override is merged key by key into the generated config, so anything but an object
+    /// has nothing to merge into — and silently writing the config without it would surface
+    /// only as a chain missing its services.
+    #[test]
+    fn a_genesis_override_that_is_not_an_object_is_refused() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_default_command("/bin/node-binary")
+            .with_genesis_overrides(serde_json::json!(["services"]))
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        let error = JamchainSpec::from_config(&config)
+            .err()
+            .expect("the spec is refused");
+
+        assert!(error.to_string().contains("genesis_overrides"), "{error}");
+    }
+
+    /// With nothing named, the node binary generates its own spec — which is the arrangement
+    /// every existing user has.
+    #[test]
+    fn the_node_binary_generates_its_own_spec_by_default() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_default_command("/bin/node-binary")
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        let spec = JamchainSpec::from_config(&config).expect("the spec builds");
+
+        assert_eq!(spec.chain_spec_command, "/bin/node-binary gen-spec");
+    }
+}

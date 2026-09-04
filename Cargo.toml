@@ -94,9 +94,9 @@ jam-types = "0.1.28"
 
 
 # Zombienet workspace crates:
-support = { package = "zombienet-support", version = "0.4.17", path = "crates/support" }
-configuration = { package = "zombienet-configuration", version = "0.4.17", path = "crates/configuration" }
-orchestrator = { package = "zombienet-orchestrator", version = "0.4.17", path = "crates/orchestrator" }
-provider = { package = "zombienet-provider", version = "0.4.17", path = "crates/provider" }
-prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.4.17", path = "crates/prom-metrics-parser" }
-zombienet-sdk = { version = "0.4.17", path = "crates/sdk" }
+support = { package = "zombienet-support", version = "0.4.18", path = "crates/support" }
+configuration = { package = "zombienet-configuration", version = "0.4.18", path = "crates/configuration" }
+orchestrator = { package = "zombienet-orchestrator", version = "0.4.18", path = "crates/orchestrator" }
+provider = { package = "zombienet-provider", version = "0.4.18", path = "crates/provider" }
+prom-metrics-parser = { package = "zombienet-prom-metrics-parser", version = "0.4.18", path = "crates/prom-metrics-parser" }
+zombienet-sdk = { version = "0.4.18", path = "crates/sdk" }

@@ -188,8 +188,7 @@ mod tests {
             .expect("the chain config builds");
 
         let error = JamchainSpec::from_config(&config)
-            .err()
-            .expect("the spec is refused");
+            .expect_err("the spec is refused");
 
         assert!(error.to_string().contains("genesis_overrides"), "{error}");
     }

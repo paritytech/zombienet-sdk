@@ -100,7 +100,6 @@ impl JamNodeSpec {
             seed: seed.clone(),
             accounts,
         };
-        println!("{:?}", accounts);
         let ed25519 = accounts
             .accounts
             .get("ed25519")

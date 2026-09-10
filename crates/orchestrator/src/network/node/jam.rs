@@ -6,7 +6,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::types::{Arg, AssetLocation, JamNodeMode};
 use serde::{Deserialize, Serialize};
-use support::net::wait_tcp_ready;
+use subxt::ext::jsonrpsee::ws_client::{WsClient, WsClientBuilder};
+use support::net::{wait_tcp_ready, wait_ws_ready};
 use tracing::debug;
 
 use super::{
@@ -112,6 +113,10 @@ impl JamNetworkNode {
         &self.rpc_uri
     }
 
+    pub fn ws_uri(&self) -> String {
+        format!("ws://{}", &self.rpc_uri)
+    }
+
     /// Address used to probe for readiness: the rpc port for ordinary nodes
     /// (the only ones that bind it), the p2p port otherwise.
     fn probe_addr(&self) -> String {
@@ -164,6 +169,45 @@ impl JamNetworkNode {
         self.core
             .restart_with(&assets, &program, &args, after)
             .await
+    }
+
+    /// Try to connect to the node.
+    ///
+    /// Most of the time you only want to use [`JamNetworkNode::wait_client`] that waits for
+    /// the node to appear before it connects to it. This function directly tries
+    /// to connect to the node and returns an error if the node is not yet available
+    /// at that point in time.
+    ///
+    /// Return a [WsClient]
+    async fn try_client(&self) -> Result<WsClient, anyhow::Error> {
+        match WsClientBuilder::default().build(self.ws_uri()).await {
+            Ok(client) => Ok(client),
+            Err(error) => Err(anyhow!(format!(
+                "Error building a wsClient: {}",
+                error.to_string()
+            ))),
+        }
+    }
+
+    /// Wait until get the [WsClient] for the node
+    pub async fn wait_client(&self) -> Result<WsClient, anyhow::Error> {
+        debug!("wait_client ws_uri: {}", self.ws_uri());
+        wait_ws_ready(&self.ws_uri())
+            .await
+            .map_err(|e| anyhow!("Error awaiting http_client to be ready, err: {e}"))?;
+
+        self.try_client()
+            .await
+            .map_err(|e| anyhow!("Can't create a wsClient, err: {e}"))
+    }
+
+    /// Wait until get the [WsClient] for the node with a defined timeout
+    pub async fn wait_client_with_timeout(
+        &self,
+        timeout_secs: impl Into<u64>,
+    ) -> Result<WsClient, anyhow::Error> {
+        debug!("waiting until client is ready");
+        tokio::time::timeout(Duration::from_secs(timeout_secs.into()), self.wait_client()).await?
     }
 }
 

@@ -16,7 +16,7 @@ env:
   GHA_CLUSTER_SERVER_ADDR: "https://kubernetes.default:443"
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-Dwarnings"
-  BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+  BASE_IMAGE: docker.io/paritytech/ci-unified:bullseye-1.93.0-2026-01-27-v202605151311
   RUN_IN_CI: "1"
   RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
   CARGO_TARGET_DIR: /tmp/target
@@ -27,7 +27,7 @@ jobs:
     runs-on: parity-large
     timeout-minutes: 60
     container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+      image: ${{ env.BASE_IMAGE }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -60,7 +60,7 @@ jobs:
     needs: build-tests
     timeout-minutes: 60
     container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+      image: ${{ env.BASE_IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -162,7 +162,7 @@ jobs:
     needs: build-tests
     timeout-minutes: 60
     container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+      image: ${{ env.BASE_IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -308,7 +308,7 @@ jobs:
     needs: build-tests
     timeout-minutes: 60
     container:
-      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+      image: ${{ env.BASE_IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0

@@ -184,7 +184,7 @@ impl JamNetworkNode {
             Ok(client) => Ok(client),
             Err(error) => Err(anyhow!(format!(
                 "Error building a wsClient: {}",
-                error.to_string()
+                error
             ))),
         }
     }

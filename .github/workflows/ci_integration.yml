@@ -23,11 +23,20 @@ env:
   POLKADOT_SDK_VERSION: "polkadot-stable2603-2"
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.set_image.outputs.image }}
+    steps:
+      - id: set_image
+        run: cat .github/env | grep -Ev '^\s*#|^\s*$'
+
   build-tests:
     runs-on: parity-large
     timeout-minutes: 60
+    needs: [preflight]
     container:
-      image: ${{ env.BASE_IMAGE }}
+      image: ${{ needs.preflight.outputs.IMAGE }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -58,10 +67,10 @@ jobs:
 
   k8s-integration-test-smoke:
     runs-on: parity-zombienet
-    needs: build-tests
     timeout-minutes: 60
+    needs: [preflight, build-tests]
     container:
-      image: ${{ env.BASE_IMAGE }}
+      image: ${{ needs.preflight.outputs.IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -160,10 +169,10 @@ jobs:
 
   native-integration-test-smoke:
     runs-on: parity-default
-    needs: build-tests
     timeout-minutes: 60
+    needs: [preflight, build-tests]
     container:
-      image: ${{ env.BASE_IMAGE }}
+      image: ${{ needs.preflight.outputs.IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -212,10 +221,10 @@ jobs:
 
   native-integration-test-jamchain-smoke:
     runs-on: parity-default
-    needs: build-tests
     timeout-minutes: 60
+    needs: [preflight, build-tests]
     container:
-      image: ${{ env.BASE_IMAGE }}
+      image: ${{ needs.preflight.outputs.IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -357,10 +366,10 @@ jobs:
 
   native-snapshot-roundtrip:
     runs-on: parity-default
-    needs: build-tests
     timeout-minutes: 60
+    needs: [preflight, build-tests]
     container:
-      image: ${{ env.BASE_IMAGE }}
+      image: ${{ needs.preflight.outputs.IMAGE }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0

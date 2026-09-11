@@ -242,7 +242,7 @@ jobs:
           for tgz in "polkajam-$JAM_VERSION-linux-x86_64.tgz" ; do
             echo "downloading $tgz";
             curl --retry 3 -L -o /tmp/$tgz https://github.com/paritytech/polkajam-releases/releases/download/$JAM_VERSION/$tgz;
-            tar -xzvf /tmp/$tgz
+            tar -xzvf /tmp/$tgz -C /tmp
             ls -ltr /tmp
             cp /tmp/polkajam-$JAM_VERSION-linux-x86_64/polkajam /tmp/polkajam
             chmod 755 /tmp/polkajam;

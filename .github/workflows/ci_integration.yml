@@ -29,7 +29,7 @@ jobs:
       image: ${{ steps.set_image.outputs.image }}
     steps:
       - id: set_image
-        run: cat .github/env | grep -Ev '^\s*#|^\s*$'
+        run: cat .github/env | grep -Ev '^\s*#|^\s*$' >> $GITHUB_OUTPUT
 
   build-tests:
     runs-on: parity-large

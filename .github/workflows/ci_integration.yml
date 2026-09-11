@@ -225,7 +225,7 @@ jobs:
 
   native-integration-test-jamchain-smoke:
     runs-on: parity-default
-    timeout-minutes: 60
+    timeout-minutes: 10
     needs: [build-tests]
     steps:
       - name: Download artifacts
@@ -266,6 +266,7 @@ jobs:
           ls -la
           tar xvfz artifacts.tar.gz
           export ZOMBIE_PROVIDER="native"
+          sudo sysctl -w vm.unprivileged_userfaultfd=1
           ./artifacts/jam_smoke_native --nocapture
           # cargo test --test jam-smoke-native -- --nocapture
 

@@ -28,6 +28,9 @@ jobs:
     outputs:
       image: ${{ steps.set_image.outputs.image }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
       - id: set_image
         run: cat .github/env | grep -Ev '^\s*#|^\s*$' >> $GITHUB_OUTPUT
 

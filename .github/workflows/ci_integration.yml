@@ -21,6 +21,7 @@ env:
   RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
   CARGO_TARGET_DIR: /tmp/target
   POLKADOT_SDK_VERSION: "polkadot-stable2603-2"
+  JAM_VERSION: "v0.1.28"
 
 jobs:
   preflight:
@@ -238,10 +239,12 @@ jobs:
       - name: Download bins
         shell: bash
         run: |
-          for bin in polkadot polkadot-execute-worker polkadot-prepare-worker polkadot-omni-node polkadot-parachain; do
-            echo "downloading $bin";
-            curl --retry 3 -L -o /tmp/$bin https://github.com/paritytech/polkadot-sdk/releases/download/$POLKADOT_SDK_VERSION/$bin;
-            chmod 755 /tmp/$bin;
+          for tgz in polkajam-$POLKAJAM_VERSION-linux-x86_64.tgz ; do
+            echo "downloading $tgz";
+            curl --retry 3 -L -o /tmp/$tgz https://github.com/paritytech/polkadot-sdk/releases/download/$POLKAJAM_VERSION/$tgz;
+            tar -xzvf /tmp/$tgz
+            cp /tmp/polkajam-$POLKAJAM_VERSION-linux-x86_64/polkajam /tmp/
+            chmod 755 /tmp/polkajam;
           done
           ls -ltr /tmp
           export PATH=/tmp:$PATH

@@ -114,7 +114,7 @@ impl JamNetworkNode {
     }
 
     pub fn ws_uri(&self) -> String {
-        format!("ws://{}", &self.rpc_uri)
+        format!("ws://{}", self.rpc_uri)
     }
 
     /// Address used to probe for readiness: the rpc port for ordinary nodes

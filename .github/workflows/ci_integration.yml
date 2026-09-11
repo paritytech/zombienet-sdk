@@ -260,6 +260,7 @@ jobs:
           ls -la
           tar xvfz artifacts.tar.gz
           export ZOMBIE_PROVIDER="native"
+          sysctl -w vm.unprivileged_userfaultfd=1
           ./artifacts/jam_smoke_native --nocapture
           # cargo test --test jam-smoke-native -- --nocapture
 
@@ -277,6 +278,7 @@ jobs:
           name: zombienet-logs-${{ github.job }}-${{ github.sha }}
           path: |
             /tmp/zombie-1/logs/*
+
   docker-integration-test-chain-spec-runtime-omni-node:
     runs-on: parity-zombienet-native-default
     needs: build-tests

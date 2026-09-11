@@ -227,15 +227,20 @@ jobs:
     runs-on: parity-default
     timeout-minutes: 60
     needs: [build-tests]
-    # container:
-    #   image: ${{ needs.preflight.outputs.IMAGE }}
-    #   options: "--privileged" # to allow enable userfaultfd
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: zombienet-tests-${{ github.sha }}
           path: /tmp
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install wget
+          # Manually download and install the OpenSSL 1.1 library
+          wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
 
       - name: Download bins
         shell: bash

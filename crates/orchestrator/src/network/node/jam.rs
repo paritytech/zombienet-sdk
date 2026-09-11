@@ -182,10 +182,7 @@ impl JamNetworkNode {
     async fn try_client(&self) -> Result<WsClient, anyhow::Error> {
         match WsClientBuilder::default().build(self.ws_uri()).await {
             Ok(client) => Ok(client),
-            Err(error) => Err(anyhow!(format!(
-                "Error building a wsClient: {}",
-                error
-            ))),
+            Err(error) => Err(anyhow!(format!("Error building a wsClient: {}", error))),
         }
     }
 

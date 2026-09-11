@@ -226,10 +226,10 @@ jobs:
   native-integration-test-jamchain-smoke:
     runs-on: parity-default
     timeout-minutes: 60
-    needs: [preflight, build-tests]
-    container:
-      image: ${{ needs.preflight.outputs.IMAGE }}
-      options: "--privileged" # to allow enable userfaultfd
+    needs: [build-tests]
+    # container:
+    #   image: ${{ needs.preflight.outputs.IMAGE }}
+    #   options: "--privileged" # to allow enable userfaultfd
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0

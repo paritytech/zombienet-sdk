@@ -267,6 +267,7 @@ jobs:
           tar xvfz artifacts.tar.gz
           export ZOMBIE_PROVIDER="native"
           sudo sysctl -w vm.unprivileged_userfaultfd=1
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           ./artifacts/jam_smoke_native --nocapture
           # cargo test --test jam-smoke-native -- --nocapture
 

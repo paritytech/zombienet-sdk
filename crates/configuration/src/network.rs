@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use support::{
-    constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALIDATION_CHECK, VALID_REGEX},
+    constants::{NO_ERR_DEF_BUILDER, RELAY_NOT_NONE, THIS_IS_A_BUG, VALID_REGEX},
     replacer::apply_env_replacements,
 };
 use tracing::trace;
@@ -20,6 +20,7 @@ use crate::{
     custom_process,
     global_settings::{GlobalSettings, GlobalSettingsBuilder},
     hrmp_channel::{self, HrmpChannelConfig, HrmpChannelConfigBuilder},
+    jamchain::{self, JamchainConfig, JamchainConfigBuilder},
     parachain::{self, ParachainConfig, ParachainConfigBuilder},
     relaychain::{self, RelaychainConfig, RelaychainConfigBuilder},
     shared::{
@@ -33,12 +34,17 @@ use crate::{
     CustomProcess, CustomProcessBuilder, RegistrationStrategy,
 };
 
-/// A network configuration, composed of a relaychain, parachains and HRMP channels.
+/// A network configuration, composed of a relaychain (or a JAM chain), parachains and HRMP
+/// channels.
+///
+/// The JAM chain takes the place of the relaychain, so a network has one or the other, never
+/// both.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkConfig {
     #[serde(rename = "settings", default = "GlobalSettings::default")]
     global_settings: GlobalSettings,
     relaychain: Option<RelaychainConfig>,
+    jamchain: Option<JamchainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     parachains: Vec<ParachainConfig>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
@@ -58,6 +64,20 @@ impl NetworkConfig {
         self.relaychain
             .as_ref()
             .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
+    }
+
+    /// The relay chain of the network, `None` for a JAM network.
+    pub fn try_relaychain(&self) -> Option<&RelaychainConfig> {
+        self.relaychain.as_ref()
+    }
+
+    /// The jam chain of the network.
+    pub fn jamchain(&self) -> Option<&JamchainConfig> {
+        if let Some(jamconfig) = &self.jamchain {
+            Some(jamconfig)
+        } else {
+            None
+        }
     }
 
     /// The parachains of the network.
@@ -158,93 +178,84 @@ impl NetworkConfig {
         let mut network_config: NetworkConfig = toml::from_str(&toml_text)?;
         trace!("parsed config {network_config:#?}");
 
-        // All unwraps below are safe, because we ensure that the relaychain is not None at this point
-        if network_config.relaychain.is_none() {
-            Err(anyhow!("Relay chain does not exist."))?
+        // A network is rooted either in a relaychain or in a JAM chain.
+        if network_config.relaychain.is_none() && network_config.jamchain.is_none() {
+            Err(anyhow!("Relay chain or Jam definition does not exist."))?
         }
 
-        // retrieve the defaults relaychain for assigning to nodes if needed
-        let mut relaychain_default_command: Option<Command> =
-            network_config.relaychain().default_command().cloned();
+        // Keep track of node names to ensure uniqueness, shared between the nodes of the
+        // root chain and the collators.
+        let mut names = HashSet::new();
 
-        if relaychain_default_command.is_none() {
-            relaychain_default_command = network_config.relaychain().command().cloned();
-        }
+        if let Some(relaychain) = network_config.relaychain.as_mut() {
+            // retrieve the defaults relaychain for assigning to nodes if needed
+            let mut relaychain_default_command: Option<Command> =
+                relaychain.default_command().cloned();
 
-        let relaychain_default_image: Option<Image> =
-            network_config.relaychain().default_image().cloned();
+            if relaychain_default_command.is_none() {
+                relaychain_default_command = relaychain.command().cloned();
+            }
 
-        let relaychain_default_db_snapshot: Option<AssetLocation> =
-            network_config.relaychain().default_db_snapshot().cloned();
+            let relaychain_default_image: Option<Image> = relaychain.default_image().cloned();
 
-        let default_args: Vec<Arg> = network_config
-            .relaychain()
-            .default_args()
-            .into_iter()
-            .cloned()
-            .collect();
+            let relaychain_default_db_snapshot: Option<AssetLocation> =
+                relaychain.default_db_snapshot().cloned();
 
-        let mut nodes: Vec<NodeConfig> = network_config
-            .relaychain()
-            .nodes()
-            .into_iter()
-            .cloned()
-            .collect();
+            let default_args: Vec<Arg> = relaychain.default_args().into_iter().cloned().collect();
 
-        let group_nodes: Vec<GroupNodeConfig> = network_config
-            .relaychain()
-            .group_node_configs()
-            .into_iter()
-            .cloned()
-            .collect();
+            let mut nodes: Vec<NodeConfig> = relaychain.nodes().into_iter().cloned().collect();
 
-        if let Some(group) = group_nodes.iter().find(|n| n.count == 0) {
-            return Err(anyhow!(
-                "Group node '{}' must have a count greater than 0.",
-                group.base_config.name()
-            ));
+            let group_nodes: Vec<GroupNodeConfig> = relaychain
+                .group_node_configs()
+                .into_iter()
+                .cloned()
+                .collect();
+
+            if let Some(group) = group_nodes.iter().find(|n| n.count == 0) {
+                return Err(anyhow!(
+                    "Group node '{}' must have a count greater than 0.",
+                    group.base_config.name()
+                ));
+            }
+
+            // Validation checks for relay
+            TryInto::<Chain>::try_into(relaychain.chain().as_str())?;
+            if let Some(default_image) = &relaychain_default_image {
+                TryInto::<Image>::try_into(default_image.clone())?;
+            }
+            if let Some(default_command) = &relaychain_default_command {
+                TryInto::<Command>::try_into(default_command.clone())?;
+            }
+
+            for node in nodes.iter_mut() {
+                if relaychain_default_command.is_some() {
+                    // we modify only nodes which don't already have a command
+                    if node.command.is_none() {
+                        node.command.clone_from(&relaychain_default_command);
+                    }
+                }
+
+                if relaychain_default_image.is_some() && node.image.is_none() {
+                    node.image.clone_from(&relaychain_default_image);
+                }
+
+                if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
+                    node.db_snapshot.clone_from(&relaychain_default_db_snapshot);
+                }
+
+                if !default_args.is_empty() && node.args().is_empty() {
+                    node.set_args(default_args.clone());
+                }
+
+                let unique_name = generate_unique_node_name_from_names(node.name(), &mut names);
+                node.name = unique_name;
+            }
+
+            relaychain.set_nodes(nodes);
         }
 
         let mut parachains: Vec<ParachainConfig> =
             network_config.parachains().into_iter().cloned().collect();
-
-        // Validation checks for relay
-        TryInto::<Chain>::try_into(network_config.relaychain().chain().as_str())?;
-        if relaychain_default_image.is_some() {
-            TryInto::<Image>::try_into(relaychain_default_image.clone().expect(VALIDATION_CHECK))?;
-        }
-        if relaychain_default_command.is_some() {
-            TryInto::<Command>::try_into(
-                relaychain_default_command.clone().expect(VALIDATION_CHECK),
-            )?;
-        }
-
-        // Keep track of node names to ensure uniqueness
-        let mut names = HashSet::new();
-
-        for node in nodes.iter_mut() {
-            if relaychain_default_command.is_some() {
-                // we modify only nodes which don't already have a command
-                if node.command.is_none() {
-                    node.command.clone_from(&relaychain_default_command);
-                }
-            }
-
-            if relaychain_default_image.is_some() && node.image.is_none() {
-                node.image.clone_from(&relaychain_default_image);
-            }
-
-            if relaychain_default_db_snapshot.is_some() && node.db_snapshot.is_none() {
-                node.db_snapshot.clone_from(&relaychain_default_db_snapshot);
-            }
-
-            if !default_args.is_empty() && node.args().is_empty() {
-                node.set_args(default_args.clone());
-            }
-
-            let unique_name = generate_unique_node_name_from_names(node.name(), &mut names);
-            node.name = unique_name;
-        }
 
         for para in parachains.iter_mut() {
             // retrieve the defaults parachain for assigning to collators if needed
@@ -286,8 +297,7 @@ impl NetworkConfig {
 
             para.collators = collators;
 
-            if para.collator.is_some() {
-                let mut collator = para.collator.clone().unwrap();
+            if let Some(mut collator) = para.collator.clone() {
                 populate_collator_with_defaults(
                     &mut collator,
                     &parachain_default_command,
@@ -301,21 +311,15 @@ impl NetworkConfig {
             }
         }
 
-        network_config
-            .relaychain
-            .as_mut()
-            .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}"))
-            .set_nodes(nodes);
-
         network_config.set_parachains(parachains);
 
         // Validation checks for parachains
         network_config.parachains().iter().for_each(|parachain| {
-            if parachain.default_image().is_some() {
-                let _ = TryInto::<Image>::try_into(parachain.default_image().unwrap().as_str());
+            if let Some(default_image) = parachain.default_image() {
+                let _ = TryInto::<Image>::try_into(default_image.as_str());
             }
-            if parachain.default_command().is_some() {
-                let _ = TryInto::<Command>::try_into(parachain.default_command().unwrap().as_str());
+            if let Some(default_command) = parachain.default_command() {
+                let _ = TryInto::<Command>::try_into(default_command.as_str());
             }
         });
         Ok(network_config)
@@ -370,7 +374,7 @@ fn populate_collator_with_defaults(
 
 states! {
     Initial,
-    WithRelaychain
+    Buildable
 }
 
 /// A network configuration builder, used to build a [`NetworkConfig`] declaratively with fields validation.
@@ -457,6 +461,7 @@ impl Default for NetworkConfigBuilder<Initial> {
                     .build()
                     .expect(&format!("{NO_ERR_DEF_BUILDER}, {THIS_IS_A_BUG}")),
                 relaychain: None,
+                jamchain: None,
                 parachains: vec![],
                 hrmp_channels: vec![],
                 custom_processes: vec![],
@@ -481,6 +486,36 @@ impl<A> NetworkConfigBuilder<A> {
             _state: PhantomData,
         }
     }
+
+    /// Set the default tiny configuration for JAM
+    /// id: dev
+    /// 6 validators with names jam0..jam5
+    /// 1 ordinary with name jam-or
+    /// NO corevm builder
+    /// NO corevm monitor
+    fn setup_tiny_jamchain(self) -> NetworkConfigBuilder<Buildable> {
+        let mut builder = JamchainConfigBuilder::new(self.validation_context.clone())
+            .with_id("dev")
+            .with_validator(|n| n.with_name("jam0"));
+
+        for i in 1..6 {
+            builder = builder.with_validator(|n| n.with_name(&format!("jam{i}")));
+        }
+
+        let builder = builder.with_ordinary(|n| n.with_name("jam-or"));
+
+        match builder.build() {
+            Ok(jamchain) => Self::transition(
+                NetworkConfig {
+                    jamchain: Some(jamchain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
 }
 
 impl NetworkConfigBuilder<Initial> {
@@ -494,7 +529,7 @@ impl NetworkConfigBuilder<Initial> {
     pub fn with_chain_and_nodes(
         relay_name: &str,
         node_names: Vec<String>,
-    ) -> NetworkConfigBuilder<WithRelaychain> {
+    ) -> NetworkConfigBuilder<Buildable> {
         let network_config = NetworkConfigBuilder::new().with_relaychain(|relaychain| {
             let mut relaychain_with_node =
                 relaychain.with_chain(relay_name).with_validator(|node| {
@@ -521,7 +556,7 @@ impl NetworkConfigBuilder<Initial> {
         f: impl FnOnce(
             RelaychainConfigBuilder<relaychain::Initial>,
         ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
-    ) -> NetworkConfigBuilder<WithRelaychain> {
+    ) -> NetworkConfigBuilder<Buildable> {
         match f(RelaychainConfigBuilder::new(
             self.validation_context.clone(),
         ))
@@ -538,9 +573,87 @@ impl NetworkConfigBuilder<Initial> {
             Err(errors) => Self::transition(self.config, self.validation_context, errors),
         }
     }
+
+    /// Set the jam chain using a nested [`JamchainConfigBuilder`].
+    pub fn with_jamchain(
+        self,
+        f: impl FnOnce(
+            JamchainConfigBuilder<jamchain::Initial>,
+        ) -> JamchainConfigBuilder<jamchain::WithAtLeastOneNode>,
+    ) -> NetworkConfigBuilder<Buildable> {
+        match f(JamchainConfigBuilder::new(self.validation_context.clone())).build() {
+            Ok(jamchain) => Self::transition(
+                NetworkConfig {
+                    jamchain: Some(jamchain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
+
+    /// Set the default tiny configuration for JAM
+    /// see [`setup_tiny_jamchain`] fn.
+    pub fn with_tiny_jamchain(self) -> NetworkConfigBuilder<Buildable> {
+        self.setup_tiny_jamchain()
+    }
 }
 
-impl NetworkConfigBuilder<WithRelaychain> {
+impl NetworkConfigBuilder<Buildable> {
+    // Allow to set jam/relay in buildable state (override if already set)
+
+    /// Set the relay chain using a nested [`RelaychainConfigBuilder`].
+    pub fn with_relaychain(
+        self,
+        f: impl FnOnce(
+            RelaychainConfigBuilder<relaychain::Initial>,
+        ) -> RelaychainConfigBuilder<relaychain::WithAtLeastOneNode>,
+    ) -> NetworkConfigBuilder<Buildable> {
+        match f(RelaychainConfigBuilder::new(
+            self.validation_context.clone(),
+        ))
+        .build()
+        {
+            Ok(relaychain) => Self::transition(
+                NetworkConfig {
+                    relaychain: Some(relaychain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
+
+    /// Set the jam chain using a nested [`JamchainConfigBuilder`].
+    pub fn with_jamchain(
+        self,
+        f: impl FnOnce(
+            JamchainConfigBuilder<jamchain::Initial>,
+        ) -> JamchainConfigBuilder<jamchain::WithAtLeastOneNode>,
+    ) -> NetworkConfigBuilder<Buildable> {
+        match f(JamchainConfigBuilder::new(self.validation_context.clone())).build() {
+            Ok(jamchain) => Self::transition(
+                NetworkConfig {
+                    jamchain: Some(jamchain),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(self.config, self.validation_context, errors),
+        }
+    }
+
+    /// Set the default tiny configuration for JAM
+    /// see [`setup_tiny_jamchain`] fn.
+    pub fn with_tiny_jamchain(self) -> NetworkConfigBuilder<Buildable> {
+        self.setup_tiny_jamchain()
+    }
+
     /// Set the global settings using a nested [`GlobalSettingsBuilder`].
     pub fn with_global_settings(
         self,
@@ -711,9 +824,8 @@ impl NetworkConfigBuilder<WithRelaychain> {
             .collect();
 
         // ensure we can make this check
-        if self.config.relaychain.is_some() {
+        if let Some(rc_config) = self.config.relaychain.as_ref() {
             // check we have num_validators >= num_requested_cores
-            let rc_config = self.config.relaychain();
             let mut num_validators = rc_config.nodes().iter().fold(0u32, |mut acc, node| {
                 if node.is_validator {
                     acc += 1;
@@ -749,7 +861,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::parachain::RegistrationStrategy;
+    use crate::{parachain::RegistrationStrategy, types::JamNodeMode};
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -2125,6 +2237,202 @@ command = "polkadot"
         );
     }
 
+    #[test]
+    fn with_jamchain() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("westend")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:stable2603-3")
+                    .with_validator(|n| n.with_name("validator-0"))
+                    .with_validator(|n| n.with_name("validator-1"))
+            })
+            .with_parachain(|parachain| {
+                parachain
+                    .with_id(1004)
+                    .with_chain_spec_path("https://raw.githubusercontent.com/paritytech/polkadot-sdk/104e66f7114ea3322187b4b93255bb9f3f4d5005/cumulus/zombienet/zombienet-sdk/tests/zombie_ci/statement_store/people-westend-local-spec.json")
+                    .with_collator_group(|g| {
+                        g.with_count(100)
+                        .with_base_node(|n|{
+                            n.with_name("collator")
+                            .with_command("polkadot-parachain")
+                            .with_args(vec!["--enable-statement-store".into()])
+                            .with_image("docker.io/parity/polkadot-parachain:stable2603-3")
+                        })
+                })
+            })
+            .with_jamchain(|jamchain| {
+                jamchain
+                .with_id("dev")
+                .with_validator(|jamnode|{
+                    jamnode.with_name("jam1")
+                })
+            })
+            .build()
+            .unwrap();
+
+        let toml_string = network_config.dump_to_toml().unwrap();
+        println!("{}", toml_string);
+    }
+
+    /// A network file is the other way to describe a jamchain, and the override is plain data,
+    /// so a `[jamchain.genesis_overrides]` table has to come back as the same JSON the builder
+    /// would have been given — and survive being dumped and loaded again.
+    #[test]
+    fn jamchain_genesis_overrides_round_trip_through_toml() {
+        let toml = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[jamchain]
+id = "dev"
+
+[jamchain.genesis_overrides]
+auth_queues = { "0" = "2bbda8cb" }
+assigners = { "0" = 5 }
+
+[[jamchain.genesis_overrides.services]]
+id = 5
+code = "/blobs/parasim-service.jam"
+preimages = ["/blobs/parachain-authorizer-sr25519.jam"]
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+"#;
+        let expected = serde_json::json!({
+            "auth_queues": { "0": "2bbda8cb" },
+            "assigners": { "0": 5 },
+            "services": [{
+                "id": 5,
+                "code": "/blobs/parasim-service.jam",
+                "preimages": ["/blobs/parachain-authorizer-sr25519.jam"],
+            }],
+        });
+
+        let loaded = NetworkConfig::load_from_toml_string(toml).unwrap();
+        let jamchain = loaded.jamchain().expect("the file has a jamchain");
+        assert_eq!(jamchain.genesis_overrides(), Some(&expected));
+
+        let reloaded =
+            NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
+        assert_eq!(reloaded.jamchain(), Some(jamchain));
+    }
+
+    #[test]
+    fn jamchain_toml_without_relaychain_works() {
+        let config = NetworkConfig::load_from_toml_string(
+            r#"
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.try_relaychain().is_none());
+        let jamchain = config.jamchain().unwrap();
+        assert_eq!(jamchain.id().as_str(), "dev");
+        assert_eq!(jamchain.nodes().len(), 2);
+        assert_eq!(jamchain.nodes()[1].mode(), &JamNodeMode::Ordinary);
+    }
+
+    #[test]
+    fn jamchain_toml_with_parachains_works() {
+        let config = NetworkConfig::load_from_toml_string(
+            r#"
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"
+
+[[parachains]]
+id = 1000
+default_command = "polkadot-omni-node"
+default_args = ["--jam-rpc-url http://{{ZOMBIE:jam-or:rpc_uri}}"]
+
+[[parachains.collators]]
+name = "collator"
+
+[[parachains.collators]]
+name = "collator"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.try_relaychain().is_none());
+        assert!(config.jamchain().is_some());
+
+        let para = config.parachains()[0];
+        assert_eq!(para.id(), 1000);
+
+        // the parachain defaults are applied to the collators, and their names deduplicated
+        let collators = para.collators();
+        assert_eq!(collators.len(), 2);
+        assert_eq!(collators[0].name(), "collator");
+        assert_eq!(collators[1].name(), "collator-1");
+        for collator in collators {
+            assert_eq!(collator.command().unwrap().as_str(), "polkadot-omni-node");
+            assert_eq!(
+                collator.args(),
+                vec![&Arg::Option(
+                    "--jam-rpc-url".into(),
+                    "http://{{ZOMBIE:jam-or:rpc_uri}}".into()
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn toml_without_relaychain_nor_jamchain_fails() {
+        let err = NetworkConfig::load_from_toml_string(
+            r#"
+[[parachains]]
+id = 1000
+"#,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Relay chain or Jam definition does not exist."
+        );
+    }
+
+    #[test]
+    fn with_tiny_jamchain() {
+        let network_config = NetworkConfigBuilder::new()
+            .with_relaychain(|relaychain| {
+                relaychain
+                    .with_chain("westend")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot:stable2603-3")
+                    .with_validator(|n| n.with_name("validator-0"))
+                    .with_validator(|n| n.with_name("validator-1"))
+            })
+            .with_tiny_jamchain()
+            .build()
+            .unwrap();
+
+        let toml_string = network_config.dump_to_toml().unwrap();
+        println!("{}", toml_string);
+    }
     #[test]
     fn demo_denis() {
         let network_config = NetworkConfigBuilder::new()

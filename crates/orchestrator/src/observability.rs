@@ -207,7 +207,7 @@ pub(crate) fn generate_prometheus_config(nodes: &[&NetworkNode], host_addr: &str
         if let Some(port) = extract_port_from_uri(&node.prometheus_uri) {
             targets.push_str(&format!(
                 "      - targets: ['{host_addr}:{port}']\n        labels:\n          node: '{}'\n",
-                node.name
+                node.name()
             ));
         }
     }

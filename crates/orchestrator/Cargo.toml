@@ -44,6 +44,10 @@ erased-serde = { workspace = true }
 codec = { workspace = true, default-features = false, features = ["derive"] }
 socket2 = { workspace = true }
 
+# JAM
+jam-std-common = { workspace = true }
+jam-types = { workspace = true }
+
 # Zombienet deps
 configuration = { workspace = true }
 support = { workspace = true }

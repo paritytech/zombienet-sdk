@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -16,7 +19,7 @@ pub struct Relaychain {
     pub(crate) chain_id: String,
     pub(crate) chain_spec_path: PathBuf,
     #[serde(default, deserialize_with = "default_as_empty_vec")]
-    pub(crate) nodes: Vec<NetworkNode>,
+    pub(crate) nodes: Vec<Arc<NetworkNode>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,7 +68,7 @@ impl Relaychain {
 
     // Public API
     pub fn nodes(&self) -> Vec<&NetworkNode> {
-        self.nodes.iter().collect()
+        self.nodes.iter().map(|n| n.as_ref()).collect()
     }
 
     /// Get chain name

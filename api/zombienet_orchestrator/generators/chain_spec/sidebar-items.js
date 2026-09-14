@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CommandInContext","Context"],"fn":["build_locally"],"struct":["ChainSpec","ParaGenesisConfig"]};

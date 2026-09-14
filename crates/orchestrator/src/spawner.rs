@@ -1,7 +1,8 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use configuration::{CustomProcess, GlobalSettings};
+use configuration::{types::JamNodeMode, CustomProcess, GlobalSettings};
+use jam_std_common::hash_raw;
 use provider::{
     constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
     shared::helpers::running_in_ci,
@@ -15,9 +16,12 @@ use tracing::info;
 
 use crate::{
     generators::{self, ResolvedDbSnapshots},
-    network::{node::NetworkNode, NodeContext},
-    network_spec::{node::NodeSpec, parachain::ParachainSpec},
-    shared::constants::{FULL_NODE_PROMETHEUS_PORT, PROMETHEUS_PORT, RPC_PORT},
+    network::{
+        node::{JamNetworkNode, NetworkNode},
+        NodeContext,
+    },
+    network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec},
+    shared::constants::{FULL_NODE_PROMETHEUS_PORT, JAM_PORT, PROMETHEUS_PORT, RPC_PORT},
     ScopedFilesystem, ZombieRole,
 };
 
@@ -389,4 +393,146 @@ pub async fn spawn_process(
     info!("📓 logs cmd: {}", running_node.log_cmd());
 
     Ok(())
+}
+
+pub async fn spawn_jam_node<'a, T>(
+    node: &JamNodeSpec,
+    mut files_to_inject: Vec<TransferedFile>,
+    ctx: &SpawnNodeCtx<'a, T>,
+) -> Result<JamNetworkNode, anyhow::Error>
+where
+    T: FileSystem,
+{
+    let base_dir = format!("{}/{}", ctx.ns.base_dir().to_string_lossy(), node.name);
+
+    let (cfg_path, data_path) = if !ctx.ns.capabilities().prefix_with_full_path {
+        (NODE_CONFIG_DIR.into(), NODE_DATA_DIR.into())
+    } else {
+        let cfg_path = format!("{}{NODE_CONFIG_DIR}", base_dir);
+        let data_path = format!("{}{NODE_DATA_DIR}", base_dir);
+        (cfg_path, data_path)
+    };
+
+    // create local seed file and set to transfer process:
+
+    // 1. Create local dir to store all the needed files
+    ctx.scoped_fs
+        .create_dir_all(PathBuf::from(&node.name))
+        .await?;
+
+    // 2. set paths to use (local and remote)
+    let keys_remote = PathBuf::from(format!("{}/{}/keys", NODE_CONFIG_DIR, ctx.chain));
+    let seed_local_path = PathBuf::from(format!("{}/{}.seed", base_dir, node.name));
+    let seed_remote_path = PathBuf::from(format!(
+        "{}/{}.seed",
+        keys_remote.to_string_lossy(),
+        node.name
+    ));
+
+    // 3. write local seed
+    ctx.scoped_fs
+        .write(&seed_local_path, hash_raw(node.accounts.seed.as_bytes()))
+        .await?;
+
+    // 4. set paths/files to use in remote.
+    let created_paths = vec![keys_remote];
+    files_to_inject.push(TransferedFile::new(seed_local_path, seed_remote_path));
+
+    let gen_opts = generators::GenCmdOptions {
+        relay_chain_name: ctx.chain.to_string(),
+        cfg_path,  // TODO: get from provider/ns
+        data_path, // TODO: get from provider
+        use_default_ports_in_cmd: ctx.ns.capabilities().use_default_ports_in_cmd,
+        // IFF the provider require an image (e.g k8s) we know this is not native
+        is_native: !ctx.ns.capabilities().requires_image,
+        bootnode_addr: ctx.bootnodes_addr.clone(),
+        ..Default::default()
+    };
+
+    let (program, args) = generators::generate_jam_node_command(node, gen_opts.clone());
+    // apply running networ replacements
+    let args: Vec<String> = args
+        .iter()
+        .map(|arg| apply_running_network_replacements(arg, &ctx.nodes_by_name))
+        .collect();
+
+    info!(
+        "🚀 {}, spawning.... with command: {} {}",
+        node.name,
+        program,
+        args.join(" ")
+    );
+
+    let ports = if ctx.ns.capabilities().use_default_ports_in_cmd {
+        // should use default ports to as internal
+        [(JAM_PORT, node.port.0), (RPC_PORT, node.rpc_port.0)]
+    } else {
+        [(JAM_PORT, JAM_PORT), (RPC_PORT, RPC_PORT)]
+    };
+
+    let spawn_ops = SpawnNodeOptions::new(node.name.clone(), program)
+        .args(args)
+        .env(
+            node.env
+                .iter()
+                .map(|var| (var.name.clone(), var.value.clone())),
+        )
+        .injected_files(files_to_inject)
+        .created_paths(created_paths)
+        .port_mapping(HashMap::from(ports));
+
+    let spawn_ops = if let Some(image) = node.image.as_ref() {
+        spawn_ops.image(image.as_str())
+    } else {
+        spawn_ops
+    };
+
+    let spawn_ops = if let Some(resources) = node.resources.as_ref() {
+        spawn_ops.resources(resources.clone())
+    } else {
+        spawn_ops
+    };
+
+    // Drops the port parking listeners before spawn
+    node.port.drop_listener();
+    node.rpc_port.drop_listener();
+
+    let running_node = ctx.ns.spawn_node(&spawn_ops).await.with_context(|| {
+        format!(
+            "Failed to spawn node: {} with opts: {:#?}",
+            node.name, spawn_ops
+        )
+    })?;
+
+    let ip_to_use = if let Some(local_ip) = ctx.global_settings.local_ip() {
+        *local_ip
+    } else {
+        LOCALHOST
+    };
+
+    // NOTE: running in ci (k8s) is not supported yet for JAM, so we don't
+    // create port-forwards nor use the internal ip/default ports here.
+
+    info!("🚀 {}, should be running now", node.name);
+    match node.mode {
+        JamNodeMode::Ordinary => {
+            info!("💻 {}, rpc  {ip_to_use}:{}", node.name, node.rpc_port.0);
+        },
+        JamNodeMode::Validator | JamNodeMode::Proxy => {
+            info!(
+                "💻 {}, peer details {}@{ip_to_use}:{}",
+                node.name, node.peer_id, node.port.0
+            );
+        },
+    }
+
+    info!("📓 logs cmd: {}", running_node.log_cmd());
+
+    Ok(JamNetworkNode::new(
+        node.name.clone(),
+        running_node,
+        node.clone(),
+        ip_to_use,
+        gen_opts,
+    ))
 }

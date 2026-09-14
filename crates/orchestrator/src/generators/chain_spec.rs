@@ -1327,7 +1327,7 @@ impl ChainSpec {
 
 type GenesisNodeKey = (String, String, HashMap<String, String>);
 
-async fn build_locally<'a, T>(
+pub async fn build_locally<'a, T>(
     generate_command: GenerateFileCommand,
     scoped_fs: &ScopedFilesystem<'a, T>,
     maybe_output: Option<&Path>,
@@ -1532,7 +1532,7 @@ fn construct_runtime_pointer_from_overrides(
 }
 
 // Merge `patch_section` with `overrides`.
-fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
+pub(crate) fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     trace!("patch: {:?}", patch_section);
     trace!("overrides: {:?}", overrides);
     if let (Some(genesis_obj), Some(overrides_obj)) =

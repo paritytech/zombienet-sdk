@@ -1,9 +1,13 @@
-use configuration::types::Arg;
+use configuration::types::{Arg, JamNodeMode};
 use serde::{Deserialize, Serialize};
 use support::constants::THIS_IS_A_BUG;
+use tracing::info;
 
 use super::arg_filter::{apply_arg_removals, parse_removal_args};
-use crate::{network_spec::node::NodeSpec, shared::constants::*};
+use crate::{
+    network_spec::{jamnode::JamNodeSpec, node::NodeSpec},
+    shared::constants::*,
+};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GenCmdOptions {
@@ -246,19 +250,27 @@ pub fn generate_for_cumulus_node(
 
     final_args.append(&mut tmp_args);
 
-    let relaychain_spec_path = format!("{}/{}.json", options.cfg_path, options.relay_chain_name);
-    let mut full_node_injected: Vec<String> = vec![
-        "--".into(),
-        "--base-path".into(),
-        options.relay_data_path,
-        "--chain".into(),
-        relaychain_spec_path,
-        "--execution".into(),
-        "wasm".into(),
-    ];
+    if final_args
+        .iter()
+        .any(|arg_str| arg_str.contains("jam-rpc-url"))
+    {
+        info!("🖋 skipping rc args since jam-rpc-url arg is present!");
+    } else {
+        let relaychain_spec_path =
+            format!("{}/{}.json", options.cfg_path, options.relay_chain_name);
+        let mut full_node_injected: Vec<String> = vec![
+            "--".into(),
+            "--base-path".into(),
+            options.relay_data_path,
+            "--chain".into(),
+            relaychain_spec_path,
+            "--execution".into(),
+            "wasm".into(),
+        ];
 
-    final_args.append(&mut full_node_injected);
-    final_args.append(&mut full_node_args_filtered);
+        final_args.append(&mut full_node_injected);
+        final_args.append(&mut full_node_args_filtered);
+    }
 
     let removals = parse_removal_args(args);
     final_args = apply_arg_removals(final_args, &removals);
@@ -435,6 +447,58 @@ pub fn generate_for_node(
     } else {
         (final_args.remove(0), final_args)
     }
+}
+
+pub fn generate_for_jam_node(node: &JamNodeSpec, options: GenCmdOptions) -> (String, Vec<String>) {
+    let mut cmd_args: Vec<String> = vec![
+        "--config-path".into(),
+        options.cfg_path.clone(),
+        "--chain".into(),
+        format!("{}/jam_spec.json", options.cfg_path),
+        "run".into(),
+        "--data-path".into(),
+        options.data_path,
+        "--mode".into(),
+        node.mode.as_str().into(),
+        // always set peer-id and port
+        // This is not extrictly necesary for ordinary
+        // nodes, but we are already reserving the ports
+        format!("--peer-id={}", node.peer_id),
+        format!("--port={}", node.port.0),
+    ];
+
+    if node.mode == JamNodeMode::Ordinary {
+        // TODO: support `--proxy`  config.
+        cmd_args.push(format!("--rpc-port={}", node.rpc_port.0));
+    }
+
+    for bootnode in options.bootnode_addr {
+        cmd_args.push("--bootnode".into());
+        cmd_args.push(bootnode.clone());
+    }
+    if let Some(tel_endpoint) = node.telemetry_endpoint.as_ref() {
+        cmd_args.push("--telemetry".into());
+        cmd_args.push(tel_endpoint.into())
+    }
+
+    // Args set in the config, appended last so they can't clash with the ones above.
+    // TODO: ensure that we are not overwriting the args zombienet add automatically.
+    for arg in &node.args {
+        match arg {
+            Arg::Flag(flag) => cmd_args.push(flag.clone()),
+            Arg::Option(k, v) => {
+                cmd_args.push(k.clone());
+                cmd_args.push(v.clone());
+            },
+            Arg::Array(k, v) => {
+                cmd_args.push(k.clone());
+                cmd_args.extend(v.iter().cloned());
+            },
+            Arg::Positional(value) => cmd_args.push(value.clone()),
+        }
+    }
+
+    (node.command.as_str().into(), cmd_args)
 }
 
 /// Returns (prometheus, rpc, p2p) ports to use in the command

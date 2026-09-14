@@ -11,9 +11,14 @@ pub const P2P_PORT: u16 = 30333;
 // default command template to build chain-spec
 pub const DEFAULT_CHAIN_SPEC_TPL_COMMAND: &str =
     "{{mainCommand}} {{subCommand}} --chain {{chainName}} {{disableBootnodes}}";
+// default command template to build jam chain-spec
+pub const DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND: &str = "{{mainCommand}} {{subCommand}}";
 // interval to determine how often to run node liveness checks
 pub const NODE_MONITORING_INTERVAL_SECONDS: u64 = 15;
 // how long to wait before a node is considered unresponsive
 pub const NODE_MONITORING_FAILURE_THRESHOLD_SECONDS: u64 = 5;
 // metric used to check if the node is running
 pub const PROCESS_START_TIME_METRIC: &str = "process_start_time_seconds";
+
+// JAM
+pub const JAM_PORT: u16 = 40000;

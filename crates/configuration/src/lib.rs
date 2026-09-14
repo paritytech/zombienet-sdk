@@ -78,6 +78,7 @@
 mod custom_process;
 mod global_settings;
 mod hrmp_channel;
+mod jamchain;
 mod network;
 mod observability;
 mod parachain;
@@ -88,7 +89,8 @@ mod utils;
 pub use custom_process::{CustomProcess, CustomProcessBuilder};
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
-pub use network::{NetworkConfig, NetworkConfigBuilder, WithRelaychain};
+pub use jamchain::{JamchainConfig, JamchainConfigBuilder};
+pub use network::{Buildable, NetworkConfig, NetworkConfigBuilder};
 pub use observability::{ObservabilityConfig, ObservabilityConfigBuilder};
 pub use parachain::{
     states as para_states, ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,

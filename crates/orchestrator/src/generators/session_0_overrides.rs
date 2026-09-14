@@ -139,7 +139,7 @@ pub fn generate_session_0_overrides(
 }
 
 fn genetate_groups(num_validators: u32, num_cores: u32) -> Vec<Vec<ValidatorIndex>> {
-    let iter = std::iter::repeat(vec![]).take(num_cores as usize);
+    let iter = std::iter::repeat_n(vec![], num_cores as usize);
     let mut groups: Vec<Vec<ValidatorIndex>> = Vec::from_iter(iter);
     for i in 0..num_validators {
         let index = i % num_cores;

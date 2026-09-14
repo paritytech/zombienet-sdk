@@ -1,4 +1,5 @@
 pub mod chain_upgrade;
+pub mod jamchain;
 pub mod node;
 pub mod parachain;
 pub mod relaychain;
@@ -20,11 +21,19 @@ use configuration::{
 };
 use provider::{types::TransferedFile, DynNamespace, ProviderError};
 use serde::{Deserialize, Serialize};
-use support::fs::FileSystem;
+use support::{
+    constants::{RELAY_NOT_NONE, THIS_IS_A_BUG},
+    fs::FileSystem,
+};
 use tokio::sync::RwLock;
 use tracing::{error, warn};
 
-use self::{node::NetworkNode, parachain::Parachain, relaychain::Relaychain};
+use self::{
+    jamchain::Jamchain,
+    node::{JamNetworkNode, NetworkNode, NodeKind, SpawnedNode},
+    parachain::Parachain,
+    relaychain::Relaychain,
+};
 use crate::{
     generators::{self, chain_spec::ChainSpec},
     network_spec::{self, NetworkSpec},
@@ -48,6 +57,7 @@ pub enum NodeContext {
         para_id: ParaId,
         is_cumulus_based: bool,
     },
+    Jam,
 }
 
 #[derive(Serialize)]
@@ -56,13 +66,21 @@ pub struct Network<T: FileSystem> {
     ns: DynNamespace,
     #[serde(skip)]
     filesystem: T,
-    relay: Relaychain,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay: Option<Relaychain>,
     initial_spec: NetworkSpec,
     parachains: HashMap<u32, Vec<Parachain>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jamchain: Option<Jamchain>,
+    /// Every node spawned in this network, by name, regardless of its kind.
+    ///
+    /// Holds the same `Arc`s as the typed collections above; downcast with
+    /// [`Network::get_node`] / [`Network::get_jam_node`] to get the concrete
+    /// type back.
     #[serde(skip)]
-    nodes_by_name: HashMap<String, NetworkNode>,
+    nodes_by_name: HashMap<String, Arc<dyn SpawnedNode>>,
     #[serde(skip)]
-    nodes_to_watch: Arc<RwLock<Vec<NetworkNode>>>,
+    nodes_to_watch: Arc<RwLock<Vec<Arc<dyn SpawnedNode>>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     start_time_ts: Option<String>,
     #[serde(skip)]
@@ -76,7 +94,8 @@ impl<T: FileSystem> std::fmt::Debug for Network<T> {
             .field("relay", &self.relay)
             .field("initial_spec", &self.initial_spec)
             .field("parachains", &self.parachains)
-            .field("nodes_by_name", &self.nodes_by_name)
+            .field("jamchain", &self.jamchain)
+            .field("nodes_by_name", &self.nodes_by_name.keys())
             .field("observability", &self.observability)
             .finish()
     }
@@ -100,12 +119,22 @@ impl<T: FileSystem> Network<T> {
         fs: T,
         initial_spec: NetworkSpec,
     ) -> Self {
+        Self::new(Some(relay), ns, fs, initial_spec)
+    }
+
+    /// Create a network whose root chain is a JAM chain instead of a relaychain.
+    pub(crate) fn new_without_relay(ns: DynNamespace, fs: T, initial_spec: NetworkSpec) -> Self {
+        Self::new(None, ns, fs, initial_spec)
+    }
+
+    fn new(relay: Option<Relaychain>, ns: DynNamespace, fs: T, initial_spec: NetworkSpec) -> Self {
         Self {
             ns,
             filesystem: fs,
             relay,
             initial_spec,
             parachains: Default::default(),
+            jamchain: Default::default(),
             nodes_by_name: Default::default(),
             nodes_to_watch: Default::default(),
             start_time_ts: Default::default(),
@@ -123,7 +152,20 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub fn relaychain(&self) -> &Relaychain {
-        &self.relay
+        self.relay
+            .as_ref()
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
+    }
+
+    /// The relaychain of the network, `None` for a JAM network.
+    pub fn try_relaychain(&self) -> Option<&Relaychain> {
+        self.relay.as_ref()
+    }
+
+    fn relaychain_mut(&mut self) -> &mut Relaychain {
+        self.relay
+            .as_mut()
+            .expect(&format!("{RELAY_NOT_NONE}, {THIS_IS_A_BUG}"))
     }
 
     // Teardown the network
@@ -190,11 +232,11 @@ impl<T: FileSystem> Network<T> {
         };
 
         let chain_context = ChainDefaultContext {
-            default_command: self.initial_spec.relaychain.default_command.as_ref(),
-            default_image: self.initial_spec.relaychain.default_image.as_ref(),
-            default_resources: self.initial_spec.relaychain.default_resources.as_ref(),
-            default_db_snapshot: self.initial_spec.relaychain.default_db_snapshot.as_ref(),
-            default_args: self.initial_spec.relaychain.default_args.iter().collect(),
+            default_command: self.initial_spec.relaychain().default_command.as_ref(),
+            default_image: self.initial_spec.relaychain().default_image.as_ref(),
+            default_resources: self.initial_spec.relaychain().default_resources.as_ref(),
+            default_db_snapshot: self.initial_spec.relaychain().default_db_snapshot.as_ref(),
+            default_args: self.initial_spec.relaychain().default_args.iter().collect(),
         };
 
         let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
@@ -323,6 +365,9 @@ impl<T: FileSystem> Network<T> {
             default_args: spec.default_args.iter().collect(),
         };
 
+        let relay_chain = self.relaychain().chain.clone();
+        let relay_chain_id = self.relaychain().chain_id.clone();
+
         let parachain = self
             .parachains
             .get_mut(&para_id)
@@ -339,13 +384,13 @@ impl<T: FileSystem> Network<T> {
             PathBuf::from(format!(
                 "{}/{}.json",
                 self.ns.base_dir().to_string_lossy(),
-                self.relay.chain
+                relay_chain
             ))
         };
 
         let mut global_files_to_inject = vec![TransferedFile::new(
             relaychain_spec_path,
-            PathBuf::from(format!("/cfg/{}.json", self.relay.chain)),
+            PathBuf::from(format!("/cfg/{}.json", relay_chain)),
         )];
 
         let para_chain_spec_local_path = if let Some(para_chain_spec_custom) = &options.chain_spec {
@@ -390,9 +435,9 @@ impl<T: FileSystem> Network<T> {
 
         // TODO: we want to still supporting spawn a dedicated bootnode??
         let ctx = SpawnNodeCtx {
-            chain_id: &self.relay.chain_id,
+            chain_id: &relay_chain_id,
             parachain_id: parachain.chain_id.as_deref(),
-            chain: &self.relay.chain,
+            chain: &relay_chain,
             role,
             ns: &self.ns,
             scoped_fs: &scoped_fs,
@@ -519,7 +564,7 @@ impl<T: FileSystem> Network<T> {
                 )),
                 PathBuf::from(format!("/cfg/{}.json", self.relaychain().chain)),
             ));
-            self.relay.chain_id.clone()
+            self.relaychain().chain_id.clone()
         };
 
         let mut para_spec = network_spec::parachain::ParachainSpec::from_config(
@@ -743,38 +788,74 @@ impl<T: FileSystem> Network<T> {
     // deregister and stop the collator?
     // remove_parachain()
 
-    pub fn get_node(&self, name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
-        let name = name.into();
-        if let Some(node) = self.nodes_iter().find(|&n| n.name == name) {
-            return Ok(node);
-        }
+    /// Get a node of a specific kind by name, downcasting it from the registry.
+    fn get_node_as<'a, N: SpawnedNode>(&'a self, name: &str) -> Result<&'a N, anyhow::Error> {
+        let node = self.nodes_by_name.get(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "can't find node with name: {name:?}, should be one of {}",
+                self.node_names().join(", ")
+            )
+        })?;
 
-        let list = self.node_names().join(", ");
-
-        Err(anyhow::anyhow!(
-            "can't find node with name: {name:?}, should be one of {list}"
-        ))
+        // `dyn SpawnedNode` upcasts to `dyn Any` (Rust >= 1.86), no `as_any` needed.
+        let node_any: &dyn std::any::Any = node.as_ref();
+        node_any.downcast_ref::<N>().ok_or_else(|| {
+            anyhow::anyhow!(
+                "node {name:?} is a '{}' node, it can't be used as a {}",
+                node.kind(),
+                std::any::type_name::<N>()
+            )
+        })
     }
 
-    pub fn get_node_mut(
-        &mut self,
-        name: impl Into<String>,
-    ) -> Result<&mut NetworkNode, anyhow::Error> {
+    /// Get a substrate node (relaychain node or collator) by name.
+    pub fn get_node(&self, name: impl Into<String>) -> Result<&NetworkNode, anyhow::Error> {
+        self.get_node_as::<NetworkNode>(&name.into())
+    }
+
+    /// Get a JAM node by name.
+    pub fn get_jam_node(&self, name: impl Into<String>) -> Result<&JamNetworkNode, anyhow::Error> {
+        self.get_node_as::<JamNetworkNode>(&name.into())
+    }
+
+    /// Get any node by name, without caring about its kind.
+    ///
+    /// Only the behaviour shared by every node ([`SpawnedNode`]) is available
+    /// on the returned reference.
+    pub fn get_any_node(&self, name: impl Into<String>) -> Result<&dyn SpawnedNode, anyhow::Error> {
         let name = name.into();
-        self.nodes_iter_mut()
-            .find(|n| n.name == name)
-            .ok_or(anyhow::anyhow!("can't find node with name: {name:?}"))
+        self.nodes_by_name
+            .get(&name)
+            .map(|node| node.as_ref())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "can't find node with name: {name:?}, should be one of {}",
+                    self.node_names().join(", ")
+                )
+            })
     }
 
     pub fn node_names(&self) -> Vec<String> {
-        self.nodes_iter()
-            .map(|n| &n.name)
-            .cloned()
-            .collect::<Vec<_>>()
+        self.nodes_by_name.keys().cloned().collect::<Vec<_>>()
     }
 
+    /// All the substrate nodes (relaychain nodes and collators) of the network.
     pub fn nodes(&self) -> Vec<&NetworkNode> {
-        self.nodes_by_name.values().collect::<Vec<&NetworkNode>>()
+        self.nodes_iter().collect()
+    }
+
+    /// All the nodes of the network, of every kind.
+    pub fn all_nodes(&self) -> Vec<&dyn SpawnedNode> {
+        self.nodes_by_name.values().map(|n| n.as_ref()).collect()
+    }
+
+    /// All the nodes of the given kind.
+    pub fn nodes_of_kind(&self, kind: NodeKind) -> Vec<&dyn SpawnedNode> {
+        self.nodes_by_name
+            .values()
+            .filter(|n| n.kind() == kind)
+            .map(|n| n.as_ref())
+            .collect()
     }
 
     pub async fn detach(&self) {
@@ -783,6 +864,7 @@ impl<T: FileSystem> Network<T> {
 
     // Internal API
     pub(crate) async fn add_running_node(&mut self, node: NetworkNode, para_id: Option<u32>) {
+        let node = Arc::new(node);
         if let Some(para_id) = para_id {
             if let Some(para) = self.parachains.get_mut(&para_id).and_then(|p| p.get_mut(0)) {
                 para.collators.push(node.clone());
@@ -791,18 +873,39 @@ impl<T: FileSystem> Network<T> {
                 unreachable!()
             }
         } else {
-            self.relay.nodes.push(node.clone());
+            self.relaychain_mut().nodes.push(node.clone());
         }
-        // TODO: we should hold a ref to the node in the vec in the future.
-        node.set_is_running(true);
-        node.set_last_start_ts(
+
+        self.register_running_node(node).await;
+    }
+
+    /// Add an already spawned JAM node to the jamchain and to the registry.
+    pub(crate) async fn add_running_jam_node(&mut self, node: JamNetworkNode) {
+        let node = Arc::new(node);
+        if let Some(jamchain) = self.jamchain.as_mut() {
+            jamchain.nodes.push(node.clone());
+        } else {
+            // the jamchain should be set before adding any of its nodes
+            unreachable!()
+        }
+
+        self.register_running_node(node).await;
+    }
+
+    /// Mark a freshly spawned node as running and register it (as the very
+    /// same `Arc` the typed collection holds) for lookup and monitoring.
+    async fn register_running_node(&mut self, node: Arc<impl SpawnedNode>) {
+        node.core().set_is_running(true);
+        node.core().set_last_start_ts(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("Timestamp should be valid")
                 .as_secs(),
         );
-        let node_name = node.name.clone();
-        self.nodes_by_name.insert(node_name, node.clone());
+
+        let node: Arc<dyn SpawnedNode> = node;
+        self.nodes_by_name
+            .insert(node.name().to_string(), node.clone());
         self.nodes_to_watch.write().await.push(node);
     }
 
@@ -855,21 +958,16 @@ impl<T: FileSystem> Network<T> {
     }
 
     pub(crate) fn nodes_iter(&self) -> impl Iterator<Item = &NetworkNode> {
-        self.relay.nodes.iter().chain(
-            self.parachains
-                .values()
-                .flat_map(|p| p.iter())
-                .flat_map(|p| &p.collators),
-        )
-    }
-
-    pub(crate) fn nodes_iter_mut(&mut self) -> impl Iterator<Item = &mut NetworkNode> {
-        self.relay.nodes.iter_mut().chain(
-            self.parachains
-                .values_mut()
-                .flat_map(|p| p.iter_mut())
-                .flat_map(|p| &mut p.collators),
-        )
+        self.relay
+            .iter()
+            .flat_map(|relay| relay.nodes.iter())
+            .chain(
+                self.parachains
+                    .values()
+                    .flat_map(|p| p.iter())
+                    .flat_map(|p| &p.collators),
+            )
+            .map(|n| n.as_ref())
     }
 
     /// Waits given number of seconds until all nodes in the network report that they are
@@ -883,7 +981,8 @@ impl<T: FileSystem> Network<T> {
     /// * `Err(e)` if timeout or other error occurred while waiting.
     pub async fn wait_until_is_up(&self, timeout_secs: u64) -> Result<(), anyhow::Error> {
         let handles = self
-            .nodes_iter()
+            .nodes_by_name
+            .values()
             .map(|node| node.wait_until_is_up(timeout_secs));
 
         futures::future::try_join_all(handles).await?;
@@ -1031,8 +1130,17 @@ impl<T: FileSystem> Network<T> {
         self.parachains = parachains;
     }
 
-    pub(crate) fn insert_node(&mut self, node: NetworkNode) {
-        self.nodes_by_name.insert(node.name.clone(), node);
+    pub(crate) fn insert_node(&mut self, node: Arc<dyn SpawnedNode>) {
+        self.nodes_by_name.insert(node.name().to_string(), node);
+    }
+
+    pub(crate) fn set_jamchain(&mut self, jamchain: Jamchain) {
+        self.jamchain = Some(jamchain);
+    }
+
+    /// The JAM chain of this network, if any.
+    pub fn jamchain(&self) -> Option<&Jamchain> {
+        self.jamchain.as_ref()
     }
 
     pub(crate) fn set_start_time_ts(&mut self, start_time: SystemTime) {

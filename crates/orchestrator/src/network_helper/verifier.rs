@@ -19,7 +19,7 @@ async fn check_nodes(nodes: &[&NetworkNode]) {
         let tasks: Vec<_> = nodes
             .iter()
             .map(|node| {
-                trace!("🔎 checking node: {} ", node.name);
+                trace!("🔎 checking node: {} ", node.name());
                 reqwest::get(node.prometheus_uri.clone())
             })
             .collect();

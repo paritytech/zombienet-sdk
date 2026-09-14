@@ -6,6 +6,9 @@ pub enum ConfigError {
     #[error("relaychain.{0}")]
     Relaychain(anyhow::Error),
 
+    #[error("jamchain.{0}")]
+    Jamchain(anyhow::Error),
+
     #[error("parachain[{0}].{1}")]
     Parachain(ParaId, anyhow::Error),
 

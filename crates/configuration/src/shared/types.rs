@@ -330,9 +330,12 @@ impl AssetLocation {
     pub async fn get_asset(&self) -> Result<Vec<u8>, anyhow::Error> {
         let contents = match self {
             AssetLocation::Url(location) => {
-                let res = reqwest::get(location.as_ref()).await.map_err(|err| {
-                    anyhow!("Error dowinloding asset from url {location} - {err}")
-                })?;
+                let res = reqwest::get(location.as_ref())
+                    .await
+                    .and_then(|res| res.error_for_status())
+                    .map_err(|err| {
+                        anyhow!("Error downloading asset from url {location} - {err}")
+                    })?;
 
                 res.bytes().await.unwrap().into()
             },
@@ -1019,6 +1022,42 @@ mod tests {
             got,
             AssetLocation::FilePath(value) if value == PathBuf::from_str(filepath).unwrap()
         ));
+    }
+
+    #[tokio::test]
+    async fn get_asset_succeeds_for_a_2xx_response() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/asset.tgz")
+            .with_status(200)
+            .with_body("asset-contents")
+            .create_async()
+            .await;
+
+        let asset_location: AssetLocation = format!("{}/asset.tgz", server.url()).as_str().into();
+
+        let contents = asset_location.get_asset().await.unwrap();
+
+        assert_eq!(contents, b"asset-contents");
+    }
+
+    #[tokio::test]
+    async fn get_asset_fails_for_a_4xx_response_instead_of_returning_the_error_body() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/missing-asset.tgz")
+            .with_status(404)
+            .with_body("Not Found")
+            .create_async()
+            .await;
+
+        let asset_location: AssetLocation = format!("{}/missing-asset.tgz", server.url())
+            .as_str()
+            .into();
+
+        let result = asset_location.get_asset().await;
+
+        assert!(result.is_err());
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::{
     env,
     path::{Path, PathBuf},
     sync::{Arc, Weak},
+    thread,
 };
 
 use async_trait::async_trait;
@@ -397,15 +398,35 @@ where
             if *delete_on_drop {
                 let client = self.k8s_client.clone();
                 let provider = self.provider.upgrade();
-                futures::executor::block_on(async move {
-                    trace!("🧟 deleting ns {ns_name} from cluster");
-                    let _ = client.delete_namespace(&ns_name).await;
-                    if let Some(provider) = provider {
-                        provider.namespaces.write().await.remove(&ns_name);
-                    }
 
-                    trace!("✅ deleted");
+                // Give the deletion its own thread and runtime, as the docker
+                // namespace does. `futures::executor::block_on` here would park
+                // the dropping thread with nothing driving the kube request:
+                // when the drop happens on a runtime worker — anything
+                // embedding the SDK — the future never completes and the thread
+                // is lost, taking the caller's `destroy()` or failed `spawn()`
+                // with it.
+                let handler = thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async move {
+                        trace!("🧟 deleting ns {ns_name} from cluster");
+                        let _ = client.delete_namespace(&ns_name).await;
+                        trace!("✅ deleted");
+                    });
                 });
+
+                if handler.join().is_ok() {
+                    if let Some(provider) = provider {
+                        if let Ok(mut p) = provider.namespaces.try_write() {
+                            p.remove(&self.name);
+                        } else {
+                            warn!(
+                                "⚠️  Can not acquire write lock to the provider, ns {} not removed",
+                                self.name
+                            );
+                        }
+                    }
+                }
             } else {
                 trace!("⚠️ leaking ns {ns_name} in cluster");
             }

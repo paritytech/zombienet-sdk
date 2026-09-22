@@ -87,6 +87,7 @@ sysinfo = "0.32"
 walkdir = "2.5"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 socket2 = "0.6.5"
+mockito = "1.7"
 
 # JAM
 jam-std-common = "0.1.28"

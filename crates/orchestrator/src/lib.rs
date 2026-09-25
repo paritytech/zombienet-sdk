@@ -121,15 +121,24 @@ where
         let zombie_json_content = self.filesystem.read_to_string(zombie_json_path).await?;
         let zombie_json: serde_json::Value = serde_json::from_str(&zombie_json_content)?;
 
+        self.attach_to_live_from_json(&zombie_json).await
+    }
+
+    /// Like [`Self::attach_to_live`], but takes already-parsed `zombie.json` content.
+    /// Its `local_base_dir` is used as-is.
+    pub async fn attach_to_live_from_json(
+        &self,
+        zombie_json: &serde_json::Value,
+    ) -> Result<Network<T>, OrchestratorError> {
         info!("recreating namespace...");
         let ns: DynNamespace = self
             .provider
-            .create_namespace_from_json(&zombie_json)
+            .create_namespace_from_json(zombie_json)
             .await?;
 
         info!("recreating relaychain...");
         let (relay, initial_spec) =
-            recreate_relaychain_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
+            recreate_relaychain_from_json(zombie_json, ns.clone(), self.provider.name()).await?;
         let relay_nodes = relay.nodes.clone();
 
         let mut network =
@@ -144,7 +153,7 @@ where
 
         info!("recreating parachains...");
         let parachains_map =
-            recreate_parachains_from_json(&zombie_json, ns.clone(), self.provider.name()).await?;
+            recreate_parachains_from_json(zombie_json, ns.clone(), self.provider.name()).await?;
         let para_nodes = parachains_map
             .values()
             .flat_map(|paras| paras.iter().flat_map(|para| para.collators.clone()))
@@ -159,7 +168,7 @@ where
         }
 
         if let Some(jamchain) =
-            recreate_jamchain_from_json(&zombie_json, ns.clone(), self.provider.name()).await?
+            recreate_jamchain_from_json(zombie_json, ns.clone(), self.provider.name()).await?
         {
             info!("recreating jamchain...");
             let jam_nodes = jamchain.nodes.clone();

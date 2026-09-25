@@ -88,6 +88,21 @@ pub trait AttachToLive {
     async fn attach_docker(
         zombie_json_path: PathBuf,
     ) -> Result<Network<LocalFileSystem>, OrchestratorError>;
+
+    /// Attaches to a running live network using the k8s provider, from in-memory
+    /// `zombie.json` content. Its `local_base_dir` is used as-is.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use zombienet_sdk::{AttachToLive, AttachToLiveNetwork};
+    /// # async fn example(zombie_json: serde_json::Value) -> Result<(), zombienet_sdk::OrchestratorError> {
+    /// let network = AttachToLiveNetwork::attach_k8s_from_json(zombie_json).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn attach_k8s_from_json(
+        zombie_json: serde_json::Value,
+    ) -> Result<Network<LocalFileSystem>, OrchestratorError>;
 }
 
 #[async_trait]
@@ -143,5 +158,14 @@ impl AttachToLive for AttachToLiveNetwork {
         let provider = DockerProvider::new(filesystem.clone()).await;
         let orchestrator = Orchestrator::new(filesystem, provider);
         orchestrator.attach_to_live(zombie_json_path.as_ref()).await
+    }
+
+    async fn attach_k8s_from_json(
+        zombie_json: serde_json::Value,
+    ) -> Result<Network<LocalFileSystem>, OrchestratorError> {
+        let filesystem = LocalFileSystem;
+        let provider = KubernetesProvider::new(filesystem.clone()).await;
+        let orchestrator = Orchestrator::new(filesystem, provider);
+        orchestrator.attach_to_live_from_json(&zombie_json).await
     }
 }

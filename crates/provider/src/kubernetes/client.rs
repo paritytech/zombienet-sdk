@@ -48,6 +48,11 @@ impl KubernetesClient {
         })
     }
 
+    #[cfg(test)]
+    pub(super) fn from_inner(inner: kube::Client) -> Self {
+        Self { inner }
+    }
+
     #[allow(dead_code)]
     pub(super) async fn get_namespace(&self, name: &str) -> Result<Option<Namespace>> {
         Api::<Namespace>::all(self.inner.clone())

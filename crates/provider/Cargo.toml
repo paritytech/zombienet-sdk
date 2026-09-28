@@ -45,3 +45,7 @@ erased-serde = { workspace = true }
 # Zomebienet deps
 support = { workspace = true }
 configuration = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+mockito = { workspace = true }

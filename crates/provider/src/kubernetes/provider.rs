@@ -165,3 +165,97 @@ where
         Ok(namespace)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, ffi::OsString};
+
+    use mockito::{Matcher, Mock, Server, ServerGuard};
+    use support::fs::in_memory::{InMemoryFile, InMemoryFileSystem};
+
+    use super::*;
+
+    /// Provider talking to `server`. Unmocked requests get mockito's 501, so
+    /// spawning fails right after the namespace step. kube appends a query string,
+    /// hence `match_query` on exact-path mocks.
+    fn provider(
+        server: &ServerGuard,
+        existing_namespace: Option<&str>,
+    ) -> Arc<KubernetesProvider<InMemoryFileSystem>> {
+        // In-memory `create_dir` needs every ancestor of the tmp dir to exist. Going
+        // through `components()` drops the trailing `/` `$TMPDIR` may have.
+        let tmp_dir: PathBuf = std::env::temp_dir().components().collect();
+        let files: HashMap<OsString, InMemoryFile> = tmp_dir
+            .ancestors()
+            .map(|dir| (dir.as_os_str().to_owned(), InMemoryFile::dir()))
+            .collect();
+        let config = kube::Config::new(server.url().parse().unwrap());
+        let client = KubernetesClient::from_inner(kube::Client::try_from(config).unwrap());
+
+        KubernetesProvider::with_client(
+            InMemoryFileSystem::new(files),
+            client,
+            existing_namespace.map(String::from),
+        )
+    }
+
+    async fn mock_create_namespace(server: &mut ServerGuard, times: usize) -> Mock {
+        server
+            .mock("POST", "/api/v1/namespaces")
+            .match_query(Matcher::Any)
+            .with_status(201)
+            .with_body(r#"{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"mock"}}"#)
+            .expect(times)
+            .create_async()
+            .await
+    }
+
+    async fn mock_delete_namespace(server: &mut ServerGuard, path: Matcher, times: usize) -> Mock {
+        server
+            .mock("DELETE", path)
+            .with_status(200)
+            .expect(times)
+            .create_async()
+            .await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn existing_namespace_is_neither_created_nor_deleted() {
+        let mut server = Server::new_async().await;
+        let create = mock_create_namespace(&mut server, 0).await;
+        let delete = mock_delete_namespace(&mut server, Matcher::Any, 0).await;
+        let file_server = server
+            .mock("POST", "/api/v1/namespaces/adopted/pods")
+            .match_query(Matcher::Any)
+            .with_status(500)
+            .create_async()
+            .await;
+
+        let provider = provider(&server, Some("adopted"));
+        assert!(provider.create_namespace().await.is_err());
+        drop(provider);
+
+        file_server.assert_async().await;
+        create.assert_async().await;
+        delete.assert_async().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn own_namespace_is_created_and_deleted_on_drop() {
+        let mut server = Server::new_async().await;
+        let create = mock_create_namespace(&mut server, 1).await;
+        let delete = mock_delete_namespace(
+            &mut server,
+            Matcher::Regex("^/api/v1/namespaces/zombie-".into()),
+            1,
+        )
+        .await;
+
+        let provider = provider(&server, None);
+        assert!(provider.create_namespace().await.is_err());
+        drop(provider);
+
+        create.assert_async().await;
+        delete.assert_async().await;
+    }
+}

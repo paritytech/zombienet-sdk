@@ -30,14 +30,15 @@ use network::{
     node::{NetworkNode, SpawnedNode},
     parachain::Parachain,
     relaychain::Relaychain,
-    Network,
+    Network, NodeContext,
 };
 // re-exported
 pub use network_spec::NetworkSpec;
 use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
 use provider::{
+    shared::helpers::running_in_ci,
     types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
-    DynNamespace, DynProvider,
+    DynNamespace, DynNode, DynProvider,
 };
 use serde_json::json;
 use support::{
@@ -58,7 +59,10 @@ use crate::{
         parachain::RawParachain,
         relaychain::RawRelaychain,
     },
-    shared::types::RegisterParachainOptions,
+    shared::{
+        constants::{FULL_NODE_PROMETHEUS_PORT, PROMETHEUS_PORT, RPC_PORT},
+        types::RegisterParachainOptions,
+    },
     spawner::SpawnNodeCtx,
     utils::write_zombie_json,
 };
@@ -963,6 +967,7 @@ async fn recreate_network_nodes_from_json(
         validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
 
         let inner = ns.spawn_node_from_json(&raw.inner).await?;
+        recreate_port_forwards(&raw.name, &raw.spec, &raw.context, &inner, provider_name).await;
         let relay_node = NetworkNode::new(
             raw.name,
             raw.ws_uri,
@@ -977,6 +982,47 @@ async fn recreate_network_nodes_from_json(
     }
 
     Ok(nodes)
+}
+
+/// Port-forwards only live in the process that created them, so when attaching to a live
+/// network we need to create them again, using the same local ports that were used at spawn
+/// time (the ones in `ws_uri` / `prometheus_uri`). Mirrors the logic in `spawner::spawn_node`.
+///
+/// Failures are only logged: if the ports are still forwarded by another process (e.g. the one
+/// that spawned the network is still running) the uris keep working.
+async fn recreate_port_forwards(
+    name: &str,
+    spec: &NodeSpec,
+    context: &NodeContext,
+    node: &DynNode,
+    provider_name: &str,
+) {
+    // k8s in CI uses the pod ip and the default ports, no port-forward needed
+    if running_in_ci() && provider_name == "k8s" {
+        return;
+    }
+
+    let mut fwds = vec![
+        (spec.rpc_port.0, RPC_PORT),
+        (spec.prometheus_port.0, PROMETHEUS_PORT),
+    ];
+
+    if let (
+        NodeContext::Para {
+            is_cumulus_based: true,
+            ..
+        },
+        Some(port),
+    ) = (context, &spec.full_node_prometheus_port)
+    {
+        fwds.push((port.0, FULL_NODE_PROMETHEUS_PORT));
+    }
+
+    for (local_port, remote_port) in fwds {
+        if let Err(err) = node.create_port_forward(local_port, remote_port).await {
+            warn!("{name}: failed to recreate port-forward {local_port} -> {remote_port}: {err}");
+        }
+    }
 }
 
 async fn recreate_relaychain_from_json(
@@ -1794,5 +1840,199 @@ mod tests {
         alice.args.push("{{ZOMBIE:bob:someField}}".into());
 
         assert!(dependency_levels_among(&[&alice, &bob]).is_err())
+    }
+}
+
+#[cfg(test)]
+mod recreate_port_forwards_tests {
+    use std::{
+        path::{Path, PathBuf},
+        sync::{Arc, Mutex, RwLock},
+        time::Duration,
+    };
+
+    use async_trait::async_trait;
+    use configuration::types::AssetLocation;
+    use provider::{types::*, ProviderError, ProviderNode};
+    use serde::Serialize;
+
+    use super::*;
+    use crate::shared::types::ParkedPort;
+
+    #[derive(Serialize, Default)]
+    struct FwdRecorderNode {
+        #[serde(skip)]
+        fwds: Mutex<Vec<(u16, u16)>>,
+        #[serde(skip)]
+        fail: bool,
+    }
+
+    #[async_trait]
+    impl ProviderNode for FwdRecorderNode {
+        fn name(&self) -> &str {
+            "mock"
+        }
+        fn args(&self) -> Vec<&str> {
+            unimplemented!()
+        }
+        fn base_dir(&self) -> &PathBuf {
+            unimplemented!()
+        }
+        fn config_dir(&self) -> &PathBuf {
+            unimplemented!()
+        }
+        fn data_dir(&self) -> &PathBuf {
+            unimplemented!()
+        }
+        fn relay_data_dir(&self) -> &PathBuf {
+            unimplemented!()
+        }
+        fn scripts_dir(&self) -> &PathBuf {
+            unimplemented!()
+        }
+        fn log_path(&self) -> &PathBuf {
+            unimplemented!()
+        }
+        fn log_cmd(&self) -> String {
+            unimplemented!()
+        }
+        fn path_in_node(&self, _file: &Path) -> PathBuf {
+            unimplemented!()
+        }
+        async fn logs(&self) -> Result<String, ProviderError> {
+            unimplemented!()
+        }
+        async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn create_port_forward(
+            &self,
+            local_port: u16,
+            remote_port: u16,
+        ) -> Result<Option<u16>, ProviderError> {
+            self.fwds.lock().unwrap().push((local_port, remote_port));
+            if self.fail {
+                return Err(ProviderError::PortForwardError(
+                    local_port,
+                    remote_port,
+                    anyhow!("address in use"),
+                ));
+            }
+            Ok(Some(local_port))
+        }
+        async fn run_command(
+            &self,
+            _options: RunCommandOptions,
+        ) -> Result<ExecutionResult, ProviderError> {
+            unimplemented!()
+        }
+        async fn run_script(
+            &self,
+            _options: RunScriptOptions,
+        ) -> Result<ExecutionResult, ProviderError> {
+            unimplemented!()
+        }
+        async fn send_file(
+            &self,
+            _local_file_path: &Path,
+            _remote_file_path: &Path,
+            _mode: &str,
+        ) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn receive_file(
+            &self,
+            _remote_file_path: &Path,
+            _local_file_path: &Path,
+        ) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn pause(&self) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn resume(&self) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn restart(&self, _after: Option<Duration>) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn restart_with(
+            &self,
+            _assets: &[AssetLocation],
+            _cmd: &str,
+            _args: &[String],
+            _after: Option<Duration>,
+        ) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn destroy(&self) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+        async fn snapshot_db(&self, _: bool) -> Result<InnerSnapshotDb, ProviderError> {
+            unimplemented!()
+        }
+    }
+
+    fn port(p: u16) -> ParkedPort {
+        ParkedPort(p, Arc::new(RwLock::new(None)))
+    }
+
+    fn spec_with_ports() -> NodeSpec {
+        NodeSpec {
+            rpc_port: port(30001),
+            prometheus_port: port(30002),
+            full_node_prometheus_port: Some(port(30003)),
+            ..Default::default()
+        }
+    }
+
+    async fn run(context: NodeContext, fail: bool) -> Vec<(u16, u16)> {
+        let recorder = Arc::new(FwdRecorderNode {
+            fail,
+            ..Default::default()
+        });
+        let node: DynNode = recorder.clone();
+        recreate_port_forwards("alice", &spec_with_ports(), &context, &node, "k8s").await;
+        let fwds = recorder.fwds.lock().unwrap().clone();
+        fwds
+    }
+
+    #[tokio::test]
+    async fn relay_node_gets_rpc_and_prometheus_forwards() {
+        let fwds = run(NodeContext::Rc, false).await;
+        assert_eq!(fwds, vec![(30001, RPC_PORT), (30002, PROMETHEUS_PORT)]);
+    }
+
+    #[tokio::test]
+    async fn cumulus_collator_also_gets_full_node_prometheus_forward() {
+        let ctx = NodeContext::Para {
+            para_id: 2000,
+            is_cumulus_based: true,
+        };
+        let fwds = run(ctx, false).await;
+        assert_eq!(
+            fwds,
+            vec![
+                (30001, RPC_PORT),
+                (30002, PROMETHEUS_PORT),
+                (30003, FULL_NODE_PROMETHEUS_PORT)
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn non_cumulus_collator_does_not_get_full_node_forward() {
+        let ctx = NodeContext::Para {
+            para_id: 100,
+            is_cumulus_based: false,
+        };
+        let fwds = run(ctx, false).await;
+        assert_eq!(fwds, vec![(30001, RPC_PORT), (30002, PROMETHEUS_PORT)]);
+    }
+
+    #[tokio::test]
+    async fn failed_forward_does_not_stop_the_others() {
+        let fwds = run(NodeContext::Rc, true).await;
+        assert_eq!(fwds, vec![(30001, RPC_PORT), (30002, PROMETHEUS_PORT)]);
     }
 }

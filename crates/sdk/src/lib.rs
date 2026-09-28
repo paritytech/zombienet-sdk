@@ -62,6 +62,12 @@ pub trait NetworkConfigExt {
     /// ```
     async fn spawn_native(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
     async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
+    /// Spawns a network using the k8s provider into `namespace`, which must already
+    /// exist. It is left in place if spawning fails; `Network::destroy` deletes it.
+    async fn spawn_k8s_in_namespace(
+        self,
+        namespace: &str,
+    ) -> Result<Network<LocalFileSystem>, OrchestratorError>;
     async fn spawn_docker(self) -> Result<Network<LocalFileSystem>, OrchestratorError>;
 }
 
@@ -117,6 +123,16 @@ impl NetworkConfigExt for NetworkConfig {
     async fn spawn_k8s(self) -> Result<Network<LocalFileSystem>, OrchestratorError> {
         let filesystem = LocalFileSystem;
         let provider = KubernetesProvider::new(filesystem.clone()).await;
+        let orchestrator = Orchestrator::new(filesystem, provider);
+        orchestrator.spawn(self).await
+    }
+
+    async fn spawn_k8s_in_namespace(
+        self,
+        namespace: &str,
+    ) -> Result<Network<LocalFileSystem>, OrchestratorError> {
+        let filesystem = LocalFileSystem;
+        let provider = KubernetesProvider::new_in_namespace(filesystem.clone(), namespace).await;
         let orchestrator = Orchestrator::new(filesystem, provider);
         orchestrator.spawn(self).await
     }

@@ -25,6 +25,8 @@ where
     tmp_dir: PathBuf,
     k8s_client: KubernetesClient,
     filesystem: FS,
+    // Pre-existing namespace to spawn into, instead of creating one.
+    existing_namespace: Option<String>,
     pub(super) namespaces: RwLock<HashMap<String, Arc<KubernetesNamespace<FS>>>>,
 }
 
@@ -33,8 +35,25 @@ where
     FS: FileSystem + Send + Sync + Clone,
 {
     pub async fn new(filesystem: FS) -> Arc<Self> {
-        let k8s_client = KubernetesClient::new().await.unwrap();
+        Self::build(filesystem, None).await
+    }
 
+    /// Spawns into `namespace`, which must already exist. Zombienet won't create it
+    /// nor delete it on drop, but `destroy()` still deletes it.
+    pub async fn new_in_namespace(filesystem: FS, namespace: impl Into<String>) -> Arc<Self> {
+        Self::build(filesystem, Some(namespace.into())).await
+    }
+
+    async fn build(filesystem: FS, existing_namespace: Option<String>) -> Arc<Self> {
+        let k8s_client = KubernetesClient::new().await.unwrap();
+        Self::with_client(filesystem, k8s_client, existing_namespace)
+    }
+
+    fn with_client(
+        filesystem: FS,
+        k8s_client: KubernetesClient,
+        existing_namespace: Option<String>,
+    ) -> Arc<Self> {
         Arc::new_cyclic(|weak| KubernetesProvider {
             weak: weak.clone(),
             capabilities: ProviderCapabilities {
@@ -46,6 +65,7 @@ where
             tmp_dir: std::env::temp_dir(),
             k8s_client,
             filesystem,
+            existing_namespace,
             namespaces: RwLock::new(HashMap::new()),
         })
     }
@@ -86,6 +106,7 @@ where
             &self.k8s_client,
             &self.filesystem,
             None,
+            self.existing_namespace.as_deref(),
         )
         .await?;
 
@@ -108,6 +129,7 @@ where
             &self.k8s_client,
             &self.filesystem,
             Some(base_dir),
+            self.existing_namespace.as_deref(),
         )
         .await?;
 

@@ -104,7 +104,7 @@ where
             file_server_port: RwLock::new(None),
             file_server_fw_task: RwLock::new(None),
             nodes: RwLock::new(HashMap::new()),
-            // Not ours to delete if spawning fails.
+            // if namespace already exists, it's not ours to delete if spawning fails.
             delete_on_drop: Arc::new(Mutex::new(existing.is_none())),
         });
 

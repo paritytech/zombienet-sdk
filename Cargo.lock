@@ -11724,6 +11724,7 @@ dependencies = [
  "hex",
  "k8s-openapi",
  "kube",
+ "mockito",
  "nix 0.29.0",
  "regex",
  "reqwest",

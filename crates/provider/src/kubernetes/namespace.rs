@@ -66,9 +66,12 @@ where
         k8s_client: &KubernetesClient,
         filesystem: &FS,
         custom_base_dir: Option<&Path>,
+        existing: Option<&str>,
     ) -> Result<Arc<Self>, ProviderError> {
         // If the namespace is already provided
-        let name = if let Ok(name) = env::var(ZOMBIE_K8S_CI_NAMESPACE) {
+        let name = if let Some(name) = existing {
+            name.to_owned()
+        } else if let Ok(name) = env::var(ZOMBIE_K8S_CI_NAMESPACE) {
             name
         } else {
             format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4())
@@ -101,10 +104,11 @@ where
             file_server_port: RwLock::new(None),
             file_server_fw_task: RwLock::new(None),
             nodes: RwLock::new(HashMap::new()),
-            delete_on_drop: Arc::new(Mutex::new(true)),
+            // if namespace already exists, it's not ours to delete if spawning fails.
+            delete_on_drop: Arc::new(Mutex::new(existing.is_none())),
         });
 
-        namespace.initialize().await?;
+        namespace.initialize(existing.is_none()).await?;
 
         Ok(namespace)
     }
@@ -138,10 +142,10 @@ where
         Ok(namespace)
     }
 
-    async fn initialize(&self) -> Result<(), ProviderError> {
-        // Initialize the namespace IFF
+    async fn initialize(&self, create: bool) -> Result<(), ProviderError> {
+        // Initialize the namespace IFF it wasn't provided by the caller and
         // we are not in CI or we don't have the env `ZOMBIE_NAMESPACE` set
-        if env::var(ZOMBIE_K8S_CI_NAMESPACE).is_err() || !running_in_ci() {
+        if create && (env::var(ZOMBIE_K8S_CI_NAMESPACE).is_err() || !running_in_ci()) {
             self.initialize_k8s().await?;
         }
 

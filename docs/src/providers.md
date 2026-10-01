@@ -106,6 +106,10 @@ zombie-cli spawn network.toml --provider k8s
 let network = config.spawn_k8s().await?;
 ```
 
+### Pod Labels
+
+Node pods carry a `zombie-role` label with the same values as zombienet v1: `node` (relay chain nodes, validators or not), `collator`, `cumulus-collator`, `bootnode` (dedicated bootnodes) and `temp` (short-lived helper pods). The file server and custom processes have no `zombie-role`.
+
 ## Attaching to Running Networks
 
 Reconnect to a previously spawned network, currently running network using the `zombie.json` state file:

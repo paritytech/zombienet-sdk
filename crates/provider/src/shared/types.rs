@@ -25,6 +25,34 @@ pub struct ProviderCapabilities {
     pub use_default_ports_in_cmd: bool,
 }
 
+/// Role of a node in the network, exposed by providers that support labels
+/// (k8s) as the `zombie-role` label with the values zombienet v1 used
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeRole {
+    /// Relay chain node, validator or not
+    Node,
+    /// Dedicated bootnode
+    Bootnode,
+    /// Collator of a parachain that is not cumulus based (e.g adder/undying)
+    Collator,
+    /// Collator of a cumulus based parachain
+    CumulusCollator,
+    /// Short-lived helper node (e.g used to generate chain-specs)
+    Temp,
+}
+
+impl NodeRole {
+    pub fn as_label(&self) -> &'static str {
+        match self {
+            NodeRole::Node => "node",
+            NodeRole::Bootnode => "bootnode",
+            NodeRole::Collator => "collator",
+            NodeRole::CumulusCollator => "cumulus-collator",
+            NodeRole::Temp => "temp",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SpawnNodeOptions {
     /// Name of the node
@@ -53,6 +81,8 @@ pub struct SpawnNodeOptions {
     pub port_mapping: Option<HashMap<Port, Port>>,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
+    /// Role of the node in the network
+    pub role: Option<NodeRole>,
 }
 
 impl SpawnNodeOptions {
@@ -72,6 +102,7 @@ impl SpawnNodeOptions {
             db_snapshot: None,
             port_mapping: None,
             node_log_path: None,
+            role: None,
         }
     }
 
@@ -141,6 +172,11 @@ impl SpawnNodeOptions {
 
     pub fn node_log_path(mut self, path: Option<PathBuf>) -> Self {
         self.node_log_path = path;
+        self
+    }
+
+    pub fn role(mut self, role: NodeRole) -> Self {
+        self.role = Some(role);
         self
     }
 }

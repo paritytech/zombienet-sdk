@@ -36,7 +36,7 @@ use network::{
 pub use network_spec::NetworkSpec;
 use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
 use provider::{
-    types::{GenerateFileCommand, ProviderCapabilities, TransferedFile},
+    types::{GenerateFileCommand, NodeRole, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
 };
 use serde_json::json;
@@ -1502,7 +1502,18 @@ pub enum ZombieRole {
     Bootnode,
     Collator,
     CumulusCollator,
-    Companion,
+}
+
+impl ZombieRole {
+    pub(crate) fn node_role(&self) -> NodeRole {
+        match self {
+            ZombieRole::Node => NodeRole::Node,
+            ZombieRole::Bootnode => NodeRole::Bootnode,
+            ZombieRole::Collator => NodeRole::Collator,
+            ZombieRole::CumulusCollator => NodeRole::CumulusCollator,
+            ZombieRole::Temp => NodeRole::Temp,
+        }
+    }
 }
 
 // re-exports

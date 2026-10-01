@@ -27,8 +27,8 @@ use crate::{
     },
     shared::helpers::{extract_execution_result, running_in_ci},
     types::{
-        GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
-        SpawnNodeOptions,
+        GenerateFileCommand, GenerateFilesOptions, NodeRole, ProviderCapabilities,
+        RunCommandOptions, SpawnNodeOptions,
     },
     DynNode, KubernetesProvider, ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -486,7 +486,8 @@ where
         let temp_node = self
             .spawn_node(
                 &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
-                    .image(node_image.clone()),
+                    .image(node_image.clone())
+                    .role(NodeRole::Temp),
             )
             .await?;
 
@@ -516,6 +517,7 @@ where
             startup_files: &options.injected_files,
             resources: options.resources.as_ref(),
             db_snapshot: options.db_snapshot.as_deref(),
+            role: options.role,
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,
         })
@@ -568,7 +570,8 @@ where
             .spawn_node(
                 &SpawnNodeOptions::new(node_name, "cat".to_string())
                     .injected_files(options.injected_files)
-                    .image(node_image),
+                    .image(node_image)
+                    .role(NodeRole::Temp),
             )
             .await?;
 

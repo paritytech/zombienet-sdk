@@ -165,8 +165,7 @@ where
             generators::generate_node_command_cumulus(node, gen_opts.clone(), para.id)
         },
         _ => unreachable!(), /* TODO: do we need those?
-                              * ZombieRole::Bootnode => todo!(),
-                              * ZombieRole::Companion => todo!(), */
+                              * ZombieRole::Bootnode => todo!(), */
     };
 
     // apply running networ replacements
@@ -224,7 +223,8 @@ where
         .created_paths(created_paths)
         .db_snapshot(resolved_db_snapshot)
         .port_mapping(HashMap::from(ports))
-        .node_log_path(node.node_log_path.clone());
+        .node_log_path(node.node_log_path.clone())
+        .role(ctx.role.node_role());
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())

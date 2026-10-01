@@ -29,7 +29,8 @@ use crate::{
     },
     kubernetes,
     types::{
-        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+        ExecutionResult, InnerSnapshotDb, NodeRole, RunCommandOptions, RunScriptOptions,
+        TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -48,6 +49,7 @@ where
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
     pub(super) db_snapshot: Option<&'a Path>,
+    pub(super) role: Option<NodeRole>,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -74,6 +76,7 @@ where
             startup_files: &[],
             resources: deserializable.resources.as_ref(),
             db_snapshot: None,
+            role: None,
             k8s_client,
             filesystem,
         }
@@ -174,7 +177,7 @@ where
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_k8s().await?;
+        node.initialize_k8s(options.role).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
@@ -231,8 +234,8 @@ where
         Ok(node)
     }
 
-    async fn initialize_k8s(&self) -> Result<(), ProviderError> {
-        let labels = BTreeMap::from([
+    async fn initialize_k8s(&self, role: Option<NodeRole>) -> Result<(), ProviderError> {
+        let mut labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
                 self.name().to_string(),
@@ -242,6 +245,9 @@ where
                 env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()),
             ),
         ]);
+        if let Some(role) = role {
+            labels.insert("zombie-role".to_string(), role.as_label().to_string());
+        }
 
         // Create pod
         let pod_spec = PodSpecBuilder::build(

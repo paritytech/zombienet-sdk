@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MANIFEST_SCHEMA_VERSION"],"fn":["untar_bundle"],"struct":["ArchiveEntry","Bundle","BundleBuilder","Empty","NonEmpty","SnapshotManifest"]};

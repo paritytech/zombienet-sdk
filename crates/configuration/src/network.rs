@@ -2070,9 +2070,7 @@ mod tests {
                     .with_chain("myparachain1")
                     // .with_registration_strategy(RegistrationStrategy::UsingExtrinsic)
                     .with_collator(|collator| {
-                        collator
-                            .with_name("collator2")
-                            .with_command("command1")
+                        collator.with_name("collator2").with_command("command1")
                     })
             })
             .build()

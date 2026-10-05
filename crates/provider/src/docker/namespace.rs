@@ -222,14 +222,8 @@ where
                     vec!["ash", "/scripts/helper-binaries-downloader.sh"],
                 )
                 .volume_mounts(HashMap::from([
-                    (
-                        helper_binaries_volume_name.as_str(),
-                        "/helpers",
-                    ),
-                    (
-                        zombie_wrapper_volume_name.as_ref(),
-                        "/scripts",
-                    )
+                    (helper_binaries_volume_name.as_str(), "/helpers"),
+                    (zombie_wrapper_volume_name.as_ref(), "/scripts"),
                 ]))
                 // wait until complete
                 .detach(false)

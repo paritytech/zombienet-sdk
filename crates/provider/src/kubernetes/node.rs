@@ -237,7 +237,9 @@ where
             ),
             (
                 "x-infra-instance".to_string(),
-                env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()).to_lowercase(),
+                env::var("X_INFRA_INSTANCE")
+                    .unwrap_or("ondemand".to_string())
+                    .to_lowercase(),
             ),
         ]);
         if let Some(role) = role {

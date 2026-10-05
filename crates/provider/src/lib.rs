@@ -23,6 +23,7 @@ use shared::{
 };
 use support::fs::FileSystemError;
 use tracing::warn;
+use url::Url;
 
 use crate::shared::types::InnerSnapshotDb;
 
@@ -119,6 +120,9 @@ pub enum ProviderError {
     #[error("Failed to acquire lock: {0}")]
     FailedToAcquireLock(String),
 
+    #[error("Failed to upgrade from weak ref of ns")]
+    FailedToUpgradeWeakRef,
+
     #[error("Failed to generate the snapshot for node {0}:  {1}")]
     SnapshotDb(String, anyhow::Error),
 }
@@ -185,6 +189,16 @@ pub trait ProviderNamespace {
     async fn destroy(&self) -> Result<(), ProviderError>;
 
     async fn static_setup(&self) -> Result<(), ProviderError>;
+
+    /// Upload a file to the namespace's file server, if the provider has one.
+    /// Returns the url and content hash of the uploaded file, or `None` for
+    /// providers without a file server.
+    async fn upload_to_fileserver(
+        &self,
+        _location: &Path,
+    ) -> Result<Option<(Url, String)>, ProviderError> {
+        Ok(None)
+    }
 }
 
 pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;

@@ -6,6 +6,7 @@ use std::{
     thread,
 };
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use k8s_openapi::{
     api::core::v1::{
@@ -13,9 +14,11 @@ use k8s_openapi::{
     },
     apimachinery::pkg::util::intstr::IntOrString,
 };
+use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace, warn};
+use url::Url;
 use uuid::Uuid;
 
 use super::{client::KubernetesClient, node::KubernetesNode};
@@ -378,6 +381,59 @@ where
         Ok(())
     }
 
+    pub(super) async fn upload_file(
+        &self,
+        location: &Path,
+    ) -> Result<(Url, String), ProviderError> {
+        let file_name = if let Some(name) = location.file_name() {
+            name.to_string_lossy()
+        } else {
+            "unnamed".into()
+        };
+
+        let data = self.filesystem.read(location).await?;
+        let content_hashed = hex::encode(sha2::Sha256::digest(&data));
+        let http_client = reqwest::Client::new();
+        let req = http_client
+            .head(format!(
+                "http://{}/{content_hashed}__{file_name}",
+                self.file_server_local_host().await?
+            ))
+            .build()
+            .map_err(|err| {
+                ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
+            })?;
+
+        let url = req.url().clone();
+        let res = http_client.execute(req).await.map_err(|err| {
+            ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
+        })?;
+
+        if res.status() != reqwest::StatusCode::OK {
+            // we need to upload the file
+            http_client
+                .post(url.as_ref())
+                .body(data)
+                .send()
+                .await
+                .map_err(|err| {
+                    ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
+                })?;
+        }
+
+        Ok((url, content_hashed))
+    }
+
+    async fn file_server_local_host(&self) -> Result<String, ProviderError> {
+        if let Some(port) = *self.file_server_port.read().await {
+            return Ok(format!("localhost:{port}"));
+        }
+
+        Err(ProviderError::FileServerSetupError(anyhow!(
+            "file server port not bound locally"
+        )))
+    }
+
     pub async fn set_delete_on_drop(&self, delete_on_drop: bool) {
         *self.delete_on_drop.lock().await = delete_on_drop;
     }
@@ -461,6 +517,13 @@ where
 
     async fn detach(&self) {
         self.set_delete_on_drop(false).await;
+    }
+
+    async fn upload_to_fileserver(
+        &self,
+        location: &Path,
+    ) -> Result<Option<(Url, String)>, ProviderError> {
+        self.upload_file(location).await.map(Some)
     }
 
     async fn is_detached(&self) -> bool {

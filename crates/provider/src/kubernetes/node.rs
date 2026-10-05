@@ -13,7 +13,6 @@ use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
 use tracing::{debug, trace, warn};
@@ -117,8 +116,6 @@ where
     #[serde(skip)]
     k8s_client: KubernetesClient,
     #[serde(skip)]
-    http_client: reqwest::Client,
-    #[serde(skip)]
     filesystem: FS,
     #[serde(skip)]
     port_fwds: RwLock<HashMap<u16, FwdInfo>>,
@@ -172,7 +169,6 @@ where
             log_path,
             filesystem: filesystem.clone(),
             k8s_client: options.k8s_client.clone(),
-            http_client: reqwest::Client::new(),
             port_fwds: Default::default(),
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
@@ -226,7 +222,6 @@ where
             log_path,
             filesystem: filesystem.clone(),
             k8s_client: options.k8s_client.clone(),
-            http_client: reqwest::Client::new(),
             port_fwds: Default::default(),
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
@@ -238,11 +233,11 @@ where
         let mut labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
-                self.name().to_string(),
+                self.name().to_string().to_lowercase(),
             ),
             (
                 "x-infra-instance".to_string(),
-                env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()),
+                env::var("X_INFRA_INSTANCE").unwrap_or("ondemand".to_string()).to_lowercase(),
             ),
         ]);
         if let Some(role) = role {
@@ -447,55 +442,11 @@ where
     }
 
     async fn upload_to_fileserver(&self, location: &Path) -> Result<(Url, String), ProviderError> {
-        let file_name = if let Some(name) = location.file_name() {
-            name.to_string_lossy()
-        } else {
-            "unnamed".into()
-        };
-
-        let data = self.filesystem.read(location).await?;
-        let content_hashed = hex::encode(sha2::Sha256::digest(&data));
-        let req = self
-            .http_client
-            .head(format!(
-                "http://{}/{content_hashed}__{file_name}",
-                self.file_server_local_host().await?
-            ))
-            .build()
-            .map_err(|err| {
-                ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
-            })?;
-
-        let url = req.url().clone();
-        let res = self.http_client.execute(req).await.map_err(|err| {
-            ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
-        })?;
-
-        if res.status() != reqwest::StatusCode::OK {
-            // we need to upload the file
-            self.http_client
-                .post(url.as_ref())
-                .body(data)
-                .send()
-                .await
-                .map_err(|err| {
-                    ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
-                })?;
-        }
-
-        Ok((url, content_hashed))
-    }
-
-    async fn file_server_local_host(&self) -> Result<String, ProviderError> {
         if let Some(namespace) = self.namespace.upgrade() {
-            if let Some(port) = *namespace.file_server_port.read().await {
-                return Ok(format!("localhost:{port}"));
-            }
+            namespace.upload_file(location).await
+        } else {
+            Err(ProviderError::FailedToUpgradeWeakRef)
         }
-
-        Err(ProviderError::FileServerSetupError(anyhow!(
-            "file server port not bound locally"
-        )))
     }
 
     async fn download_file(

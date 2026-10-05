@@ -556,6 +556,9 @@ where
 
         ctx.bootnodes_addr = &bootnodes_addr;
 
+        // Upload the raw relaychain spec (with bootnodes) to the provider's file server, if any
+        upload_raw_spec(&ns, &network_spec.relaychain().chain_spec).await?;
+
         for level in dependency_levels_among(&relaynodes)? {
             let mut running_nodes_per_level = vec![];
             for chunk in level.chunks(spawn_concurrency) {
@@ -712,6 +715,9 @@ where
                 para_chain_spec
                     .add_bootnodes(scoped_fs, &bootnodes_addr)
                     .await?;
+
+                // Upload the raw parachain spec (with bootnodes) to the provider's file server, if any
+                upload_raw_spec(ctx.ns, para_chain_spec).await?;
             }
 
             ctx_para.bootnodes_addr = &bootnodes_addr;
@@ -1122,6 +1128,23 @@ fn generate_bootnode_addr(
         &node.spec.p2p_cert_hash,
     )
 }
+
+// Upload the raw chain-spec to the provider's file server (a no-op for providers without one),
+// so the nodes spawned after it find the spec already there instead of each uploading it.
+// The path is the one the nodes inject (`<base_dir>/<chain_spec_name>.json`), so their upload
+// resolves to the same `<hash>__<file name>` entry.
+async fn upload_raw_spec(
+    ns: &DynNamespace,
+    chain_spec: &generators::chain_spec::ChainSpec,
+) -> Result<(), OrchestratorError> {
+    if let Some(location) = chain_spec.raw_path() {
+        ns.upload_to_fileserver(&ns.base_dir().join(location))
+            .await?;
+    }
+
+    Ok(())
+}
+
 // Validate that the config fulfill all the requirements of the provider
 fn validate_spec_with_provider_capabilities(
     network_spec: &NetworkSpec,

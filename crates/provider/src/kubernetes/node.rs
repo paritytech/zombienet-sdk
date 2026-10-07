@@ -330,6 +330,7 @@ where
         // the namespace cache; we still need the pod to fetch it over
         // HTTP, so upload to the fileserver and curl from inside.
         let (url_of_snap, _) = self.upload_to_fileserver(db_snapshot).await?;
+        let url_of_snap = make_url_internal(&url_of_snap);
 
         // we need to get the snapshot from a public access
         // and extract to /data
@@ -689,9 +690,10 @@ where
         );
 
         // we need to override the url to use inside the pod
-        let (mut url, hash) = self.upload_to_fileserver(local_file_path).await?;
-        let _ = url.set_host(Some("fileserver"));
-        let _ = url.set_port(Some(80));
+        let (url, hash) = self.upload_to_fileserver(local_file_path).await?;
+        let url = make_url_internal(&url);
+        // let _ = url.set_host(Some("fileserver"));
+        // let _ = url.set_port(Some(80));
 
         // Sometimes downloading the file fails (the file is corrupted)
         // Add at most 5 retries
@@ -922,4 +924,12 @@ where
     async fn snapshot_db(&self, _is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
         todo!("snapshot db is not implemented yet for k8s");
     }
+}
+
+// Helper fn to make a fileserver usable from inside of pods
+fn make_url_internal(url: &Url) -> Url {
+    let mut url = url.clone();
+    let _ = url.set_host(Some("fileserver"));
+    let _ = url.set_port(Some(80));
+    url
 }

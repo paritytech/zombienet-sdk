@@ -2462,4 +2462,43 @@ id = 1000
         let toml_string = network_config.dump_to_toml().unwrap();
         println!("{}", toml_string);
     }
+
+    #[test]
+    fn node_names_loaded_from_toml_are_made_valid_for_every_provider() {
+        // zombie-bite writes `Collator-<id>`, which no kubernetes pod can be named.
+        let network_config = NetworkConfig::load_from_toml_string(
+            r#"
+            [relaychain]
+            chain = "rococo-local"
+            default_command = "polkadot"
+
+            [[relaychain.nodes]]
+            name = "Alice"
+
+            [[relaychain.nodes]]
+            name = "my_node"
+
+            [[parachains]]
+            id = 1000
+            chain = "asset-hub-rococo"
+            default_command = "polkadot-parachain"
+
+            [[parachains.collators]]
+            name = "Collator-1000"
+            "#,
+        )
+        .unwrap();
+
+        let validators: Vec<&str> = network_config
+            .relaychain()
+            .nodes()
+            .iter()
+            .map(|node| node.name())
+            .collect();
+        assert_eq!(validators, ["alice", "my-node"]);
+        assert_eq!(
+            network_config.parachains()[0].collators()[0].name(),
+            "collator-1000"
+        );
+    }
 }

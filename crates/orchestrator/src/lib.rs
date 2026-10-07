@@ -981,6 +981,7 @@ async fn recreate_network_nodes_from_json(
         let relay_node = NetworkNode::new(
             raw.name,
             raw.ws_uri,
+            raw.internal_ws_uri,
             raw.prometheus_uri,
             raw.multiaddr,
             raw.spec,

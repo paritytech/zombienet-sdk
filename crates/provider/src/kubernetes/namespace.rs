@@ -400,25 +400,25 @@ where
                 self.file_server_local_host().await?
             ))
             .build()
-            .map_err(|err| {
-                ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
-            })?;
+            .map_err(|e| map_to_upload_file_err(location, e))?;
 
         let url = req.url().clone();
-        let res = http_client.execute(req).await.map_err(|err| {
-            ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
-        })?;
+        let res = http_client
+            .execute(req)
+            .await
+            .map_err(|e| map_to_upload_file_err(location, e))?;
 
         if res.status() != reqwest::StatusCode::OK {
             // we need to upload the file
+            let len = data.len();
             http_client
                 .post(url.as_ref())
-                .body(data)
+                .header(reqwest::header::CONTENT_LENGTH, len)
+                .body(chunked_body(data))
                 .send()
                 .await
-                .map_err(|err| {
-                    ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
-                })?;
+                .and_then(|res| res.error_for_status())
+                .map_err(|e| map_to_upload_file_err(location, e))?;
         }
 
         Ok((url, content_hashed))
@@ -446,6 +446,35 @@ where
             true
         }
     }
+}
+
+/// How much of a file each write to the fileserver connection carries.
+const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+
+/// `data` as a body sent [`UPLOAD_CHUNK_SIZE`] bytes at a time, rather than as
+/// one buffer written to the socket in a single call: macOS refuses a socket
+/// write of more than `INT_MAX` bytes with `EINVAL` ("Invalid argument (os
+/// error 22)"), which a multi-gigabyte db snapshot is.
+fn chunked_body(data: Vec<u8>) -> reqwest::Body {
+    reqwest::Body::wrap_stream(upload_chunks(data))
+}
+
+/// `data`, [`UPLOAD_CHUNK_SIZE`] bytes at a time, in order.
+fn upload_chunks(
+    data: Vec<u8>,
+) -> impl futures::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send + 'static {
+    futures::stream::unfold((data, 0), |(data, offset)| async move {
+        if offset >= data.len() {
+            return None;
+        }
+        let end = (offset + UPLOAD_CHUNK_SIZE).min(data.len());
+        let chunk = data[offset..end].to_vec();
+        Some((Ok(chunk), (data, end)))
+    })
+}
+
+fn map_to_upload_file_err(location: &Path, err: impl Into<anyhow::Error>) -> ProviderError {
+    ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
 }
 
 impl<FS> Drop for KubernetesNamespace<FS>
@@ -557,7 +586,8 @@ where
         let available_args_output = temp_node
             .run_command(RunCommandOptions::new(command.clone()).args(vec!["--help"]))
             .await?
-            .map_err(|(_exit, status)| {
+            .map_err(|(exit, status)| {
+                warn!("{}", format!("exit: {exit}"));
                 ProviderError::NodeAvailableArgsError(node_image, command, status)
             })?;
 
@@ -687,5 +717,39 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::StreamExt;
+
+    use super::*;
+
+    async fn chunks_of(data: Vec<u8>) -> Vec<Vec<u8>> {
+        upload_chunks(data)
+            .map(|chunk| chunk.unwrap())
+            .collect()
+            .await
+    }
+
+    #[tokio::test]
+    async fn an_upload_is_sent_in_bounded_chunks_that_add_up_to_the_file() {
+        // Not a multiple of the chunk size, so the last chunk is a short one.
+        let data: Vec<u8> = (0..UPLOAD_CHUNK_SIZE * 3 + 17)
+            .map(|i| (i % 251) as u8)
+            .collect();
+
+        let chunks = chunks_of(data.clone()).await;
+
+        assert_eq!(chunks.len(), 4);
+        assert!(chunks.iter().all(|chunk| chunk.len() <= UPLOAD_CHUNK_SIZE));
+        assert_eq!(chunks.last().unwrap().len(), 17);
+        assert_eq!(chunks.concat(), data);
+    }
+
+    #[tokio::test]
+    async fn an_empty_file_is_sent_as_no_chunks() {
+        assert!(chunks_of(Vec::new()).await.is_empty());
     }
 }

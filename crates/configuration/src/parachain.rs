@@ -1878,14 +1878,14 @@ mod tests {
         let group_collator1 = parachain_config.group_collators_configs()[0].clone();
         assert_eq!(group_collator1.count, 2);
         let base_config1 = group_collator1.base_config;
-        assert_eq!(base_config1.name(), "collator_group1");
+        assert_eq!(base_config1.name(), "collator-group1");
         assert_eq!(base_config1.command().unwrap().as_str(), "group_command1");
         assert!(base_config1.is_bootnode());
 
         let group_collator2 = parachain_config.group_collators_configs()[1].clone();
         assert_eq!(group_collator2.count, 3);
         let base_config2 = group_collator2.base_config;
-        assert_eq!(base_config2.name(), "collator_group2");
+        assert_eq!(base_config2.name(), "collator-group2");
         assert_eq!(base_config2.command().unwrap().as_str(), "group_command2");
         assert!(!base_config2.is_bootnode());
     }
@@ -1931,7 +1931,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "parachain[1000].collators['collator_group2'].Count cannot be zero"
+            "parachain[1000].collators['collator-group2'].Count cannot be zero"
         );
     }
 }

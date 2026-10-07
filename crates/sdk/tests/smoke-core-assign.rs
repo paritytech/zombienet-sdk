@@ -20,7 +20,7 @@ fn small_network() -> NetworkConfig {
         })
         .with_parachain(|p| {
             p.with_id(3000)
-            // .with_num_cores(3)
+                // .with_num_cores(3)
                 .with_collator(|n| n.with_name("collator-test").with_command("test-parachain"))
         })
         .build()

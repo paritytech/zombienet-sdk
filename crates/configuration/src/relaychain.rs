@@ -1129,7 +1129,7 @@ mod tests {
 
         let group_nodes = relaychain_config.group_node_configs();
         let group_base_node = group_nodes.first().unwrap();
-        assert_eq!(group_base_node.base_config.name(), "group_node");
+        assert_eq!(group_base_node.base_config.name(), "group-node");
         assert_eq!(
             group_base_node.base_config.command().unwrap().as_str(),
             "some_command"
@@ -1165,7 +1165,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors.first().unwrap().to_string(),
-            "relaychain.nodes['group_node'].Count cannot be zero"
+            "relaychain.nodes['group-node'].Count cannot be zero"
         );
     }
 }

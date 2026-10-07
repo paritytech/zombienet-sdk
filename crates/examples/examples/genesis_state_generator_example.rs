@@ -27,10 +27,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 .cumulus_based(false)
                 // Use a custom command with arguments to generate the genesis state
                 .with_genesis_state_generator(genesis_cmd.as_str())
-                .with_collator(|n| {
-                    n.with_name("collator")
-                        .with_command("undying-collator")
-                })
+                .with_collator(|n| n.with_name("collator").with_command("undying-collator"))
         })
         .build()
         .expect("Failed to build network config")

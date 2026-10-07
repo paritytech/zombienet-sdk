@@ -64,6 +64,8 @@ pub fn apply_running_network_replacements(text: &str, network: &serde_json::Valu
                     "⚠️ The node with name {} doesn't have the value {} in context",
                     &caps[1], &caps[2]
                 );
+                // DEBUG
+                trace!("node: {:?}", node);
                 caps[0].to_string()
             }
         } else {

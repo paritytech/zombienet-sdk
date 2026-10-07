@@ -294,9 +294,11 @@ where
         }
     }
 
+    let running_ip = running_node.ip().await?;
+
     let multiaddr = generators::generate_node_bootnode_addr(
         &node.peer_id,
-        &running_node.ip().await?,
+        &running_ip,
         if ctx.ns.provider_name() == "k8s" {
             P2P_PORT
         } else {
@@ -307,6 +309,12 @@ where
     )?;
 
     let ws_uri = format!("ws://{ip_to_use}:{rpc_port_external}");
+    let internal_ws_uri = if ctx.ns.provider_name() == "k8s" {
+        format!("ws://{running_ip}:{RPC_PORT}")
+    } else {
+        // docker/native can use the same
+        ws_uri.clone()
+    };
     let prometheus_uri = format!("http://{ip_to_use}:{prometheus_port_external}/metrics");
     info!("🚀 {}, should be running now", node.name);
     info!(
@@ -341,6 +349,7 @@ where
     Ok(NetworkNode::new(
         node.name.clone(),
         ws_uri,
+        internal_ws_uri,
         prometheus_uri,
         multiaddr,
         node.clone(),

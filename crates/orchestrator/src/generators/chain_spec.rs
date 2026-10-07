@@ -187,9 +187,13 @@ impl ChainSpec {
         self
     }
 
-    pub(crate) fn asset_location(mut self, location: AssetLocation) -> Self {
+    pub(crate) fn with_asset_location(mut self, location: AssetLocation) -> Self {
         self.asset_location = Some(location);
         self
+    }
+
+    pub(crate) fn asset_location(&self) -> Option<&AssetLocation> {
+        self.asset_location.as_ref()
     }
 
     pub(crate) fn runtime(mut self, chain_spec_runtime: ChainSpecRuntime) -> Self {

@@ -6,6 +6,7 @@ use std::{
     thread,
 };
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use k8s_openapi::{
     api::core::v1::{
@@ -13,9 +14,11 @@ use k8s_openapi::{
     },
     apimachinery::pkg::util::intstr::IntOrString,
 };
+use sha2::Digest;
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_replacements};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, trace, warn};
+use url::Url;
 use uuid::Uuid;
 
 use super::{client::KubernetesClient, node::KubernetesNode};
@@ -378,6 +381,59 @@ where
         Ok(())
     }
 
+    pub(super) async fn upload_file(
+        &self,
+        location: &Path,
+    ) -> Result<(Url, String), ProviderError> {
+        let file_name = if let Some(name) = location.file_name() {
+            name.to_string_lossy()
+        } else {
+            "unnamed".into()
+        };
+
+        let data = self.filesystem.read(location).await?;
+        let content_hashed = hex::encode(sha2::Sha256::digest(&data));
+        let http_client = reqwest::Client::new();
+        let req = http_client
+            .head(format!(
+                "http://{}/{content_hashed}__{file_name}",
+                self.file_server_local_host().await?
+            ))
+            .build()
+            .map_err(|e| map_to_upload_file_err(location, e))?;
+
+        let url = req.url().clone();
+        let res = http_client
+            .execute(req)
+            .await
+            .map_err(|e| map_to_upload_file_err(location, e))?;
+
+        if res.status() != reqwest::StatusCode::OK {
+            // we need to upload the file
+            let len = data.len();
+            http_client
+                .post(url.as_ref())
+                .header(reqwest::header::CONTENT_LENGTH, len)
+                .body(chunked_body(data))
+                .send()
+                .await
+                .and_then(|res| res.error_for_status())
+                .map_err(|e| map_to_upload_file_err(location, e))?;
+        }
+
+        Ok((url, content_hashed))
+    }
+
+    async fn file_server_local_host(&self) -> Result<String, ProviderError> {
+        if let Some(port) = *self.file_server_port.read().await {
+            return Ok(format!("localhost:{port}"));
+        }
+
+        Err(ProviderError::FileServerSetupError(anyhow!(
+            "file server port not bound locally"
+        )))
+    }
+
     pub async fn set_delete_on_drop(&self, delete_on_drop: bool) {
         *self.delete_on_drop.lock().await = delete_on_drop;
     }
@@ -390,6 +446,35 @@ where
             true
         }
     }
+}
+
+/// How much of a file each write to the fileserver connection carries.
+const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+
+/// `data` as a body sent [`UPLOAD_CHUNK_SIZE`] bytes at a time, rather than as
+/// one buffer written to the socket in a single call: macOS refuses a socket
+/// write of more than `INT_MAX` bytes with `EINVAL` ("Invalid argument (os
+/// error 22)"), which a multi-gigabyte db snapshot is.
+fn chunked_body(data: Vec<u8>) -> reqwest::Body {
+    reqwest::Body::wrap_stream(upload_chunks(data))
+}
+
+/// `data`, [`UPLOAD_CHUNK_SIZE`] bytes at a time, in order.
+fn upload_chunks(
+    data: Vec<u8>,
+) -> impl futures::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send + 'static {
+    futures::stream::unfold((data, 0), |(data, offset)| async move {
+        if offset >= data.len() {
+            return None;
+        }
+        let end = (offset + UPLOAD_CHUNK_SIZE).min(data.len());
+        let chunk = data[offset..end].to_vec();
+        Some((Ok(chunk), (data, end)))
+    })
+}
+
+fn map_to_upload_file_err(location: &Path, err: impl Into<anyhow::Error>) -> ProviderError {
+    ProviderError::UploadFile(location.to_string_lossy().to_string(), err.into())
 }
 
 impl<FS> Drop for KubernetesNamespace<FS>
@@ -463,6 +548,13 @@ where
         self.set_delete_on_drop(false).await;
     }
 
+    async fn upload_to_fileserver(
+        &self,
+        location: &Path,
+    ) -> Result<Option<(Url, String)>, ProviderError> {
+        self.upload_file(location).await.map(Some)
+    }
+
     async fn is_detached(&self) -> bool {
         self.delete_on_drop().await
     }
@@ -494,7 +586,8 @@ where
         let available_args_output = temp_node
             .run_command(RunCommandOptions::new(command.clone()).args(vec!["--help"]))
             .await?
-            .map_err(|(_exit, status)| {
+            .map_err(|(exit, status)| {
+                warn!("{}", format!("exit: {exit}"));
                 ProviderError::NodeAvailableArgsError(node_image, command, status)
             })?;
 
@@ -624,5 +717,39 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::StreamExt;
+
+    use super::*;
+
+    async fn chunks_of(data: Vec<u8>) -> Vec<Vec<u8>> {
+        upload_chunks(data)
+            .map(|chunk| chunk.unwrap())
+            .collect()
+            .await
+    }
+
+    #[tokio::test]
+    async fn an_upload_is_sent_in_bounded_chunks_that_add_up_to_the_file() {
+        // Not a multiple of the chunk size, so the last chunk is a short one.
+        let data: Vec<u8> = (0..UPLOAD_CHUNK_SIZE * 3 + 17)
+            .map(|i| (i % 251) as u8)
+            .collect();
+
+        let chunks = chunks_of(data.clone()).await;
+
+        assert_eq!(chunks.len(), 4);
+        assert!(chunks.iter().all(|chunk| chunk.len() <= UPLOAD_CHUNK_SIZE));
+        assert_eq!(chunks.last().unwrap().len(), 17);
+        assert_eq!(chunks.concat(), data);
+    }
+
+    #[tokio::test]
+    async fn an_empty_file_is_sent_as_no_chunks() {
+        assert!(chunks_of(Vec::new()).await.is_empty());
     }
 }

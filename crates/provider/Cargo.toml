@@ -36,7 +36,8 @@ tar = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 tracing = { workspace = true }
-reqwest = { workspace = true }
+# `stream`: files are uploaded to the k8s fileserver in chunks (see `upload_file`).
+reqwest = { workspace = true, features = ["stream"] }
 regex = { workspace = true }
 url = { workspace = true }
 flate2 = { workspace = true }

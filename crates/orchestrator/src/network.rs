@@ -15,7 +15,10 @@ use std::{
 
 use configuration::{
     para_states::{Initial, Running},
-    shared::{helpers::generate_unique_node_name_from_names, node::EnvVar},
+    shared::{
+        helpers::{generate_unique_node_name_from_names, sanitize_node_name},
+        node::EnvVar,
+    },
     types::{Arg, Command, Image, ParaId, Port, ValidationContext},
     ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
@@ -790,7 +793,14 @@ impl<T: FileSystem> Network<T> {
 
     /// Get a node of a specific kind by name, downcasting it from the registry.
     fn get_node_as<'a, N: SpawnedNode>(&'a self, name: &str) -> Result<&'a N, anyhow::Error> {
-        let node = self.nodes_by_name.get(name).ok_or_else(|| {
+        // Node names are sanitized when configured (`Collator-1000` runs as
+        // `collator-1000`), so a lookup by the name as it was written still
+        // finds the node.
+        let node = self
+            .nodes_by_name
+            .get(name)
+            .or_else(|| self.nodes_by_name.get(&sanitize_node_name(name)));
+        let node = node.ok_or_else(|| {
             anyhow::anyhow!(
                 "can't find node with name: {name:?}, should be one of {}",
                 self.node_names().join(", ")

@@ -20,16 +20,16 @@ async fn main() -> Result<(), anyhow::Error> {
     let network = NetworkConfigBuilder::new()
         .with_relaychain(|r| {
             r.with_chain(chain_name)
-            // The command that will be executed to generate the chain spec.
-            // The output of the command must be a valid chain spec in JSON format.
-            // Here we create a file `rococo-local.json` and zombienet will use it as the chain spec.
-            .with_chain_spec_command(chain_spec_command)
-        // By default, the command is executed inside a container.
-        // If you want to run it on your local machine, you can set this to true.
-        .chain_spec_command_is_local(false)
-        .with_default_command("polkadot")
-        .with_validator(|v| v.with_name("alice"))
-        .with_validator(|v| v.with_name("bob"))
+                // The command that will be executed to generate the chain spec.
+                // The output of the command must be a valid chain spec in JSON format.
+                // Here we create a file `rococo-local.json` and zombienet will use it as the chain spec.
+                .with_chain_spec_command(chain_spec_command)
+                // By default, the command is executed inside a container.
+                // If you want to run it on your local machine, you can set this to true.
+                .chain_spec_command_is_local(false)
+                .with_default_command("polkadot")
+                .with_validator(|v| v.with_name("alice"))
+                .with_validator(|v| v.with_name("bob"))
         })
         .build()
         .unwrap()

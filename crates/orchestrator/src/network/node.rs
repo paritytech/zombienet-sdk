@@ -65,6 +65,7 @@ pub struct NetworkNode {
     // TODO: do we need the full spec here?
     pub(crate) spec: NodeSpec,
     pub(crate) ws_uri: String,
+    pub(crate) internal_ws_uri: String,
     pub(crate) multiaddr: String,
     pub(crate) prometheus_uri: String,
     // Store the option used to generate the cmd,
@@ -80,6 +81,7 @@ pub struct NetworkNode {
 pub(crate) struct RawNetworkNode {
     pub(crate) name: String,
     pub(crate) ws_uri: String,
+    pub(crate) internal_ws_uri: String,
     pub(crate) prometheus_uri: String,
     pub(crate) multiaddr: String,
     pub(crate) spec: NodeSpec,
@@ -172,6 +174,7 @@ impl NetworkNode {
     pub(crate) fn new<T: Into<String>>(
         name: T,
         ws_uri: T,
+        internal_ws_uri: T,
         prometheus_uri: T,
         multiaddr: T,
         spec: NodeSpec,
@@ -182,6 +185,7 @@ impl NetworkNode {
         Self {
             core: NodeCore::new(name, inner, NodeKind::Substrate),
             ws_uri: ws_uri.into(),
+            internal_ws_uri: internal_ws_uri.into(),
             prometheus_uri: prometheus_uri.into(),
             spec,
             cmd_generator_opts,
@@ -1196,6 +1200,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1233,6 +1238,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1281,6 +1287,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1318,6 +1325,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1367,6 +1375,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1406,6 +1415,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1447,6 +1457,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1503,6 +1514,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1553,6 +1565,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1602,6 +1615,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "node1",
             "ws_uri",
+            "internal_ws_uri",
             "prometheus_uri",
             "multiaddr",
             NodeSpec::default(),
@@ -1698,6 +1712,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "test_node",
             "ws://localhost:9944",
+            "internal_ws_uri",
             &format!("http://127.0.0.1:{}/metrics", addr.port()),
             "/ip4/127.0.0.1/tcp/30333",
             NodeSpec::default(),
@@ -1786,6 +1801,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "test_node",
             "ws://localhost:9944",
+            "internal_ws_uri",
             &format!("http://127.0.0.1:{}/metrics", addr.port()),
             "/ip4/127.0.0.1/tcp/30333",
             NodeSpec::default(),
@@ -1849,6 +1865,7 @@ mod tests {
         let mock_node = NetworkNode::new(
             "test_node",
             "ws://localhost:9944",
+            "internal_ws_uri",
             &format!("http://127.0.0.1:{}/metrics", addr.port()),
             "/ip4/127.0.0.1/tcp/30333",
             NodeSpec::default(),
@@ -1920,6 +1937,7 @@ mod tests {
         NetworkNode::new(
             name,
             "ws://127.0.0.1:9944",
+            "ws://127.0.0.1:9944",
             "http://127.0.0.1:9615/metrics",
             "/ip4/127.0.0.1/tcp/30333",
             NodeSpec::default(),
@@ -1949,6 +1967,7 @@ mod tests {
         let obj = value.as_object().expect("node serializes as a map");
         assert_eq!(obj["name"], "alice");
         assert_eq!(obj["ws_uri"], "ws://127.0.0.1:9944");
+        assert_eq!(obj["internal_ws_uri"], "ws://127.0.0.1:9944");
         assert_eq!(obj["kind"], "substrate");
         assert!(obj.contains_key("inner"), "inner should be flattened in");
 

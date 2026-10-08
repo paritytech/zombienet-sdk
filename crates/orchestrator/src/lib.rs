@@ -36,6 +36,7 @@ use network::{
 pub use network_spec::NetworkSpec;
 use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
 use provider::{
+    shared::helpers::running_in_ci,
     types::{GenerateFileCommand, NodeRole, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
 };
@@ -54,7 +55,10 @@ use tracing::{debug, info, trace, warn};
 use crate::{
     network::{
         jamchain::{Jamchain, RawJamchain},
-        node::{jam::RawJamNetworkNode, JamNetworkNode, RawNetworkNode},
+        node::{
+            jam::RawJamNetworkNode, process::RawCustomProcessNode, CustomProcessNode,
+            JamNetworkNode, RawNetworkNode,
+        },
         parachain::RawParachain,
         relaychain::RawRelaychain,
     },
@@ -179,6 +183,21 @@ where
                 }
                 network.insert_node(node);
             }
+        }
+
+        let processes =
+            recreate_custom_processes_from_json(zombie_json, ns.clone(), self.provider.name())
+                .await?;
+        if !processes.is_empty() {
+            info!("recreating custom processes...");
+            for process in &processes {
+                // On docker and k8s this reaches a forward or proxy that
+                // answers for a gone process too; a real check is #596.
+                if process.is_responsive().await {
+                    process.core().set_is_running(true);
+                }
+            }
+            network.set_custom_processes(processes);
         }
 
         Ok(network)
@@ -641,12 +660,7 @@ where
             }
         }
 
-        // start custom processes if needed
-        for cp in &network_spec.custom_processes {
-            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
-                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
-            }
-        }
+        spawner::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
 
         network.set_start_time_ts(start_time);
 
@@ -917,12 +931,7 @@ where
         )
         .await?;
 
-        // start custom processes if needed
-        for cp in &network_spec.custom_processes {
-            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
-                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
-            }
-        }
+        spawner::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
 
         network.set_start_time_ts(start_time);
 
@@ -1056,6 +1065,57 @@ async fn recreate_jamchain_from_json(
     jamchain_raw.inner.nodes = nodes;
 
     Ok(Some(jamchain_raw.inner))
+}
+
+/// Rebuild the `custom_processes` section of a `zombie.json`; empty when the
+/// network had none (or predates custom processes being tracked).
+async fn recreate_custom_processes_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+    provider_name: &str,
+) -> Result<Vec<Arc<CustomProcessNode>>, OrchestratorError> {
+    let Some(processes_json) = zombie_json.get("custom_processes") else {
+        return Ok(vec![]);
+    };
+
+    let raw_processes: Vec<RawCustomProcessNode> = serde_json::from_value(processes_json.clone())?;
+
+    let mut processes = Vec::with_capacity(raw_processes.len());
+    for raw in raw_processes {
+        validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
+
+        // Attached as recorded, like a node: whether it still runs is what
+        // `is_responsive` says afterwards. A record the provider cannot take
+        // back is skipped with a warning, the rest of the network attaches.
+        let inner = match ns.spawn_node_from_json(&raw.inner).await {
+            Ok(inner) => inner,
+            Err(err) => {
+                warn!(
+                    "⚠️  {}: could not attach to the custom process, skipping it: {err}",
+                    raw.name
+                );
+                continue;
+            },
+        };
+
+        // The `external` addresses saved on k8s were port-forwards of the
+        // process that spawned the network, gone with it. Open new ones, and
+        // keep the saved address where there is none to open.
+        let mut ports = raw.ports;
+        if !running_in_ci() {
+            for (port_name, port) in ports.iter_mut() {
+                let saved = std::mem::take(&mut port.external);
+                port.external =
+                    spawner::forward_or_keep(&inner, &raw.name, port_name, port.port, saved).await;
+            }
+        }
+
+        processes.push(Arc::new(CustomProcessNode::new(
+            raw.name, inner, raw.spec, raw.ip, ports,
+        )));
+    }
+
+    Ok(processes)
 }
 
 async fn recreate_parachains_from_json(

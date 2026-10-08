@@ -4,13 +4,15 @@ use async_trait::async_trait;
 pub use configuration::{
     types::{Arg, AssetLocation},
     Buildable, CustomProcess, CustomProcessBuilder, GlobalSettings, GlobalSettingsBuilder,
-    NetworkConfig, NetworkConfigBuilder, RegistrationStrategy,
+    NamedPort, NetworkConfig, NetworkConfigBuilder, RegistrationStrategy,
 };
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{
         jamchain::Jamchain,
-        node::{JamNetworkNode, NetworkNode, NodeKind, SpawnedNode},
+        node::{
+            CustomProcessNode, JamNetworkNode, NetworkNode, NodeKind, ProcessPort, SpawnedNode,
+        },
         Network,
     },
     sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,

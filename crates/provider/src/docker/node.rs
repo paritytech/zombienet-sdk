@@ -22,6 +22,7 @@ use super::{
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     docker,
+    shared::helpers::{default_true, ensure_wrapper},
     types::{
         ExecutionResult, InnerSnapshotDb, Port, RunCommandOptions, RunScriptOptions, TransferedFile,
     },
@@ -45,6 +46,9 @@ where
     pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
     pub(super) port_mapping: &'a HashMap<Port, Port>,
+    /// Whether `program` runs through the zombie wrapper (see
+    /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
+    pub(super) wrapper: bool,
 }
 
 impl<'a, FS> DockerNodeOptions<'a, FS>
@@ -72,6 +76,7 @@ where
             container_name: deserializable.container_name.clone(),
             filesystem,
             port_mapping: &deserializable.port_mapping,
+            wrapper: deserializable.wrapper,
         }
     }
 }
@@ -85,6 +90,8 @@ pub(super) struct DeserializableDockerNodeOptions {
     pub(super) env: Vec<(String, String)>,
     pub(super) container_name: String,
     pub(super) port_mapping: HashMap<Port, Port>,
+    #[serde(default = "default_true")]
+    pub(super) wrapper: bool,
 }
 
 #[derive(Serialize)]
@@ -109,6 +116,8 @@ where
     docker_client: DockerClient,
     container_name: String,
     port_mapping: HashMap<Port, Port>,
+    /// Whether `program` runs through the zombie wrapper.
+    wrapper: bool,
     #[allow(dead_code)]
     #[serde(skip)]
     filesystem: FS,
@@ -163,6 +172,7 @@ where
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
             port_mapping: options.port_mapping.clone(),
+            wrapper: options.wrapper,
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
@@ -174,7 +184,11 @@ where
 
         node.initialize_startup_files(options.startup_files).await?;
 
-        node.start().await?;
+        // Without the wrapper there is no pipe to signal: the container runs
+        // `program` from the moment it is up.
+        if node.wrapper {
+            node.start().await?;
+        }
 
         Ok(node)
     }
@@ -216,6 +230,7 @@ where
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
             port_mapping: options.port_mapping.clone(),
+            wrapper: options.wrapper,
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
@@ -223,7 +238,17 @@ where
     }
 
     async fn initialize_docker(&self) -> Result<(), ProviderError> {
-        let command = [vec![self.program.to_string()], self.args.to_vec()].concat();
+        // The entrypoint is the wrapper, which starts `program args` on demand
+        // through its pipe, or `program` itself. Either way `program` replaces
+        // the image's own entrypoint, as it does on kubernetes.
+        let (entrypoint, command) = if self.wrapper {
+            (
+                "/scripts/zombie-wrapper.sh".to_string(),
+                [vec![self.program.to_string()], self.args.to_vec()].concat(),
+            )
+        } else {
+            (self.program.to_string(), self.args.to_vec())
+        };
 
         self.docker_client
             .container_run(
@@ -252,7 +277,7 @@ where
                             "/relay-data".to_string(),
                         ),
                     ]))
-                    .entrypoint("/scripts/zombie-wrapper.sh")
+                    .entrypoint(entrypoint)
                     .port_mapping(&self.port_mapping),
             )
             .await
@@ -602,6 +627,13 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "pause",
+            ProviderError::PauseNodeFailed,
+        )?;
+
         self.docker_client
             .container_exec(
                 &self.container_name,
@@ -622,6 +654,13 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "resume",
+            ProviderError::ResumeNodeFailed,
+        )?;
+
         self.docker_client
             .container_exec(
                 &self.container_name,
@@ -642,6 +681,13 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         if let Some(duration) = after {
             sleep(duration).await;
         }
@@ -672,6 +718,13 @@ where
         args: &[String],
         after: Option<Duration>,
     ) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         // get the assets
         for asset in assets {
             match asset {

@@ -3,17 +3,18 @@ use std::{collections::BTreeMap, env};
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, EnvVar, PodSpec, ResourceRequirements, Toleration,
-        Volume, VolumeMount,
+        ConfigMapVolumeSource, Container, ContainerPort, EnvVar, PodSpec, Probe,
+        ResourceRequirements, TCPSocketAction, Toleration, Volume, VolumeMount,
     },
-    apimachinery::pkg::api::resource::Quantity,
+    apimachinery::pkg::{api::resource::Quantity, util::intstr::IntOrString},
 };
 
-use crate::constants::NODE_SCRIPTS_DIR;
+use crate::{constants::NODE_SCRIPTS_DIR, types::Port};
 
 pub(super) struct PodSpecBuilder;
 
 impl PodSpecBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn build(
         name: &str,
         image: &str,
@@ -21,6 +22,8 @@ impl PodSpecBuilder {
         program: &str,
         args: &[String],
         env: &[(String, String)],
+        ports: &[(String, Port)],
+        wrapper: bool,
     ) -> PodSpec {
         let tolerations = if let Ok(node_type) = env::var("X_INFRA_NODETYPE") {
             let t = Toleration {
@@ -39,7 +42,7 @@ impl PodSpecBuilder {
             hostname: Some(name.to_string()),
             init_containers: Some(vec![Self::build_helper_binaries_setup_container()]),
             containers: vec![Self::build_main_container(
-                name, image, resources, program, args, env,
+                name, image, resources, program, args, env, ports, wrapper,
             )],
             volumes: Some(Self::build_volumes()),
             tolerations,
@@ -47,6 +50,7 @@ impl PodSpecBuilder {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_main_container(
         name: &str,
         image: &str,
@@ -54,18 +58,72 @@ impl PodSpecBuilder {
         program: &str,
         args: &[String],
         env: &[(String, String)],
+        ports: &[(String, Port)],
+        wrapper: bool,
     ) -> Container {
+        // With the wrapper, `program` is started on demand through the pipe the
+        // wrapper listens on. Without it the container runs `program` directly,
+        // as the image would, so an off-the-shelf image needs no `bash`.
+        let command = if wrapper {
+            [
+                vec!["/zombie-wrapper.sh".to_string(), program.to_string()],
+                args.to_vec(),
+            ]
+            .concat()
+        } else {
+            [vec![program.to_string()], args.to_vec()].concat()
+        };
+
+        let container_ports = if ports.is_empty() {
+            None
+        } else {
+            Some(
+                ports
+                    .iter()
+                    .map(|(name, port)| ContainerPort {
+                        name: Some(name.clone()),
+                        container_port: i32::from(*port),
+                        ..Default::default()
+                    })
+                    .collect(),
+            )
+        };
+
+        // A wrapped node reports readiness itself (the wrapper is up at once
+        // and the node is waited on through its metrics). A direct process is
+        // Ready, and so routed to by its Service, once its first declared
+        // port accepts a connection on the pod address.
+        let readiness_probe = match (wrapper, ports.first()) {
+            (false, Some((_, port))) => Some(Probe {
+                tcp_socket: Some(TCPSocketAction {
+                    port: IntOrString::Int(i32::from(*port)),
+                    ..Default::default()
+                }),
+                period_seconds: Some(2),
+                failure_threshold: Some(3),
+                ..Default::default()
+            }),
+            _ => None,
+        };
+
+        let extra_mounts = if wrapper {
+            vec![VolumeMount {
+                name: "zombie-wrapper-volume".to_string(),
+                mount_path: "/zombie-wrapper.sh".to_string(),
+                sub_path: Some("zombie-wrapper.sh".to_string()),
+                ..Default::default()
+            }]
+        } else {
+            vec![]
+        };
+
         Container {
             name: name.to_string(),
             image: Some(image.to_string()),
             image_pull_policy: Some("Always".to_string()),
-            command: Some(
-                [
-                    vec!["/zombie-wrapper.sh".to_string(), program.to_string()],
-                    args.to_vec(),
-                ]
-                .concat(),
-            ),
+            command: Some(command),
+            ports: container_ports,
+            readiness_probe,
             env: Some(
                 env.iter()
                     .map(|(name, value)| EnvVar {
@@ -75,12 +133,7 @@ impl PodSpecBuilder {
                     })
                     .collect(),
             ),
-            volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
-                name: "zombie-wrapper-volume".to_string(),
-                mount_path: "/zombie-wrapper.sh".to_string(),
-                sub_path: Some("zombie-wrapper.sh".to_string()),
-                ..Default::default()
-            }])),
+            volume_mounts: Some(Self::build_volume_mounts(extra_mounts)),
             resources: Self::build_resources_requirements(resources),
             ..Default::default()
         }
@@ -210,5 +263,90 @@ impl PodSpecBuilder {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn main_container(spec: &PodSpec) -> &Container {
+        spec.containers
+            .iter()
+            .find(|c| c.name == "proc")
+            .expect("main container is named after the pod")
+    }
+
+    #[test]
+    fn a_wrapped_node_runs_through_the_wrapper_and_has_no_probe() {
+        let spec = PodSpecBuilder::build(
+            "proc",
+            "img",
+            None,
+            "polkadot",
+            &["--dev".to_string()],
+            &[],
+            &[],
+            true,
+        );
+        let container = main_container(&spec);
+        assert_eq!(
+            container.command.as_deref().unwrap(),
+            ["/zombie-wrapper.sh", "polkadot", "--dev"]
+        );
+        assert!(container.ports.is_none());
+        assert!(container.readiness_probe.is_none());
+        assert!(container
+            .volume_mounts
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|m| m.name == "zombie-wrapper-volume"));
+    }
+
+    #[test]
+    fn a_direct_process_runs_its_command_exposes_ports_and_waits_on_the_first() {
+        let ports = vec![("api".to_string(), 5001), ("gateway".to_string(), 8080)];
+        let spec = PodSpecBuilder::build(
+            "proc",
+            "img",
+            None,
+            "ipfs",
+            &["daemon".to_string()],
+            &[],
+            &ports,
+            false,
+        );
+        let container = main_container(&spec);
+        assert_eq!(container.command.as_deref().unwrap(), ["ipfs", "daemon"]);
+
+        let container_ports = container.ports.as_ref().unwrap();
+        assert_eq!(
+            container_ports
+                .iter()
+                .map(|p| (p.name.as_deref().unwrap(), p.container_port))
+                .collect::<Vec<_>>(),
+            [("api", 5001), ("gateway", 8080)]
+        );
+
+        let probe = container.readiness_probe.as_ref().unwrap();
+        assert_eq!(
+            probe.tcp_socket.as_ref().unwrap().port,
+            IntOrString::Int(5001)
+        );
+        assert!(!container
+            .volume_mounts
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|m| m.name == "zombie-wrapper-volume"));
+    }
+
+    #[test]
+    fn a_direct_process_without_ports_has_no_probe() {
+        let spec = PodSpecBuilder::build("proc", "img", None, "job", &[], &[], &[], false);
+        let container = main_container(&spec);
+        assert!(container.readiness_probe.is_none());
+        assert!(container.ports.is_none());
     }
 }

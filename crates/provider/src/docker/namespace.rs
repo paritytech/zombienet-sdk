@@ -342,6 +342,7 @@ where
             container_name: format!("{}-{}", self.name, options.name),
             filesystem: &self.filesystem,
             port_mapping: options.port_mapping.as_ref().unwrap_or(&HashMap::default()),
+            wrapper: options.wrapper,
         })
         .await?;
 

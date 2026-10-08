@@ -1,0 +1,23 @@
+# A custom process that declares a port: zombienet picks it (`port = 0`), tells
+# the process through the placeholder, and reports where it is reachable.
+#
+#   zombie-cli spawn -p native crates/examples/examples/configs/custom_process_ports.toml
+
+[settings]
+timeout = 1000
+
+[relaychain]
+chain = "rococo-local"
+command = "polkadot"
+
+  [[relaychain.nodes]]
+  name = "alice"
+
+  [[relaychain.nodes]]
+  name = "bob"
+
+[[custom_processes]]
+name = "files"
+command = "python3"
+args = ["-m http.server", "--bind 0.0.0.0", "{{ZOMBIE:files:port_http}}"]
+ports = [{ name = "http", port = 0 }]

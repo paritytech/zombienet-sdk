@@ -46,8 +46,12 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: Demonstrates how to remove default command-line arguments from a node's startup command.
     *   **Run**: `cargo run --example arg_removal`
 
+*   **`custom_process_ports`**
+    *   **Description**: A custom process that declares a port. Zombienet picks it, hands it to the process through `{{ZOMBIE:files:port_http}}`, and the example reaches it through `get_custom_process("files").get_uri_for_name("http")`.
+    *   **Run**: `cargo run --example custom_process_ports`
+
 *   **`custom_process_positional_args`**
-    *   **Description**: Shows how to spawn custom processes with positional arguments (arguments without `--` or `-` prefix). The example runs a monitoring script that takes a WebSocket URL and block count as positional arguments.
+    *   **Description**: Shows how to spawn custom processes with positional arguments (arguments without `--` or `-` prefix). The example runs a monitoring script that is told alice's WebSocket URL through `{{ZOMBIE:alice:ws_uri}}`, plus a block count.
     *   **Run**: `cargo run --example custom_process_positional_args`
 
 *   **`db_snapshot`**

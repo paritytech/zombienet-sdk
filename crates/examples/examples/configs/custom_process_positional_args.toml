@@ -44,9 +44,10 @@ args = [
 [[custom_processes]]
 name = "block-monitor"
 command = "bash"
-# Positional arguments: script path, WebSocket URL, block count
+# Positional arguments: script path, WebSocket URL, block count.
+# The URL is alice's, filled in once she is running.
 args = [
     "crates/examples/scripts/monitor-blocks.sh", # Run this from repo root or use absolute path
-    "ws://127.0.0.1:9944",
+    "{{ZOMBIE:alice:ws_uri}}",
     "5"
 ]

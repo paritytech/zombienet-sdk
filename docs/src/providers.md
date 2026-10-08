@@ -108,7 +108,7 @@ let network = config.spawn_k8s().await?;
 
 ### Pod Labels
 
-Node pods carry a `zombie-role` label with the same values as zombienet v1: `node` (relay chain nodes, validators or not), `collator`, `cumulus-collator`, `bootnode` (dedicated bootnodes) and `temp` (short-lived helper pods). The file server and custom processes have no `zombie-role`.
+Node pods carry a `zombie-role` label with the same values as zombienet v1: `node` (relay chain nodes, validators or not), `collator`, `cumulus-collator`, `bootnode` (dedicated bootnodes) and `temp` (short-lived helper pods). Custom processes carry `custom-process`. The file server has no `zombie-role`.
 
 ## Attaching to Running Networks
 

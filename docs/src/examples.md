@@ -86,6 +86,8 @@ Scale networks with grouped nodes.
 |---------|-------------|
 | [`from_live`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/from_live.rs) | Attach to running network via `zombie.json` |
 | [`test_run_script`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/test_run_script.rs) | Run scripts on nodes |
+| [`custom_process_ports`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/custom_process_ports.rs) | A custom process with a declared port, reached through the network |
+| [`custom_process_positional_args`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/custom_process_positional_args.rs) | A custom process script told where a node is |
 
 ---
 
@@ -101,3 +103,5 @@ Example TOML configs are in [`crates/examples/examples/configs/`](https://github
 | [`wasm-override.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/wasm-override.toml) | WASM runtime override |
 | [`arg-removal.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/arg-removal.toml) | CLI argument removal |
 | [`polkadot-ah-chain-spec-runtime.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/polkadot-ah-chain-spec-runtime.toml) | Polkadot + Asset Hub with custom runtimes |
+| [`custom_process_ports.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/custom_process_ports.toml) | Custom process with a declared port |
+| [`custom_process_positional_args.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/custom_process_positional_args.toml) | Custom processes with positional arguments |

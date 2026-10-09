@@ -39,6 +39,8 @@ pub enum NodeRole {
     CumulusCollator,
     /// Short-lived helper node (e.g used to generate chain-specs)
     Temp,
+    /// A custom process declared in the network config, running next to the nodes
+    CustomProcess,
 }
 
 impl NodeRole {
@@ -49,6 +51,7 @@ impl NodeRole {
             NodeRole::Collator => "collator",
             NodeRole::CumulusCollator => "cumulus-collator",
             NodeRole::Temp => "temp",
+            NodeRole::CustomProcess => "custom-process",
         }
     }
 }
@@ -79,10 +82,20 @@ pub struct SpawnNodeOptions {
     /// download). See `orchestrator::generators::resolve_db_snapshots`.
     pub db_snapshot: Option<PathBuf>,
     pub port_mapping: Option<HashMap<Port, Port>>,
+    /// Named ports the process listens on. On k8s they are the pod's container
+    /// ports and its `Service` ports (none gives a headless Service), and the
+    /// first is the readiness probe's target when `wrapper` is off; the other
+    /// providers ignore them.
+    pub ports: Vec<(String, Port)>,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
     /// Role of the node in the network
     pub role: Option<NodeRole>,
+    /// Run `program` through zombienet's wrapper script, which gives the
+    /// pause/resume/restart controls nodes have. The wrapper needs `bash` in
+    /// the image and replaces the image's entrypoint, so a custom process that
+    /// is just an off-the-shelf image runs without it.
+    pub wrapper: bool,
 }
 
 impl SpawnNodeOptions {
@@ -101,8 +114,10 @@ impl SpawnNodeOptions {
             created_paths: vec![],
             db_snapshot: None,
             port_mapping: None,
+            ports: vec![],
             node_log_path: None,
             role: None,
+            wrapper: true,
         }
     }
 
@@ -177,6 +192,31 @@ impl SpawnNodeOptions {
 
     pub fn role(mut self, role: NodeRole) -> Self {
         self.role = Some(role);
+        self
+    }
+
+    pub fn ports<S, I>(mut self, ports: I) -> Self
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (S, Port)>,
+    {
+        self.ports = ports
+            .into_iter()
+            .map(|(name, port)| (name.as_ref().to_string(), port))
+            .collect();
+        self
+    }
+
+    /// Run `program` directly instead of through the zombie wrapper script.
+    ///
+    /// The wrapper needs `bash` in the image and is what pause, resume and
+    /// restart talk to, so those return an error for a node spawned this way
+    /// on docker and kubernetes (native signals the process and needs no
+    /// wrapper). The wrapper also holds the program back until the injected
+    /// files are copied in; without it the program starts at once, so it must
+    /// not need any `injected_files` at startup.
+    pub fn without_wrapper(mut self) -> Self {
+        self.wrapper = false;
         self
     }
 }

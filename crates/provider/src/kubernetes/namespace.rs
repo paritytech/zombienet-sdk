@@ -285,7 +285,7 @@ where
 
         let pod_manifest = self
             .k8s_client
-            .create_pod(&self.name, &name, pod_spec, labels.clone())
+            .create_pod(&self.name, &name, pod_spec, labels.clone(), true)
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
@@ -611,6 +611,8 @@ where
             resources: options.resources.as_ref(),
             db_snapshot: options.db_snapshot.as_deref(),
             role: options.role,
+            ports: &options.ports,
+            wrapper: options.wrapper,
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,
         })

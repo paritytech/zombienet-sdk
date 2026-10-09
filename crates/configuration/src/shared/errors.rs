@@ -20,6 +20,9 @@ pub enum ConfigError {
 
     #[error("collators['{0}'].{1}")]
     Collator(String, anyhow::Error),
+
+    #[error("custom_processes['{0}'].{1}")]
+    CustomProcess(String, anyhow::Error),
 }
 
 /// An error at the field level.
@@ -90,6 +93,9 @@ pub enum FieldError {
 
     #[error("registration_strategy: {0}")]
     RegistrationStrategy(anyhow::Error),
+
+    #[error("ports: {0}")]
+    Ports(anyhow::Error),
 }
 
 /// A conversion error for shared types across fields.

@@ -86,7 +86,7 @@ mod relaychain;
 pub mod shared;
 mod utils;
 
-pub use custom_process::{CustomProcess, CustomProcessBuilder};
+pub use custom_process::{CustomProcess, CustomProcessBuilder, NamedPort};
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
 pub use jamchain::{JamchainConfig, JamchainConfigBuilder};

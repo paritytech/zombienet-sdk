@@ -9,6 +9,30 @@ pub fn running_in_ci() -> bool {
     env::var("RUN_IN_CI").unwrap_or_default() == "1"
 }
 
+/// serde default for the fields that older records did not carry.
+pub(crate) fn default_true() -> bool {
+    true
+}
+
+/// The pause/resume/restart controls are messages on the wrapper's pipe. A
+/// process started without the wrapper has no pipe, and `echo` into a path
+/// that is not a pipe would create a file and report success, so refuse.
+pub(crate) fn ensure_wrapper(
+    name: &str,
+    wrapper: bool,
+    action: &str,
+    failed: fn(String, anyhow::Error) -> ProviderError,
+) -> Result<(), ProviderError> {
+    if wrapper {
+        Ok(())
+    } else {
+        Err(failed(
+            name.to_string(),
+            anyhow!("runs without the zombie wrapper, {action} is not available"),
+        ))
+    }
+}
+
 /// Executes a command on a temporary node and extracts the execution result either from the
 /// standard output or a file.
 pub async fn extract_execution_result(

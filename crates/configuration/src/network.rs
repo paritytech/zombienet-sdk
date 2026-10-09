@@ -322,6 +322,31 @@ impl NetworkConfig {
                 let _ = TryInto::<Command>::try_into(default_command.as_str());
             }
         });
+
+        // Custom processes bypass their builder here, so apply its rules: valid
+        // ports, and a name that is not already a node's (they share one
+        // registry on the running network).
+        let mut errors: Vec<String> = vec![];
+        for process in &network_config.custom_processes {
+            if names.contains(process.name()) {
+                errors.push(format!(
+                    "custom_processes['{}'].name: already used by a node or custom process",
+                    process.name()
+                ));
+            }
+            names.insert(process.name().to_string());
+            if let Err(port_errors) = process.validate() {
+                errors.extend(
+                    port_errors
+                        .into_iter()
+                        .map(|e| format!("custom_processes['{}'].{e}", process.name())),
+                );
+            }
+        }
+        if !errors.is_empty() {
+            Err(anyhow!(errors.join("\n")))?
+        }
+
         Ok(network_config)
     }
 }
@@ -760,6 +785,11 @@ impl NetworkConfigBuilder<Buildable> {
     }
 
     /// Add a custom process using a nested [`CustomProcessBuilder`].
+    ///
+    /// Processes and nodes share one registry on the running network, so the
+    /// name must be free. Declare processes after the nodes: a node declared
+    /// later with a process's name is renamed (`<name>-1`), as it would be
+    /// after another node, where a process taking a node's name is an error.
     pub fn with_custom_process(
         self,
         f: impl FnOnce(
@@ -768,14 +798,39 @@ impl NetworkConfigBuilder<Buildable> {
             -> CustomProcessBuilder<custom_process::WithName, custom_process::WithCmd>,
     ) -> Self {
         match f(CustomProcessBuilder::new()).build() {
-            Ok(custom_process) => Self::transition(
-                NetworkConfig {
-                    custom_processes: [self.config.custom_processes, vec![custom_process]].concat(),
-                    ..self.config
-                },
-                self.validation_context,
-                self.errors,
-            ),
+            Ok(custom_process) => {
+                // Processes and nodes share one registry on the running network,
+                // so a process may not take a node's name. Recording it also keeps
+                // a node declared later from taking the process's.
+                let taken = !self
+                    .validation_context
+                    .borrow_mut()
+                    .used_nodes_names
+                    .insert(custom_process.name().to_string());
+                if taken {
+                    return Self::transition(
+                        self.config,
+                        self.validation_context,
+                        merge_errors(
+                            self.errors,
+                            ConfigError::CustomProcess(
+                                custom_process.name().to_string(),
+                                anyhow!("name: already used by a node or custom process"),
+                            )
+                            .into(),
+                        ),
+                    );
+                }
+                Self::transition(
+                    NetworkConfig {
+                        custom_processes: [self.config.custom_processes, vec![custom_process]]
+                            .concat(),
+                        ..self.config
+                    },
+                    self.validation_context,
+                    self.errors,
+                )
+            },
             Err((name, errors)) => Self::transition(
                 self.config,
                 self.validation_context,
@@ -783,7 +838,7 @@ impl NetworkConfigBuilder<Buildable> {
                     self.errors,
                     errors
                         .into_iter()
-                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .map(|error| ConfigError::CustomProcess(name.clone(), error).into())
                         .collect::<Vec<_>>(),
                 ),
             ),
@@ -2499,6 +2554,167 @@ id = 1000
         assert_eq!(
             network_config.parachains()[0].collators()[0].name(),
             "collator-1000"
+        );
+    }
+
+    /// A one-node relaychain with the given `[[custom_processes]]` entries.
+    fn load_with_processes(processes: &str) -> Result<NetworkConfig, anyhow::Error> {
+        NetworkConfig::load_from_toml_string(&format!(
+            r#"
+            [relaychain]
+            chain = "rococo-local"
+            default_command = "polkadot"
+
+            [[relaychain.nodes]]
+            name = "alice"
+
+            [[custom_processes]]
+            {processes}
+            "#
+        ))
+    }
+
+    #[test]
+    fn custom_process_ports_and_resources_load_from_toml_and_dump_back() {
+        let network_config = load_with_processes(
+            r#"
+            name = "ipfs"
+            command = "ipfs"
+            image = "docker.io/ipfs/kubo:v0.39.0"
+            args = ["daemon"]
+            ports = [{ name = "api", port = 5001 }, { name = "gateway", port = 8080 }]
+
+            [custom_processes.resources]
+            limits = { cpu = "500m", memory = "512Mi" }
+
+            [[custom_processes]]
+            name = "eth-rpc"
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap();
+
+        let processes = network_config.custom_processes();
+        assert_eq!(processes.len(), 2);
+        let ipfs = processes[0];
+        assert_eq!(
+            ipfs.ports()
+                .iter()
+                .map(|p| (p.name.as_str(), p.port))
+                .collect::<Vec<_>>(),
+            [("api", 5001), ("gateway", 8080)]
+        );
+        assert_eq!(
+            ipfs.resources().unwrap().limit_cpu().unwrap().as_str(),
+            "500m"
+        );
+        assert!(processes[1].ports().is_empty());
+        assert!(processes[1].resources().is_none());
+
+        // What is dumped loads back to the same config: ports and resources included.
+        let dumped = network_config.dump_to_toml().unwrap();
+        assert!(dumped.contains("[[custom_processes.ports]]"));
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(
+            reloaded.custom_processes(),
+            network_config.custom_processes()
+        );
+    }
+
+    #[test]
+    fn custom_processes_loaded_from_toml_are_validated() {
+        // A port name k8s would reject, caught before anything is spawned.
+        let err = load_with_processes(
+            r#"
+            name = "eth-rpc"
+            command = "eth-rpc"
+            ports = [{ name = "json_rpc", port = 8545 }]
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['eth-rpc'].ports: port name 'json_rpc'"),
+            "{err}"
+        );
+
+        // A process may not take a node's name: they share one registry.
+        let err = load_with_processes(
+            r#"
+            name = "alice"
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['alice'].name: already used by a node"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_custom_process_name_is_rejected_where_a_node_name_would_be_corrected() {
+        let err = load_with_processes(
+            r#"
+            name = "eth_rpc"
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['eth_rpc'].name: 'eth_rpc' must be"),
+            "{err}"
+        );
+        assert!(err.to_string().contains("(e.g. 'eth-rpc')"), "{err}");
+
+        let err = load_with_processes(
+            r#"
+            name = ""
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes[''].name: can't be empty"),
+            "{err}"
+        );
+
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_validator(|node| node.with_name("alice"))
+            })
+            .with_custom_process(|c| c.with_name("Eth-RPC").with_command("eth-rpc"))
+            .build()
+            .unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.to_string().contains("custom_processes['Eth-RPC'].name:")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn a_custom_process_may_not_take_a_node_name_in_the_builder() {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_validator(|node| node.with_name("alice"))
+            })
+            .with_custom_process(|c| c.with_name("alice").with_command("eth-rpc"))
+            .build()
+            .unwrap_err();
+        assert!(
+            errors.iter().any(|e| e
+                .to_string()
+                .contains("already used by a node or custom process")),
+            "{errors:?}"
         );
     }
 }

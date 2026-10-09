@@ -34,10 +34,12 @@ use crate::{
 
 pub mod core;
 pub mod jam;
+pub mod process;
 pub mod spawned;
 
 pub use self::{
     jam::JamNetworkNode,
+    process::{CustomProcessNode, ProcessPort},
     spawned::{NodeKind, SpawnedNode},
 };
 

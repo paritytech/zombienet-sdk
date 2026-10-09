@@ -12,7 +12,10 @@ use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
     core::{DynamicObject, GroupVersionKind, ObjectMeta, TypeMeta, WatchEvent},
     discovery::ApiResource,
-    runtime::{conditions, wait::await_condition},
+    runtime::{
+        conditions,
+        wait::{await_condition, Condition},
+    },
     Api, Resource,
 };
 use serde::de::DeserializeOwned;
@@ -147,12 +150,17 @@ impl KubernetesClient {
         Ok(config_map)
     }
 
+    /// Create the pod and wait for it. A wrapped node is waited for until
+    /// Ready (the wrapper answers at once); a process that runs directly is
+    /// waited for until Running only, since its readiness probe depends on
+    /// the program itself listening, which is not the spawn's concern.
     pub(super) async fn create_pod(
         &self,
         namespace: &str,
         name: &str,
         spec: PodSpec,
         labels: BTreeMap<String, String>,
+        wait_ready: bool,
     ) -> Result<Pod> {
         let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
 
@@ -171,16 +179,23 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        trace!("Pod {name} checking for ready state!");
-        let wait_ready = await_condition(pods, name, helpers::is_pod_ready());
+        let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = if wait_ready {
+            ("ready", |pod| helpers::is_pod_ready().matches_object(pod))
+        } else {
+            ("running", |pod| {
+                conditions::is_pod_running().matches_object(pod)
+            })
+        };
+        trace!("Pod {name} checking for {state} state!");
         // TODO: we should use the `node_spawn_timeout` from global settings here.
-        let _ = tokio::time::timeout(Duration::from_secs(600), wait_ready)
-            .await
-            .map_err(|err| {
-                Error::from(anyhow!("error while awaiting pod {name} running: {err}"))
-            })?;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(600),
+            await_condition(pods, name, is_there),
+        )
+        .await
+        .map_err(|err| Error::from(anyhow!("error while awaiting pod {name} {state}: {err}")))?;
+        debug!("Pod {name} is {state}!");
 
-        debug!("Pod {name} is Ready!");
         Ok(pod)
     }
 

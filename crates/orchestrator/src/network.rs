@@ -75,6 +75,9 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     jamchain: Option<Jamchain>,
+    /// The custom processes running next to the nodes, in config order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    custom_processes: Vec<Arc<node::CustomProcessNode>>,
     /// Every node spawned in this network, by name, regardless of its kind.
     ///
     /// Holds the same `Arc`s as the typed collections above; downcast with
@@ -98,6 +101,7 @@ impl<T: FileSystem> std::fmt::Debug for Network<T> {
             .field("initial_spec", &self.initial_spec)
             .field("parachains", &self.parachains)
             .field("jamchain", &self.jamchain)
+            .field("custom_processes", &self.custom_processes)
             .field("nodes_by_name", &self.nodes_by_name.keys())
             .field("observability", &self.observability)
             .finish()
@@ -138,6 +142,7 @@ impl<T: FileSystem> Network<T> {
             initial_spec,
             parachains: Default::default(),
             jamchain: Default::default(),
+            custom_processes: Default::default(),
             nodes_by_name: Default::default(),
             nodes_to_watch: Default::default(),
             start_time_ts: Default::default(),
@@ -276,7 +281,7 @@ impl<T: FileSystem> Network<T> {
             parachain: None,
             bootnodes_addr: &vec![],
             wait_ready: true,
-            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
+            nodes_by_name: self.nodes_json()?,
             global_settings: &self.initial_spec.global_settings,
             resolved_db_snapshots: &resolved_db_snapshots,
         };
@@ -644,7 +649,7 @@ impl<T: FileSystem> Network<T> {
             ns: &self.ns,
             scoped_fs: &scoped_fs,
             wait_ready: false,
-            nodes_by_name: serde_json::to_value(&self.nodes_by_name)?,
+            nodes_by_name: self.nodes_json()?,
             global_settings: &self.initial_spec.global_settings,
             resolved_db_snapshots: &resolved_db_snapshots,
         };
@@ -828,6 +833,30 @@ impl<T: FileSystem> Network<T> {
         self.get_node_as::<JamNetworkNode>(&name.into())
     }
 
+    /// Get a custom process by name.
+    pub fn get_custom_process(
+        &self,
+        name: impl Into<String>,
+    ) -> Result<&node::CustomProcessNode, anyhow::Error> {
+        self.get_node_as::<node::CustomProcessNode>(&name.into())
+    }
+
+    /// Whether a node or custom process of that name is on the network.
+    pub(crate) fn has_member(&self, name: &str) -> bool {
+        self.nodes_by_name.contains_key(name)
+    }
+
+    /// The running nodes as the spawner's placeholder context: name to the
+    /// node's serialized form (`ws_uri`, `multiaddr`, ...).
+    pub(crate) fn nodes_json(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(&self.nodes_by_name)
+    }
+
+    /// The custom processes running next to the nodes, in config order.
+    pub fn custom_processes(&self) -> Vec<&node::CustomProcessNode> {
+        self.custom_processes.iter().map(|p| p.as_ref()).collect()
+    }
+
     /// Get any node by name, without caring about its kind.
     ///
     /// Only the behaviour shared by every node ([`SpawnedNode`]) is available
@@ -902,9 +931,26 @@ impl<T: FileSystem> Network<T> {
         self.register_running_node(node).await;
     }
 
+    /// Add an already spawned custom process to the network and to the registry.
+    ///
+    /// Registered for lookup but not for monitoring: a custom process has no
+    /// Prometheus endpoint, and a declared port that is not meant to answer a
+    /// plain TCP probe must not read as a crash that tears the network down.
+    pub(crate) fn add_running_custom_process(&mut self, process: node::CustomProcessNode) {
+        let process = Arc::new(process);
+        self.custom_processes.push(process.clone());
+        self.register(process);
+    }
+
     /// Mark a freshly spawned node as running and register it (as the very
     /// same `Arc` the typed collection holds) for lookup and monitoring.
     async fn register_running_node(&mut self, node: Arc<impl SpawnedNode>) {
+        let node = self.register(node);
+        self.nodes_to_watch.write().await.push(node);
+    }
+
+    /// Mark `node` as running now and register it for lookup by name.
+    fn register(&mut self, node: Arc<impl SpawnedNode>) -> Arc<dyn SpawnedNode> {
         node.core().set_is_running(true);
         node.core().set_last_start_ts(
             SystemTime::now()
@@ -916,7 +962,7 @@ impl<T: FileSystem> Network<T> {
         let node: Arc<dyn SpawnedNode> = node;
         self.nodes_by_name
             .insert(node.name().to_string(), node.clone());
-        self.nodes_to_watch.write().await.push(node);
+        node
     }
 
     pub(crate) fn add_para(&mut self, para: Parachain) {
@@ -1146,6 +1192,16 @@ impl<T: FileSystem> Network<T> {
 
     pub(crate) fn set_jamchain(&mut self, jamchain: Jamchain) {
         self.jamchain = Some(jamchain);
+    }
+
+    /// Set the custom processes recreated from a `zombie.json`, registering
+    /// each for lookup (but not monitoring, see `add_running_custom_process`).
+    pub(crate) fn set_custom_processes(&mut self, processes: Vec<Arc<node::CustomProcessNode>>) {
+        for process in &processes {
+            self.nodes_by_name
+                .insert(process.name().to_string(), process.clone());
+        }
+        self.custom_processes = processes;
     }
 
     /// The JAM chain of this network, if any.

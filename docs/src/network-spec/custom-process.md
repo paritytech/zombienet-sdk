@@ -1,6 +1,16 @@
 # Custom Processes
 
-Allow to set custom processes to spawn after the network is up.
+Allow to set custom processes to spawn after the network is up: services that run next to the nodes, such as an RPC adapter, an IPFS daemon or a database another process needs.
+
+A custom process is a member of the network like a node: it is tracked on the `Network`, written to `zombie.json`, attached to again from it and destroyed with the namespace. Look it up with `network.get_custom_process("name")` or list them with `network.custom_processes()`. A process may not share its name with a node, since they share one registry: in TOML the process is rejected; in the builder a node declared after a process with its name is renamed, as it would be after another node, so declare processes last.
+
+Unlike nodes, a custom process runs its `command` directly, not through zombienet's wrapper script: most of them are off-the-shelf images, which may not have `bash`. On docker and kubernetes the pause/resume/restart controls go through that wrapper, so on a custom process they return an error; on native they signal the process and work as for nodes.
+
+**A process must listen on all interfaces** (`0.0.0.0`) on docker and kubernetes, where it is reached through a published port or a `Service`; one bound to `127.0.0.1` is reachable from nowhere. Most daemons need a flag for that (`--rpc-external` for eth-rpc below, `--host 0.0.0.0` and the like elsewhere).
+
+A process gets the same writable `/data` directory a node gets, on every provider; that is where kubo above keeps its repo (`IPFS_PATH`) and where anything that must survive a restart of the process belongs.
+
+**`command` replaces the image's entrypoint**, on every provider. An image whose entrypoint does setup work (kubo's runs `ipfs init` and binds the API and gateway to all interfaces; the postgres image's runs `initdb`) needs that entrypoint named as the command, with the image's usual arguments as `args`.
 
 ### TOML
 
@@ -8,15 +18,21 @@ Allow to set custom processes to spawn after the network is up.
 [[custom_processes]]
 name = "eth-rpc"
 command = "eth-rpc"
-args = [ "--flag", "--other=1" ]
+args = [ "--node-rpc-url", "{{ZOMBIE:alice:internal_ws_uri}}", "--rpc-port", "{{ZOMBIE:eth-rpc:port_http}}", "--rpc-external" ]
 env = [
     { name = "RUST_LOG", value = "info" }
 ]
+ports = [ { name = "http", port = 0 } ]
 
 [[custom_processes]]
-name = "other"
-command = "some-binary"
-args = [ "--flag", "--other-flag" ]
+name = "ipfs"
+image = "docker.io/ipfs/kubo:v0.39.0"
+command = "/usr/local/bin/start_ipfs"
+args = [ "daemon" ]
+ports = [ { name = "api", port = 5001 }, { name = "gateway", port = 8080 } ]
+
+[custom_processes.resources]
+limits = { cpu = "500m", memory = "512Mi" }
 ```
 
 ### Builder
@@ -29,20 +45,48 @@ let config = NetworkConfigBuilder::new()
 
 ```rust
 let cp = CustomProcessBuilder::new()
-    .with_name("eth-rpc")
-    .with_command("eth-rpc")
-    .with_args(vec!["--flag".into()])
-    .with_env(vec![("Key", "Value")])
+    .with_name("ipfs")
+    .with_command("/usr/local/bin/start_ipfs")
+    .with_image("docker.io/ipfs/kubo:v0.39.0")
+    .with_args(vec!["daemon".into()])
+    .with_env(vec![("IPFS_PATH", "/data/ipfs")])
+    .with_named_port("api", 5001)
+    .with_named_port("gateway", 8080)
+    .with_resources(|r| r.with_limit_cpu("500m").with_limit_memory("512Mi"))
     .build()
     .unwrap();
 ```
+
+### Placeholders
+
+The `args` and `env` values of a process may refer to the nodes, which are all running by then, with the same `{{ZOMBIE:<node-name>:<field>}}` placeholders node args use: `ws_uri`, `internal_ws_uri` (the address other members of the network use, which is what a process wants), `multiaddr`, `prometheus_uri` for a substrate node, `rpc_uri` and `peer_addr` for a JAM node. On docker a node's addresses are host addresses, so a process in a container reaches a node only through the host (`host.docker.internal` on Docker Desktop). They may also refer to the process's own ports as `{{ZOMBIE:<process-name>:port_<port-name>}}`. A placeholder that resolves to nothing (a node or port that does not exist) fails the spawn of that process, which is logged and skipped. Only the process itself is in context: one process cannot refer to another.
+
+### Ports
+
+Each declared port is TCP and exposed by name. A port declared as `0` is picked free by zombienet when the process is spawned. Whatever the number, the process learns it through the placeholder above; `eth-rpc` is told `--rpc-port <picked>` that way.
+
+On kubernetes the declared ports are the pod's `Service` ports, so other pods reach the process as `<process-name>:<port>`, and a port-forward is opened from the host running zombienet for each (unless running in CI, where the pod's own address is used). The spawn waits for the pod to be running, not for the process to listen; the `Service` routes to the pod once the first declared port accepts a connection on the pod address, which a process bound to `127.0.0.1` never does (see above). On docker each port is published on a free host port picked at spawn, so two networks can share a host; on native the process listens on them as declared, and a fixed port that is busy fails the spawn.
+
+The running process reports where every port is reachable:
+
+```rust
+let ipfs = network.get_custom_process("ipfs")?;
+println!("{}", ipfs.get_uri_for_name("api").unwrap()); // from here, e.g. 127.0.0.1:53421 on k8s
+let api = ipfs.port("api").unwrap();
+println!("{}", api.external); // the same address
+println!("{}", api.internal); // from inside the network, e.g. ipfs:5001 on k8s
+```
+
+On native `external` and `internal` are the same address. On docker `external` is the published host port and `internal` the container's own address. On kubernetes `external` is a port-forward that lives as long as the zombienet process; re-attaching opens new ones. A port-forward, like docker's published port, accepts connections whether or not the process is listening, so `is_responsive()` on kubernetes and docker reports the forward, not the process; only on native and on kubernetes in CI does it reach the process itself. Re-attaching takes the processes as recorded in `zombie.json`, with the same caveat.
 
 ### Reference
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `name` | String | — | **Required.** Name of the process |
-| `command` | String | — | **Required.** Command to execute |
-| `image` | String | - | Container image |
-| `args` | Array | — | CLI arguments |
-| `env` | Array | — | Environment variables as `{name, value}` pairs |
+| `name` | String | — | **Required.** Name of the process; also its pod/container name and the key it is looked up by. Lowercase letters, digits and `-`, starting with a letter, at most 63 characters, unique among nodes and processes |
+| `command` | String | — | **Required.** Command to execute; replaces the image's entrypoint |
+| `image` | String | — | Container image |
+| `args` | Array | — | CLI arguments; may use the placeholders above |
+| `env` | Array | — | Environment variables as `{name, value}` pairs; values may use the same placeholders |
+| `ports` | Array | — | TCP ports the process listens on, as `{name, port}` pairs. Names are 1 to 15 lowercase letters, digits or `-`, with a letter, unique per process; `port: 0` is picked at spawn |
+| `resources` | Table | — | CPU/memory `requests` and `limits` (kubernetes only; a warning is logged where ignored), as for nodes |

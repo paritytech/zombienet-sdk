@@ -22,13 +22,11 @@ use super::{
     client::KubernetesClient, namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder,
 };
 use crate::{
-    constants::{
-        NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
-        PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
-    },
+    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     kubernetes,
+    shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, RunCommandOptions, RunScriptOptions,
+        ExecutionResult, InnerSnapshotDb, NodeRole, Port, RunCommandOptions, RunScriptOptions,
         TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
@@ -49,6 +47,11 @@ where
     pub(super) resources: Option<&'a Resources>,
     pub(super) db_snapshot: Option<&'a Path>,
     pub(super) role: Option<NodeRole>,
+    /// Named ports exposed on the pod's `Service`, headless when none.
+    pub(super) ports: &'a [(String, Port)],
+    /// Whether `program` runs through the zombie wrapper (see
+    /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
+    pub(super) wrapper: bool,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -76,6 +79,8 @@ where
             resources: deserializable.resources.as_ref(),
             db_snapshot: None,
             role: None,
+            ports: &deserializable.ports,
+            wrapper: deserializable.wrapper,
             k8s_client,
             filesystem,
         }
@@ -90,6 +95,10 @@ pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) args: Vec<String>,
     pub(super) env: Vec<(String, String)>,
     pub(super) resources: Option<Resources>,
+    #[serde(default)]
+    pub(super) ports: Vec<(String, Port)>,
+    #[serde(default = "default_true")]
+    pub(super) wrapper: bool,
 }
 
 type FwdInfo = (u16, JoinHandle<()>);
@@ -107,6 +116,10 @@ where
     args: Vec<String>,
     env: Vec<(String, String)>,
     resources: Option<Resources>,
+    /// Named ports exposed on the pod's `Service`, headless when none.
+    ports: Vec<(String, Port)>,
+    /// Whether `program` runs through the zombie wrapper.
+    wrapper: bool,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
@@ -161,6 +174,8 @@ where
             args: options.args.to_vec(),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
+            ports: options.ports.to_vec(),
+            wrapper: options.wrapper,
             base_dir,
             config_dir,
             data_dir,
@@ -181,7 +196,11 @@ where
 
         node.initialize_startup_files(options.startup_files).await?;
 
-        node.start().await?;
+        // Without the wrapper there is no pipe to signal: the container runs
+        // `program` from the moment the pod is up.
+        if node.wrapper {
+            node.start().await?;
+        }
 
         Ok(node)
     }
@@ -214,6 +233,8 @@ where
             args: options.args.to_vec(),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
+            ports: options.ports.to_vec(),
+            wrapper: options.wrapper,
             base_dir,
             config_dir,
             data_dir,
@@ -254,11 +275,19 @@ where
             &self.program,
             &self.args,
             &self.env,
+            &self.ports,
+            self.wrapper,
         );
 
         let manifest = self
             .k8s_client
-            .create_pod(&self.namespace_name(), &self.name, pod_spec, labels.clone())
+            .create_pod(
+                &self.namespace_name(),
+                &self.name,
+                pod_spec,
+                labels.clone(),
+                self.wrapper,
+            )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
 
@@ -275,31 +304,22 @@ where
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
 
-        // Create service for pod
+        // Create service for pod, with the ports the spawn declared; headless
+        // when it declared none (a ClusterIP Service needs at least one port,
+        // a headless one does not).
+        let service_ports: Vec<ServicePort> = self
+            .ports
+            .iter()
+            .map(|(name, port)| ServicePort {
+                port: (*port).into(),
+                name: Some(name.clone()),
+                ..Default::default()
+            })
+            .collect();
         let service_spec = ServiceSpec {
             selector: Some(labels.clone()),
-            ports: Some(vec![
-                ServicePort {
-                    port: P2P_PORT.into(),
-                    name: Some("p2p".into()),
-                    ..Default::default()
-                },
-                ServicePort {
-                    port: RPC_WS_PORT.into(),
-                    name: Some("rpc".into()),
-                    ..Default::default()
-                },
-                ServicePort {
-                    port: RPC_HTTP_PORT.into(),
-                    name: Some("rpc-http".into()),
-                    ..Default::default()
-                },
-                ServicePort {
-                    port: PROMETHEUS_PORT.into(),
-                    name: Some("prom".into()),
-                    ..Default::default()
-                },
-            ]),
+            cluster_ip: service_ports.is_empty().then(|| "None".to_string()),
+            ports: (!service_ports.is_empty()).then_some(service_ports),
             ..Default::default()
         };
 
@@ -768,6 +788,13 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "pause",
+            ProviderError::PauseNodeFailed,
+        )?;
+
         self.k8s_client
             .pod_exec(
                 &self.namespace_name(),
@@ -787,6 +814,13 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "resume",
+            ProviderError::ResumeNodeFailed,
+        )?;
+
         self.k8s_client
             .pod_exec(
                 &self.namespace_name(),
@@ -806,6 +840,13 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         if let Some(duration) = after {
             sleep(duration).await;
         }
@@ -835,6 +876,13 @@ where
         args: &[String],
         after: Option<Duration>,
     ) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         // get the assets
         for asset in assets {
             match asset {

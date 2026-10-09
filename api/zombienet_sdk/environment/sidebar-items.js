@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Provider"],"fn":["get_attach_fn","get_images_from_env","get_provider_from_env","get_spawn_fn"],"struct":["Images"],"type":["AttachResult","SpawnResult"]};

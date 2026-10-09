@@ -879,7 +879,7 @@ mod tests {
                 ("RUST_LOG", "info"),
                 ("UPSTREAM", "{{ZOMBIE:asset-hub-1:ws_uri}}"),
             ])
-            .with_port("http", 0)
+            .with_named_port("http", 0)
             .build()
             .unwrap()
     }

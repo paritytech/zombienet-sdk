@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ("--bind", "0.0.0.0").into(),
                     "{{ZOMBIE:files:port_http}}".into(),
                 ])
-                .with_port("http", 0)
+                .with_named_port("http", 0)
         })
         .build()
         .unwrap()

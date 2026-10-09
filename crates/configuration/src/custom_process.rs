@@ -334,7 +334,7 @@ impl CustomProcessBuilder<WithName, WithCmd> {
 
     /// Declare a named port the process listens on; `0` lets zombienet pick a
     /// free one at spawn time. Names and numbers are checked in [`Self::build`].
-    pub fn with_port(self, name: impl Into<String>, port: Port) -> Self {
+    pub fn with_named_port(self, name: impl Into<String>, port: Port) -> Self {
         let mut ports = self.config.ports;
         ports.push(NamedPort {
             name: name.into(),
@@ -410,8 +410,8 @@ mod tests {
             .with_name("ipfs")
             .with_command("ipfs")
             .with_image("docker.io/ipfs/kubo:v0.39.0")
-            .with_port("api", 5001)
-            .with_port("gateway", 8080)
+            .with_named_port("api", 5001)
+            .with_named_port("gateway", 8080)
             .with_resources(|r| r.with_limit_cpu("500m").with_limit_memory("512Mi"))
             .build()
             .unwrap();
@@ -458,8 +458,8 @@ mod tests {
         let err = CustomProcessBuilder::new()
             .with_name("demo")
             .with_command("some")
-            .with_port("api", 5001)
-            .with_port("api", 5002)
+            .with_named_port("api", 5001)
+            .with_named_port("api", 5002)
             .build()
             .unwrap_err();
         assert_eq!(err.0, "demo");
@@ -468,8 +468,8 @@ mod tests {
         let err = CustomProcessBuilder::new()
             .with_name("demo")
             .with_command("some")
-            .with_port("api", 5001)
-            .with_port("other", 5001)
+            .with_named_port("api", 5001)
+            .with_named_port("other", 5001)
             .build()
             .unwrap_err();
         assert!(err.1[0].to_string().contains("port 5001 is declared twice"));
@@ -478,8 +478,8 @@ mod tests {
         CustomProcessBuilder::new()
             .with_name("demo")
             .with_command("some")
-            .with_port("api", 0)
-            .with_port("gateway", 0)
+            .with_named_port("api", 0)
+            .with_named_port("gateway", 0)
             .build()
             .unwrap();
     }
@@ -498,7 +498,7 @@ mod tests {
             let err = CustomProcessBuilder::new()
                 .with_name("demo")
                 .with_command("some")
-                .with_port(bad, 5001)
+                .with_named_port(bad, 5001)
                 .build()
                 .unwrap_err();
             assert!(
@@ -511,7 +511,7 @@ mod tests {
             CustomProcessBuilder::new()
                 .with_name("demo")
                 .with_command("some")
-                .with_port(good, 5001)
+                .with_named_port(good, 5001)
                 .build()
                 .unwrap_or_else(|e| panic!("{good:?} should be accepted, got {:?}", e.1));
         }

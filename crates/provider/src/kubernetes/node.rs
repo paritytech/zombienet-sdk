@@ -788,7 +788,12 @@ where
             .k8s_client
             .pod_status(&self.namespace_name(), &self.name)
             .await
-            .map_err(|_| ProviderError::MissingNode(self.name.clone()))?;
+            .map_err(|err| {
+                ProviderError::InvalidConfig(format!(
+                    "{}: could not read the pod: {err}",
+                    self.name
+                ))
+            })?;
 
         if status_is_done(&status) {
             let code = status

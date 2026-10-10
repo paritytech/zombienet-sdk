@@ -80,7 +80,7 @@ println!("{}", api.external); // the same address
 println!("{}", api.internal); // from inside the network, e.g. ipfs:5001 on k8s
 ```
 
-On native `external` and `internal` are the same address. On docker `external` is the published host port and `internal` the container's own address. On kubernetes `external` is a port-forward that lives as long as the zombienet process; re-attaching opens new ones. A port-forward, like docker's published port, accepts connections whether or not the process is listening, so `is_responsive()` on kubernetes and docker reports the forward, not the process; only on native and on kubernetes in CI does it reach the process itself. Re-attaching takes the processes as recorded in `zombie.json`, with the same caveat.
+On native `external` and `internal` are the same address. On docker `external` is the published host port and `internal` the container's own address. On kubernetes `external` is a port-forward that lives as long as the zombienet process; re-attaching opens new ones, except for a one-shot, which has finished. A port-forward, like docker's published port, accepts connections whether or not the process is listening, so `is_responsive()` on kubernetes and docker reports the forward, not the process; only on native and on kubernetes in CI does it reach the process itself. Re-attaching takes the processes as recorded in `zombie.json`, with the same caveat.
 
 ### Lifecycle
 

@@ -1107,12 +1107,9 @@ async fn recreate_custom_processes_from_json(
         // keep the saved address where there is none to open.
         let mut ports = raw.ports;
         let state = raw.state.unwrap_or(CustomProcessState::Ready);
-        // a process that finished has nothing to forward to
-        let running = matches!(
-            state,
-            CustomProcessState::Starting | CustomProcessState::Ready
-        );
-        if !running_in_ci() && running {
+        // a one-shot is done by now, nothing to forward to; anything else may
+        // still be up, whatever its recorded state
+        if !running_in_ci() && !raw.spec.one_shot() {
             for (port_name, port) in ports.iter_mut() {
                 let saved = std::mem::take(&mut port.external);
                 port.external =

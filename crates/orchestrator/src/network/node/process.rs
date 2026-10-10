@@ -96,7 +96,8 @@ pub(crate) struct RawCustomProcessNode {
     pub(crate) ip: IpAddr,
     #[serde(default)]
     pub(crate) ports: BTreeMap<String, ProcessPort>,
-    /// `None` for a record from before states were kept; taken as up.
+    /// `None` for a record from before states were kept, or one this version
+    /// cannot read (a state it does not know); taken as up either way.
     #[serde(flatten)]
     pub(crate) state: Option<CustomProcessState>,
     /// The provider's own record of the process, which it needs to reattach.
@@ -210,7 +211,7 @@ impl CustomProcessNode {
         // The last thing that stood in the way, for the timeout message. A
         // status read that fails is retried like any other miss: one API
         // hiccup must not fail the process for good.
-        let mut problem = String::new();
+        let mut problem = String::from("no status read yet");
         let waited = tokio::time::timeout(timeout, async {
             loop {
                 let status = match self.core.inner().status().await {
@@ -240,10 +241,8 @@ impl CustomProcessNode {
                     match status {
                         ProcessStatus::Exited { code } => {
                             return Err(match code {
-                                Some(code) => {
-                                    format!("exited with code {code} before becoming ready")
-                                },
-                                None => "exited before becoming ready".into(),
+                                Some(code) => format!("exited with code {code}"),
+                                None => "exited".into(),
                             })
                         },
                         // the provider checks (k8s: the pod's probe)
@@ -362,7 +361,133 @@ impl fmt::Debug for CustomProcessNode {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use configuration::{CustomProcessBuilder, ReadyCheck};
+
     use super::*;
+    use crate::network::node::mock::MockNode;
+
+    fn node(spec: CustomProcess, mock: MockNode, state: CustomProcessState) -> CustomProcessNode {
+        let ports = spec
+            .ports()
+            .iter()
+            .map(|p| {
+                (
+                    p.name.clone(),
+                    ProcessPort {
+                        port: 8080,
+                        external: "127.0.0.1:1".into(),
+                        internal: "x:8080".into(),
+                    },
+                )
+            })
+            .collect();
+        CustomProcessNode::new(
+            "p",
+            Arc::new(mock),
+            spec,
+            "127.0.0.1".parse().unwrap(),
+            ports,
+            state,
+        )
+    }
+
+    fn one_shot() -> CustomProcess {
+        CustomProcessBuilder::new()
+            .with_name("p")
+            .with_command("sh")
+            .with_one_shot()
+            .build()
+            .unwrap()
+    }
+
+    fn with_check() -> CustomProcess {
+        CustomProcessBuilder::new()
+            .with_name("p")
+            .with_command("srv")
+            .with_named_port("http", 8080)
+            .with_ready_check(ReadyCheck::tcp("http"))
+            .build()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn wait_ready_follows_what_the_provider_reports() {
+        let running = ProcessStatus::Running { ready: None };
+        let secs = Duration::from_secs;
+
+        // a one-shot: running, then exit 0
+        let n = node(
+            one_shot(),
+            MockNode::new().with_statuses(vec![
+                Ok(running.clone()),
+                Ok(ProcessStatus::Exited { code: Some(0) }),
+            ]),
+            CustomProcessState::Starting,
+        );
+        assert_eq!(n.wait_ready(secs(10)).await, CustomProcessState::Completed);
+
+        // a one-shot that fails
+        let n = node(
+            one_shot(),
+            MockNode::new().with_statuses(vec![Ok(ProcessStatus::Exited { code: Some(3) })]),
+            CustomProcessState::Starting,
+        );
+        assert_eq!(
+            n.wait_ready(secs(10)).await,
+            CustomProcessState::Failed {
+                reason: "exited with code 3".into()
+            }
+        );
+
+        // a finished one-shot is reported as recorded, nothing is read
+        let n = node(
+            one_shot(),
+            MockNode::new().with_statuses(vec![Err("not asked")]),
+            CustomProcessState::Completed,
+        );
+        assert_eq!(n.wait_ready(secs(10)).await, CustomProcessState::Completed);
+
+        // a status error is retried; the provider's probe then passes
+        let n = node(
+            with_check(),
+            MockNode::new().with_statuses(vec![
+                Err("api down"),
+                Ok(ProcessStatus::Running { ready: Some(false) }),
+                Ok(ProcessStatus::Running { ready: Some(true) }),
+            ]),
+            CustomProcessState::Starting,
+        );
+        assert_eq!(n.wait_ready(secs(10)).await, CustomProcessState::Ready);
+
+        // never ready: the timeout names the last problem
+        let n = node(
+            with_check(),
+            MockNode::new().with_statuses(vec![Ok(ProcessStatus::Running { ready: Some(false) })]),
+            CustomProcessState::Starting,
+        );
+        assert_eq!(
+            n.wait_ready(secs(2)).await,
+            CustomProcessState::Failed {
+                reason: "not ready after 2s (the provider's tcp probe on port 8080 did not pass)"
+                    .into()
+            }
+        );
+
+        // exits before becoming ready
+        let n = node(
+            with_check(),
+            MockNode::new().with_statuses(vec![Ok(ProcessStatus::Exited { code: Some(9) })]),
+            CustomProcessState::Starting,
+        );
+        assert_eq!(
+            n.wait_ready(secs(10)).await,
+            CustomProcessState::Failed {
+                reason: "exited with code 9".into()
+            }
+        );
+    }
 
     #[test]
     fn the_state_is_two_plain_fields_and_an_old_record_is_ready() {

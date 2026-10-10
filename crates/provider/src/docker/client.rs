@@ -487,7 +487,7 @@ impl DockerClient {
         } else {
             // try the old ip template
             let mut ip_str = self
-                .container_ip_inner(container_name, "{{ .NetworkSettings.IPAddress }}")
+                .container_ip_inner(container_name, "{{ .NetworkSettings.IPAddress }}", true)
                 .await?;
             if ip_str.is_empty() {
                 // try the new template version
@@ -495,6 +495,7 @@ impl DockerClient {
                     .container_ip_inner(
                         container_name,
                         "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                        false,
                     )
                     .await?;
             }
@@ -534,13 +535,20 @@ impl DockerClient {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
-    /// Empty when the template does not apply to this engine's output, so
-    /// the caller can try the next one.
-    async fn container_ip_inner(&self, container_name: &str, ip_template: &str) -> Result<String> {
-        Ok(self
-            .inspect(container_name, ip_template)
-            .await
-            .unwrap_or_default())
+    /// `lenient` tolerates a template that does not apply to this engine's
+    /// output (empty, so the caller tries the next one); otherwise an error
+    /// is an error.
+    async fn container_ip_inner(
+        &self,
+        container_name: &str,
+        ip_template: &str,
+        lenient: bool,
+    ) -> Result<String> {
+        match self.inspect(container_name, ip_template).await {
+            Ok(ip) => Ok(ip),
+            Err(_) if lenient => Ok(String::new()),
+            Err(err) => Err(err),
+        }
     }
 
     async fn get_containers(&self) -> Result<Vec<Container>> {

@@ -70,13 +70,170 @@ fn validate_port_name(name: &str) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-/// Represent a custom process to spawn, allowing to set:
-/// cmd: Command to execute
-/// args: Argumnets to pass
-/// env: Environment to set
-/// image: Image to use (provider specific)
-/// ports: Named ports the process listens on
-/// resources: Resources to apply (provider specific)
+/// How a custom process is known to be ready. `tcp` is a declared port name
+/// that must accept a connection; `http` is a declared port name and a path
+/// that must answer 2xx. On kubernetes the check is the pod's readiness
+/// probe; elsewhere zombienet probes the port from where it runs. How long
+/// to wait is the process's `timeout`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadyCheck {
+    #[serde(flatten)]
+    pub target: ReadyTarget,
+    /// Seconds between two attempts; 1 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interval: Option<u64>,
+}
+
+/// What a process is waited on, see [`CustomProcess::effective_check`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveCheck<'a> {
+    /// The declared port the check probes.
+    pub port: &'a str,
+    /// The path a `GET` must answer 2xx on; `None` for a TCP connect.
+    pub http_path: Option<&'a str>,
+}
+
+/// What a [`ReadyCheck`] probes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ReadyTarget {
+    /// The named port accepts a TCP connection.
+    Tcp { tcp: String },
+    /// `GET <path>` on the named port answers 2xx.
+    Http { http: HttpTarget },
+}
+
+/// The port and path of an http [`ReadyCheck`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpTarget {
+    pub port: String,
+    pub path: String,
+}
+
+impl ReadyCheck {
+    /// A check that passes once the port named `port` accepts a connection.
+    pub fn tcp(port: impl Into<String>) -> Self {
+        Self {
+            target: ReadyTarget::Tcp { tcp: port.into() },
+            interval: None,
+        }
+    }
+
+    /// A check that passes once `GET <path>` on the port named `port` answers 2xx.
+    pub fn http(port: impl Into<String>, path: impl Into<String>) -> Self {
+        Self {
+            target: ReadyTarget::Http {
+                http: HttpTarget {
+                    port: port.into(),
+                    path: path.into(),
+                },
+            },
+            interval: None,
+        }
+    }
+
+    pub fn with_interval(mut self, secs: u64) -> Self {
+        self.interval = Some(secs);
+        self
+    }
+
+    /// The name of the port the check probes.
+    pub fn port_name(&self) -> &str {
+        match &self.target {
+            ReadyTarget::Tcp { tcp } => tcp,
+            ReadyTarget::Http { http } => &http.port,
+        }
+    }
+}
+
+/// When a dependency counts as met, as docker-compose names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyCondition {
+    /// The process started.
+    ServiceStarted,
+    /// The process passed its ready check.
+    ServiceHealthy,
+    /// The one-shot process exited 0.
+    ServiceCompletedSuccessfully,
+}
+
+impl DependencyCondition {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ServiceStarted => "service_started",
+            Self::ServiceHealthy => "service_healthy",
+            Self::ServiceCompletedSuccessfully => "service_completed_successfully",
+        }
+    }
+}
+
+/// Another custom process this one starts after. Written as a bare name
+/// (`"postgres"`) or as `{ name = "init", condition = "..." }`; without a
+/// condition the target's natural one applies, see
+/// [`CustomProcess::natural_condition`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "DependencyRepr", into = "DependencyRepr")]
+pub struct Dependency {
+    pub name: String,
+    pub condition: Option<DependencyCondition>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum DependencyRepr {
+    Name(String),
+    Full {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        condition: Option<DependencyCondition>,
+    },
+}
+
+impl From<DependencyRepr> for Dependency {
+    fn from(repr: DependencyRepr) -> Self {
+        match repr {
+            DependencyRepr::Name(name) => Self {
+                name,
+                condition: None,
+            },
+            DependencyRepr::Full { name, condition } => Self { name, condition },
+        }
+    }
+}
+
+impl From<Dependency> for DependencyRepr {
+    fn from(dep: Dependency) -> Self {
+        match dep.condition {
+            None => Self::Name(dep.name),
+            Some(condition) => Self::Full {
+                name: dep.name,
+                condition: Some(condition),
+            },
+        }
+    }
+}
+
+impl From<&str> for Dependency {
+    fn from(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            condition: None,
+        }
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+/// The longest `timeout` accepted: a week, in seconds.
+pub const MAX_TIMEOUT_SECS: u64 = 7 * 24 * 60 * 60;
+
+/// A custom process to spawn next to the nodes: its `command`, `args`, `env`,
+/// `image` (provider specific), named `ports`, `resources` (provider
+/// specific), and its lifecycle: `ready_check`, `depends_on`, `one_shot` and
+/// `timeout`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomProcess {
     // Name of the process
@@ -98,6 +255,18 @@ pub struct CustomProcess {
     // Resources to apply (only k8s)
     #[serde(skip_serializing_if = "Option::is_none")]
     resources: Option<Resources>,
+    // How the process is known to be ready
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ready_check: Option<ReadyCheck>,
+    // Processes this one starts after
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    depends_on: Vec<Dependency>,
+    // Runs to completion instead of staying up
+    #[serde(skip_serializing_if = "is_false", default)]
+    one_shot: bool,
+    // Seconds to wait for the condition: the ready check, or a one-shot's exit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout: Option<u64>,
 }
 
 impl Default for CustomProcess {
@@ -110,6 +279,10 @@ impl Default for CustomProcess {
             env: vec![],
             ports: vec![],
             resources: None,
+            ready_check: None,
+            depends_on: vec![],
+            one_shot: false,
+            timeout: None,
         }
     }
 }
@@ -150,10 +323,77 @@ impl CustomProcess {
         self.resources.as_ref()
     }
 
+    /// How the process is known to be ready, if declared. Without one, a
+    /// process with ports is ready when its first port accepts a connection,
+    /// and a process without ports is ready once started.
+    pub fn ready_check(&self) -> Option<&ReadyCheck> {
+        self.ready_check.as_ref()
+    }
+
+    /// The processes this one starts after.
+    pub fn depends_on(&self) -> &[Dependency] {
+        &self.depends_on
+    }
+
+    /// Whether the process runs to completion (exit 0 is success) instead of
+    /// staying up.
+    pub fn one_shot(&self) -> bool {
+        self.one_shot
+    }
+
+    /// Seconds to wait for the process to meet its condition (the ready check
+    /// to pass, or a one-shot to exit); the global `node_spawn_timeout` when
+    /// absent.
+    pub fn timeout(&self) -> Option<u64> {
+        self.timeout
+    }
+
+    /// What the process is waited on: the `ready_check`, or a TCP connect on
+    /// the first declared port when there is none. `None` for a one-shot
+    /// (waited on to exit) and for a process with nothing to check (ready
+    /// once started).
+    pub fn effective_check(&self) -> Option<EffectiveCheck<'_>> {
+        if self.one_shot {
+            return None;
+        }
+        match &self.ready_check {
+            Some(check) => Some(EffectiveCheck {
+                port: check.port_name(),
+                http_path: match &check.target {
+                    ReadyTarget::Http { http } => Some(http.path.as_str()),
+                    ReadyTarget::Tcp { .. } => None,
+                },
+            }),
+            None => self.ports.first().map(|p| EffectiveCheck {
+                port: p.name.as_str(),
+                http_path: None,
+            }),
+        }
+    }
+
+    /// The condition a dependency on this process means when it names none:
+    /// completed for a one-shot, healthy when there is something to check (a
+    /// `ready_check` or a port), started otherwise.
+    pub fn natural_condition(&self) -> DependencyCondition {
+        if self.one_shot {
+            DependencyCondition::ServiceCompletedSuccessfully
+        } else if self.ready_check.is_some() || !self.ports.is_empty() {
+            DependencyCondition::ServiceHealthy
+        } else {
+            DependencyCondition::ServiceStarted
+        }
+    }
+
     /// The field rules, applied by the builder and by the TOML loader: the name
     /// is an RFC 1035 label like a node's (rejected rather than corrected, it
-    /// is the lookup key), port names are valid service names and unique, and
-    /// no two ports share a number (`0` excepted, each is picked separately).
+    /// is the lookup key), port names are valid service names and unique, no
+    /// two ports share a number (`0` excepted, each is picked separately), a
+    /// `ready_check` names a declared port, has an http path starting with `/`
+    /// and is not on a one-shot, the `timeout` and `interval` are at least 1
+    /// second (the timeout at most a week, [`MAX_TIMEOUT_SECS`]), and
+    /// `depends_on` names neither the process itself nor anything twice.
+    /// What is checked at spawn follows from these, see
+    /// [`Self::effective_check`].
     pub fn validate(&self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = vec![];
         let valid_name = sanitize_node_name(&self.name);
@@ -197,6 +437,69 @@ impl CustomProcess {
             numbers.push(port.port);
         }
 
+        if let Some(check) = &self.ready_check {
+            if !names.contains(&check.port_name()) {
+                errors.push(
+                    FieldError::ReadyCheck(anyhow::anyhow!(
+                        "port '{}' is not declared in ports",
+                        check.port_name()
+                    ))
+                    .into(),
+                );
+            }
+            if self.one_shot {
+                errors.push(
+                    FieldError::ReadyCheck(anyhow::anyhow!(
+                        "a one-shot process runs to completion, it has no readiness"
+                    ))
+                    .into(),
+                );
+            }
+            if let ReadyTarget::Http { http } = &check.target {
+                if !http.path.starts_with('/') {
+                    errors.push(
+                        FieldError::ReadyCheck(anyhow::anyhow!(
+                            "http path '{}' must start with '/'",
+                            http.path
+                        ))
+                        .into(),
+                    );
+                }
+            }
+        }
+        if let Some(0) = self.ready_check.as_ref().and_then(|c| c.interval) {
+            errors.push(
+                FieldError::ReadyCheck(anyhow::anyhow!("interval must be at least 1 second"))
+                    .into(),
+            );
+        }
+        match self.timeout {
+            Some(0) => errors
+                .push(FieldError::Timeout(anyhow::anyhow!("must be at least 1 second")).into()),
+            Some(secs) if secs > MAX_TIMEOUT_SECS => errors.push(
+                FieldError::Timeout(anyhow::anyhow!(
+                    "{secs} is more than the {MAX_TIMEOUT_SECS} seconds (a week) allowed"
+                ))
+                .into(),
+            ),
+            _ => {},
+        }
+        let mut seen: Vec<&str> = vec![];
+        for dep in &self.depends_on {
+            if dep.name == self.name {
+                errors.push(
+                    FieldError::DependsOn(anyhow::anyhow!("'{}' depends on itself", dep.name))
+                        .into(),
+                );
+            }
+            if seen.contains(&dep.name.as_str()) {
+                errors.push(
+                    FieldError::DependsOn(anyhow::anyhow!("'{}' is listed twice", dep.name)).into(),
+                );
+            }
+            seen.push(&dep.name);
+        }
+
         if errors.is_empty() {
             Ok(())
         } else {
@@ -205,7 +508,85 @@ impl CustomProcess {
     }
 }
 
-/// A node configuration builder, used to build a [`NodeConfig`] declaratively with fields validation.
+/// The rules between processes, applied once the whole set is known: every
+/// dependency names a custom process, its condition fits the target (only a
+/// one-shot completes, only a process with something to check is healthy),
+/// and there is no cycle. Errors are prefixed with the process they are on.
+pub(crate) fn validate_custom_processes(processes: &[CustomProcess]) -> Result<(), Vec<String>> {
+    let by_name: std::collections::HashMap<&str, &CustomProcess> =
+        processes.iter().map(|p| (p.name(), p)).collect();
+    let mut errors = vec![];
+
+    for process in processes {
+        for dep in &process.depends_on {
+            let Some(target) = by_name.get(dep.name.as_str()) else {
+                errors.push(format!(
+                    "custom_processes['{}'].depends_on: '{}' is not a custom process",
+                    process.name(),
+                    dep.name
+                ));
+                continue;
+            };
+            let condition = dep.condition.unwrap_or_else(|| target.natural_condition());
+            let fits = match condition {
+                DependencyCondition::ServiceStarted => true,
+                DependencyCondition::ServiceHealthy => {
+                    !target.one_shot && (target.ready_check.is_some() || !target.ports.is_empty())
+                },
+                DependencyCondition::ServiceCompletedSuccessfully => target.one_shot,
+            };
+            if !fits {
+                errors.push(format!(
+                    "custom_processes['{}'].depends_on: '{}' cannot be {} ({})",
+                    process.name(),
+                    dep.name,
+                    condition.as_str(),
+                    if target.one_shot {
+                        "it is a one-shot, which completes"
+                    } else if condition == DependencyCondition::ServiceHealthy {
+                        "it has no ready_check and no port"
+                    } else {
+                        "it is not a one-shot"
+                    }
+                ));
+            }
+        }
+    }
+
+    // A cycle: some process never becomes startable. Peel off the ones whose
+    // dependencies are all peeled; what is left is on a cycle.
+    let mut remaining: Vec<&CustomProcess> = processes.iter().collect();
+    let mut peeled: Vec<&str> = vec![];
+    loop {
+        let (free, blocked): (Vec<&CustomProcess>, Vec<&CustomProcess>) =
+            remaining.iter().partition(|p| {
+                p.depends_on.iter().all(|d| {
+                    peeled.contains(&d.name.as_str()) || !by_name.contains_key(d.name.as_str())
+                })
+            });
+        if free.is_empty() {
+            break;
+        }
+        peeled.extend(free.iter().map(|p| p.name()));
+        remaining = blocked;
+    }
+    if !remaining.is_empty() {
+        let mut names: Vec<&str> = remaining.iter().map(|p| p.name()).collect();
+        names.sort();
+        errors.push(format!(
+            "custom_processes: depends_on forms a cycle among {}",
+            names.join(", ")
+        ));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// A custom process builder, used to build a [`CustomProcess`] declaratively with fields validation.
 pub struct CustomProcessBuilder<N, C> {
     config: CustomProcess,
     errors: Vec<anyhow::Error>,
@@ -350,6 +731,68 @@ impl CustomProcessBuilder<WithName, WithCmd> {
         )
     }
 
+    /// Declare how the process is known to be ready; see [`ReadyCheck`].
+    pub fn with_ready_check(self, check: ReadyCheck) -> Self {
+        Self::transition(
+            CustomProcess {
+                ready_check: Some(check),
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
+    /// Start after `name` has met its natural condition (completed for a
+    /// one-shot, healthy when it has a check or a port, started otherwise).
+    pub fn with_dependency(self, name: impl Into<String>) -> Self {
+        self.with_dependency_on(name, None)
+    }
+
+    /// Start after `name` has met `condition`, or its natural one when `None`.
+    pub fn with_dependency_on(
+        self,
+        name: impl Into<String>,
+        condition: impl Into<Option<DependencyCondition>>,
+    ) -> Self {
+        let mut depends_on = self.config.depends_on;
+        depends_on.push(Dependency {
+            name: name.into(),
+            condition: condition.into(),
+        });
+        Self::transition(
+            CustomProcess {
+                depends_on,
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
+    /// Seconds to wait for the process to meet its condition (the ready check
+    /// to pass, or a one-shot to exit); the global `node_spawn_timeout`
+    /// otherwise.
+    pub fn with_timeout(self, secs: u64) -> Self {
+        Self::transition(
+            CustomProcess {
+                timeout: Some(secs),
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
+    /// The process runs to completion: exit 0 is success, anything else a
+    /// failure; others may depend on it with `service_completed_successfully`.
+    pub fn with_one_shot(self) -> Self {
+        Self::transition(
+            CustomProcess {
+                one_shot: true,
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
     /// Set the resources to apply to the process (only k8s).
     pub fn with_resources(self, f: impl FnOnce(ResourcesBuilder) -> ResourcesBuilder) -> Self {
         match f(ResourcesBuilder::new()).build() {
@@ -372,8 +815,8 @@ impl CustomProcessBuilder<WithName, WithCmd> {
     /// Seals the builder and returns a [`CustomProcess`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<CustomProcess, (String, Vec<anyhow::Error>)> {
         let mut errors = self.errors;
-        if let Err(port_errors) = self.config.validate() {
-            errors.extend(port_errors);
+        if let Err(field_errors) = self.config.validate() {
+            errors.extend(field_errors);
         }
 
         if !errors.is_empty() {
@@ -482,6 +925,200 @@ mod tests {
             .with_named_port("gateway", 0)
             .build()
             .unwrap();
+    }
+
+    #[test]
+    fn lifecycle_fields_round_trip_and_validate() {
+        let init = CustomProcessBuilder::new()
+            .with_name("init")
+            .with_command("sh")
+            .with_one_shot()
+            .build()
+            .unwrap();
+        let api = CustomProcessBuilder::new()
+            .with_name("api")
+            .with_command("api")
+            .with_named_port("http", 8080)
+            .with_ready_check(ReadyCheck::http("http", "/health"))
+            .with_timeout(30)
+            .with_dependency("init")
+            .with_dependency_on("db", DependencyCondition::ServiceStarted)
+            .build()
+            .unwrap();
+        let db = CustomProcessBuilder::new()
+            .with_name("db")
+            .with_command("postgres")
+            .with_named_port("pg", 5432)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            init.natural_condition(),
+            DependencyCondition::ServiceCompletedSuccessfully
+        );
+        assert_eq!(db.natural_condition(), DependencyCondition::ServiceHealthy);
+        assert_eq!(api.ready_check().unwrap().port_name(), "http");
+        assert_eq!(api.timeout(), Some(30));
+        assert_eq!(
+            api.effective_check(),
+            Some(EffectiveCheck {
+                port: "http",
+                http_path: Some("/health")
+            })
+        );
+        assert_eq!(
+            db.effective_check(),
+            Some(EffectiveCheck {
+                port: "pg",
+                http_path: None
+            })
+        );
+        assert_eq!(init.effective_check(), None);
+
+        let toml_str = toml::to_string(&api).unwrap();
+        assert!(
+            toml_str.contains(
+                "depends_on = [\"init\", { name = \"db\", condition = \"service_started\" }]"
+            ),
+            "{toml_str}"
+        );
+        assert!(toml_str.contains("[ready_check.http]"), "{toml_str}");
+        let back: CustomProcess = toml::from_str(&toml_str).unwrap();
+        assert_eq!(back, api);
+
+        validate_custom_processes(&[init.clone(), db.clone(), api.clone()]).unwrap();
+    }
+
+    #[test]
+    fn lifecycle_rules_are_enforced() {
+        // ready_check on a port that is not declared, and on a one-shot
+        let errors = CustomProcessBuilder::new()
+            .with_name("bad")
+            .with_command("sh")
+            .with_one_shot()
+            .with_ready_check(ReadyCheck::tcp("nope"))
+            .build()
+            .unwrap_err()
+            .1;
+        let text: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        assert!(
+            text.iter()
+                .any(|e| e.contains("port 'nope' is not declared")),
+            "{text:?}"
+        );
+        assert!(
+            text.iter()
+                .any(|e| e.contains("one-shot process runs to completion")),
+            "{text:?}"
+        );
+
+        // zero and absurd durations
+        let errors = CustomProcessBuilder::new()
+            .with_name("slow")
+            .with_command("sh")
+            .with_named_port("p", 1)
+            .with_ready_check(ReadyCheck::tcp("p").with_interval(0))
+            .with_timeout(0)
+            .build()
+            .unwrap_err()
+            .1;
+        let text: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        assert!(
+            text.iter()
+                .any(|e| e.contains("interval must be at least 1")),
+            "{text:?}"
+        );
+        assert!(
+            text.iter()
+                .any(|e| e.contains("timeout: must be at least 1")),
+            "{text:?}"
+        );
+        let errors = CustomProcessBuilder::new()
+            .with_name("forever")
+            .with_command("sh")
+            .with_timeout(u64::MAX)
+            .build()
+            .unwrap_err()
+            .1;
+        assert!(
+            errors.iter().any(|e| e.to_string().contains("a week")),
+            "{errors:?}"
+        );
+
+        // self dependency and a duplicate
+        let errors = CustomProcessBuilder::new()
+            .with_name("me")
+            .with_command("sh")
+            .with_dependency("me")
+            .with_dependency("other")
+            .with_dependency("other")
+            .build()
+            .unwrap_err()
+            .1;
+        let text: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        assert!(
+            text.iter().any(|e| e.contains("depends on itself")),
+            "{text:?}"
+        );
+        assert!(text.iter().any(|e| e.contains("listed twice")), "{text:?}");
+
+        // across processes: unknown target, condition that does not fit, a cycle
+        let mk = |name: &str, deps: Vec<Dependency>, one_shot: bool| {
+            let mut b = CustomProcessBuilder::new()
+                .with_name(name)
+                .with_command("sh");
+            for d in deps {
+                b = b.with_dependency_on(d.name, d.condition);
+            }
+            if one_shot {
+                b = b.with_one_shot();
+            }
+            b.build().unwrap()
+        };
+        let errors = validate_custom_processes(&[
+            mk("a", vec!["ghost".into()], false),
+            mk(
+                "b",
+                vec![Dependency {
+                    name: "a".into(),
+                    condition: Some(DependencyCondition::ServiceHealthy),
+                }],
+                false,
+            ),
+            mk(
+                "c",
+                vec![Dependency {
+                    name: "a".into(),
+                    condition: Some(DependencyCondition::ServiceCompletedSuccessfully),
+                }],
+                false,
+            ),
+            mk("x", vec!["y".into()], false),
+            mk("y", vec!["x".into()], false),
+        ])
+        .unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("'ghost' is not a custom process")),
+            "{errors:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("'a' cannot be service_healthy")),
+            "{errors:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("'a' cannot be service_completed_successfully")),
+            "{errors:?}"
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("cycle among x, y")),
+            "{errors:?}"
+        );
     }
 
     #[test]

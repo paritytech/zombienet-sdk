@@ -56,6 +56,34 @@ impl NodeRole {
     }
 }
 
+/// How a provider tells that a node spawned without the wrapper is ready.
+/// On kubernetes it becomes the pod's readiness probe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadinessProbe {
+    pub target: ReadinessTarget,
+    /// Seconds between two attempts.
+    pub period_secs: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadinessTarget {
+    /// The port accepts a TCP connection.
+    Tcp(Port),
+    /// `GET <path>` on the port answers 2xx.
+    Http { port: Port, path: String },
+}
+
+/// What a provider knows about a node's process.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessStatus {
+    /// The process runs. `ready` is what the provider's own check says, where
+    /// it has one (kubernetes: the pod's Ready condition); `None` otherwise.
+    Running { ready: Option<bool> },
+    /// The process exited, with its code where the provider knows it (not for
+    /// a process attached by pid that is gone).
+    Exited { code: Option<i32> },
+}
+
 #[derive(Debug, Clone)]
 pub struct SpawnNodeOptions {
     /// Name of the node
@@ -83,10 +111,14 @@ pub struct SpawnNodeOptions {
     pub db_snapshot: Option<PathBuf>,
     pub port_mapping: Option<HashMap<Port, Port>>,
     /// Named ports the process listens on. On k8s they are the pod's container
-    /// ports and its `Service` ports (none gives a headless Service), and the
-    /// first is the readiness probe's target when `wrapper` is off; the other
+    /// ports and its `Service` ports (none gives a headless Service); the other
     /// providers ignore them.
     pub ports: Vec<(String, Port)>,
+    /// How the provider may check readiness itself; on k8s the pod's probe.
+    pub readiness: Option<ReadinessProbe>,
+    /// The process runs to completion: on k8s the pod is not restarted and the
+    /// spawn also returns once it has finished.
+    pub one_shot: bool,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
     /// Role of the node in the network
@@ -115,6 +147,8 @@ impl SpawnNodeOptions {
             db_snapshot: None,
             port_mapping: None,
             ports: vec![],
+            readiness: None,
+            one_shot: false,
             node_log_path: None,
             role: None,
             wrapper: true,
@@ -204,6 +238,16 @@ impl SpawnNodeOptions {
             .into_iter()
             .map(|(name, port)| (name.as_ref().to_string(), port))
             .collect();
+        self
+    }
+
+    pub fn readiness(mut self, probe: ReadinessProbe) -> Self {
+        self.readiness = Some(probe);
+        self
+    }
+
+    pub fn one_shot(mut self) -> Self {
+        self.one_shot = true;
         self
     }
 

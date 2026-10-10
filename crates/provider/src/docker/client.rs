@@ -505,6 +505,33 @@ impl DockerClient {
         Ok(ip)
     }
 
+    /// The container's state (`running`, `exited`, ...) and exit code.
+    pub async fn container_state(&self, container_name: &str) -> Result<(String, Option<i32>)> {
+        let out = self
+            .client_command()
+            .args([
+                "inspect",
+                "-f",
+                "{{.State.Status}} {{.State.ExitCode}}",
+                container_name,
+            ])
+            .output()
+            .await
+            .map_err(|err| anyhow!("Failed to inspect container '{container_name}': {err}"))?;
+        if !out.status.success() {
+            return Err(anyhow!(
+                "Failed to inspect container '{container_name}': {}",
+                String::from_utf8_lossy(&out.stderr)
+            )
+            .into());
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut parts = text.split_whitespace();
+        let state = parts.next().unwrap_or_default().to_string();
+        let code = parts.next().and_then(|c| c.parse().ok());
+        Ok((state, code))
+    }
+
     async fn container_ip_inner(&self, container_name: &str, ip_template: &str) -> Result<String> {
         let mut cmd = tokio::process::Command::new("docker");
         cmd.args(vec!["inspect", "-f", ip_template, container_name]);

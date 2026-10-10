@@ -50,6 +50,10 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: A custom process that declares a port. Zombienet picks it, hands it to the process through `{{ZOMBIE:files:port_http}}`, and the example reaches it through `get_custom_process("files").get_uri_for_name("http")`.
     *   **Run**: `cargo run --example custom_process_ports`
 
+*   **`custom_process_lifecycle`**
+    *   **Description**: A one-shot `prepare`, a `files` server that starts once it completed and is ready when its http check passes, and a `reader` that starts once `files` is healthy. Prints each process's state.
+    *   **Run**: `cargo run --example custom_process_lifecycle`
+
 *   **`custom_process_positional_args`**
     *   **Description**: Shows how to spawn custom processes with positional arguments (arguments without `--` or `-` prefix). The example runs a monitoring script that is told alice's WebSocket URL through `{{ZOMBIE:alice:ws_uri}}`, plus a block count.
     *   **Run**: `cargo run --example custom_process_positional_args`

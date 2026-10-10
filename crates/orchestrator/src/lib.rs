@@ -199,6 +199,9 @@ where
             }
             network.set_custom_processes(processes);
         }
+        if let Some(skipped) = zombie_json.get("skipped_custom_processes") {
+            network.set_skipped_custom_processes(serde_json::from_value(skipped.clone())?);
+        }
 
         Ok(network)
     }
@@ -1084,9 +1087,9 @@ async fn recreate_custom_processes_from_json(
     for raw in raw_processes {
         validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
 
-        // Attached as recorded, like a node: whether it still runs is what
-        // `is_responsive` says afterwards. A record the provider cannot take
-        // back is skipped with a warning, the rest of the network attaches.
+        // Attached as recorded, like a node, with the state it had; `state()`
+        // and `wait_ready()` say more afterwards. A record the provider cannot
+        // take back is skipped with a warning, the rest of the network attaches.
         let inner = match ns.spawn_node_from_json(&raw.inner).await {
             Ok(inner) => inner,
             Err(err) => {
@@ -1102,7 +1105,8 @@ async fn recreate_custom_processes_from_json(
         // process that spawned the network, gone with it. Open new ones, and
         // keep the saved address where there is none to open.
         let mut ports = raw.ports;
-        if !running_in_ci() {
+        // a one-shot is done by now, nothing to forward to
+        if !running_in_ci() && !raw.spec.one_shot() {
             for (port_name, port) in ports.iter_mut() {
                 let saved = std::mem::take(&mut port.external);
                 port.external =
@@ -1111,7 +1115,7 @@ async fn recreate_custom_processes_from_json(
         }
 
         processes.push(Arc::new(CustomProcessNode::new(
-            raw.name, inner, raw.spec, raw.ip, ports,
+            raw.name, inner, raw.spec, raw.ip, ports, raw.state,
         )));
     }
 

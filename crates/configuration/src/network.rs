@@ -323,9 +323,9 @@ impl NetworkConfig {
             }
         });
 
-        // Custom processes bypass their builder here, so apply its rules: valid
-        // ports, and a name that is not already a node's (they share one
-        // registry on the running network).
+        // Custom processes bypass their builder here, so apply its rules (see
+        // `CustomProcess::validate`), and a name that is not already a node's
+        // (they share one registry on the running network).
         let mut errors: Vec<String> = vec![];
         for process in &network_config.custom_processes {
             if names.contains(process.name()) {
@@ -342,6 +342,11 @@ impl NetworkConfig {
                         .map(|e| format!("custom_processes['{}'].{e}", process.name())),
                 );
             }
+        }
+        if let Err(dependency_errors) =
+            custom_process::validate_custom_processes(&network_config.custom_processes)
+        {
+            errors.extend(dependency_errors);
         }
         if !errors.is_empty() {
             Err(anyhow!(errors.join("\n")))?
@@ -878,6 +883,12 @@ impl NetworkConfigBuilder<Buildable> {
             })
             .collect();
 
+        if let Err(dependency_errors) =
+            custom_process::validate_custom_processes(&self.config.custom_processes)
+        {
+            errs.extend(dependency_errors.into_iter().map(|e| anyhow!(e)));
+        }
+
         // ensure we can make this check
         if let Some(rc_config) = self.config.relaychain.as_ref() {
             // check we have num_validators >= num_requested_cores
@@ -916,7 +927,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::{parachain::RegistrationStrategy, types::JamNodeMode};
+    use crate::{parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition};
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -2572,6 +2583,68 @@ id = 1000
             {processes}
             "#
         ))
+    }
+
+    #[test]
+    fn custom_process_lifecycle_loads_from_toml_and_is_validated() {
+        let config = load_with_processes(
+            r#"
+            name = "init"
+            command = "sh"
+            one_shot = true
+            timeout = 30
+
+            [[custom_processes]]
+            name = "api"
+            command = "api"
+            ports = [{ name = "http", port = 8080 }]
+            ready_check = { http = { port = "http", path = "/health" }, interval = 2 }
+            timeout = 120
+            depends_on = ["init", { name = "cache", condition = "service_started" }]
+
+            [[custom_processes]]
+            name = "cache"
+            command = "cache"
+            "#,
+        )
+        .unwrap();
+        let processes = config.custom_processes();
+        let api = processes[1];
+        assert_eq!(api.timeout(), Some(120));
+        assert_eq!(api.ready_check().unwrap().interval, Some(2));
+        assert_eq!(api.depends_on().len(), 2);
+        assert_eq!(
+            api.depends_on()[1].condition,
+            Some(DependencyCondition::ServiceStarted)
+        );
+        assert!(processes[0].one_shot());
+        let dumped = config.dump_to_toml().unwrap();
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(reloaded.custom_processes(), config.custom_processes());
+
+        // the cross-process rules apply on this path too
+        let err = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            ports = [{ name = "http", port = 8080 }]
+            ready_check = { http = { port = "http", path = "health" } }
+            depends_on = [{ name = "cache", condition = "service_healthy" }]
+
+            [[custom_processes]]
+            name = "cache"
+            command = "cache"
+            depends_on = ["api"]
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("http path 'health' must start with '/'"),
+            "{err}"
+        );
+        assert!(err.contains("'cache' cannot be service_healthy"), "{err}");
+        assert!(err.contains("cycle among api, cache"), "{err}");
     }
 
     #[test]

@@ -64,6 +64,15 @@ pub enum FieldError {
     #[error("resources.{0}")]
     Resources(anyhow::Error),
 
+    #[error("ready_check: {0}")]
+    ReadyCheck(anyhow::Error),
+
+    #[error("depends_on: {0}")]
+    DependsOn(anyhow::Error),
+
+    #[error("timeout: {0}")]
+    Timeout(anyhow::Error),
+
     #[error("request_memory: {0}")]
     RequestMemory(anyhow::Error),
 

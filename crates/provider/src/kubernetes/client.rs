@@ -41,6 +41,17 @@ pub struct KubernetesClient {
     inner: kube::Client,
 }
 
+/// What `create_pod` waits for before returning.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum PodWait {
+    /// The Ready condition: a wrapped node, whose wrapper answers at once.
+    Ready,
+    /// The Running phase: a direct process, whose readiness is its own check.
+    Running,
+    /// Running, or already finished: a one-shot that may be quick.
+    RunningOrDone,
+}
+
 impl KubernetesClient {
     pub(super) async fn new() -> Result<Self> {
         Ok(Self {
@@ -150,17 +161,14 @@ impl KubernetesClient {
         Ok(config_map)
     }
 
-    /// Create the pod and wait for it. A wrapped node is waited for until
-    /// Ready (the wrapper answers at once); a process that runs directly is
-    /// waited for until Running only, since its readiness probe depends on
-    /// the program itself listening, which is not the spawn's concern.
+    /// Create the pod and wait for it, see [`PodWait`].
     pub(super) async fn create_pod(
         &self,
         namespace: &str,
         name: &str,
         spec: PodSpec,
         labels: BTreeMap<String, String>,
-        wait_ready: bool,
+        wait: PodWait,
     ) -> Result<Pod> {
         let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
 
@@ -179,12 +187,15 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = if wait_ready {
-            ("ready", |pod| helpers::is_pod_ready().matches_object(pod))
-        } else {
-            ("running", |pod| {
+        let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = match wait {
+            PodWait::Ready => ("ready", |pod| helpers::is_pod_ready().matches_object(pod)),
+            PodWait::Running => ("running", |pod| {
                 conditions::is_pod_running().matches_object(pod)
-            })
+            }),
+            PodWait::RunningOrDone => ("running or done", |pod| {
+                conditions::is_pod_running().matches_object(pod)
+                    || helpers::is_pod_done().matches_object(pod)
+            }),
         };
         trace!("Pod {name} checking for {state} state!");
         // TODO: we should use the `node_spawn_timeout` from global settings here.
@@ -597,6 +608,16 @@ mod helpers {
     use k8s_openapi::api::core::v1::Pod;
     use kube::runtime::wait::Condition;
     use tracing::trace;
+
+    /// An await condition for `Pod` that returns `true` once its phase is
+    /// terminal, `Succeeded` or `Failed`.
+    pub fn is_pod_done() -> impl Condition<Pod> {
+        |obj: Option<&Pod>| {
+            obj.and_then(|pod| pod.status.as_ref())
+                .and_then(|status| status.phase.as_deref())
+                .is_some_and(|phase| phase == "Succeeded" || phase == "Failed")
+        }
+    }
 
     /// An await condition for `Pod` that returns `true` once it is ready
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]

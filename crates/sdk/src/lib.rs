@@ -3,15 +3,17 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 pub use configuration::{
     types::{Arg, AssetLocation},
-    Buildable, CustomProcess, CustomProcessBuilder, GlobalSettings, GlobalSettingsBuilder,
-    NamedPort, NetworkConfig, NetworkConfigBuilder, RegistrationStrategy,
+    Buildable, CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition,
+    EffectiveCheck, GlobalSettings, GlobalSettingsBuilder, HttpTarget, NamedPort, NetworkConfig,
+    NetworkConfigBuilder, ReadyCheck, ReadyTarget, RegistrationStrategy,
 };
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{
         jamchain::Jamchain,
         node::{
-            CustomProcessNode, JamNetworkNode, NetworkNode, NodeKind, ProcessPort, SpawnedNode,
+            CustomProcessNode, CustomProcessState, JamNetworkNode, NetworkNode, NodeKind,
+            ProcessPort, SkippedProcess, SpawnedNode,
         },
         Network,
     },

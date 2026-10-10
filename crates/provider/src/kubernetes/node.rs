@@ -19,15 +19,17 @@ use tracing::{debug, trace, warn};
 use url::Url;
 
 use super::{
-    client::KubernetesClient, namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder,
+    client::{KubernetesClient, PodWait},
+    namespace::KubernetesNamespace,
+    pod_spec_builder::PodSpecBuilder,
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     kubernetes,
     shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, Port, RunCommandOptions, RunScriptOptions,
-        TransferedFile,
+        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
+        RunCommandOptions, RunScriptOptions, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -52,6 +54,11 @@ where
     /// Whether `program` runs through the zombie wrapper (see
     /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
     pub(super) wrapper: bool,
+    /// The pod's readiness probe, for a process without the wrapper.
+    pub(super) readiness: Option<&'a ReadinessProbe>,
+    /// Not restarted, and the spawn returns once it ran, see
+    /// [`SpawnNodeOptions::one_shot`](crate::types::SpawnNodeOptions).
+    pub(super) one_shot: bool,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -81,6 +88,8 @@ where
             role: None,
             ports: &deserializable.ports,
             wrapper: deserializable.wrapper,
+            readiness: None,
+            one_shot: deserializable.one_shot,
             k8s_client,
             filesystem,
         }
@@ -97,6 +106,8 @@ pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) resources: Option<Resources>,
     #[serde(default)]
     pub(super) ports: Vec<(String, Port)>,
+    #[serde(default)]
+    pub(super) one_shot: bool,
     #[serde(default = "default_true")]
     pub(super) wrapper: bool,
 }
@@ -120,6 +131,8 @@ where
     ports: Vec<(String, Port)>,
     /// Whether `program` runs through the zombie wrapper.
     wrapper: bool,
+    /// Whether the pod runs to completion instead of being restarted.
+    one_shot: bool,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
@@ -176,6 +189,7 @@ where
             resources: options.resources.cloned(),
             ports: options.ports.to_vec(),
             wrapper: options.wrapper,
+            one_shot: options.one_shot,
             base_dir,
             config_dir,
             data_dir,
@@ -188,7 +202,7 @@ where
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_k8s(options.role).await?;
+        node.initialize_k8s(options.role, options.readiness).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
@@ -235,6 +249,7 @@ where
             resources: options.resources.cloned(),
             ports: options.ports.to_vec(),
             wrapper: options.wrapper,
+            one_shot: options.one_shot,
             base_dir,
             config_dir,
             data_dir,
@@ -250,7 +265,11 @@ where
         Ok(node)
     }
 
-    async fn initialize_k8s(&self, role: Option<NodeRole>) -> Result<(), ProviderError> {
+    async fn initialize_k8s(
+        &self,
+        role: Option<NodeRole>,
+        readiness: Option<&ReadinessProbe>,
+    ) -> Result<(), ProviderError> {
         let mut labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
@@ -276,6 +295,8 @@ where
             &self.args,
             &self.env,
             &self.ports,
+            readiness,
+            self.one_shot,
             self.wrapper,
         );
 
@@ -286,7 +307,11 @@ where
                 &self.name,
                 pod_spec,
                 labels.clone(),
-                self.wrapper,
+                match (self.wrapper, self.one_shot) {
+                    (true, _) => PodWait::Ready,
+                    (false, false) => PodWait::Running,
+                    (false, true) => PodWait::RunningOrDone,
+                },
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -765,6 +790,62 @@ where
         _local_dest: &Path,
     ) -> Result<(), ProviderError> {
         Ok(())
+    }
+
+    /// The pod's phase and, while it runs, its Ready condition.
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let status = self
+            .k8s_client
+            .pod_status(&self.namespace_name(), &self.name)
+            .await
+            .map_err(|_| ProviderError::MissingNode(self.name.clone()))?;
+
+        match status.phase.as_deref() {
+            Some("Succeeded") => Ok(ProcessStatus::Exited { code: Some(0) }),
+            Some("Failed") => {
+                // the main container's exit code, when the kubelet recorded one
+                let code = status
+                    .container_statuses
+                    .iter()
+                    .flatten()
+                    .find(|c| c.name == self.name)
+                    .and_then(|c| c.state.as_ref())
+                    .and_then(|s| s.terminated.as_ref())
+                    .map(|t| t.exit_code);
+                Ok(ProcessStatus::Exited { code })
+            },
+            _ => {
+                // A container that keeps dying is restarted by the kubelet and
+                // the pod stays Running; report it as the exit it is.
+                let main = status
+                    .container_statuses
+                    .iter()
+                    .flatten()
+                    .find(|c| c.name == self.name);
+                if let Some(main) = main {
+                    let crash_looping = main
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.waiting.as_ref())
+                        .and_then(|w| w.reason.as_deref())
+                        == Some("CrashLoopBackOff");
+                    if main.restart_count > 0 || crash_looping {
+                        let code = main
+                            .last_state
+                            .as_ref()
+                            .and_then(|s| s.terminated.as_ref())
+                            .map(|t| t.exit_code);
+                        return Ok(ProcessStatus::Exited { code });
+                    }
+                }
+                let ready = status
+                    .conditions
+                    .iter()
+                    .flatten()
+                    .any(|cond| cond.type_ == "Ready" && cond.status == "True");
+                Ok(ProcessStatus::Running { ready: Some(ready) })
+            },
+        }
     }
 
     async fn ip(&self) -> Result<IpAddr, ProviderError> {

@@ -116,9 +116,6 @@ pub struct SpawnNodeOptions {
     pub ports: Vec<(String, Port)>,
     /// How the provider may check readiness itself; on k8s the pod's probe.
     pub readiness: Option<ReadinessProbe>,
-    /// The process runs to completion: on k8s the pod is not restarted and the
-    /// spawn also returns once it has finished.
-    pub one_shot: bool,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
     /// Role of the node in the network
@@ -148,7 +145,6 @@ impl SpawnNodeOptions {
             port_mapping: None,
             ports: vec![],
             readiness: None,
-            one_shot: false,
             node_log_path: None,
             role: None,
             wrapper: true,
@@ -241,13 +237,8 @@ impl SpawnNodeOptions {
         self
     }
 
-    pub fn readiness(mut self, probe: ReadinessProbe) -> Self {
-        self.readiness = Some(probe);
-        self
-    }
-
-    pub fn one_shot(mut self) -> Self {
-        self.one_shot = true;
+    pub fn readiness(mut self, probe: Option<ReadinessProbe>) -> Self {
+        self.readiness = probe;
         self
     }
 

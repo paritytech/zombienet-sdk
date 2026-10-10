@@ -71,11 +71,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     assert_eq!(
         network.get_custom_process("prepare")?.state(),
-        CustomProcessState::Completed
+        &CustomProcessState::Completed
     );
     assert_eq!(
         network.get_custom_process("files")?.state(),
-        CustomProcessState::Ready
+        &CustomProcessState::Ready
     );
 
     Ok(())

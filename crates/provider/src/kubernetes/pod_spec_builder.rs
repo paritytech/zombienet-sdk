@@ -27,7 +27,6 @@ impl PodSpecBuilder {
         env: &[(String, String)],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
-        one_shot: bool,
         wrapper: bool,
     ) -> PodSpec {
         let tolerations = if let Ok(node_type) = env::var("X_INFRA_NODETYPE") {
@@ -51,8 +50,11 @@ impl PodSpecBuilder {
             )],
             volumes: Some(Self::build_volumes()),
             tolerations,
-            // A one-shot runs once; the pod ends with it instead of restarting it.
-            restart_policy: one_shot.then(|| "Never".to_string()),
+            // A direct process that exits is done, by success or by failure: the
+            // pod ends with it, and so says what happened, instead of the
+            // kubelet restarting it in a loop. A wrapped node keeps its pod up
+            // through the wrapper either way.
+            restart_policy: (!wrapper).then(|| "Never".to_string()),
             ..Default::default()
         }
     }
@@ -315,9 +317,9 @@ mod tests {
             &[],
             &[],
             None,
-            false,
             true,
         );
+        assert!(spec.restart_policy.is_none());
         let container = main_container(&spec);
         assert_eq!(
             container.command.as_deref().unwrap(),
@@ -352,9 +354,8 @@ mod tests {
                 period_secs: 3,
             }),
             false,
-            false,
         );
-        assert!(spec.restart_policy.is_none());
+        assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
         let container = main_container(&spec);
         assert_eq!(container.command.as_deref().unwrap(), ["ipfs", "daemon"]);
 
@@ -382,9 +383,8 @@ mod tests {
     }
 
     #[test]
-    fn a_one_shot_without_ports_has_no_probe_and_is_not_restarted() {
-        let spec =
-            PodSpecBuilder::build("proc", "img", None, "job", &[], &[], &[], None, true, false);
+    fn a_direct_process_without_ports_has_no_probe() {
+        let spec = PodSpecBuilder::build("proc", "img", None, "job", &[], &[], &[], None, false);
         assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
         let container = main_container(&spec);
         assert!(container.readiness_probe.is_none());
@@ -406,7 +406,6 @@ mod tests {
                 target: ReadinessTarget::Tcp(5001),
                 period_secs: 1,
             }),
-            false,
             false,
         );
         let probe = main_container(&spec).readiness_probe.as_ref().unwrap();

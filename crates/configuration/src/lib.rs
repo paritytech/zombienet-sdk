@@ -87,8 +87,8 @@ pub mod shared;
 mod utils;
 
 pub use custom_process::{
-    CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, EffectiveCheck,
-    HttpTarget, NamedPort, ReadyCheck, ReadyTarget, MAX_TIMEOUT_SECS,
+    CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, NamedPort, ReadyCheck,
+    ReadyTarget, MAX_TIMEOUT_SECS,
 };
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};

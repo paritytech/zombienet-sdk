@@ -4,8 +4,8 @@ use async_trait::async_trait;
 pub use configuration::{
     types::{Arg, AssetLocation},
     Buildable, CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition,
-    EffectiveCheck, GlobalSettings, GlobalSettingsBuilder, HttpTarget, NamedPort, NetworkConfig,
-    NetworkConfigBuilder, ReadyCheck, ReadyTarget, RegistrationStrategy,
+    GlobalSettings, GlobalSettingsBuilder, NamedPort, NetworkConfig, NetworkConfigBuilder,
+    ReadyCheck, ReadyTarget, RegistrationStrategy,
 };
 pub use orchestrator::{
     errors::OrchestratorError,

@@ -41,17 +41,6 @@ pub struct KubernetesClient {
     inner: kube::Client,
 }
 
-/// What `create_pod` waits for before returning.
-#[derive(Debug, Clone, Copy)]
-pub(super) enum PodWait {
-    /// The Ready condition: a wrapped node, whose wrapper answers at once.
-    Ready,
-    /// The Running phase: a direct process, whose readiness is its own check.
-    Running,
-    /// Running, or already finished: a one-shot that may be quick.
-    RunningOrDone,
-}
-
 impl KubernetesClient {
     pub(super) async fn new() -> Result<Self> {
         Ok(Self {
@@ -161,14 +150,16 @@ impl KubernetesClient {
         Ok(config_map)
     }
 
-    /// Create the pod and wait for it, see [`PodWait`].
+    /// Create the pod and wait for it: until Ready for a wrapped node (the
+    /// wrapper answers at once), else until it runs or is already done, since
+    /// a direct process may be quick and its readiness is its own check.
     pub(super) async fn create_pod(
         &self,
         namespace: &str,
         name: &str,
         spec: PodSpec,
         labels: BTreeMap<String, String>,
-        wait: PodWait,
+        wait_ready: bool,
     ) -> Result<Pod> {
         let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
 
@@ -187,15 +178,13 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = match wait {
-            PodWait::Ready => ("ready", |pod| helpers::is_pod_ready().matches_object(pod)),
-            PodWait::Running => ("running", |pod| {
-                conditions::is_pod_running().matches_object(pod)
-            }),
-            PodWait::RunningOrDone => ("running or done", |pod| {
+        let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = if wait_ready {
+            ("ready", |pod| helpers::is_pod_ready().matches_object(pod))
+        } else {
+            ("running or done", |pod| {
                 conditions::is_pod_running().matches_object(pod)
                     || helpers::is_pod_done().matches_object(pod)
-            }),
+            })
         };
         trace!("Pod {name} checking for {state} state!");
         // TODO: we should use the `node_spawn_timeout` from global settings here.
@@ -604,18 +593,33 @@ impl KubernetesClient {
     }
 }
 
-mod helpers {
-    use k8s_openapi::api::core::v1::Pod;
+pub(super) mod helpers {
+    use k8s_openapi::api::core::v1::{Pod, PodStatus};
     use kube::runtime::wait::Condition;
-    use tracing::trace;
+
+    /// Whether the pod's phase is terminal, `Succeeded` or `Failed`.
+    pub fn status_is_done(status: &PodStatus) -> bool {
+        status
+            .phase
+            .as_deref()
+            .is_some_and(|phase| phase == "Succeeded" || phase == "Failed")
+    }
+
+    /// Whether the pod's Ready condition is true.
+    pub fn status_is_ready(status: &PodStatus) -> bool {
+        status
+            .conditions
+            .iter()
+            .flatten()
+            .any(|cond| cond.status == "True" && cond.type_ == "Ready")
+    }
 
     /// An await condition for `Pod` that returns `true` once its phase is
     /// terminal, `Succeeded` or `Failed`.
     pub fn is_pod_done() -> impl Condition<Pod> {
         |obj: Option<&Pod>| {
             obj.and_then(|pod| pod.status.as_ref())
-                .and_then(|status| status.phase.as_deref())
-                .is_some_and(|phase| phase == "Succeeded" || phase == "Failed")
+                .is_some_and(status_is_done)
         }
     }
 
@@ -623,21 +627,8 @@ mod helpers {
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]
     pub fn is_pod_ready() -> impl Condition<Pod> {
         |obj: Option<&Pod>| {
-            if let Some(pod) = &obj {
-                if let Some(status) = &pod.status {
-                    if let Some(conditions) = &status.conditions {
-                        let ready = conditions
-                            .iter()
-                            .any(|cond| cond.status == "True" && cond.type_ == "Ready");
-
-                        if ready {
-                            trace!("{:#?}", status);
-                            return ready;
-                        }
-                    }
-                }
-            }
-            false
+            obj.and_then(|pod| pod.status.as_ref())
+                .is_some_and(status_is_ready)
         }
     }
 }

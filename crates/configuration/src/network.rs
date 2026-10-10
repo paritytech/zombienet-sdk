@@ -2611,7 +2611,7 @@ id = 1000
         let processes = config.custom_processes();
         let api = processes[1];
         assert_eq!(api.timeout(), Some(120));
-        assert_eq!(api.ready_check().unwrap().interval, Some(2));
+        assert_eq!(api.ready_check().unwrap().interval, 2);
         assert_eq!(api.depends_on().len(), 2);
         assert_eq!(
             api.depends_on()[1].condition,

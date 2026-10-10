@@ -8,6 +8,7 @@ pub mod network_helper;
 pub mod observability;
 pub mod tx_helper;
 
+mod custom_processes;
 mod network_spec;
 pub mod shared;
 mod spawner;
@@ -57,7 +58,7 @@ use crate::{
         jamchain::{Jamchain, RawJamchain},
         node::{
             jam::RawJamNetworkNode, process::RawCustomProcessNode, CustomProcessNode,
-            JamNetworkNode, RawNetworkNode,
+            CustomProcessState, JamNetworkNode, RawNetworkNode,
         },
         parachain::RawParachain,
         relaychain::RawRelaychain,
@@ -663,7 +664,7 @@ where
             }
         }
 
-        spawner::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
 
         network.set_start_time_ts(start_time);
 
@@ -934,7 +935,7 @@ where
         )
         .await?;
 
-        spawner::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
 
         network.set_start_time_ts(start_time);
 
@@ -1105,8 +1106,13 @@ async fn recreate_custom_processes_from_json(
         // process that spawned the network, gone with it. Open new ones, and
         // keep the saved address where there is none to open.
         let mut ports = raw.ports;
-        // a one-shot is done by now, nothing to forward to
-        if !running_in_ci() && !raw.spec.one_shot() {
+        let state = raw.state.unwrap_or(CustomProcessState::Ready);
+        // a process that finished has nothing to forward to
+        let running = matches!(
+            state,
+            CustomProcessState::Starting | CustomProcessState::Ready
+        );
+        if !running_in_ci() && running {
             for (port_name, port) in ports.iter_mut() {
                 let saved = std::mem::take(&mut port.external);
                 port.external =
@@ -1115,7 +1121,7 @@ async fn recreate_custom_processes_from_json(
         }
 
         processes.push(Arc::new(CustomProcessNode::new(
-            raw.name, inner, raw.spec, raw.ip, ports, raw.state,
+            raw.name, inner, raw.spec, raw.ip, ports, state,
         )));
     }
 

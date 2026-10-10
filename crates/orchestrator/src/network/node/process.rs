@@ -7,20 +7,13 @@
 //! has no chain, so the only protocol-level surface it exposes is the set of
 //! ports it declared and where each one is reachable.
 
-use std::{
-    collections::BTreeMap,
-    net::IpAddr,
-    sync::{Arc, RwLock},
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, fmt, net::IpAddr, time::Duration};
 
-use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::{types::Port, CustomProcess};
 use provider::types::ProcessStatus;
-use serde::{Deserialize, Serialize, Serializer};
-use support::net::wait_tcp_ready;
-use tracing::{debug, info, warn};
+use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use super::{
     core::NodeCore,
@@ -46,7 +39,7 @@ pub struct ProcessPort {
 /// `state` field (`starting`, `ready`, `completed`, `failed`) plus
 /// `state_reason` for a failure; a record without one is taken as ready.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "StateRepr", into = "StateRepr")]
+#[serde(tag = "state", rename_all = "lowercase")]
 pub enum CustomProcessState {
     /// Spawned, its condition not met yet.
     Starting,
@@ -56,46 +49,20 @@ pub enum CustomProcessState {
     Completed,
     /// The ready check failed or timed out, or the one-shot exited with an
     /// error. The process is left as it is, for its logs.
-    Failed { reason: String },
+    Failed {
+        #[serde(rename = "state_reason")]
+        reason: String,
+    },
 }
 
-#[derive(Serialize, Deserialize)]
-struct StateRepr {
-    #[serde(default = "ready_str")]
-    state: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    state_reason: Option<String>,
-}
-
-fn ready_str() -> String {
-    "ready".into()
-}
-
-impl From<StateRepr> for CustomProcessState {
-    fn from(repr: StateRepr) -> Self {
-        match repr.state.as_str() {
-            "starting" => Self::Starting,
-            "completed" => Self::Completed,
-            "failed" => Self::Failed {
-                reason: repr.state_reason.unwrap_or_default(),
-            },
-            _ => Self::Ready,
-        }
-    }
-}
-
-impl From<CustomProcessState> for StateRepr {
-    fn from(state: CustomProcessState) -> Self {
-        let (state, state_reason) = match state {
-            CustomProcessState::Starting => ("starting", None),
-            CustomProcessState::Ready => ("ready", None),
-            CustomProcessState::Completed => ("completed", None),
-            CustomProcessState::Failed { reason } => ("failed", Some(reason)),
-        };
-        Self {
-            state: state.into(),
-            state_reason,
-        }
+impl fmt::Display for CustomProcessState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Starting => "starting",
+            Self::Ready => "ready",
+            Self::Completed => "completed",
+            Self::Failed { .. } => "failed",
+        })
     }
 }
 
@@ -105,16 +72,6 @@ impl From<CustomProcessState> for StateRepr {
 pub struct SkippedProcess {
     pub name: String,
     pub reason: String,
-}
-
-fn serialize_state<S: Serializer>(
-    state: &Arc<RwLock<CustomProcessState>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    state
-        .read()
-        .map_err(|_| serde::ser::Error::custom("state lock poisoned"))?
-        .serialize(serializer)
 }
 
 /// A running custom process.
@@ -127,8 +84,8 @@ pub struct CustomProcessNode {
     pub(crate) ip: IpAddr,
     /// Where each declared port is reachable, by the port's name.
     pub(crate) ports: BTreeMap<String, ProcessPort>,
-    #[serde(flatten, serialize_with = "serialize_state")]
-    pub(crate) state: Arc<RwLock<CustomProcessState>>,
+    #[serde(flatten)]
+    pub(crate) state: CustomProcessState,
 }
 
 /// Deserialization counterpart used when re-attaching to a running network.
@@ -139,9 +96,9 @@ pub(crate) struct RawCustomProcessNode {
     pub(crate) ip: IpAddr,
     #[serde(default)]
     pub(crate) ports: BTreeMap<String, ProcessPort>,
-    /// A record from before states were kept is taken as up.
+    /// `None` for a record from before states were kept; taken as up.
     #[serde(flatten)]
-    pub(crate) state: CustomProcessState,
+    pub(crate) state: Option<CustomProcessState>,
     /// The provider's own record of the process, which it needs to reattach.
     pub(crate) inner: serde_json::Value,
 }
@@ -160,18 +117,8 @@ impl CustomProcessNode {
             spec,
             ip,
             ports,
-            state: Arc::new(RwLock::new(state)),
+            state,
         }
-    }
-
-    /// Where the process is in its lifecycle.
-    pub fn state(&self) -> CustomProcessState {
-        self.state
-            .read()
-            .map(|s| s.clone())
-            .unwrap_or(CustomProcessState::Failed {
-                reason: "state lock poisoned".into(),
-            })
     }
 
     /// The provider-generic part of this process.
@@ -209,10 +156,10 @@ impl CustomProcessNode {
         self.ports.get(name).map(|p| p.external.as_str())
     }
 
-    pub(crate) fn set_state(&self, state: CustomProcessState) {
-        if let Ok(mut guard) = self.state.write() {
-            *guard = state;
-        }
+    /// Where the process is in its lifecycle, as of the spawn (or the record
+    /// attached to); [`Self::wait_ready`] re-checks.
+    pub fn state(&self) -> &CustomProcessState {
+        &self.state
     }
 
     /// The first declared port, in declaration order, if any.
@@ -223,133 +170,126 @@ impl CustomProcessNode {
             .and_then(|declared| self.ports.get(&declared.name))
     }
 
-    /// What there is to wait on, see [`CustomProcess::effective_check`], with
-    /// the port resolved to where it is reachable. `None` counts as ready at
-    /// start.
-    fn check_target(&self) -> Option<(&ProcessPort, Option<&str>)> {
-        let check = self.spec.effective_check()?;
-        let port = self.ports.get(check.port)?;
-        Some((port, check.http_path))
-    }
-
-    /// Wait for the process to meet its condition: a one-shot to exit 0, any
-    /// other to pass its ready check (the provider's own, where it has one,
-    /// else a probe from here). The state is set to what happened, and an
-    /// error says why it did not get there.
-    pub async fn wait_ready(&self, timeout: Duration) -> Result<(), anyhow::Error> {
-        let before = self.state();
-        // A one-shot that finished stays as recorded: there is nothing left to
-        // observe, and after an attach its pid is gone along with its exit code.
-        if self.spec.one_shot() {
-            match &before {
-                CustomProcessState::Completed => return Ok(()),
-                CustomProcessState::Failed { reason } => {
-                    return Err(anyhow!("{}: {reason}", self.name()))
-                },
-                _ => {},
-            }
+    /// Wait for the process to meet its condition and say what happened: a
+    /// one-shot to exit (0 is [`CustomProcessState::Completed`]), any other
+    /// to pass its ready check (the provider's own, where it has one, else a
+    /// probe from here). A one-shot that already finished is reported as
+    /// recorded: there is nothing left to observe, and after an attach its
+    /// pid is gone along with its exit code.
+    pub async fn wait_ready(&self, timeout: Duration) -> CustomProcessState {
+        if self.spec.one_shot()
+            && matches!(
+                self.state,
+                CustomProcessState::Completed | CustomProcessState::Failed { .. }
+            )
+        {
+            return self.state.clone();
         }
-        let outcome = self.await_condition(timeout).await;
-        match outcome {
-            Ok(state) => {
-                if state != before {
-                    info!("✅ {}: {}", self.name(), describe(&state));
-                }
-                self.set_state(state);
-                Ok(())
-            },
-            Err(reason) => {
-                let state = CustomProcessState::Failed {
-                    reason: reason.clone(),
-                };
-                if state != before {
-                    warn!("⚠️  {}: {reason}", self.name());
-                }
-                self.set_state(state);
-                Err(anyhow!("{}: {reason}", self.name()))
-            },
+        match self.await_condition(timeout).await {
+            Ok(state) => state,
+            Err(reason) => CustomProcessState::Failed { reason },
         }
     }
 
     async fn await_condition(&self, timeout: Duration) -> Result<CustomProcessState, String> {
-        let interval = Duration::from_secs(
-            self.spec
-                .ready_check()
-                .and_then(|c| c.interval)
-                .unwrap_or(1)
-                .max(1),
-        );
-        let deadline = Instant::now().checked_add(timeout).unwrap_or_else(|| {
-            Instant::now() + Duration::from_secs(configuration::MAX_TIMEOUT_SECS)
-        });
-        let target = self.check_target();
-        let kind = match target {
-            Some((_, Some(_))) => "http",
-            _ => "tcp",
-        };
+        let interval = Duration::from_secs(u64::from(
+            self.spec.ready_check().map(|c| c.interval).unwrap_or(1),
+        ));
+        let check = self.spec.effective_check();
+        let target = check
+            .as_ref()
+            .and_then(|check| Some((self.ports.get(check.port_name())?, check.http_path())));
         if !self.spec.one_shot() && target.is_none() {
             return Ok(CustomProcessState::Ready);
         }
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .map_err(|e| format!("could not build the http probe: {e}"))?;
 
-        // A status read that fails is retried until the deadline: one API
+        // The last thing that stood in the way, for the timeout message. A
+        // status read that fails is retried like any other miss: one API
         // hiccup must not fail the process for good.
-        loop {
-            let status = self.core.inner().status().await;
-            let problem = match (self.spec.one_shot(), status, target) {
-                (_, Err(err), _) => format!("could not read the process status: {err}"),
-                (true, Ok(ProcessStatus::Exited { code: Some(0) }), _) => {
-                    return Ok(CustomProcessState::Completed)
-                },
-                (true, Ok(ProcessStatus::Exited { code: Some(code) }), _) => {
-                    return Err(format!("exited with code {code}"))
-                },
-                (true, Ok(ProcessStatus::Exited { code: None }), _) => {
-                    return Err("exited, with its code unknown".into())
-                },
-                (true, Ok(ProcessStatus::Running { .. }), _) => "still running".into(),
-                (false, Ok(ProcessStatus::Exited { code }), _) => {
-                    return Err(match code {
-                        Some(code) => format!("exited with code {code} before becoming ready"),
-                        None => "exited before becoming ready".into(),
-                    })
-                },
-                // the provider checks (k8s: the pod's probe)
-                (false, Ok(ProcessStatus::Running { ready: Some(true) }), _) => {
-                    return Ok(CustomProcessState::Ready)
-                },
-                (false, Ok(ProcessStatus::Running { ready: Some(false) }), Some((port, path))) => {
-                    format!(
-                        "the provider's {kind} probe on port {}{} did not pass",
-                        port.port,
-                        path.unwrap_or("")
-                    )
-                },
-                // nobody else checks: probe from here
-                (false, Ok(ProcessStatus::Running { ready: None }), Some((port, path))) => {
-                    if probe(&port.external, path).await {
-                        return Ok(CustomProcessState::Ready);
+        let mut problem = String::new();
+        let waited = tokio::time::timeout(timeout, async {
+            loop {
+                let status = match self.core.inner().status().await {
+                    Ok(status) => status,
+                    Err(err) => {
+                        problem = format!("could not read the process status: {err}");
+                        tokio::time::sleep(interval).await;
+                        continue;
+                    },
+                };
+                if self.spec.one_shot() {
+                    match status {
+                        ProcessStatus::Exited { code: Some(0) } => {
+                            return Ok(CustomProcessState::Completed)
+                        },
+                        ProcessStatus::Exited { code: Some(code) } => {
+                            return Err(format!("exited with code {code}"))
+                        },
+                        ProcessStatus::Exited { code: None } => {
+                            return Err("exited, with its code unknown".into())
+                        },
+                        ProcessStatus::Running { .. } => problem = "still running".into(),
                     }
-                    format!(
-                        "{kind} {}{} did not pass",
-                        port.external,
-                        path.unwrap_or("")
-                    )
-                },
-                (false, Ok(ProcessStatus::Running { .. }), None) => {
-                    return Ok(CustomProcessState::Ready)
-                },
-            };
-            if Instant::now() >= deadline {
-                let what = if self.spec.one_shot() {
+                } else {
+                    let (port, path) = target.expect("checked above; qed");
+                    let kind = if path.is_some() { "http" } else { "tcp" };
+                    match status {
+                        ProcessStatus::Exited { code } => {
+                            return Err(match code {
+                                Some(code) => {
+                                    format!("exited with code {code} before becoming ready")
+                                },
+                                None => "exited before becoming ready".into(),
+                            })
+                        },
+                        // the provider checks (k8s: the pod's probe)
+                        ProcessStatus::Running { ready: Some(true) } => {
+                            return Ok(CustomProcessState::Ready)
+                        },
+                        ProcessStatus::Running { ready: Some(false) } => {
+                            problem = format!(
+                                "the provider's {kind} probe on port {}{} did not pass",
+                                port.port,
+                                path.unwrap_or("")
+                            );
+                        },
+                        // nobody else checks: probe from here
+                        ProcessStatus::Running { ready: None } => {
+                            let passed = match path {
+                                None => tcp_answers(&port.external).await,
+                                Some(path) => http_answers(&client, &port.external, path).await,
+                            };
+                            if passed {
+                                return Ok(CustomProcessState::Ready);
+                            }
+                            problem = format!(
+                                "{kind} {}{} did not pass",
+                                port.external,
+                                path.unwrap_or("")
+                            );
+                        },
+                    }
+                }
+                tokio::time::sleep(interval).await;
+            }
+        })
+        .await;
+
+        match waited {
+            Ok(outcome) => outcome,
+            Err(_elapsed) => Err(format!(
+                "{} after {}s ({problem})",
+                if self.spec.one_shot() {
                     "not finished"
                 } else {
                     "not ready"
-                };
-                return Err(format!("{what} after {}s ({problem})", timeout.as_secs()));
-            }
-            // never past the deadline, whatever the interval
-            tokio::time::sleep(interval.min(deadline.saturating_duration_since(Instant::now())))
-                .await;
+                },
+                timeout.as_secs()
+            )),
         }
     }
 
@@ -364,14 +304,27 @@ impl CustomProcessNode {
     /// the process itself.
     pub async fn is_responsive(&self) -> bool {
         match self.first_port() {
-            Some(port) => {
-                tokio::time::timeout(Duration::from_secs(2), wait_tcp_ready(&port.external))
-                    .await
-                    .is_ok()
-            },
+            Some(port) => tcp_answers(&port.external).await,
             None => true,
         }
     }
+}
+
+/// One TCP connect to `addr`, given 2 seconds.
+async fn tcp_answers(addr: &str) -> bool {
+    tokio::time::timeout(Duration::from_secs(2), tokio::net::TcpStream::connect(addr))
+        .await
+        .is_ok_and(|connected| connected.is_ok())
+}
+
+/// One `GET http://<addr><path>`, given 5 seconds, passing on 2xx.
+async fn http_answers(client: &reqwest::Client, addr: &str, path: &str) -> bool {
+    client
+        .get(format!("http://{addr}{path}"))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .is_ok_and(|res| res.status().is_success())
 }
 
 #[async_trait]
@@ -386,59 +339,23 @@ impl SpawnedNode for CustomProcessNode {
     /// request.
     async fn wait_until_is_up(&self, _timeout_secs: u64) -> Result<(), anyhow::Error> {
         debug!(
-            "[{}] custom process, not waited on; state {:?}",
+            "[{}] custom process, not waited on; state {}",
             self.name(),
-            self.state()
+            self.state
         );
         Ok(())
     }
 }
 
-fn describe(state: &CustomProcessState) -> &'static str {
-    match state {
-        CustomProcessState::Starting => "starting",
-        CustomProcessState::Ready => "ready",
-        CustomProcessState::Completed => "completed",
-        CustomProcessState::Failed { .. } => "failed",
-    }
-}
-
-/// One attempt from where zombienet runs: a TCP connect, or `GET` of `path`
-/// answering 2xx. On docker a published port answers for the proxy, so
-/// tcp proves less there; see the docs.
-async fn probe(addr: &str, path: Option<&str>) -> bool {
-    match path {
-        None => tokio::time::timeout(Duration::from_secs(2), wait_tcp_ready(addr))
-            .await
-            .is_ok(),
-        Some(path) => {
-            let url = format!("http://{addr}{path}");
-            let client = match reqwest::Client::builder().no_proxy().build() {
-                Ok(client) => client,
-                Err(_) => return false,
-            };
-            match client
-                .get(&url)
-                .timeout(Duration::from_secs(5))
-                .send()
-                .await
-            {
-                Ok(res) => res.status().is_success(),
-                Err(_) => false,
-            }
-        },
-    }
-}
-
-impl std::fmt::Debug for CustomProcessNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for CustomProcessNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CustomProcessNode")
             .field("inner", &"inner_skipped")
             .field("name", &self.name())
             .field("spec", &self.spec)
             .field("ip", &self.ip)
             .field("ports", &self.ports)
-            .field("state", &self.state())
+            .field("state", &self.state)
             .finish()
     }
 }
@@ -472,13 +389,16 @@ mod tests {
             "state": "failed", "state_reason": "x", "inner": {}
         });
         let raw: RawCustomProcessNode = serde_json::from_value(with_state).unwrap();
-        assert_eq!(raw.state, CustomProcessState::Failed { reason: "x".into() });
+        assert_eq!(
+            raw.state,
+            Some(CustomProcessState::Failed { reason: "x".into() })
+        );
 
         let without_state = serde_json::json!({
             "name": "web", "spec": {"name": "web", "command": "web"}, "ip": "10.0.0.1", "inner": {}
         });
         let raw: RawCustomProcessNode = serde_json::from_value(without_state).unwrap();
-        assert_eq!(raw.state, CustomProcessState::Ready);
+        assert_eq!(raw.state, None);
     }
 
     #[test]
@@ -486,36 +406,31 @@ mod tests {
         let json = serde_json::json!({
             "name": "eth-rpc",
             "spec": { "name": "eth-rpc", "command": "eth-rpc" },
-            "ip": "127.0.0.1",
-            "inner": { "provider_tag": "k8s" },
+            "ip": "10.0.0.1",
+            "inner": { "name": "eth-rpc" }
         });
         let raw: RawCustomProcessNode = serde_json::from_value(json).unwrap();
         assert_eq!(raw.name, "eth-rpc");
         assert!(raw.ports.is_empty());
-        assert_eq!(raw.inner["provider_tag"], "k8s");
 
-        let without_inner = serde_json::json!({
+        let json = serde_json::json!({
             "name": "eth-rpc",
             "spec": { "name": "eth-rpc", "command": "eth-rpc" },
-            "ip": "127.0.0.1",
+            "ip": "10.0.0.1"
         });
-        assert!(serde_json::from_value::<RawCustomProcessNode>(without_inner).is_err());
+        assert!(serde_json::from_value::<RawCustomProcessNode>(json).is_err());
     }
 
     #[test]
     fn ports_round_trip_by_name() {
-        let ports = BTreeMap::from([(
-            "http".to_string(),
-            ProcessPort {
-                port: 8545,
-                external: "127.0.0.1:53421".into(),
-                internal: "10.0.0.7:8545".into(),
-            },
-        )]);
-        let json = serde_json::to_value(&ports).unwrap();
-        assert_eq!(json["http"]["port"], 8545);
-        assert_eq!(json["http"]["external"], "127.0.0.1:53421");
-        let back: BTreeMap<String, ProcessPort> = serde_json::from_value(json).unwrap();
-        assert_eq!(back, ports);
+        let port = ProcessPort {
+            port: 8545,
+            external: "127.0.0.1:53421".into(),
+            internal: "eth-rpc:8545".into(),
+        };
+        let json = serde_json::to_value(&port).unwrap();
+        assert_eq!(json["external"], "127.0.0.1:53421");
+        let back: ProcessPort = serde_json::from_value(json).unwrap();
+        assert_eq!(back, port);
     }
 }

@@ -1,11 +1,10 @@
-use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
 use configuration::{
     types::{JamNodeMode, Port},
-    CustomProcess, DependencyCondition, GlobalSettings,
+    CustomProcess, GlobalSettings, ReadyTarget,
 };
-use futures::{stream::FuturesUnordered, StreamExt};
 use jam_std_common::hash_raw;
 use provider::{
     constants::{
@@ -27,9 +26,9 @@ use crate::{
     generators::{self, ResolvedDbSnapshots},
     network::{
         node::{CustomProcessNode, CustomProcessState, JamNetworkNode, NetworkNode, ProcessPort},
-        Network, NodeContext,
+        NodeContext,
     },
-    network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec, NetworkSpec},
+    network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec},
     shared::{
         constants::{FULL_NODE_PROMETHEUS_PORT, JAM_PORT, PROMETHEUS_PORT, RPC_PORT},
         types::ParkedPort,
@@ -384,28 +383,21 @@ where
 type ResolvedArgsAndEnv = (Vec<String>, Vec<(String, String)>);
 
 /// The args and env of `custom_process` with every `{{ZOMBIE:<name>:<field>}}`
-/// resolved against the nodes already running (`nodes_by_name`, as the
-/// orchestrator keeps them) and the process's own ports, as `port_<name>`.
+/// resolved against `context`: the nodes as the orchestrator keeps them, and
+/// every custom process's ports as `port_<name>` (see `ports_json`).
 ///
 /// A placeholder that stays unresolved is an error: the process would start
 /// with the literal text.
 fn resolve_placeholders(
     custom_process: &CustomProcess,
-    resolved_ports: &[(String, Port)],
-    nodes_by_name: &serde_json::Value,
+    context: &serde_json::Value,
 ) -> Result<ResolvedArgsAndEnv, anyhow::Error> {
     let name = custom_process.name();
-    let mut context = nodes_by_name.clone();
-    context[name] = serde_json::json!(resolved_ports
-        .iter()
-        .map(|(port_name, port)| (format!("port_{port_name}"), port.to_string()))
-        .collect::<HashMap<_, _>>());
-
     let resolve = |text: &str| -> Result<String, anyhow::Error> {
-        let resolved = apply_running_network_replacements(text, &context);
+        let resolved = apply_running_network_replacements(text, context);
         if has_tokens(&resolved) {
             Err(anyhow::anyhow!(
-                "{name}: unresolved placeholder in {resolved:?} (nodes in context: {})",
+                "{name}: unresolved placeholder in {resolved:?} (in context: {})",
                 context
                     .as_object()
                     .map(|nodes| nodes.keys().cloned().collect::<Vec<_>>().join(", "))
@@ -437,12 +429,20 @@ fn resolve_placeholders(
 /// process picks (or declares, on native) cannot be handed to another; each
 /// process releases its own right before its spawn.
 pub(crate) struct PreparedProcess<'a> {
-    spec: &'a CustomProcess,
+    pub(crate) spec: &'a CustomProcess,
     /// Every declared port by name, `0`s resolved to the picked number.
-    ports: Vec<(String, Port)>,
+    pub(crate) ports: Vec<(String, Port)>,
     /// On docker, the host port each port is published on.
     host_ports: HashMap<Port, Port>,
     parked: Vec<ParkedPort>,
+}
+
+/// A process's ports as placeholder context: `{ "port_<name>": "<number>" }`.
+pub(crate) fn ports_json(ports: &[(String, Port)]) -> serde_json::Value {
+    serde_json::json!(ports
+        .iter()
+        .map(|(port_name, port)| (format!("port_{port_name}"), port.to_string()))
+        .collect::<HashMap<_, _>>())
 }
 
 /// Resolve and park the ports of `custom_process`: a `0` is picked free, a
@@ -530,37 +530,37 @@ pub(crate) async fn spawn_process(
     let capabilities = ns.capabilities();
     let name = custom_process.name();
 
-    let (args, env) = resolve_placeholders(custom_process, &resolved_ports, nodes_by_name)?;
+    let (args, env) = resolve_placeholders(custom_process, nodes_by_name)?;
 
     // On docker a published port answers for the proxy, so a tcp check there
     // proves nothing; said once, at spawn, where the config can still change.
-    if let Some(check) = custom_process.effective_check() {
-        if provider == "docker" && check.http_path.is_none() {
+    let check = custom_process.effective_check();
+    if let Some(check) = &check {
+        if provider == "docker" && check.http_path().is_none() {
             warn!(
                 "⚠️  {name}: the tcp check on port '{}' passes as soon as docker publishes it, whether or not the process listens; use an http ready_check for real readiness on docker",
-                check.port
+                check.port_name()
             );
         }
     }
 
     // What the provider may check itself (k8s: the pod's probe).
-    let readiness = custom_process.effective_check().and_then(|check| {
+    let readiness = check.and_then(|check| {
         let port = resolved_ports
             .iter()
-            .find(|(n, _)| n == check.port)
+            .find(|(n, _)| n == check.port_name())
             .map(|(_, p)| *p)?;
         Some(ReadinessProbe {
-            target: match check.http_path {
-                None => ReadinessTarget::Tcp(port),
-                Some(path) => ReadinessTarget::Http {
-                    port,
-                    path: path.to_string(),
-                },
+            target: match check {
+                ReadyTarget::Tcp(_) => ReadinessTarget::Tcp(port),
+                ReadyTarget::Http { path, .. } => ReadinessTarget::Http { port, path },
             },
-            period_secs: custom_process
-                .ready_check()
-                .and_then(|c| c.interval)
-                .unwrap_or(1),
+            period_secs: u64::from(
+                custom_process
+                    .ready_check()
+                    .map(|c| c.interval)
+                    .unwrap_or(1),
+            ),
         })
     });
 
@@ -571,16 +571,8 @@ pub(crate) async fn spawn_process(
         // only docker publishes ports; k8s and native ignore the mapping
         .port_mapping(host_ports.clone())
         .role(NodeRole::CustomProcess)
+        .readiness(readiness)
         .without_wrapper();
-    let spawn_ops = match readiness {
-        Some(probe) => spawn_ops.readiness(probe),
-        None => spawn_ops,
-    };
-    let spawn_ops = if custom_process.one_shot() {
-        spawn_ops.one_shot()
-    } else {
-        spawn_ops
-    };
 
     let spawn_ops = if let Some(image) = custom_process.image() {
         spawn_ops.image(image.as_str())
@@ -702,213 +694,6 @@ pub(crate) async fn forward_or_keep(
             fallback
         },
     }
-}
-
-/// What the scheduler knows about a process so far.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    /// Spawned, condition pending.
-    Started,
-    /// Passed its ready check, or had nothing to check.
-    Ready,
-    /// A one-shot that exited 0.
-    Completed,
-    /// Spawned, but its check failed or it exited with an error.
-    Failed,
-    /// Never spawned.
-    Skipped,
-}
-
-impl From<&CustomProcessState> for Phase {
-    fn from(state: &CustomProcessState) -> Self {
-        match state {
-            CustomProcessState::Starting => Phase::Started,
-            CustomProcessState::Ready => Phase::Ready,
-            CustomProcessState::Completed => Phase::Completed,
-            CustomProcessState::Failed { .. } => Phase::Failed,
-        }
-    }
-}
-
-/// Whether `process` may start, given what its dependencies reached.
-enum Startable {
-    Now,
-    Later,
-    Never(String),
-}
-
-fn startable(
-    process: &CustomProcess,
-    by_name: &HashMap<&str, &CustomProcess>,
-    phases: &HashMap<String, Phase>,
-) -> Startable {
-    for dep in process.depends_on() {
-        let Some(target) = by_name.get(dep.name.as_str()) else {
-            return Startable::Never(format!("depends on '{}', which was not spawned", dep.name));
-        };
-        let condition = dep.condition.unwrap_or_else(|| target.natural_condition());
-        let phase = phases.get(dep.name.as_str()).copied();
-        let met = match (condition, phase) {
-            (_, None) => return Startable::Later,
-            (_, Some(Phase::Skipped)) => false,
-            (DependencyCondition::ServiceStarted, Some(_)) => true,
-            (DependencyCondition::ServiceHealthy, Some(Phase::Ready)) => true,
-            (DependencyCondition::ServiceHealthy, Some(Phase::Started)) => return Startable::Later,
-            (DependencyCondition::ServiceHealthy, Some(_)) => false,
-            (DependencyCondition::ServiceCompletedSuccessfully, Some(Phase::Completed)) => true,
-            (DependencyCondition::ServiceCompletedSuccessfully, Some(Phase::Started)) => {
-                return Startable::Later
-            },
-            (DependencyCondition::ServiceCompletedSuccessfully, Some(_)) => false,
-        };
-        if !met {
-            return Startable::Never(format!(
-                "depends on '{}' being {}, which it is not ({:?})",
-                dep.name,
-                condition.as_str(),
-                phase.unwrap_or(Phase::Skipped)
-            ));
-        }
-    }
-    Startable::Now
-}
-
-/// Spawn the custom processes of `spec` and register the ones that came up.
-///
-/// Every process starts as soon as its dependencies have met their conditions,
-/// in parallel with whatever else is startable; one with no dependencies
-/// starts at once, the nodes being up by now. A process whose dependency
-/// did not get there is skipped; one that does not meet its own condition is
-/// kept, marked failed, for its logs. Neither fails the spawn: the nodes are
-/// up, and a missing side service must not take the network down.
-pub(crate) async fn spawn_custom_processes<T: FileSystem>(
-    network: &mut Network<T>,
-    spec: &NetworkSpec,
-    ns: Arc<dyn ProviderNamespace + Send + Sync>,
-) -> Result<(), anyhow::Error> {
-    if spec.custom_processes.is_empty() {
-        return Ok(());
-    }
-    let host_ip = spec
-        .global_settings
-        .local_ip()
-        .copied()
-        .unwrap_or(LOCALHOST);
-    let nodes_by_name = network.nodes_json()?;
-    let default_timeout = Duration::from_secs(u64::from(spec.global_settings.node_spawn_timeout()));
-    let by_name: HashMap<&str, &CustomProcess> = spec
-        .custom_processes
-        .iter()
-        .map(|cp| (cp.name(), cp))
-        .collect();
-    let mut phases: HashMap<String, Phase> = HashMap::new();
-
-    // Checked before spawning: a process that ran and was then refused would
-    // be untracked, having taken the node's place in the provider's registry.
-    // Every process parks its ports before any spawns, see `PreparedProcess`.
-    let mut pending: Vec<PreparedProcess> = vec![];
-    for cp in &spec.custom_processes {
-        if network.has_member(cp.name()) {
-            network.add_skipped_custom_process(
-                cp.name(),
-                "the name is already taken by a node or custom process".into(),
-            );
-            phases.insert(cp.name().to_string(), Phase::Skipped);
-            continue;
-        }
-        match prepare_process(cp, ns.as_ref()) {
-            Ok(prepared) => pending.push(prepared),
-            Err(e) => {
-                network.add_skipped_custom_process(
-                    cp.name(),
-                    format!("could not reserve its ports: {e}"),
-                );
-                phases.insert(cp.name().to_string(), Phase::Skipped);
-            },
-        }
-    }
-
-    // Every process's ports are known now, so a process may name another's,
-    // `{{ZOMBIE:<process>:port_<name>}}`, the way it names its own.
-    let mut nodes_by_name = nodes_by_name;
-    for prepared in &pending {
-        nodes_by_name[prepared.spec.name()] = serde_json::json!(prepared
-            .ports
-            .iter()
-            .map(|(port_name, port)| (format!("port_{port_name}"), port.to_string()))
-            .collect::<HashMap<_, _>>());
-    }
-
-    // A started process says so through the channel, so its dependents with a
-    // `service_started` condition go while its own check is still running.
-    let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let mut running = FuturesUnordered::new();
-    loop {
-        let mut i = 0;
-        while i < pending.len() {
-            match startable(pending[i].spec, &by_name, &phases) {
-                Startable::Now => {
-                    let prepared = pending.swap_remove(i);
-                    let name = prepared.spec.name().to_string();
-                    let timeout = prepared
-                        .spec
-                        .timeout()
-                        .map(Duration::from_secs)
-                        .unwrap_or(default_timeout);
-                    let ns = ns.clone();
-                    let started_tx = started_tx.clone();
-                    let nodes_by_name = &nodes_by_name;
-                    running.push(async move {
-                        match spawn_process(prepared, ns, host_ip, nodes_by_name).await {
-                            Ok(node) => {
-                                let _ = started_tx.send(name.clone());
-                                // the outcome is on the node's state
-                                let _ = node.wait_ready(timeout).await;
-                                (name, Ok(node))
-                            },
-                            Err(e) => (name, Err(e.to_string())),
-                        }
-                    });
-                },
-                Startable::Later => i += 1,
-                Startable::Never(reason) => {
-                    let prepared = pending.swap_remove(i);
-                    network.add_skipped_custom_process(prepared.spec.name(), reason);
-                    phases.insert(prepared.spec.name().to_string(), Phase::Skipped);
-                },
-            }
-        }
-        if running.is_empty() {
-            break;
-        }
-        tokio::select! {
-            Some(name) = started_rx.recv() => {
-                phases.entry(name).or_insert(Phase::Started);
-            },
-            Some((name, outcome)) = running.next() => {
-                match outcome {
-                    Ok(node) => {
-                        phases.insert(name, Phase::from(&node.state()));
-                        network.add_running_custom_process(node);
-                    },
-                    Err(e) => {
-                        network.add_skipped_custom_process(&name, format!("failed to spawn: {e}"));
-                        phases.insert(name, Phase::Skipped);
-                    },
-                }
-            },
-        }
-    }
-    // Only a cycle leaves something pending; the config check should have
-    // caught it, so this is defensive.
-    for prepared in pending {
-        network.add_skipped_custom_process(
-            prepared.spec.name(),
-            "its dependencies never started (cycle?)".into(),
-        );
-    }
-
-    Ok(())
 }
 
 pub async fn spawn_jam_node<'a, T>(
@@ -1078,20 +863,23 @@ mod tests {
             .unwrap()
     }
 
-    fn nodes() -> serde_json::Value {
-        serde_json::json!({
+    /// A node plus the process's own ports, as the scheduler builds it.
+    fn context(own_ports: &[(String, Port)]) -> serde_json::Value {
+        let mut context = serde_json::json!({
             "asset-hub-1": {
                 "name": "asset-hub-1",
                 "ws_uri": "ws://127.0.0.1:51234",
                 "internal_ws_uri": "ws://asset-hub-1:9944",
             }
-        })
+        });
+        context["eth-rpc"] = ports_json(own_ports);
+        context
     }
 
     #[test]
     fn placeholders_resolve_nodes_and_own_ports() {
         let (args, env) =
-            resolve_placeholders(&eth_rpc(), &[("http".into(), 8545)], &nodes()).unwrap();
+            resolve_placeholders(&eth_rpc(), &context(&[("http".into(), 8545)])).unwrap();
 
         assert_eq!(
             args,
@@ -1113,104 +901,13 @@ mod tests {
     }
 
     #[test]
-    fn startable_follows_the_dependency_conditions() {
-        let mk = |name: &str,
-                  deps: Vec<(&str, Option<DependencyCondition>)>,
-                  one_shot: bool,
-                  port: bool| {
-            let mut b = CustomProcessBuilder::new()
-                .with_name(name)
-                .with_command("sh");
-            for (dep, cond) in deps {
-                b = b.with_dependency_on(dep, cond);
-            }
-            if one_shot {
-                b = b.with_one_shot();
-            }
-            if port {
-                b = b.with_named_port("p", 0);
-            }
-            b.build().unwrap()
-        };
-        let db = mk("db", vec![], false, true);
-        let init = mk("init", vec![], true, false);
-        let api = mk("api", vec![("db", None), ("init", None)], false, true);
-        let eager = mk(
-            "eager",
-            vec![("db", Some(DependencyCondition::ServiceStarted))],
-            false,
-            false,
-        );
-        let orphan = mk("orphan", vec![("ghost", None)], false, false);
-        let all = [&db, &init, &api, &eager, &orphan];
-        let by_name: HashMap<&str, &CustomProcess> = all.iter().map(|p| (p.name(), *p)).collect();
-        let phases = |pairs: &[(&str, Phase)]| -> HashMap<String, Phase> {
-            pairs.iter().map(|(n, p)| (n.to_string(), *p)).collect()
-        };
-
-        // nothing known yet: wait
-        assert!(matches!(
-            startable(&api, &by_name, &phases(&[])),
-            Startable::Later
-        ));
-        // db started but not ready, init done: healthy still pending
-        assert!(matches!(
-            startable(
-                &api,
-                &by_name,
-                &phases(&[("db", Phase::Started), ("init", Phase::Completed)])
-            ),
-            Startable::Later
-        ));
-        // both met
-        assert!(matches!(
-            startable(
-                &api,
-                &by_name,
-                &phases(&[("db", Phase::Ready), ("init", Phase::Completed)])
-            ),
-            Startable::Now
-        ));
-        // db failed its check: never
-        assert!(matches!(
-            startable(
-                &api,
-                &by_name,
-                &phases(&[("db", Phase::Failed), ("init", Phase::Completed)])
-            ),
-            Startable::Never(_)
-        ));
-        // init skipped: never
-        assert!(matches!(
-            startable(
-                &api,
-                &by_name,
-                &phases(&[("db", Phase::Ready), ("init", Phase::Skipped)])
-            ),
-            Startable::Never(_)
-        ));
-        // service_started is met by a failed check too
-        assert!(matches!(
-            startable(&eager, &by_name, &phases(&[("db", Phase::Failed)])),
-            Startable::Now
-        ));
-        // an unknown dependency
-        assert!(matches!(
-            startable(&orphan, &by_name, &phases(&[])),
-            Startable::Never(_)
-        ));
-    }
-
-    #[test]
     fn an_unresolved_placeholder_is_an_error() {
         // no such port
-        let err = resolve_placeholders(&eth_rpc(), &[("rpc".into(), 8545)], &nodes()).unwrap_err();
+        let err = resolve_placeholders(&eth_rpc(), &context(&[("rpc".into(), 8545)])).unwrap_err();
         assert!(err.to_string().contains("port_http"), "{err}");
 
         // no such node
-        let err =
-            resolve_placeholders(&eth_rpc(), &[("http".into(), 8545)], &serde_json::json!({}))
-                .unwrap_err();
+        let err = resolve_placeholders(&eth_rpc(), &serde_json::json!({})).unwrap_err();
         assert!(err.to_string().contains("asset-hub-1"), "{err}");
     }
 }

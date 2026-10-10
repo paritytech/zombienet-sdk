@@ -507,14 +507,20 @@ impl DockerClient {
 
     /// The container's state (`running`, `exited`, ...) and exit code.
     pub async fn container_state(&self, container_name: &str) -> Result<(String, Option<i32>)> {
+        let text = self
+            .inspect(container_name, "{{.State.Status}} {{.State.ExitCode}}")
+            .await?;
+        let mut parts = text.split_whitespace();
+        let state = parts.next().unwrap_or_default().to_string();
+        let code = parts.next().and_then(|c| c.parse().ok());
+        Ok((state, code))
+    }
+
+    /// `inspect -f <template>` on the container, trimmed.
+    async fn inspect(&self, container_name: &str, template: &str) -> Result<String> {
         let out = self
             .client_command()
-            .args([
-                "inspect",
-                "-f",
-                "{{.State.Status}} {{.State.ExitCode}}",
-                container_name,
-            ])
+            .args(["inspect", "-f", template, container_name])
             .output()
             .await
             .map_err(|err| anyhow!("Failed to inspect container '{container_name}': {err}"))?;
@@ -525,30 +531,16 @@ impl DockerClient {
             )
             .into());
         }
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut parts = text.split_whitespace();
-        let state = parts.next().unwrap_or_default().to_string();
-        let code = parts.next().and_then(|c| c.parse().ok());
-        Ok((state, code))
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
+    /// Empty when the template does not apply to this engine's output, so
+    /// the caller can try the next one.
     async fn container_ip_inner(&self, container_name: &str, ip_template: &str) -> Result<String> {
-        let mut cmd = tokio::process::Command::new("docker");
-        cmd.args(vec!["inspect", "-f", ip_template, container_name]);
-
-        trace!("CMD: {cmd:?}");
-
-        let res = cmd
-            .output()
+        Ok(self
+            .inspect(container_name, ip_template)
             .await
-            .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?;
-
-        let ip_str = String::from_utf8(res.stdout)
-            .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?
-            .trim()
-            .into();
-
-        Ok(ip_str)
+            .unwrap_or_default())
     }
 
     async fn get_containers(&self) -> Result<Vec<Container>> {

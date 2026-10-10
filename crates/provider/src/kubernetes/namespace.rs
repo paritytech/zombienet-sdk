@@ -21,10 +21,7 @@ use tracing::{debug, trace, warn};
 use url::Url;
 use uuid::Uuid;
 
-use super::{
-    client::{KubernetesClient, PodWait},
-    node::KubernetesNode,
-};
+use super::{client::KubernetesClient, node::KubernetesNode};
 use crate::{
     constants::NAMESPACE_PREFIX,
     kubernetes::{
@@ -288,7 +285,7 @@ where
 
         let pod_manifest = self
             .k8s_client
-            .create_pod(&self.name, &name, pod_spec, labels.clone(), PodWait::Ready)
+            .create_pod(&self.name, &name, pod_spec, labels.clone(), true)
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
@@ -616,7 +613,6 @@ where
             role: options.role,
             ports: &options.ports,
             readiness: options.readiness.as_ref(),
-            one_shot: options.one_shot,
             wrapper: options.wrapper,
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,

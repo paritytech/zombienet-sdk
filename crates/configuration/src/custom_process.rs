@@ -11,6 +11,7 @@ use crate::{
         resources::{Resources, ResourcesBuilder},
     },
     types::{Arg, Command, Image, Port},
+    utils::is_false,
 };
 
 states! {
@@ -79,43 +80,52 @@ fn validate_port_name(name: &str) -> Result<(), anyhow::Error> {
 pub struct ReadyCheck {
     #[serde(flatten)]
     pub target: ReadyTarget,
-    /// Seconds between two attempts; 1 when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub interval: Option<u64>,
+    /// Seconds between two attempts.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub interval: u32,
 }
 
-/// What a process is waited on, see [`CustomProcess::effective_check`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EffectiveCheck<'a> {
-    /// The declared port the check probes.
-    pub port: &'a str,
-    /// The path a `GET` must answer 2xx on; `None` for a TCP connect.
-    pub http_path: Option<&'a str>,
-}
-
-/// What a [`ReadyCheck`] probes.
+/// What a [`ReadyCheck`] probes, by declared port name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(rename_all = "lowercase")]
 pub enum ReadyTarget {
     /// The named port accepts a TCP connection.
-    Tcp { tcp: String },
+    Tcp(String),
     /// `GET <path>` on the named port answers 2xx.
-    Http { http: HttpTarget },
+    Http { port: String, path: String },
 }
 
-/// The port and path of an http [`ReadyCheck`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HttpTarget {
-    pub port: String,
-    pub path: String,
+impl ReadyTarget {
+    /// The name of the port the check probes.
+    pub fn port_name(&self) -> &str {
+        match self {
+            Self::Tcp(port) | Self::Http { port, .. } => port,
+        }
+    }
+
+    /// The path a `GET` must answer 2xx on; `None` for a TCP connect.
+    pub fn http_path(&self) -> Option<&str> {
+        match self {
+            Self::Tcp(_) => None,
+            Self::Http { path, .. } => Some(path),
+        }
+    }
+}
+
+fn one() -> u32 {
+    1
+}
+
+fn is_one(value: &u32) -> bool {
+    *value == 1
 }
 
 impl ReadyCheck {
     /// A check that passes once the port named `port` accepts a connection.
     pub fn tcp(port: impl Into<String>) -> Self {
         Self {
-            target: ReadyTarget::Tcp { tcp: port.into() },
-            interval: None,
+            target: ReadyTarget::Tcp(port.into()),
+            interval: 1,
         }
     }
 
@@ -123,26 +133,21 @@ impl ReadyCheck {
     pub fn http(port: impl Into<String>, path: impl Into<String>) -> Self {
         Self {
             target: ReadyTarget::Http {
-                http: HttpTarget {
-                    port: port.into(),
-                    path: path.into(),
-                },
+                port: port.into(),
+                path: path.into(),
             },
-            interval: None,
+            interval: 1,
         }
     }
 
-    pub fn with_interval(mut self, secs: u64) -> Self {
-        self.interval = Some(secs);
+    pub fn with_interval(mut self, secs: u32) -> Self {
+        self.interval = secs;
         self
     }
 
     /// The name of the port the check probes.
     pub fn port_name(&self) -> &str {
-        match &self.target {
-            ReadyTarget::Tcp { tcp } => tcp,
-            ReadyTarget::Http { http } => &http.port,
-        }
+        self.target.port_name()
     }
 }
 
@@ -214,6 +219,14 @@ impl From<Dependency> for DependencyRepr {
     }
 }
 
+impl Dependency {
+    /// The condition this dependency means on `target`: the one named, or
+    /// the target's natural one.
+    pub fn condition_on(&self, target: &CustomProcess) -> DependencyCondition {
+        self.condition.unwrap_or_else(|| target.natural_condition())
+    }
+}
+
 impl From<&str> for Dependency {
     fn from(name: &str) -> Self {
         Self {
@@ -223,12 +236,8 @@ impl From<&str> for Dependency {
     }
 }
 
-fn is_false(value: &bool) -> bool {
-    !value
-}
-
 /// The longest `timeout` accepted: a week, in seconds.
-pub const MAX_TIMEOUT_SECS: u64 = 7 * 24 * 60 * 60;
+pub const MAX_TIMEOUT_SECS: u32 = 7 * 24 * 60 * 60;
 
 /// A custom process to spawn next to the nodes: its `command`, `args`, `env`,
 /// `image` (provider specific), named `ports`, `resources` (provider
@@ -266,7 +275,7 @@ pub struct CustomProcess {
     one_shot: bool,
     // Seconds to wait for the condition: the ready check, or a one-shot's exit
     #[serde(skip_serializing_if = "Option::is_none")]
-    timeout: Option<u64>,
+    timeout: Option<u32>,
 }
 
 impl Default for CustomProcess {
@@ -344,7 +353,7 @@ impl CustomProcess {
     /// Seconds to wait for the process to meet its condition (the ready check
     /// to pass, or a one-shot to exit); the global `node_spawn_timeout` when
     /// absent.
-    pub fn timeout(&self) -> Option<u64> {
+    pub fn timeout(&self) -> Option<u32> {
         self.timeout
     }
 
@@ -352,48 +361,31 @@ impl CustomProcess {
     /// the first declared port when there is none. `None` for a one-shot
     /// (waited on to exit) and for a process with nothing to check (ready
     /// once started).
-    pub fn effective_check(&self) -> Option<EffectiveCheck<'_>> {
+    pub fn effective_check(&self) -> Option<ReadyTarget> {
         if self.one_shot {
             return None;
         }
         match &self.ready_check {
-            Some(check) => Some(EffectiveCheck {
-                port: check.port_name(),
-                http_path: match &check.target {
-                    ReadyTarget::Http { http } => Some(http.path.as_str()),
-                    ReadyTarget::Tcp { .. } => None,
-                },
-            }),
-            None => self.ports.first().map(|p| EffectiveCheck {
-                port: p.name.as_str(),
-                http_path: None,
-            }),
+            Some(check) => Some(check.target.clone()),
+            None => self.ports.first().map(|p| ReadyTarget::Tcp(p.name.clone())),
         }
     }
 
     /// The condition a dependency on this process means when it names none:
-    /// completed for a one-shot, healthy when there is something to check (a
-    /// `ready_check` or a port), started otherwise.
+    /// completed for a one-shot, healthy when there is something to check,
+    /// started otherwise.
     pub fn natural_condition(&self) -> DependencyCondition {
         if self.one_shot {
             DependencyCondition::ServiceCompletedSuccessfully
-        } else if self.ready_check.is_some() || !self.ports.is_empty() {
+        } else if self.effective_check().is_some() {
             DependencyCondition::ServiceHealthy
         } else {
             DependencyCondition::ServiceStarted
         }
     }
 
-    /// The field rules, applied by the builder and by the TOML loader: the name
-    /// is an RFC 1035 label like a node's (rejected rather than corrected, it
-    /// is the lookup key), port names are valid service names and unique, no
-    /// two ports share a number (`0` excepted, each is picked separately), a
-    /// `ready_check` names a declared port, has an http path starting with `/`
-    /// and is not on a one-shot, the `timeout` and `interval` are at least 1
-    /// second (the timeout at most a week, [`MAX_TIMEOUT_SECS`]), and
-    /// `depends_on` names neither the process itself nor anything twice.
-    /// What is checked at spawn follows from these, see
-    /// [`Self::effective_check`].
+    /// The field rules shared by the builder and the TOML loader. What is
+    /// checked at spawn follows from them, see [`Self::effective_check`].
     pub fn validate(&self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = vec![];
         let valid_name = sanitize_node_name(&self.name);
@@ -455,19 +447,18 @@ impl CustomProcess {
                     .into(),
                 );
             }
-            if let ReadyTarget::Http { http } = &check.target {
-                if !http.path.starts_with('/') {
+            if let Some(path) = check.target.http_path() {
+                if !path.starts_with('/') {
                     errors.push(
                         FieldError::ReadyCheck(anyhow::anyhow!(
-                            "http path '{}' must start with '/'",
-                            http.path
+                            "http path '{path}' must start with '/'"
                         ))
                         .into(),
                     );
                 }
             }
         }
-        if let Some(0) = self.ready_check.as_ref().and_then(|c| c.interval) {
+        if self.ready_check.as_ref().is_some_and(|c| c.interval == 0) {
             errors.push(
                 FieldError::ReadyCheck(anyhow::anyhow!("interval must be at least 1 second"))
                     .into(),
@@ -527,12 +518,10 @@ pub(crate) fn validate_custom_processes(processes: &[CustomProcess]) -> Result<(
                 ));
                 continue;
             };
-            let condition = dep.condition.unwrap_or_else(|| target.natural_condition());
+            let condition = dep.condition_on(target);
             let fits = match condition {
                 DependencyCondition::ServiceStarted => true,
-                DependencyCondition::ServiceHealthy => {
-                    !target.one_shot && (target.ready_check.is_some() || !target.ports.is_empty())
-                },
+                DependencyCondition::ServiceHealthy => target.effective_check().is_some(),
                 DependencyCondition::ServiceCompletedSuccessfully => target.one_shot,
             };
             if !fits {
@@ -771,7 +760,7 @@ impl CustomProcessBuilder<WithName, WithCmd> {
     /// Seconds to wait for the process to meet its condition (the ready check
     /// to pass, or a one-shot to exit); the global `node_spawn_timeout`
     /// otherwise.
-    pub fn with_timeout(self, secs: u64) -> Self {
+    pub fn with_timeout(self, secs: u32) -> Self {
         Self::transition(
             CustomProcess {
                 timeout: Some(secs),
@@ -961,18 +950,12 @@ mod tests {
         assert_eq!(api.timeout(), Some(30));
         assert_eq!(
             api.effective_check(),
-            Some(EffectiveCheck {
-                port: "http",
-                http_path: Some("/health")
+            Some(ReadyTarget::Http {
+                port: "http".into(),
+                path: "/health".into()
             })
         );
-        assert_eq!(
-            db.effective_check(),
-            Some(EffectiveCheck {
-                port: "pg",
-                http_path: None
-            })
-        );
+        assert_eq!(db.effective_check(), Some(ReadyTarget::Tcp("pg".into())));
         assert_eq!(init.effective_check(), None);
 
         let toml_str = toml::to_string(&api).unwrap();
@@ -1036,7 +1019,7 @@ mod tests {
         let errors = CustomProcessBuilder::new()
             .with_name("forever")
             .with_command("sh")
-            .with_timeout(u64::MAX)
+            .with_timeout(u32::MAX)
             .build()
             .unwrap_err()
             .1;

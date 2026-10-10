@@ -1,0 +1,39 @@
+# Custom processes with a lifecycle: `prepare` runs once, `files` starts after
+# it completed and is ready when GET / answers, `reader` starts once `files`
+# is ready.
+#
+#   zombie-cli spawn -p native crates/examples/examples/configs/custom_process_lifecycle.toml
+
+[settings]
+timeout = 1000
+
+[relaychain]
+chain = "rococo-local"
+command = "polkadot"
+
+  [[relaychain.nodes]]
+  name = "alice"
+
+  [[relaychain.nodes]]
+  name = "bob"
+
+[[custom_processes]]
+name = "prepare"
+command = "sh"
+args = ["-c", "mkdir -p /tmp/zombie-lifecycle && echo hello > /tmp/zombie-lifecycle/index.html"]
+one_shot = true
+
+[[custom_processes]]
+name = "files"
+command = "python3"
+args = ["-m http.server", "--bind 127.0.0.1", "--directory /tmp/zombie-lifecycle", "{{ZOMBIE:files:port_http}}"]
+ports = [{ name = "http", port = 0 }]
+ready_check = { http = { port = "http", path = "/" } }
+timeout = 60
+depends_on = ["prepare"]
+
+[[custom_processes]]
+name = "reader"
+command = "sh"
+args = ["-c", "echo reading; sleep 600"]
+depends_on = [{ name = "files", condition = "service_healthy" }]

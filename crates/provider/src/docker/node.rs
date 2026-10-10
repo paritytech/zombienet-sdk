@@ -24,7 +24,8 @@ use crate::{
     docker,
     shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, Port, RunCommandOptions, RunScriptOptions, TransferedFile,
+        ExecutionResult, InnerSnapshotDb, Port, ProcessStatus, RunCommandOptions, RunScriptOptions,
+        TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -608,6 +609,20 @@ where
         _local_dest: &Path,
     ) -> Result<(), ProviderError> {
         Ok(())
+    }
+
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let (state, code) = self
+            .docker_client
+            .container_state(&self.container_name)
+            .await
+            .map_err(|err| {
+                ProviderError::InvalidConfig(format!("Error getting container state, err: {err}"))
+            })?;
+        Ok(match state.as_str() {
+            "exited" | "dead" | "stopped" => ProcessStatus::Exited { code },
+            _ => ProcessStatus::Running { ready: None },
+        })
     }
 
     async fn ip(&self) -> Result<IpAddr, ProviderError> {

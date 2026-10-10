@@ -8,6 +8,7 @@ pub mod network_helper;
 pub mod observability;
 pub mod tx_helper;
 
+mod custom_processes;
 mod network_spec;
 pub mod shared;
 mod spawner;
@@ -57,7 +58,7 @@ use crate::{
         jamchain::{Jamchain, RawJamchain},
         node::{
             jam::RawJamNetworkNode, process::RawCustomProcessNode, CustomProcessNode,
-            JamNetworkNode, RawNetworkNode,
+            CustomProcessState, JamNetworkNode, RawNetworkNode,
         },
         parachain::RawParachain,
         relaychain::RawRelaychain,
@@ -198,6 +199,9 @@ where
                 }
             }
             network.set_custom_processes(processes);
+        }
+        if let Some(skipped) = zombie_json.get("skipped_custom_processes") {
+            network.set_skipped_custom_processes(serde_json::from_value(skipped.clone())?);
         }
 
         Ok(network)
@@ -660,7 +664,7 @@ where
             }
         }
 
-        spawner::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
 
         network.set_start_time_ts(start_time);
 
@@ -931,7 +935,7 @@ where
         )
         .await?;
 
-        spawner::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
 
         network.set_start_time_ts(start_time);
 
@@ -1084,9 +1088,9 @@ async fn recreate_custom_processes_from_json(
     for raw in raw_processes {
         validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
 
-        // Attached as recorded, like a node: whether it still runs is what
-        // `is_responsive` says afterwards. A record the provider cannot take
-        // back is skipped with a warning, the rest of the network attaches.
+        // Attached as recorded, like a node, with the state it had; `state()`
+        // and `wait_ready()` say more afterwards. A record the provider cannot
+        // take back is skipped with a warning, the rest of the network attaches.
         let inner = match ns.spawn_node_from_json(&raw.inner).await {
             Ok(inner) => inner,
             Err(err) => {
@@ -1102,7 +1106,10 @@ async fn recreate_custom_processes_from_json(
         // process that spawned the network, gone with it. Open new ones, and
         // keep the saved address where there is none to open.
         let mut ports = raw.ports;
-        if !running_in_ci() {
+        let state = raw.state.unwrap_or(CustomProcessState::Ready);
+        // a one-shot is done by now, nothing to forward to; anything else may
+        // still be up, whatever its recorded state
+        if !running_in_ci() && !raw.spec.one_shot() {
             for (port_name, port) in ports.iter_mut() {
                 let saved = std::mem::take(&mut port.external);
                 port.external =
@@ -1111,7 +1118,7 @@ async fn recreate_custom_processes_from_json(
         }
 
         processes.push(Arc::new(CustomProcessNode::new(
-            raw.name, inner, raw.spec, raw.ip, ports,
+            raw.name, inner, raw.spec, raw.ip, ports, state,
         )));
     }
 

@@ -19,15 +19,20 @@ use tracing::{debug, trace, warn};
 use url::Url;
 
 use super::{
-    client::KubernetesClient, namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder,
+    client::{
+        helpers::{status_is_done, status_is_ready},
+        KubernetesClient,
+    },
+    namespace::KubernetesNamespace,
+    pod_spec_builder::PodSpecBuilder,
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     kubernetes,
     shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, Port, RunCommandOptions, RunScriptOptions,
-        TransferedFile,
+        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
+        RunCommandOptions, RunScriptOptions, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -52,6 +57,8 @@ where
     /// Whether `program` runs through the zombie wrapper (see
     /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
     pub(super) wrapper: bool,
+    /// The pod's readiness probe, for a process without the wrapper.
+    pub(super) readiness: Option<&'a ReadinessProbe>,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -81,6 +88,7 @@ where
             role: None,
             ports: &deserializable.ports,
             wrapper: deserializable.wrapper,
+            readiness: None,
             k8s_client,
             filesystem,
         }
@@ -188,7 +196,7 @@ where
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_k8s(options.role).await?;
+        node.initialize_k8s(options.role, options.readiness).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
@@ -250,7 +258,11 @@ where
         Ok(node)
     }
 
-    async fn initialize_k8s(&self, role: Option<NodeRole>) -> Result<(), ProviderError> {
+    async fn initialize_k8s(
+        &self,
+        role: Option<NodeRole>,
+        readiness: Option<&ReadinessProbe>,
+    ) -> Result<(), ProviderError> {
         let mut labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
@@ -276,6 +288,7 @@ where
             &self.args,
             &self.env,
             &self.ports,
+            readiness,
             self.wrapper,
         );
 
@@ -765,6 +778,37 @@ where
         _local_dest: &Path,
     ) -> Result<(), ProviderError> {
         Ok(())
+    }
+
+    /// The pod's phase and, while it runs, its Ready condition. A direct
+    /// process's pod ends with it (see `PodSpecBuilder`), so an exit shows as
+    /// a terminal phase with the container's exit code.
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let status = self
+            .k8s_client
+            .pod_status(&self.namespace_name(), &self.name)
+            .await
+            .map_err(|err| {
+                ProviderError::InvalidConfig(format!(
+                    "{}: could not read the pod: {err}",
+                    self.name
+                ))
+            })?;
+
+        if status_is_done(&status) {
+            let code = status
+                .container_statuses
+                .iter()
+                .flatten()
+                .find(|c| c.name == self.name)
+                .and_then(|c| c.state.as_ref())
+                .and_then(|s| s.terminated.as_ref())
+                .map(|t| t.exit_code);
+            return Ok(ProcessStatus::Exited { code });
+        }
+        Ok(ProcessStatus::Running {
+            ready: Some(status_is_ready(&status)),
+        })
     }
 
     async fn ip(&self) -> Result<IpAddr, ProviderError> {

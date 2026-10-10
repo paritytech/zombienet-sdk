@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 use anyhow::Context;
 use configuration::{
     types::{JamNodeMode, Port},
-    CustomProcess, GlobalSettings,
+    CustomProcess, GlobalSettings, ReadyTarget,
 };
 use jam_std_common::hash_raw;
 use provider::{
@@ -12,7 +12,7 @@ use provider::{
         RPC_WS_PORT,
     },
     shared::helpers::running_in_ci,
-    types::{NodeRole, SpawnNodeOptions, TransferedFile},
+    types::{NodeRole, ReadinessProbe, ReadinessTarget, SpawnNodeOptions, TransferedFile},
     DynNamespace, DynNode, ProviderNamespace,
 };
 use support::{
@@ -20,15 +20,15 @@ use support::{
     fs::FileSystem,
     replacer::{apply_running_network_replacements, has_tokens},
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     generators::{self, ResolvedDbSnapshots},
     network::{
-        node::{CustomProcessNode, JamNetworkNode, NetworkNode, ProcessPort},
-        Network, NodeContext,
+        node::{CustomProcessNode, CustomProcessState, JamNetworkNode, NetworkNode, ProcessPort},
+        NodeContext,
     },
-    network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec, NetworkSpec},
+    network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec},
     shared::{
         constants::{FULL_NODE_PROMETHEUS_PORT, JAM_PORT, PROMETHEUS_PORT, RPC_PORT},
         types::ParkedPort,
@@ -383,28 +383,21 @@ where
 type ResolvedArgsAndEnv = (Vec<String>, Vec<(String, String)>);
 
 /// The args and env of `custom_process` with every `{{ZOMBIE:<name>:<field>}}`
-/// resolved against the nodes already running (`nodes_by_name`, as the
-/// orchestrator keeps them) and the process's own ports, as `port_<name>`.
+/// resolved against `context`: the nodes as the orchestrator keeps them, and
+/// every custom process's ports as `port_<name>` (see `ports_json`).
 ///
 /// A placeholder that stays unresolved is an error: the process would start
 /// with the literal text.
 fn resolve_placeholders(
     custom_process: &CustomProcess,
-    resolved_ports: &[(String, Port)],
-    nodes_by_name: &serde_json::Value,
+    context: &serde_json::Value,
 ) -> Result<ResolvedArgsAndEnv, anyhow::Error> {
     let name = custom_process.name();
-    let mut context = nodes_by_name.clone();
-    context[name] = serde_json::json!(resolved_ports
-        .iter()
-        .map(|(port_name, port)| (format!("port_{port_name}"), port.to_string()))
-        .collect::<HashMap<_, _>>());
-
     let resolve = |text: &str| -> Result<String, anyhow::Error> {
-        let resolved = apply_running_network_replacements(text, &context);
+        let resolved = apply_running_network_replacements(text, context);
         if has_tokens(&resolved) {
             Err(anyhow::anyhow!(
-                "{name}: unresolved placeholder in {resolved:?} (nodes in context: {})",
+                "{name}: unresolved placeholder in {resolved:?} (in context: {})",
                 context
                     .as_object()
                     .map(|nodes| nodes.keys().cloned().collect::<Vec<_>>().join(", "))
@@ -436,12 +429,20 @@ fn resolve_placeholders(
 /// process picks (or declares, on native) cannot be handed to another; each
 /// process releases its own right before its spawn.
 pub(crate) struct PreparedProcess<'a> {
-    spec: &'a CustomProcess,
+    pub(crate) spec: &'a CustomProcess,
     /// Every declared port by name, `0`s resolved to the picked number.
-    ports: Vec<(String, Port)>,
+    pub(crate) ports: Vec<(String, Port)>,
     /// On docker, the host port each port is published on.
     host_ports: HashMap<Port, Port>,
     parked: Vec<ParkedPort>,
+}
+
+/// A process's ports as placeholder context: `{ "port_<name>": "<number>" }`.
+pub(crate) fn ports_json(ports: &[(String, Port)]) -> serde_json::Value {
+    serde_json::json!(ports
+        .iter()
+        .map(|(port_name, port)| (format!("port_{port_name}"), port.to_string()))
+        .collect::<HashMap<_, _>>())
 }
 
 /// Resolve and park the ports of `custom_process`: a `0` is picked free, a
@@ -529,7 +530,39 @@ pub(crate) async fn spawn_process(
     let capabilities = ns.capabilities();
     let name = custom_process.name();
 
-    let (args, env) = resolve_placeholders(custom_process, &resolved_ports, nodes_by_name)?;
+    let (args, env) = resolve_placeholders(custom_process, nodes_by_name)?;
+
+    // On docker a published port answers for the proxy, so a tcp check there
+    // proves nothing; said once, at spawn, where the config can still change.
+    let check = custom_process.effective_check();
+    if let Some(check) = &check {
+        if provider == "docker" && check.http_path().is_none() {
+            warn!(
+                "⚠️  {name}: the tcp check on port '{}' passes as soon as docker publishes it, whether or not the process listens; use an http ready_check for real readiness on docker",
+                check.port_name()
+            );
+        }
+    }
+
+    // What the provider may check itself (k8s: the pod's probe).
+    let readiness = check.and_then(|check| {
+        let port = resolved_ports
+            .iter()
+            .find(|(n, _)| n == check.port_name())
+            .map(|(_, p)| *p)?;
+        Some(ReadinessProbe {
+            target: match check {
+                ReadyTarget::Tcp(_) => ReadinessTarget::Tcp(port),
+                ReadyTarget::Http { path, .. } => ReadinessTarget::Http { port, path },
+            },
+            period_secs: u64::from(
+                custom_process
+                    .ready_check()
+                    .map(|c| c.interval)
+                    .unwrap_or(1),
+            ),
+        })
+    });
 
     let spawn_ops = SpawnNodeOptions::new(name, custom_process.command().as_str())
         .args(&args)
@@ -538,6 +571,7 @@ pub(crate) async fn spawn_process(
         // only docker publishes ports; k8s and native ignore the mapping
         .port_mapping(host_ports.clone())
         .role(NodeRole::CustomProcess)
+        .readiness(readiness)
         .without_wrapper();
 
     let spawn_ops = if let Some(image) = custom_process.image() {
@@ -576,6 +610,11 @@ pub(crate) async fn spawn_process(
     // cannot reach from here is reported by its in-network address instead.
     let running_ip = match running_node.ip().await {
         Ok(ip) => ip,
+        // a one-shot may be done already, with no address left to report
+        Err(err) if custom_process.one_shot() => {
+            debug!("{name}: no process ip ({err}); using {host_ip}");
+            host_ip
+        },
         Err(err) => {
             warn!("⚠️  {name}: could not get the process ip ({err}); using {host_ip}");
             host_ip
@@ -592,7 +631,8 @@ pub(crate) async fn spawn_process(
             // the cluster (CI), a port-forward on this host otherwise.
             "k8s" => {
                 let internal = format!("{name}:{port}");
-                let external = if in_ci {
+                // a one-shot may be gone already, nothing to forward to
+                let external = if in_ci || custom_process.one_shot() {
                     format!("{running_ip}:{port}")
                 } else {
                     forward_or_keep(&running_node, name, port_name, *port, internal.clone()).await
@@ -633,6 +673,7 @@ pub(crate) async fn spawn_process(
         custom_process.clone(),
         running_ip,
         ports,
+        CustomProcessState::Starting,
     ))
 }
 
@@ -653,68 +694,6 @@ pub(crate) async fn forward_or_keep(
             fallback
         },
     }
-}
-
-/// Spawn the custom processes of `spec`, concurrently, and register the ones
-/// that came up. A process that does not is logged and left out: the nodes
-/// are up by now, and a missing side service must not take the network down.
-pub(crate) async fn spawn_custom_processes<T: FileSystem>(
-    network: &mut Network<T>,
-    spec: &NetworkSpec,
-    ns: Arc<dyn ProviderNamespace + Send + Sync>,
-) -> Result<(), anyhow::Error> {
-    if spec.custom_processes.is_empty() {
-        return Ok(());
-    }
-    let host_ip = spec
-        .global_settings
-        .local_ip()
-        .copied()
-        .unwrap_or(LOCALHOST);
-    let nodes_by_name = network.nodes_json()?;
-
-    // Checked before spawning: a process that ran and was then refused would
-    // be untracked, having taken the node's place in the provider's registry.
-    let (taken, free): (Vec<_>, Vec<_>) = spec
-        .custom_processes
-        .iter()
-        .partition(|cp| network.has_member(cp.name()));
-    for cp in taken {
-        warn!(
-            "⚠️  Custom process {} not spawned: the name is already taken by a node or custom process",
-            cp.name()
-        );
-    }
-
-    // Every process parks its ports before any spawns, see `PreparedProcess`.
-    let prepared: Vec<PreparedProcess> = free
-        .into_iter()
-        .filter_map(|cp| match prepare_process(cp, ns.as_ref()) {
-            Ok(prepared) => Some(prepared),
-            Err(e) => {
-                warn!(
-                    "⚠️  Failed to reserve the ports of custom process {}, not spawned, err: {e}",
-                    cp.name()
-                );
-                None
-            },
-        })
-        .collect();
-    let names: Vec<&str> = prepared.iter().map(|p| p.spec.name()).collect();
-    let spawning = prepared
-        .into_iter()
-        .map(|p| spawn_process(p, ns.clone(), host_ip, &nodes_by_name));
-    for (name, spawned) in names
-        .into_iter()
-        .zip(futures::future::join_all(spawning).await)
-    {
-        match spawned {
-            Ok(process) => network.add_running_custom_process(process),
-            Err(e) => warn!("⚠️  Failed to spawn custom process {name}, err: {e}"),
-        }
-    }
-
-    Ok(())
 }
 
 pub async fn spawn_jam_node<'a, T>(
@@ -884,20 +863,23 @@ mod tests {
             .unwrap()
     }
 
-    fn nodes() -> serde_json::Value {
-        serde_json::json!({
+    /// A node plus the process's own ports, as the scheduler builds it.
+    fn context(own_ports: &[(String, Port)]) -> serde_json::Value {
+        let mut context = serde_json::json!({
             "asset-hub-1": {
                 "name": "asset-hub-1",
                 "ws_uri": "ws://127.0.0.1:51234",
                 "internal_ws_uri": "ws://asset-hub-1:9944",
             }
-        })
+        });
+        context["eth-rpc"] = ports_json(own_ports);
+        context
     }
 
     #[test]
     fn placeholders_resolve_nodes_and_own_ports() {
         let (args, env) =
-            resolve_placeholders(&eth_rpc(), &[("http".into(), 8545)], &nodes()).unwrap();
+            resolve_placeholders(&eth_rpc(), &context(&[("http".into(), 8545)])).unwrap();
 
         assert_eq!(
             args,
@@ -921,13 +903,11 @@ mod tests {
     #[test]
     fn an_unresolved_placeholder_is_an_error() {
         // no such port
-        let err = resolve_placeholders(&eth_rpc(), &[("rpc".into(), 8545)], &nodes()).unwrap_err();
+        let err = resolve_placeholders(&eth_rpc(), &context(&[("rpc".into(), 8545)])).unwrap_err();
         assert!(err.to_string().contains("port_http"), "{err}");
 
         // no such node
-        let err =
-            resolve_placeholders(&eth_rpc(), &[("http".into(), 8545)], &serde_json::json!({}))
-                .unwrap_err();
+        let err = resolve_placeholders(&eth_rpc(), &serde_json::json!({})).unwrap_err();
         assert!(err.to_string().contains("asset-hub-1"), "{err}");
     }
 }

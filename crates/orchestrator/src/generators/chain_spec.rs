@@ -1561,8 +1561,9 @@ fn patch_genesis(
     let section = chain_spec_json.pointer_mut(pointer).ok_or_else(|| {
         GeneratorError::ChainSpecGeneration(format!("runtime genesis not found at {pointer}"))
     })?;
-    json_patch::patch(section, &patch.0)
-        .map_err(|e| GeneratorError::ChainSpecGeneration(format!("genesis_patch: {e}")))
+    json_patch::patch(section, &patch.0).map_err(|e| {
+        GeneratorError::ChainSpecGeneration(format!("genesis_patch (paths under {pointer}): {e}"))
+    })
 }
 
 // Merge `patch_section` with `overrides`.
@@ -1980,41 +1981,33 @@ fn generate_balance_to_add_from_assets_pallet(
             Default::default()
         };
 
-        if let Some(assets_accounts) = val.pointer("/assets/accounts") {
-            let assets_accounts = assets_accounts
-                .as_array()
-                .expect("assets_accounts config should be an array, qed");
-            let accounts_to_add: Vec<(String, u128)> = assets_accounts
-                .iter()
-                .filter_map(|account| {
-                    let account = account
-                        .as_array()
-                        .expect("assets_accounts config should be an array, qed");
-                    // map account / balance
-                    let account_balance = (
-                        account[1]
-                            .as_str()
-                            .expect("account should be a valid string. qed")
-                            .to_string(),
-                        account[2]
-                            .as_number()
-                            .expect("balance should be a valid str")
-                            .to_string()
-                            .parse::<u128>()
-                            .expect("balance should be a valid u128"),
-                    );
-
-                    if balances_map.contains_key(&account_balance.0) {
-                        None
-                    } else {
-                        Some(account_balance)
-                    }
-                })
-                .collect();
-            Ok(accounts_to_add)
-        } else {
-            Ok(vec![])
+        let Some(assets_accounts) = val.pointer("/assets/accounts") else {
+            return Ok(vec![]);
+        };
+        let bad = |what: &str| {
+            GeneratorError::ChainSpecGeneration(format!(
+                "assets/accounts entries must be [asset_id, address, amount]: {what}"
+            ))
+        };
+        let mut accounts_to_add = vec![];
+        for account in assets_accounts
+            .as_array()
+            .ok_or_else(|| bad("not a list"))?
+        {
+            let address = account
+                .get(1)
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| bad(&account.to_string()))?;
+            let amount = account
+                .get(2)
+                .and_then(|v| v.as_number())
+                .and_then(|n| n.to_string().parse::<u128>().ok())
+                .ok_or_else(|| bad(&account.to_string()))?;
+            if !balances_map.contains_key(address) {
+                accounts_to_add.push((address.to_string(), amount));
+            }
         }
+        Ok(accounts_to_add)
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }

@@ -189,6 +189,11 @@ impl ParachainSpec {
             };
 
             Some(chain_spec)
+        } else if config.genesis_patch().is_some() {
+            return Err(OrchestratorError::InvalidConfig(format!(
+                "parachain[{}]: genesis_patch needs a chain spec, and a non-cumulus parachain has none",
+                config.id()
+            )));
         } else {
             None
         };

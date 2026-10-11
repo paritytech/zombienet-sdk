@@ -13,7 +13,7 @@ The framework applies these modifications to relay chain specs:
 | Customization | Description |
 |---------------|-------------|
 | **Runtime Genesis Patch** | Merges user-provided `genesis_overrides` JSON (applied first): objects merge, any other value replaces |
-| **Genesis Patch** | Applies the `genesis_patch` RFC 6902 operations after the overrides. A path must exist in the preset's genesis for `replace`, and its parent for `add`; keys rewritten below (authorities, stakers, invulnerables, `validatorCount`, node balances) are rewritten after the patch |
+| **Genesis Patch** | Applies the `genesis_patch` RFC 6902 operations after the overrides. A path must already exist, after `genesis` is merged, for `replace`, and its parent for `add`; keys rewritten below (authorities, stakers, invulnerables, `validatorCount`, node balances) are rewritten after the patch |
 | **Clear Authorities** | Removes existing authorities from `session/keys`, `aura/authorities`, `grandpa/authorities`, `collatorSelection/invulnerables`, and `staking/invulnerables` + `staking/stakers` (relay only). Also sets `validatorCount` to 0 unless `devStakers` is configured. |
 | **Add Balances** | Adds balances for each node's `sr` and `sr_stash` accounts. Balance is `max(initial_balance, staking_min * 2)`. Only nodes with `initial_balance > 0` receive balances. |
 | **Add Zombie Account** | Adds `//Zombie` account with 1000 units (in chain denomination, i.e., `1000 * 10^token_decimals` planck) for internal operations |

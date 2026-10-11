@@ -78,7 +78,7 @@ let config = NetworkConfigBuilder::new()
 | `genesis_state_path` | String | — | Path/URL to genesis state |
 | `genesis_state_generator` | String/Array | — | Command with args to generate genesis state |
 | `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`). Objects merge, any other value replaces |
-| `genesis_patch` | Array | — | RFC 6902 operations applied to the runtime genesis after `genesis`; `add` at `/-` appends to a list. Needs a plain chain spec, and paths must exist in the preset (see [How it works](../how-it-works.md)) |
+| `genesis_patch` | Array | — | RFC 6902 operations applied to the runtime genesis after `genesis`; `add` at `/-` appends to a list. Needs a plain chain spec, and paths must exist once `genesis` is merged (see [How it works](../how-it-works.md)) |
 | `chain_spec_path` | String | — | Path/URL to parachain chain spec |
 | `chain_spec_command` | String | — | Command template to generate chain spec |
 | `chain_spec_command_is_local` | Boolean | `false` | Run chain spec command locally |

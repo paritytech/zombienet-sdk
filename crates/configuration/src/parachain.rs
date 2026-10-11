@@ -1477,6 +1477,34 @@ mod tests {
     }
 
     #[test]
+    fn genesis_patch_is_kept_when_valid_and_reported_when_not() {
+        let patch = serde_json::json!([{"op": "remove", "path": "/sudo"}]);
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_genesis_patch(patch.clone())
+            .with_collator(|collator| collator.with_name("collator").with_command("command"))
+            .build()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(config.genesis_patch().unwrap()).unwrap(),
+            patch
+        );
+
+        let errors = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_genesis_patch(serde_json::json!([{"op": "add", "path": "no-slash", "value": 1}]))
+            .with_collator(|collator| collator.with_name("collator").with_command("command"))
+            .build()
+            .unwrap_err();
+        assert_eq!(errors.len(), 1);
+        let error = errors.first().unwrap().to_string();
+        assert!(
+            error.starts_with("parachain[1000].genesis_patch: "),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn parachain_config_builder_should_fails_and_returns_an_error_if_chain_is_invalid() {
         let errors = ParachainConfigBuilder::new(Default::default())
             .with_id(1000)

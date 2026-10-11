@@ -967,6 +967,35 @@ mod tests {
     }
 
     #[test]
+    fn genesis_patch_is_kept_when_valid_and_reported_when_not() {
+        let patch =
+            serde_json::json!([{"op": "add", "path": "/balances/balances/-", "value": ["5A", 1]}]);
+        let config = RelaychainConfigBuilder::new(Default::default())
+            .with_chain("polkadot")
+            .with_genesis_patch(patch.clone())
+            .with_validator(|node| node.with_name("node").with_command("command"))
+            .build()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(config.genesis_patch().unwrap()).unwrap(),
+            patch
+        );
+
+        let errors = RelaychainConfigBuilder::new(Default::default())
+            .with_chain("polkadot")
+            .with_genesis_patch(serde_json::json!([{"op": "append", "path": "/x", "value": 1}]))
+            .with_validator(|node| node.with_name("node").with_command("command"))
+            .build()
+            .unwrap_err();
+        assert_eq!(errors.len(), 1);
+        let error = errors.first().unwrap().to_string();
+        assert!(
+            error.starts_with("relaychain.genesis_patch: unknown variant `append`"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn relaychain_config_builder_should_fails_and_returns_an_error_if_chain_is_invalid() {
         let errors = RelaychainConfigBuilder::new(Default::default())
             .with_chain("invalid chain")

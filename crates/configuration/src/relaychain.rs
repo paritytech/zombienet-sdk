@@ -50,6 +50,9 @@ pub struct RelaychainConfig {
     node_groups: Vec<GroupNodeConfig>,
     #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     runtime_genesis_patch: Option<serde_json::Value>,
+    /// RFC 6902 operations applied to the runtime genesis after `genesis`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    genesis_patch: Option<json_patch::Patch>,
     // Path or url to override the runtime (:code) in the chain-spec
     wasm_override: Option<AssetLocation>,
     command: Option<Command>,
@@ -143,6 +146,11 @@ impl RelaychainConfig {
         self.runtime_genesis_patch.as_ref()
     }
 
+    /// The RFC 6902 patch applied to the runtime genesis after the overrides.
+    pub fn genesis_patch(&self) -> Option<&json_patch::Patch> {
+        self.genesis_patch.as_ref()
+    }
+
     /// The nodes of the relay chain.
     pub fn nodes(&self) -> Vec<&NodeConfig> {
         self.nodes.iter().collect::<Vec<&NodeConfig>>()
@@ -210,6 +218,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 random_nominators_count: None,
                 max_nominations: None,
                 runtime_genesis_patch: None,
+                genesis_patch: None,
                 nodes: vec![],
                 node_groups: vec![],
                 raw_spec_override: None,
@@ -540,6 +549,27 @@ impl RelaychainConfigBuilder<WithChain> {
             self.validation_context,
             self.errors,
         )
+    }
+
+    /// Set the RFC 6902 patch applied to the runtime genesis after the
+    /// overrides, as a JSON list of operations. Paths are relative to the
+    /// runtime genesis, so `add` at `/balances/balances/-` appends a balance.
+    pub fn with_genesis_patch(self, patch: impl Into<serde_json::Value>) -> Self {
+        match serde_json::from_value::<json_patch::Patch>(patch.into()) {
+            Ok(patch) => Self::transition(
+                RelaychainConfig {
+                    genesis_patch: Some(patch),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::GenesisPatch(error.into()).into()),
+            ),
+        }
     }
 
     /// Add a new validator node using a nested [`NodeConfigBuilder`].

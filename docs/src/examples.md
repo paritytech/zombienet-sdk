@@ -56,6 +56,7 @@ Scale networks with grouped nodes.
 | [`db_snapshot`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/db_snapshot.rs) | Database snapshots for faster init |
 | [`docker_db_snapshot`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/docker_db_snapshot.rs) | DB snapshots in Docker environments |
 | [`raw_spec_override`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/raw_spec_override.rs) | Override raw chain spec fields |
+| [`genesis_patch`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/genesis_patch.rs) | Append to and replace runtime genesis values with an RFC 6902 patch |
 
 ---
 

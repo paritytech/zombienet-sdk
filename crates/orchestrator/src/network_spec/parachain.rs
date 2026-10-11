@@ -83,6 +83,9 @@ pub struct ParachainSpec {
     /// Genesis overrides as JSON value.
     pub(crate) genesis_overrides: Option<serde_json::Value>,
 
+    /// RFC 6902 patch applied after the overrides.
+    pub(crate) genesis_patch: Option<json_patch::Patch>,
+
     /// Wasm override path/url to use.
     pub(crate) wasm_override: Option<AssetLocation>,
 
@@ -298,6 +301,7 @@ impl ParachainSpec {
             genesis_state,
             genesis_wasm,
             genesis_overrides: config.genesis_overrides().cloned(),
+            genesis_patch: config.genesis_patch().cloned(),
             collators,
             raw_spec_override: config.raw_spec_override().cloned(),
             bootnodes_addresses: config.bootnodes_addresses().into_iter().cloned().collect(),

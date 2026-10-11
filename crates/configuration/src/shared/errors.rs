@@ -55,6 +55,9 @@ pub enum FieldError {
     #[error("genesis_state_generator: {0}")]
     GenesisStateGenerator(anyhow::Error),
 
+    #[error("genesis_patch: {0}")]
+    GenesisPatch(anyhow::Error),
+
     #[error("local_ip: {0}")]
     LocalIp(anyhow::Error),
 

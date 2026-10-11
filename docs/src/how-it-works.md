@@ -12,7 +12,8 @@ The framework applies these modifications to relay chain specs:
 
 | Customization | Description |
 |---------------|-------------|
-| **Runtime Genesis Patch** | Merges user-provided `genesis_overrides` JSON (applied first) |
+| **Runtime Genesis Patch** | Merges user-provided `genesis_overrides` JSON (applied first): objects merge, any other value replaces |
+| **Genesis Patch** | Applies the `genesis_patch` RFC 6902 operations after the overrides. A path must exist in the preset's genesis for `replace`, and its parent for `add`; keys rewritten below (authorities, stakers, invulnerables, `validatorCount`, node balances) are rewritten after the patch |
 | **Clear Authorities** | Removes existing authorities from `session/keys`, `aura/authorities`, `grandpa/authorities`, `collatorSelection/invulnerables`, and `staking/invulnerables` + `staking/stakers` (relay only). Also sets `validatorCount` to 0 unless `devStakers` is configured. |
 | **Add Balances** | Adds balances for each node's `sr` and `sr_stash` accounts. Balance is `max(initial_balance, staking_min * 2)`. Only nodes with `initial_balance > 0` receive balances. |
 | **Add Zombie Account** | Adds `//Zombie` account with 1000 units (in chain denomination, i.e., `1000 * 10^token_decimals` planck) for internal operations |
@@ -31,6 +32,7 @@ For cumulus-based parachains:
 | **Override para_id/paraId** | Sets correct parachain ID in chain spec root (both `para_id` and `paraId` variants) |
 | **Override relay_chain** | Sets relay chain ID in chain spec root |
 | **Apply Genesis Overrides** | Merges user-provided JSON overrides |
+| **Genesis Patch** | Applies the `genesis_patch` RFC 6902 operations after the overrides, before the authorities and balances below are rewritten |
 | **Clear/Add Authorities** | Clears existing authorities from `session/keys`, `aura/authorities`, `grandpa/authorities`, `collatorSelection/invulnerables`. Then adds collator session keys (if session pallet exists) or aura authorities. |
 | **Add Collator Selection** | Adds invulnerable collators to `collatorSelection/invulnerables` |
 | **Override parachainInfo** | Sets correct `parachainId` in `/parachainInfo/parachainId` |

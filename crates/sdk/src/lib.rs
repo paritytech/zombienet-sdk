@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 pub use configuration::{
+    json_patch,
     types::{Arg, AssetLocation},
     Buildable, CustomProcess, CustomProcessBuilder, GlobalSettings, GlobalSettingsBuilder,
     NamedPort, NetworkConfig, NetworkConfigBuilder, RegistrationStrategy,

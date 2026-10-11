@@ -924,6 +924,9 @@ impl ChainSpec {
                     merge(genesis, percolated_overrides);
                 }
             }
+            if let Some(patch) = &para.genesis_patch {
+                patch_genesis(&pointer, &mut chain_spec_json, patch)?;
+            }
 
             clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
@@ -974,14 +977,19 @@ impl ChainSpec {
 
             // check if `assets` pallet config
             let balances_to_add =
-                generate_balance_to_add_from_assets_pallet(&pointer, &chain_spec_json);
-            add_balances(&pointer, &mut chain_spec_json, balances_to_add);
+                generate_balance_to_add_from_assets_pallet(&pointer, &chain_spec_json)?;
+            add_balances(&pointer, &mut chain_spec_json, balances_to_add)?;
 
             // write spec
             let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
                 GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
             })?;
             self.write_spec(scoped_fs, content).await?;
+        } else if para.genesis_patch.is_some() {
+            return Err(GeneratorError::ChainSpecGeneration(format!(
+                "para_id {}: genesis_patch needs a plain chain spec, this one is raw",
+                para.id
+            )));
         } else {
             warn!("⚠️ Chain spec for para_id: {} is in raw mode", para.id);
         }
@@ -1030,6 +1038,9 @@ impl ChainSpec {
                     merge(patch_section, percolated_overrides);
                 }
             }
+            if let Some(patch) = &relaychain.genesis_patch {
+                patch_genesis(&pointer, &mut chain_spec_json, patch)?;
+            }
 
             // get min stake (to store if neede later)
             let staking_min = get_staking_min(&pointer, &mut chain_spec_json);
@@ -1048,7 +1059,7 @@ impl ChainSpec {
                 1000 * 10_u128.pow(token_decimals as u32),
             ));
 
-            add_balances(&pointer, &mut chain_spec_json, balances_to_add);
+            add_balances(&pointer, &mut chain_spec_json, balances_to_add)?;
 
             // add staking
             add_staking(
@@ -1108,6 +1119,11 @@ impl ChainSpec {
                 GeneratorError::ChainSpecGeneration("can not parse chain-spec value as json".into())
             })?;
             self.write_spec(scoped_fs, content).await?;
+        } else if relaychain.genesis_patch.is_some() {
+            return Err(GeneratorError::ChainSpecGeneration(format!(
+                "{}: genesis_patch needs a plain chain spec, this one is raw",
+                self.chain_spec_name
+            )));
         } else {
             warn!(
                 "⚠️ Chain Spec for chain {} is in raw mode, can't customize.",
@@ -1535,6 +1551,20 @@ fn construct_runtime_pointer_from_overrides(
     Err(anyhow!("Can not find the runtime pointer"))
 }
 
+/// Apply an RFC 6902 patch to the runtime genesis section. Paths in the
+/// patch are relative to that section. Nothing is changed if an operation fails.
+fn patch_genesis(
+    pointer: &str,
+    chain_spec_json: &mut serde_json::Value,
+    patch: &json_patch::Patch,
+) -> Result<(), GeneratorError> {
+    let section = chain_spec_json.pointer_mut(pointer).ok_or_else(|| {
+        GeneratorError::ChainSpecGeneration(format!("runtime genesis not found at {pointer}"))
+    })?;
+    json_patch::patch(section, &patch.0)
+        .map_err(|e| GeneratorError::ChainSpecGeneration(format!("genesis_patch: {e}")))
+}
+
 // Merge `patch_section` with `overrides`.
 pub(crate) fn merge(patch_section: &mut serde_json::Value, overrides: &serde_json::Value) {
     trace!("patch: {:?}", patch_section);
@@ -1632,17 +1662,16 @@ fn add_balances(
     runtime_config_ptr: &str,
     chain_spec_json: &mut serde_json::Value,
     balances_to_add: Vec<(String, u128)>,
-    // token_decimals: u8,
-) {
+) -> Result<(), GeneratorError> {
     if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
         let Some(balances) = val.pointer("/balances/balances") else {
             // should be a info log
             warn!("NO 'balances' key in runtime config, skipping...");
-            return;
+            return Ok(());
         };
 
         // create a balance map
-        let mut balances_map = generate_balance_map(balances);
+        let mut balances_map = generate_balance_map(balances)?;
         for balance in balances_to_add {
             balances_map.insert(balance.0, balance.1);
         }
@@ -1655,6 +1684,7 @@ fn add_balances(
     } else {
         unreachable!("pointer to runtime config should be valid!")
     }
+    Ok(())
 }
 
 /// Gets the address for a given key scheme from the node's accounts.
@@ -1941,11 +1971,11 @@ fn override_parachain_info(
 fn generate_balance_to_add_from_assets_pallet(
     runtime_config_ptr: &str,
     chain_spec_json: &serde_json::Value,
-) -> Vec<(String, u128)> {
+) -> Result<Vec<(String, u128)>, GeneratorError> {
     if let Some(val) = chain_spec_json.pointer(runtime_config_ptr) {
         // generate the current balance map, to only add missing accounts
         let balances_map = if let Some(balances) = val.pointer("/balances/balances") {
-            generate_balance_map(balances)
+            generate_balance_map(balances)?
         } else {
             Default::default()
         };
@@ -1981,9 +2011,9 @@ fn generate_balance_to_add_from_assets_pallet(
                     }
                 })
                 .collect();
-            accounts_to_add
+            Ok(accounts_to_add)
         } else {
-            vec![]
+            Ok(vec![])
         }
     } else {
         unreachable!("pointer to runtime config should be valid!")
@@ -2029,17 +2059,16 @@ fn add_collator_selection(
 }
 
 // Helpers
-fn generate_balance_map(balances: &serde_json::Value) -> HashMap<String, u128> {
-    // SAFETY: balances is always an array in chain-spec with items [k,v]
-    let balances_map: HashMap<String, u128> =
-        serde_json::from_value::<Vec<(String, u128)>>(balances.to_owned())
-            .unwrap()
-            .iter()
-            .fold(HashMap::new(), |mut memo, balance| {
-                memo.insert(balance.0.clone(), balance.1);
-                memo
-            });
-    balances_map
+fn generate_balance_map(
+    balances: &serde_json::Value,
+) -> Result<HashMap<String, u128>, GeneratorError> {
+    let entries =
+        serde_json::from_value::<Vec<(String, u128)>>(balances.to_owned()).map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!(
+                "balances/balances entries must be [address, amount]: {e}"
+            ))
+        })?;
+    Ok(entries.into_iter().collect())
 }
 
 fn generate_balance_to_add_from_nodes(
@@ -2151,6 +2180,85 @@ mod tests {
     }
 
     #[test]
+    fn genesis_patch_appends_and_replaces() {
+        let mut chain_spec_json = chain_spec_with_stake();
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+        let patch: json_patch::Patch = serde_json::from_value(json!([
+            {"op": "add", "path": "/staking/invulnerables/-", "value": "5Extra"},
+            {"op": "replace", "path": "/staking/minimumValidatorCount", "value": 7},
+            {"op": "add", "path": "/balances", "value": {"balances": [["5Extra", 1]]}},
+        ]))
+        .unwrap();
+
+        patch_genesis(&pointer, &mut chain_spec_json, &patch).unwrap();
+
+        let section = chain_spec_json.pointer(&pointer).unwrap();
+        assert_eq!(
+            section["staking"]["invulnerables"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(section["staking"]["invulnerables"][2], "5Extra");
+        assert_eq!(section["staking"]["minimumValidatorCount"], 7);
+        assert_eq!(section["balances"]["balances"][0][0], "5Extra");
+    }
+
+    #[test]
+    fn appended_balance_survives_overrides_and_add_balances() {
+        let mut spec = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+        let pointer = get_runtime_config_pointer(&spec).unwrap();
+        let balances = format!("{pointer}/balances/balances");
+
+        // overrides replace the list, the patch appends to the result
+        let overrides = json!({"balances": {"balances": [["5Base", 1]]}});
+        merge(spec.pointer_mut(&pointer).unwrap(), &overrides);
+        let patch: json_patch::Patch = serde_json::from_value(json!([
+            {"op": "add", "path": "/balances/balances/-", "value": ["5Extra", 5]},
+        ]))
+        .unwrap();
+        patch_genesis(&pointer, &mut spec, &patch).unwrap();
+        add_balances(&pointer, &mut spec, vec![("5Node".into(), 7)]).unwrap();
+
+        let map = generate_balance_map(spec.pointer(&balances).unwrap()).unwrap();
+        assert_eq!(map.len(), 3);
+        assert_eq!(map["5Base"], 1);
+        assert_eq!(map["5Extra"], 5);
+        assert_eq!(map["5Node"], 7);
+    }
+
+    #[test]
+    fn malformed_balance_is_an_error_not_a_panic() {
+        let mut spec = chain_spec_test(ROCOCO_LOCAL_PLAIN_TESTING);
+        let pointer = get_runtime_config_pointer(&spec).unwrap();
+        let patch: json_patch::Patch = serde_json::from_value(json!([
+            {"op": "add", "path": "/balances/balances/-", "value": ["5Extra", "5"]},
+        ]))
+        .unwrap();
+        patch_genesis(&pointer, &mut spec, &patch).unwrap();
+
+        let err = add_balances(&pointer, &mut spec, vec![]).unwrap_err();
+        assert!(err.to_string().contains("balances"), "{err}");
+    }
+
+    #[test]
+    fn genesis_patch_fails_whole_when_an_operation_fails() {
+        let mut chain_spec_json = chain_spec_with_stake();
+        let before = chain_spec_json.clone();
+        let pointer = get_runtime_config_pointer(&chain_spec_json).unwrap();
+        let patch: json_patch::Patch = serde_json::from_value(json!([
+            {"op": "replace", "path": "/staking/minimumValidatorCount", "value": 7},
+            {"op": "replace", "path": "/staking/missing", "value": 1},
+        ]))
+        .unwrap();
+
+        let err = patch_genesis(&pointer, &mut chain_spec_json, &patch).unwrap_err();
+        assert!(err.to_string().contains("genesis_patch"), "{err}");
+        assert_eq!(chain_spec_json, before);
+    }
+
+    #[test]
     fn get_min_stake_works() {
         let mut chain_spec_json = chain_spec_with_stake();
 
@@ -2241,13 +2349,13 @@ mod tests {
 
         let nodes = vec![node];
         let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
-        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
+        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add).unwrap();
 
         let new_balances = spec_plain
             .pointer("/genesis/runtime/balances/balances")
             .unwrap();
 
-        let balances_map = generate_balance_map(new_balances);
+        let balances_map = generate_balance_map(new_balances).unwrap();
 
         // sr and sr_stash keys exists
         let sr = nodes[0].accounts.accounts.get("sr").unwrap();
@@ -2266,18 +2374,18 @@ mod tests {
         let balances = spec_plain
             .pointer("/genesis/runtime/balances/balances")
             .unwrap();
-        let balances_map = generate_balance_map(balances);
+        let balances_map = generate_balance_map(balances).unwrap();
 
         let nodes: Vec<NodeSpec> = vec![];
         let mut balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
         balances_to_add.push((ZOMBIE_KEY.to_string(), 1000 * 10_u128.pow(12)));
-        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
+        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add).unwrap();
 
         let new_balances = spec_plain
             .pointer("/genesis/runtime/balances/balances")
             .unwrap();
 
-        let new_balances_map = generate_balance_map(new_balances);
+        let new_balances_map = generate_balance_map(new_balances).unwrap();
 
         // sr and sr_stash keys exists
         assert!(new_balances_map.contains_key(ZOMBIE_KEY));
@@ -2313,7 +2421,7 @@ mod tests {
 
         let nodes = vec![node];
         let balances_to_add = generate_balance_to_add_from_nodes(&nodes, 0);
-        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add);
+        add_balances("/genesis/runtime", &mut spec_plain, balances_to_add).unwrap();
 
         let new_balances = spec_plain.pointer("/genesis/runtime/balances/balances");
 
@@ -2494,7 +2602,7 @@ mod tests {
         let balances = spec_plain
             .pointer("/genesis/runtimeGenesis/patch/balances/balances")
             .unwrap();
-        let balances_map = generate_balance_map(balances);
+        let balances_map = generate_balance_map(balances).unwrap();
         println!("balance {balances_map:?}");
 
         let nodes: Vec<NodeSpec> = vec![];
@@ -2503,25 +2611,28 @@ mod tests {
             "/genesis/runtimeGenesis/patch",
             &mut spec_plain,
             balances_to_add,
-        );
+        )
+        .unwrap();
 
         //
         let balances_to_add_from_assets = generate_balance_to_add_from_assets_pallet(
             "/genesis/runtimeGenesis/patch",
             &spec_plain,
-        );
+        )
+        .unwrap();
         println!("to add : {balances_to_add_from_assets:?}");
         add_balances(
             "/genesis/runtimeGenesis/patch",
             &mut spec_plain,
             balances_to_add_from_assets,
-        );
+        )
+        .unwrap();
 
         let new_balances = spec_plain
             .pointer("/genesis/runtimeGenesis/patch/balances/balances")
             .unwrap();
 
-        let new_balances_map = generate_balance_map(new_balances);
+        let new_balances_map = generate_balance_map(new_balances).unwrap();
         println!("balance {new_balances_map:?}");
 
         assert_eq!(new_balances_map.len(), balances_map.len() + 1);

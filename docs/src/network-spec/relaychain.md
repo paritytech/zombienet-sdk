@@ -27,6 +27,13 @@ max_nominations = 16
 [relaychain.genesis.balances]
 balances = [["5GrwvaEF...", 1000000000000]]
 
+# Genesis patch as RFC 6902 operations, applied after `genesis`; paths are
+# relative to the runtime genesis, and `add` at `/-` appends to a list
+[[relaychain.genesis_patch]]
+op = "add"
+path = "/balances/balances/-"
+value = ["5FHneW46...", 1000000000000]
+
 [[relaychain.nodes]]
 name = "alice"
 invulnerable = true
@@ -70,6 +77,7 @@ let config = NetworkConfigBuilder::new()
 | `chain_spec_runtime` | Object | — | Runtime WASM for chain spec generation (see [Chain Spec](./chain-spec.md)) |
 | `random_nominators_count` | Number | — | Number of random nominators for staking |
 | `max_nominations` | Number | — | Maximum nominations per nominator |
-| `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`) |
+| `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`). Objects merge, any other value replaces |
+| `genesis_patch` | Array | — | RFC 6902 operations applied to the runtime genesis after `genesis`; `add` at `/-` appends to a list. Needs a plain chain spec, and paths must exist in the preset (see [How it works](../how-it-works.md)) |
 | `wasm_override` | String | — | WASM runtime override path/URL |
 | `raw_spec_override` | String/Object | — | Raw chain spec override (inline JSON or file path) |

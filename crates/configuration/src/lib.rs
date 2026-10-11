@@ -90,6 +90,8 @@ pub use custom_process::{CustomProcess, CustomProcessBuilder, NamedPort};
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
 pub use jamchain::{JamchainConfig, JamchainConfigBuilder};
+/// RFC 6902 patches, the type behind `genesis_patch`.
+pub use json_patch;
 pub use network::{Buildable, NetworkConfig, NetworkConfigBuilder};
 pub use observability::{ObservabilityConfig, ObservabilityConfigBuilder};
 pub use parachain::{

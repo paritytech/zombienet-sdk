@@ -121,6 +121,13 @@ impl ParachainSpec {
             )));
         };
 
+        if !config.is_cumulus_based() && config.genesis_patch().is_some() {
+            return Err(OrchestratorError::InvalidConfig(format!(
+                "parachain[{}]: genesis_patch requires a cumulus-based parachain",
+                config.id()
+            )));
+        }
+
         // TODO: internally we use image as String
         let main_image = config
             .default_image()
@@ -189,11 +196,6 @@ impl ParachainSpec {
             };
 
             Some(chain_spec)
-        } else if config.genesis_patch().is_some() {
-            return Err(OrchestratorError::InvalidConfig(format!(
-                "parachain[{}]: genesis_patch needs a chain spec, and a non-cumulus parachain has none",
-                config.id()
-            )));
         } else {
             None
         };

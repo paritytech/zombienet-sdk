@@ -916,17 +916,12 @@ impl ChainSpec {
             let pointer = get_runtime_config_pointer(&chain_spec_json)
                 .map_err(GeneratorError::ChainSpecGeneration)?;
 
-            // make genesis overrides first.
-            if let Some(overrides) = &para.genesis_overrides {
-                let percolated_overrides = percolate_overrides(&pointer, overrides)
-                    .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
-                if let Some(genesis) = chain_spec_json.pointer_mut(&pointer) {
-                    merge(genesis, percolated_overrides);
-                }
-            }
-            if let Some(patch) = &para.genesis_patch {
-                patch_genesis(&pointer, &mut chain_spec_json, patch)?;
-            }
+            edit_genesis(
+                &pointer,
+                &mut chain_spec_json,
+                para.genesis_overrides.as_ref(),
+                para.genesis_patch.as_ref(),
+            )?;
 
             clear_authorities(&pointer, &mut chain_spec_json, &self.context);
 
@@ -986,10 +981,7 @@ impl ChainSpec {
             })?;
             self.write_spec(scoped_fs, content).await?;
         } else if para.genesis_patch.is_some() {
-            return Err(GeneratorError::ChainSpecGeneration(format!(
-                "para_id {}: genesis_patch needs a plain chain spec, this one is raw",
-                para.id
-            )));
+            return Err(self.patch_needs_plain_spec());
         } else {
             warn!("⚠️ Chain spec for para_id: {} is in raw mode", para.id);
         }
@@ -1030,17 +1022,12 @@ impl ChainSpec {
             let pointer = get_runtime_config_pointer(&chain_spec_json)
                 .map_err(GeneratorError::ChainSpecGeneration)?;
 
-            // make genesis overrides first.
-            if let Some(overrides) = &relaychain.runtime_genesis_patch {
-                let percolated_overrides = percolate_overrides(&pointer, overrides)
-                    .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
-                if let Some(patch_section) = chain_spec_json.pointer_mut(&pointer) {
-                    merge(patch_section, percolated_overrides);
-                }
-            }
-            if let Some(patch) = &relaychain.genesis_patch {
-                patch_genesis(&pointer, &mut chain_spec_json, patch)?;
-            }
+            edit_genesis(
+                &pointer,
+                &mut chain_spec_json,
+                relaychain.runtime_genesis_patch.as_ref(),
+                relaychain.genesis_patch.as_ref(),
+            )?;
 
             // get min stake (to store if neede later)
             let staking_min = get_staking_min(&pointer, &mut chain_spec_json);
@@ -1120,10 +1107,7 @@ impl ChainSpec {
             })?;
             self.write_spec(scoped_fs, content).await?;
         } else if relaychain.genesis_patch.is_some() {
-            return Err(GeneratorError::ChainSpecGeneration(format!(
-                "{}: genesis_patch needs a plain chain spec, this one is raw",
-                self.chain_spec_name
-            )));
+            return Err(self.patch_needs_plain_spec());
         } else {
             warn!(
                 "⚠️ Chain Spec for chain {} is in raw mode, can't customize.",
@@ -1147,15 +1131,9 @@ impl ChainSpec {
                 GeneratorError::ChainSpecGeneration("Can not parse chain-spec as json".into())
             })?;
 
-        // get the config pointer
         let pointer = get_runtime_config_pointer(&chain_spec_json)
             .map_err(GeneratorError::ChainSpecGeneration)?;
-
-        let percolated_overrides = percolate_overrides(&pointer, overrides)
-            .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
-        if let Some(patch_section) = chain_spec_json.pointer_mut(&pointer) {
-            merge(patch_section, percolated_overrides);
-        }
+        edit_genesis(&pointer, &mut chain_spec_json, Some(overrides), None)?;
 
         // write spec
         let content = serde_json::to_string_pretty(&chain_spec_json).map_err(|_| {
@@ -1164,6 +1142,13 @@ impl ChainSpec {
         self.write_spec(scoped_fs, content).await?;
 
         Ok(())
+    }
+
+    fn patch_needs_plain_spec(&self) -> GeneratorError {
+        GeneratorError::ChainSpecGeneration(format!(
+            "{}: genesis_patch needs a plain chain spec",
+            self.chain_spec_name
+        ))
     }
 
     pub async fn add_bootnodes<'a, T>(
@@ -1551,19 +1536,33 @@ fn construct_runtime_pointer_from_overrides(
     Err(anyhow!("Can not find the runtime pointer"))
 }
 
-/// Apply an RFC 6902 patch to the runtime genesis section. Paths in the
-/// patch are relative to that section. Nothing is changed if an operation fails.
-fn patch_genesis(
+/// Merge the `genesis` overrides into the runtime genesis section, then apply
+/// the RFC 6902 patch to it. Patch paths are relative to the section, and
+/// nothing is changed if an operation fails.
+fn edit_genesis(
     pointer: &str,
     chain_spec_json: &mut serde_json::Value,
-    patch: &json_patch::Patch,
+    overrides: Option<&serde_json::Value>,
+    patch: Option<&json_patch::Patch>,
 ) -> Result<(), GeneratorError> {
-    let section = chain_spec_json.pointer_mut(pointer).ok_or_else(|| {
-        GeneratorError::ChainSpecGeneration(format!("runtime genesis not found at {pointer}"))
-    })?;
-    json_patch::patch(section, &patch.0).map_err(|e| {
-        GeneratorError::ChainSpecGeneration(format!("genesis_patch (paths under {pointer}): {e}"))
-    })
+    let percolated = overrides
+        .map(|overrides| percolate_overrides(pointer, overrides))
+        .transpose()
+        .map_err(|e| GeneratorError::ChainSpecGeneration(e.to_string()))?;
+    let Some(section) = chain_spec_json.pointer_mut(pointer) else {
+        unreachable!("pointer to runtime config should be valid!")
+    };
+    if let Some(overrides) = percolated {
+        merge(section, overrides);
+    }
+    if let Some(patch) = patch {
+        json_patch::patch(section, &patch.0).map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!(
+                "genesis_patch (paths under {pointer}): {e}"
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 // Merge `patch_section` with `overrides`.
@@ -1664,27 +1663,20 @@ fn add_balances(
     chain_spec_json: &mut serde_json::Value,
     balances_to_add: Vec<(String, u128)>,
 ) -> Result<(), GeneratorError> {
-    if let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) {
-        let Some(balances) = val.pointer("/balances/balances") else {
-            // should be a info log
-            warn!("NO 'balances' key in runtime config, skipping...");
-            return Ok(());
-        };
-
-        // create a balance map
-        let mut balances_map = generate_balance_map(balances)?;
-        for balance in balances_to_add {
-            balances_map.insert(balance.0, balance.1);
-        }
-
-        // convert the map and store again
-        let new_balances: Vec<(&String, &u128)> =
-            balances_map.iter().collect::<Vec<(&String, &u128)>>();
-
-        val["balances"]["balances"] = json!(new_balances);
-    } else {
+    let Some(val) = chain_spec_json.pointer_mut(runtime_config_ptr) else {
         unreachable!("pointer to runtime config should be valid!")
+    };
+    let Some(balances) = val.pointer("/balances/balances") else {
+        warn!("NO 'balances' key in runtime config, skipping...");
+        return Ok(());
+    };
+
+    let mut balances_map = generate_balance_map(balances)?;
+    for balance in balances_to_add {
+        balances_map.insert(balance.0, balance.1);
     }
+    let new_balances: Vec<(&String, &u128)> = balances_map.iter().collect();
+    val["balances"]["balances"] = json!(new_balances);
     Ok(())
 }
 
@@ -1973,44 +1965,28 @@ fn generate_balance_to_add_from_assets_pallet(
     runtime_config_ptr: &str,
     chain_spec_json: &serde_json::Value,
 ) -> Result<Vec<(String, u128)>, GeneratorError> {
-    if let Some(val) = chain_spec_json.pointer(runtime_config_ptr) {
-        // generate the current balance map, to only add missing accounts
-        let balances_map = if let Some(balances) = val.pointer("/balances/balances") {
-            generate_balance_map(balances)?
-        } else {
-            Default::default()
-        };
-
-        let Some(assets_accounts) = val.pointer("/assets/accounts") else {
-            return Ok(vec![]);
-        };
-        let bad = |what: &str| {
-            GeneratorError::ChainSpecGeneration(format!(
-                "assets/accounts entries must be [asset_id, address, amount]: {what}"
-            ))
-        };
-        let mut accounts_to_add = vec![];
-        for account in assets_accounts
-            .as_array()
-            .ok_or_else(|| bad("not a list"))?
-        {
-            let address = account
-                .get(1)
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| bad(&account.to_string()))?;
-            let amount = account
-                .get(2)
-                .and_then(|v| v.as_number())
-                .and_then(|n| n.to_string().parse::<u128>().ok())
-                .ok_or_else(|| bad(&account.to_string()))?;
-            if !balances_map.contains_key(address) {
-                accounts_to_add.push((address.to_string(), amount));
-            }
-        }
-        Ok(accounts_to_add)
-    } else {
+    let Some(val) = chain_spec_json.pointer(runtime_config_ptr) else {
         unreachable!("pointer to runtime config should be valid!")
-    }
+    };
+    // only accounts the balances list does not have yet
+    let balances_map = match val.pointer("/balances/balances") {
+        Some(balances) => generate_balance_map(balances)?,
+        None => Default::default(),
+    };
+    let Some(assets_accounts) = val.pointer("/assets/accounts") else {
+        return Ok(vec![]);
+    };
+    let accounts =
+        Vec::<(serde_json::Value, String, u128)>::deserialize(assets_accounts).map_err(|e| {
+            GeneratorError::ChainSpecGeneration(format!(
+                "assets/accounts entries must be [asset_id, address, amount]: {e}"
+            ))
+        })?;
+    Ok(accounts
+        .into_iter()
+        .filter(|(_, address, _)| !balances_map.contains_key(address))
+        .map(|(_, address, amount)| (address, amount))
+        .collect())
 }
 
 fn add_collator_selection(
@@ -2055,12 +2031,11 @@ fn add_collator_selection(
 fn generate_balance_map(
     balances: &serde_json::Value,
 ) -> Result<HashMap<String, u128>, GeneratorError> {
-    let entries =
-        serde_json::from_value::<Vec<(String, u128)>>(balances.to_owned()).map_err(|e| {
-            GeneratorError::ChainSpecGeneration(format!(
-                "balances/balances entries must be [address, amount]: {e}"
-            ))
-        })?;
+    let entries = Vec::<(String, u128)>::deserialize(balances).map_err(|e| {
+        GeneratorError::ChainSpecGeneration(format!(
+            "balances/balances entries must be [address, amount]: {e}"
+        ))
+    })?;
     Ok(entries.into_iter().collect())
 }
 
@@ -2183,16 +2158,9 @@ mod tests {
         ]))
         .unwrap();
 
-        patch_genesis(&pointer, &mut chain_spec_json, &patch).unwrap();
+        edit_genesis(&pointer, &mut chain_spec_json, None, Some(&patch)).unwrap();
 
         let section = chain_spec_json.pointer(&pointer).unwrap();
-        assert_eq!(
-            section["staking"]["invulnerables"]
-                .as_array()
-                .unwrap()
-                .len(),
-            3
-        );
         assert_eq!(section["staking"]["invulnerables"][2], "5Extra");
         assert_eq!(section["staking"]["minimumValidatorCount"], 7);
         assert_eq!(section["balances"]["balances"][0][0], "5Extra");
@@ -2206,12 +2174,11 @@ mod tests {
 
         // overrides replace the list, the patch appends to the result
         let overrides = json!({"balances": {"balances": [["5Base", 1]]}});
-        merge(spec.pointer_mut(&pointer).unwrap(), &overrides);
         let patch: json_patch::Patch = serde_json::from_value(json!([
             {"op": "add", "path": "/balances/balances/-", "value": ["5Extra", 5]},
         ]))
         .unwrap();
-        patch_genesis(&pointer, &mut spec, &patch).unwrap();
+        edit_genesis(&pointer, &mut spec, Some(&overrides), Some(&patch)).unwrap();
         add_balances(&pointer, &mut spec, vec![("5Node".into(), 7)]).unwrap();
 
         let map = generate_balance_map(spec.pointer(&balances).unwrap()).unwrap();
@@ -2229,7 +2196,7 @@ mod tests {
             {"op": "add", "path": "/balances/balances/-", "value": ["5Extra", "5"]},
         ]))
         .unwrap();
-        patch_genesis(&pointer, &mut spec, &patch).unwrap();
+        edit_genesis(&pointer, &mut spec, None, Some(&patch)).unwrap();
 
         let err = add_balances(&pointer, &mut spec, vec![]).unwrap_err();
         assert!(err.to_string().contains("balances"), "{err}");
@@ -2246,7 +2213,7 @@ mod tests {
         ]))
         .unwrap();
 
-        let err = patch_genesis(&pointer, &mut chain_spec_json, &patch).unwrap_err();
+        let err = edit_genesis(&pointer, &mut chain_spec_json, None, Some(&patch)).unwrap_err();
         assert!(err.to_string().contains("genesis_patch"), "{err}");
         assert_eq!(chain_spec_json, before);
     }

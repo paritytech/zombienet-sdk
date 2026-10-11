@@ -77,7 +77,7 @@ let config = NetworkConfigBuilder::new()
 | `chain_spec_runtime` | Object | — | Runtime WASM for chain spec generation (see [Chain Spec](./chain-spec.md)) |
 | `random_nominators_count` | Number | — | Number of random nominators for staking |
 | `max_nominations` | Number | — | Maximum nominations per nominator |
-| `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`). Objects merge, any other value replaces |
-| `genesis_patch` | Array | — | RFC 6902 operations applied to the runtime genesis after `genesis`; `add` at `/-` appends to a list. Needs a plain chain spec, and paths must exist once `genesis` is merged (see [How it works](../how-it-works.md)) |
+| `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`) |
+| `genesis_patch` | Array | — | RFC 6902 operations applied to the runtime genesis after `genesis` (see [How it works](../how-it-works.md)) |
 | `wasm_override` | String | — | WASM runtime override path/URL |
 | `raw_spec_override` | String/Object | — | Raw chain spec override (inline JSON or file path) |

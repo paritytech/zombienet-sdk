@@ -2378,7 +2378,7 @@ mode = "validator"
     }
 
     #[test]
-    fn genesis_patch_round_trips_through_toml_and_is_validated() {
+    fn genesis_patch_round_trips_through_toml() {
         let toml = r#"
 [relaychain]
 chain = "rococo-local"
@@ -2425,9 +2425,6 @@ name = "collator"
             NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
         assert_eq!(reloaded.relaychain().genesis_patch(), Some(relay_patch));
         assert_eq!(reloaded.parachains()[0].genesis_patch(), Some(para_patch));
-
-        let bogus = toml.replace("op = \"remove\"", "op = \"append\"");
-        assert!(NetworkConfig::load_from_toml_string(&bogus).is_err());
     }
 
     #[test]

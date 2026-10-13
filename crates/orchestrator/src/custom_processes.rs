@@ -5,7 +5,11 @@
 //! is allowed to fail: then it is recorded on the network and the spawn goes
 //! on.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use configuration::{CustomProcess, DependencyCondition};
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -79,7 +83,7 @@ fn startable(
 
 /// What a process that did not make it means for the spawn: the reason to
 /// record when the process is allowed to fail, else the error that fails it.
-fn tolerated(process: &CustomProcess, reason: String) -> Result<String, OrchestratorError> {
+fn tolerate(process: &CustomProcess, reason: String) -> Result<String, OrchestratorError> {
     if process.allowed_to_fail() {
         Ok(reason)
     } else {
@@ -99,15 +103,15 @@ fn skip<T: FileSystem>(
     process: &CustomProcess,
     reason: String,
 ) -> Result<(), OrchestratorError> {
-    let reason = tolerated(process, reason)?;
+    let reason = tolerate(process, reason)?;
     network.add_skipped_custom_process(process.name(), reason);
     phases.insert(process.name().to_string(), Phase::Skipped);
     Ok(())
 }
 
 /// Start each process once its dependencies are met, at most
-/// `spawn_concurrency` spawning at a time. The first process that fails,
-/// or is never started, without being allowed to fails the spawn.
+/// `spawn_concurrency` spawning at a time. The first process that fails, or
+/// is never started, without being allowed to fail fails the spawn.
 pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     network: &mut Network<T>,
     spec: &NetworkSpec,
@@ -117,7 +121,6 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     if spec.custom_processes.is_empty() {
         return Ok(());
     }
-    let spawn_concurrency = spawn_concurrency.max(1);
     let host_ip = spec
         .global_settings
         .local_ip()
@@ -137,8 +140,9 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     // Checked before spawning, so no process runs untracked. Every process
     // parks its ports before any spawns, see `PreparedProcess`.
     let mut pending: Vec<PreparedProcess> = vec![];
+    let mut seen: HashSet<&str> = HashSet::new();
     for cp in &spec.custom_processes {
-        if network.has_member(cp.name()) {
+        if network.has_member(cp.name()) || !seen.insert(cp.name()) {
             skip(
                 network,
                 &mut phases,
@@ -177,12 +181,12 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
                 Startable::Now if spawning.len() >= spawn_concurrency => i += 1,
                 Startable::Now => {
                     let prepared = pending.swap_remove(i);
-                    let name = prepared.spec.name().to_string();
+                    let spec = prepared.spec;
                     let ns = ns.clone();
                     let nodes_by_name = &nodes_by_name;
                     spawning.push(async move {
                         let outcome = spawn_process(prepared, ns, host_ip, nodes_by_name).await;
-                        (name, outcome)
+                        (spec, outcome)
                     });
                 },
                 Startable::Later => i += 1,
@@ -196,30 +200,25 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
             break;
         }
         tokio::select! {
-            Some((name, outcome)) = spawning.next(), if !spawning.is_empty() => match outcome {
+            Some((spec, outcome)) = spawning.next(), if !spawning.is_empty() => match outcome {
                 Ok(node) => {
-                    phases.insert(name.clone(), Phase::Reached(CustomProcessState::Starting));
-                    let timeout = node
-                        .spec()
+                    phases.insert(spec.name().to_string(), Phase::Reached(CustomProcessState::Starting));
+                    let timeout = spec
                         .timeout()
                         .map(|secs| Duration::from_secs(u64::from(secs)))
                         .unwrap_or(default_timeout);
                     waiting.push(async move {
                         let state = node.wait_ready(timeout).await;
-                        (name, node, state)
+                        (node, state)
                     });
                 },
-                Err(e) => skip(
-                    network,
-                    &mut phases,
-                    by_name[name.as_str()],
-                    format!("failed to spawn: {e}"),
-                )?,
+                Err(e) => skip(network, &mut phases, spec, format!("failed to spawn: {e}"))?,
             },
-            Some((name, mut node, state)) = waiting.next(), if !waiting.is_empty() => {
+            Some((mut node, state)) = waiting.next(), if !waiting.is_empty() => {
+                let name = node.name().to_string();
                 match &state {
                     CustomProcessState::Failed { reason } => {
-                        let reason = tolerated(node.spec(), reason.clone())?;
+                        let reason = tolerate(node.spec(), reason.clone())?;
                         warn!("⚠️  {name}: {reason}");
                     },
                     state => info!("✅ {name}: {state}"),
@@ -367,10 +366,10 @@ mod tests {
             .build()
             .unwrap();
 
-        let err = tolerated(&required, "exited with code 3".into()).unwrap_err();
-        assert_eq!(err.to_string(), "Custom process 'api' exited with code 3");
+        let err = tolerate(&required, "exited with code 3".into()).unwrap_err();
+        assert_eq!(err.to_string(), "Custom process 'api': exited with code 3");
         assert_eq!(
-            tolerated(&optional, "exited with code 3".into()).unwrap(),
+            tolerate(&optional, "exited with code 3".into()).unwrap(),
             "exited with code 3"
         );
     }

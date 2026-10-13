@@ -668,7 +668,7 @@ where
             &mut network,
             &network_spec,
             ns.clone(),
-            spawn_concurrency,
+            configured_concurrency(&network_spec),
         )
         .await?;
 
@@ -945,7 +945,7 @@ where
             &mut network,
             network_spec,
             ns.clone(),
-            spawn_concurrency,
+            configured_concurrency(network_spec),
         )
         .await?;
 
@@ -1357,15 +1357,18 @@ fn spawn_concurrency_from_env() -> Option<usize> {
     }
 }
 
+/// The spawn concurrency as set (env over settings), before any token limit:
+/// what custom processes spawn with, since their placeholders resolve from
+/// nodes that are all up and ports that are all reserved before any starts.
+fn configured_concurrency(spec: &NetworkSpec) -> usize {
+    spawn_concurrency_from_env()
+        .or(spec.global_settings.spawn_concurrency())
+        .unwrap_or(100)
+}
+
 fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Error> {
-    let desired_spawn_concurrency = match (
-        spawn_concurrency_from_env(),
-        spec.global_settings.spawn_concurrency(),
-    ) {
-        (Some(n), _) => Some(n),
-        (None, Some(n)) => Some(n),
-        _ => None,
-    };
+    let desired_spawn_concurrency =
+        spawn_concurrency_from_env().or(spec.global_settings.spawn_concurrency());
 
     let (spawn_concurrency, limited_by_tokens) =
         if let Some(spawn_concurrency) = desired_spawn_concurrency {

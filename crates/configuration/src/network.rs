@@ -2672,6 +2672,7 @@ id = 1000
         );
         assert!(processes[0].one_shot());
         let dumped = config.dump_to_toml().unwrap();
+        assert_eq!(dumped.matches("allowed_to_fail").count(), 1, "{dumped}");
         let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
         assert_eq!(reloaded.custom_processes(), config.custom_processes());
 

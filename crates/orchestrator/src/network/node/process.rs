@@ -68,7 +68,7 @@ impl fmt::Display for CustomProcessState {
 }
 
 /// A custom process, allowed to fail, that was never spawned: a dependency
-/// did not meet its condition, or its ports could not be reserved.
+/// did not meet its condition, or it could not be started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkippedProcess {
     pub name: String,

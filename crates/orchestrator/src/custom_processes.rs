@@ -1,6 +1,9 @@
 //! Starting the custom processes of a network once the nodes are up: each one
 //! as soon as its dependencies have met their conditions, in parallel with
-//! whatever else can start. Failures are recorded on the network, never fatal.
+//! whatever else can start, `spawn_concurrency` at a time. A process that
+//! does not meet its condition, or never starts, fails the spawn, unless it
+//! is allowed to fail: then it is recorded on the network and the spawn goes
+//! on.
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -11,6 +14,7 @@ use support::fs::FileSystem;
 use tracing::{info, warn};
 
 use crate::{
+    errors::OrchestratorError,
     network::{node::CustomProcessState, Network},
     network_spec::NetworkSpec,
     spawner::{ports_json, prepare_process, spawn_process, PreparedProcess},
@@ -73,28 +77,47 @@ fn startable(
     Startable::Now
 }
 
-/// A process that is not spawned: recorded on the network, and known to the
-/// scheduler so its dependents are refused too.
+/// What a process that did not make it means for the spawn: the reason to
+/// record when the process is allowed to fail, else the error that fails it.
+fn tolerated(process: &CustomProcess, reason: String) -> Result<String, OrchestratorError> {
+    if process.allowed_to_fail() {
+        Ok(reason)
+    } else {
+        Err(OrchestratorError::CustomProcessFailed {
+            name: process.name().to_string(),
+            reason,
+        })
+    }
+}
+
+/// A process that is not spawned: fails the spawn, or, when allowed to fail,
+/// is recorded on the network and known to the scheduler so its dependents
+/// are refused too.
 fn skip<T: FileSystem>(
     network: &mut Network<T>,
     phases: &mut HashMap<String, Phase>,
-    name: &str,
+    process: &CustomProcess,
     reason: String,
-) {
-    network.add_skipped_custom_process(name, reason);
-    phases.insert(name.to_string(), Phase::Skipped);
+) -> Result<(), OrchestratorError> {
+    let reason = tolerated(process, reason)?;
+    network.add_skipped_custom_process(process.name(), reason);
+    phases.insert(process.name().to_string(), Phase::Skipped);
+    Ok(())
 }
 
-/// Start each process once its dependencies are met; a failed or skipped
-/// one is recorded on the network, nothing here fails the spawn.
+/// Start each process once its dependencies are met, at most
+/// `spawn_concurrency` spawning at a time. The first process that fails,
+/// or is never started, without being allowed to fails the spawn.
 pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     network: &mut Network<T>,
     spec: &NetworkSpec,
     ns: Arc<dyn ProviderNamespace + Send + Sync>,
-) -> Result<(), anyhow::Error> {
+    spawn_concurrency: usize,
+) -> Result<(), OrchestratorError> {
     if spec.custom_processes.is_empty() {
         return Ok(());
     }
+    let spawn_concurrency = spawn_concurrency.max(1);
     let host_ip = spec
         .global_settings
         .local_ip()
@@ -108,18 +131,20 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
         .collect();
     let mut phases: HashMap<String, Phase> = HashMap::new();
 
-    // Checked before spawning: a process that ran and was then refused would
-    // be untracked, having taken the node's place in the provider's registry.
-    // Every process parks its ports before any spawns, see `PreparedProcess`.
+    // The loader and the builder refuse a name a node or process already has,
+    // but a `NetworkConfig` or `NetworkSpec` deserialized directly skips them,
+    // and a process registered under a node's name would replace the node.
+    // Checked before spawning, so no process runs untracked. Every process
+    // parks its ports before any spawns, see `PreparedProcess`.
     let mut pending: Vec<PreparedProcess> = vec![];
     for cp in &spec.custom_processes {
         if network.has_member(cp.name()) {
             skip(
                 network,
                 &mut phases,
-                cp.name(),
+                cp,
                 "the name is already taken by a node or custom process".into(),
-            );
+            )?;
             continue;
         }
         match prepare_process(cp, ns.as_ref()) {
@@ -127,9 +152,9 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
             Err(e) => skip(
                 network,
                 &mut phases,
-                cp.name(),
+                cp,
                 format!("could not reserve its ports: {e}"),
-            ),
+            )?,
         }
     }
 
@@ -141,13 +166,15 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     }
 
     // Spawning and waiting are two steps, so a `service_started` dependent
-    // goes as soon as its dependency spawned, while that one is still waited on.
+    // goes as soon as its dependency spawned, while that one is still waited
+    // on. The concurrency limit is on the spawning step, as for nodes.
     let mut spawning = FuturesUnordered::new();
     let mut waiting = FuturesUnordered::new();
     loop {
         let mut i = 0;
         while i < pending.len() {
             match startable(pending[i].spec, &by_name, &phases) {
+                Startable::Now if spawning.len() >= spawn_concurrency => i += 1,
                 Startable::Now => {
                     let prepared = pending.swap_remove(i);
                     let name = prepared.spec.name().to_string();
@@ -161,7 +188,7 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
                 Startable::Later => i += 1,
                 Startable::Never(reason) => {
                     let prepared = pending.swap_remove(i);
-                    skip(network, &mut phases, prepared.spec.name(), reason);
+                    skip(network, &mut phases, prepared.spec, reason)?;
                 },
             }
         }
@@ -182,11 +209,19 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
                         (name, node, state)
                     });
                 },
-                Err(e) => skip(network, &mut phases, &name, format!("failed to spawn: {e}")),
+                Err(e) => skip(
+                    network,
+                    &mut phases,
+                    by_name[name.as_str()],
+                    format!("failed to spawn: {e}"),
+                )?,
             },
             Some((name, mut node, state)) = waiting.next(), if !waiting.is_empty() => {
                 match &state {
-                    CustomProcessState::Failed { reason } => warn!("⚠️  {name}: {reason}"),
+                    CustomProcessState::Failed { reason } => {
+                        let reason = tolerated(node.spec(), reason.clone())?;
+                        warn!("⚠️  {name}: {reason}");
+                    },
                     state => info!("✅ {name}: {state}"),
                 }
                 node.state = state.clone();
@@ -201,9 +236,9 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
         skip(
             network,
             &mut phases,
-            prepared.spec.name(),
+            prepared.spec,
             "its dependencies never started (cycle?)".into(),
-        );
+        )?;
     }
 
     Ok(())
@@ -316,5 +351,27 @@ mod tests {
             startable(&orphan, &by_name, &phases(vec![])),
             Startable::Never(_)
         ));
+    }
+
+    #[test]
+    fn a_failure_is_an_error_unless_the_process_is_allowed_to_fail() {
+        let required = CustomProcessBuilder::new()
+            .with_name("api")
+            .with_command("api")
+            .build()
+            .unwrap();
+        let optional = CustomProcessBuilder::new()
+            .with_name("metrics")
+            .with_command("metrics")
+            .with_allowed_to_fail()
+            .build()
+            .unwrap();
+
+        let err = tolerated(&required, "exited with code 3".into()).unwrap_err();
+        assert_eq!(err.to_string(), "Custom process 'api' exited with code 3");
+        assert_eq!(
+            tolerated(&optional, "exited with code 3".into()).unwrap(),
+            "exited with code 3"
+        );
     }
 }

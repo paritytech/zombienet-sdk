@@ -2655,11 +2655,14 @@ id = 1000
             [[custom_processes]]
             name = "cache"
             command = "cache"
+            allowed_to_fail = true
             "#,
         )
         .unwrap();
         let processes = config.custom_processes();
         let api = processes[1];
+        assert!(!api.allowed_to_fail());
+        assert!(processes[2].allowed_to_fail());
         assert_eq!(api.timeout(), Some(120));
         assert_eq!(api.ready_check().unwrap().interval, 2);
         assert_eq!(api.depends_on().len(), 2);

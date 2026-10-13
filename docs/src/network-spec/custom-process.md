@@ -109,7 +109,9 @@ timeout = 120
 depends_on = [ "migrate", { name = "cache", condition = "service_started" } ]
 ```
 
-What happened is on the running process: `process.state()` is `Starting`, `Ready`, `Completed` or `Failed { reason }`, and is written to `zombie.json`. A process that fails its check or exits with an error is **kept, not torn down**, so its logs can be read, and `spawn` still returns the `Network`; the processes whose condition on it can no longer be met are not started and are listed with the reason in `network.skipped_custom_processes()` (a `service_started` dependent still starts). `wait_ready()` on a process waits for its condition again; the network-wide `wait_until_is_up()` leaves processes out, for the same reason the spawn does not fail on them.
+Every process is required: one that does not meet its condition within its `timeout`, or is never started (its ports could not be reserved, a dependency did not meet its condition, a placeholder did not resolve), **fails the spawn**, as a node that never comes up does; the error names the process and the reason. With `allowed_to_fail = true` the spawn goes on instead: the process is **kept, not torn down**, so its logs can be read, `process.state()` is `Failed { reason }` (next to `Starting`, `Ready` and `Completed`, all written to `zombie.json`), and one never started is listed with the reason in `network.skipped_custom_processes()`. A process whose dependency failed is itself never started, so it needs `allowed_to_fail` too unless the spawn should fail there (a `service_started` dependent still starts). `wait_ready()` on a process waits for its condition again; the network-wide `wait_until_is_up()` leaves processes out.
+
+Processes start at most `spawn_concurrency` at a time, as nodes do.
 
 A process may name another's port the way it names its own, `{{ZOMBIE:<process>:port_<name>}}`, since every port is picked before anything starts. The host part of the address is the other process's name on kubernetes and the host itself on native; on docker the containers have no names for each other, so the placeholder is of little use there.
 
@@ -128,3 +130,4 @@ A process may name another's port the way it names its own, `{{ZOMBIE:<process>:
 | `depends_on` | Array | — | Names, or `{ name, condition }` with `service_started`, `service_healthy` or `service_completed_successfully` |
 | `one_shot` | Bool | `false` | Runs to completion; exit 0 is success. No `ready_check` |
 | `timeout` | Integer | `node_spawn_timeout` | Seconds to wait for the ready check to pass, or the one-shot to exit |
+| `allowed_to_fail` | Bool | `false` | Not meeting the condition, or never starting, is recorded on the network instead of failing the spawn |

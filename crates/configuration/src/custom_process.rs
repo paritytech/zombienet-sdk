@@ -276,6 +276,9 @@ pub struct CustomProcess {
     // Seconds to wait for the condition: the ready check, or a one-shot's exit
     #[serde(skip_serializing_if = "Option::is_none")]
     timeout: Option<u32>,
+    // Not meeting the condition, or never starting, is recorded, not fatal
+    #[serde(skip_serializing_if = "is_false", default)]
+    allowed_to_fail: bool,
 }
 
 impl Default for CustomProcess {
@@ -292,6 +295,7 @@ impl Default for CustomProcess {
             depends_on: vec![],
             one_shot: false,
             timeout: None,
+            allowed_to_fail: false,
         }
     }
 }
@@ -355,6 +359,13 @@ impl CustomProcess {
     /// absent.
     pub fn timeout(&self) -> Option<u32> {
         self.timeout
+    }
+
+    /// Whether the spawn goes on when this process does not meet its
+    /// condition within its timeout, or is never started. Otherwise that
+    /// fails the spawn, as a node that never comes up does.
+    pub fn allowed_to_fail(&self) -> bool {
+        self.allowed_to_fail
     }
 
     /// What the process is waited on: the `ready_check`, or a TCP connect on
@@ -776,6 +787,19 @@ impl CustomProcessBuilder<WithName, WithCmd> {
         Self::transition(
             CustomProcess {
                 one_shot: true,
+                ..self.config
+            },
+            self.errors,
+        )
+    }
+
+    /// A failure of this process (its check not passing, a one-shot exiting
+    /// with an error, or never starting) is recorded on the network instead
+    /// of failing the spawn.
+    pub fn with_allowed_to_fail(self) -> Self {
+        Self::transition(
+            CustomProcess {
+                allowed_to_fail: true,
                 ..self.config
             },
             self.errors,

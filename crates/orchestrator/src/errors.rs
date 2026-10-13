@@ -18,6 +18,8 @@ pub enum OrchestratorError {
     InvariantError(&'static str),
     #[error("Global network spawn timeout: {0} secs")]
     GlobalTimeOut(u32),
+    #[error("Custom process '{name}' {reason}")]
+    CustomProcessFailed { name: String, reason: String },
     #[error("Generator error: {0}")]
     GeneratorError(#[from] generators::errors::GeneratorError),
     #[error("Provider error: {0}")]

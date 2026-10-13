@@ -664,7 +664,13 @@ where
             }
         }
 
-        custom_processes::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            &network_spec,
+            ns.clone(),
+            spawn_concurrency,
+        )
+        .await?;
 
         network.set_start_time_ts(start_time);
 
@@ -935,7 +941,13 @@ where
         )
         .await?;
 
-        custom_processes::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            network_spec,
+            ns.clone(),
+            spawn_concurrency,
+        )
+        .await?;
 
         network.set_start_time_ts(start_time);
 

@@ -864,8 +864,9 @@ impl<T: FileSystem> Network<T> {
         self.custom_processes.iter().map(|p| p.as_ref()).collect()
     }
 
-    /// The custom processes that were never spawned: a dependency did not meet
-    /// its condition, or their ports could not be reserved.
+    /// The custom processes, allowed to fail, that were never spawned: a
+    /// dependency did not meet its condition, or their ports could not be
+    /// reserved. One not allowed to fail fails the spawn instead.
     pub fn skipped_custom_processes(&self) -> &[node::SkippedProcess] {
         &self.skipped_custom_processes
     }

@@ -75,9 +75,13 @@ pub struct Network<T: FileSystem> {
     parachains: HashMap<u32, Vec<Parachain>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     jamchain: Option<Jamchain>,
-    /// The custom processes running next to the nodes, in config order.
+    /// The custom processes running next to the nodes, in the order each one
+    /// met (or failed) its condition; `zombie.json` keeps that order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     custom_processes: Vec<Arc<node::CustomProcessNode>>,
+    /// Custom processes that were never spawned, with why.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    skipped_custom_processes: Vec<node::SkippedProcess>,
     /// Every node spawned in this network, by name, regardless of its kind.
     ///
     /// Holds the same `Arc`s as the typed collections above; downcast with
@@ -143,6 +147,7 @@ impl<T: FileSystem> Network<T> {
             parachains: Default::default(),
             jamchain: Default::default(),
             custom_processes: Default::default(),
+            skipped_custom_processes: Default::default(),
             nodes_by_name: Default::default(),
             nodes_to_watch: Default::default(),
             start_time_ts: Default::default(),
@@ -852,9 +857,29 @@ impl<T: FileSystem> Network<T> {
         serde_json::to_value(&self.nodes_by_name)
     }
 
-    /// The custom processes running next to the nodes, in config order.
+    /// The custom processes running next to the nodes, in the order each one
+    /// met (or failed) its condition. Each carries its
+    /// [`CustomProcessState`](node::CustomProcessState).
     pub fn custom_processes(&self) -> Vec<&node::CustomProcessNode> {
         self.custom_processes.iter().map(|p| p.as_ref()).collect()
+    }
+
+    /// The custom processes that were never spawned: a dependency did not meet
+    /// its condition, or their ports could not be reserved.
+    pub fn skipped_custom_processes(&self) -> &[node::SkippedProcess] {
+        &self.skipped_custom_processes
+    }
+
+    pub(crate) fn add_skipped_custom_process(&mut self, name: &str, reason: String) {
+        warn!("⚠️  Custom process {name} not spawned: {reason}");
+        self.skipped_custom_processes.push(node::SkippedProcess {
+            name: name.to_string(),
+            reason,
+        });
+    }
+
+    pub(crate) fn set_skipped_custom_processes(&mut self, skipped: Vec<node::SkippedProcess>) {
+        self.skipped_custom_processes = skipped;
     }
 
     /// Get any node by name, without caring about its kind.

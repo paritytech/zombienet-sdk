@@ -612,6 +612,7 @@ where
             db_snapshot: options.db_snapshot.as_deref(),
             role: options.role,
             ports: &options.ports,
+            readiness: options.readiness.as_ref(),
             wrapper: options.wrapper,
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,

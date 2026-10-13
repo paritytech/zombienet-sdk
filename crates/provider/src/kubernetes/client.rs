@@ -150,10 +150,9 @@ impl KubernetesClient {
         Ok(config_map)
     }
 
-    /// Create the pod and wait for it. A wrapped node is waited for until
-    /// Ready (the wrapper answers at once); a process that runs directly is
-    /// waited for until Running only, since its readiness probe depends on
-    /// the program itself listening, which is not the spawn's concern.
+    /// Create the pod and wait for it: until Ready for a wrapped node (the
+    /// wrapper answers at once), else until it runs or is already done, since
+    /// a direct process may be quick and its readiness is its own check.
     pub(super) async fn create_pod(
         &self,
         namespace: &str,
@@ -182,8 +181,9 @@ impl KubernetesClient {
         let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = if wait_ready {
             ("ready", |pod| helpers::is_pod_ready().matches_object(pod))
         } else {
-            ("running", |pod| {
+            ("running or done", |pod| {
                 conditions::is_pod_running().matches_object(pod)
+                    || helpers::is_pod_done().matches_object(pod)
             })
         };
         trace!("Pod {name} checking for {state} state!");
@@ -593,30 +593,42 @@ impl KubernetesClient {
     }
 }
 
-mod helpers {
-    use k8s_openapi::api::core::v1::Pod;
+pub(super) mod helpers {
+    use k8s_openapi::api::core::v1::{Pod, PodStatus};
     use kube::runtime::wait::Condition;
-    use tracing::trace;
+
+    /// Whether the pod's phase is terminal, `Succeeded` or `Failed`.
+    pub fn status_is_done(status: &PodStatus) -> bool {
+        status
+            .phase
+            .as_deref()
+            .is_some_and(|phase| phase == "Succeeded" || phase == "Failed")
+    }
+
+    /// Whether the pod's Ready condition is true.
+    pub fn status_is_ready(status: &PodStatus) -> bool {
+        status
+            .conditions
+            .iter()
+            .flatten()
+            .any(|cond| cond.status == "True" && cond.type_ == "Ready")
+    }
+
+    /// An await condition for `Pod` that returns `true` once its phase is
+    /// terminal, `Succeeded` or `Failed`.
+    pub fn is_pod_done() -> impl Condition<Pod> {
+        |obj: Option<&Pod>| {
+            obj.and_then(|pod| pod.status.as_ref())
+                .is_some_and(status_is_done)
+        }
+    }
 
     /// An await condition for `Pod` that returns `true` once it is ready
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]
     pub fn is_pod_ready() -> impl Condition<Pod> {
         |obj: Option<&Pod>| {
-            if let Some(pod) = &obj {
-                if let Some(status) = &pod.status {
-                    if let Some(conditions) = &status.conditions {
-                        let ready = conditions
-                            .iter()
-                            .any(|cond| cond.status == "True" && cond.type_ == "Ready");
-
-                        if ready {
-                            trace!("{:#?}", status);
-                            return ready;
-                        }
-                    }
-                }
-            }
-            false
+            obj.and_then(|pod| pod.status.as_ref())
+                .is_some_and(status_is_ready)
         }
     }
 }

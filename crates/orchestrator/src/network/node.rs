@@ -34,12 +34,14 @@ use crate::{
 
 pub mod core;
 pub mod jam;
+#[cfg(test)]
+pub(crate) mod mock;
 pub mod process;
 pub mod spawned;
 
 pub use self::{
     jam::JamNetworkNode,
-    process::{CustomProcessNode, ProcessPort},
+    process::{CustomProcessNode, CustomProcessState, ProcessPort, SkippedProcess},
     spawned::{NodeKind, SpawnedNode},
 };
 
@@ -1054,147 +1056,9 @@ where
 // TODO: mock and impl more unit tests
 #[cfg(test)]
 mod tests {
-    use std::{
-        path::{Path, PathBuf},
-        sync::{Arc, Mutex},
-    };
+    use std::sync::Arc;
 
-    use async_trait::async_trait;
-    use provider::{types::*, ProviderError, ProviderNode};
-
-    use super::*;
-
-    #[derive(Serialize)]
-    struct MockNode {
-        logs: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl MockNode {
-        fn new() -> Self {
-            Self {
-                logs: Arc::new(Mutex::new(vec![])),
-            }
-        }
-
-        fn logs_push(&self, lines: Vec<impl Into<String>>) {
-            self.logs
-                .lock()
-                .unwrap()
-                .extend(lines.into_iter().map(|l| l.into()));
-        }
-    }
-
-    #[async_trait]
-    impl ProviderNode for MockNode {
-        fn name(&self) -> &str {
-            todo!()
-        }
-
-        fn args(&self) -> Vec<&str> {
-            todo!()
-        }
-
-        fn base_dir(&self) -> &PathBuf {
-            todo!()
-        }
-
-        fn config_dir(&self) -> &PathBuf {
-            todo!()
-        }
-
-        fn data_dir(&self) -> &PathBuf {
-            todo!()
-        }
-
-        fn relay_data_dir(&self) -> &PathBuf {
-            todo!()
-        }
-
-        fn scripts_dir(&self) -> &PathBuf {
-            todo!()
-        }
-
-        fn log_path(&self) -> &PathBuf {
-            todo!()
-        }
-
-        fn log_cmd(&self) -> String {
-            todo!()
-        }
-
-        fn path_in_node(&self, _file: &Path) -> PathBuf {
-            todo!()
-        }
-
-        async fn logs(&self) -> Result<String, ProviderError> {
-            Ok(self.logs.lock().unwrap().join("\n"))
-        }
-
-        async fn dump_logs(&self, _local_dest: PathBuf) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn run_command(
-            &self,
-            _options: RunCommandOptions,
-        ) -> Result<ExecutionResult, ProviderError> {
-            todo!()
-        }
-
-        async fn run_script(
-            &self,
-            _options: RunScriptOptions,
-        ) -> Result<ExecutionResult, ProviderError> {
-            todo!()
-        }
-
-        async fn send_file(
-            &self,
-            _local_file_path: &Path,
-            _remote_file_path: &Path,
-            _mode: &str,
-        ) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn receive_file(
-            &self,
-            _remote_file_path: &Path,
-            _local_file_path: &Path,
-        ) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn pause(&self) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn resume(&self) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn restart(&self, _after: Option<Duration>) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn restart_with(
-            &self,
-            _assets: &[AssetLocation],
-            _cmd: &str,
-            _args: &[String],
-            _after: Option<Duration>,
-        ) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn destroy(&self) -> Result<(), ProviderError> {
-            todo!()
-        }
-
-        async fn snapshot_db(&self, _: bool) -> Result<InnerSnapshotDb, ProviderError> {
-            todo!()
-        }
-    }
+    use super::{mock::MockNode, *};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_wait_log_count_target_reached_immediately() -> Result<(), anyhow::Error> {

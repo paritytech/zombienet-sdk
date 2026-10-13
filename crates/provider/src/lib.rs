@@ -17,8 +17,8 @@ use configuration::types::AssetLocation;
 use shared::{
     constants::LOCALHOST,
     types::{
-        ExecutionResult, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
-        RunScriptOptions, SpawnNodeOptions,
+        ExecutionResult, GenerateFilesOptions, ProcessStatus, ProviderCapabilities,
+        RunCommandOptions, RunScriptOptions, SpawnNodeOptions,
     },
 };
 use support::fs::FileSystemError;
@@ -234,6 +234,13 @@ pub trait ProviderNode: erased_serde::Serialize {
     // By default return localhost, should be overrided for k8s
     async fn ip(&self) -> Result<IpAddr, ProviderError> {
         Ok(LOCALHOST)
+    }
+
+    /// What the provider knows about the process: running (and, where the
+    /// provider checks readiness itself, ready or not) or exited. Providers
+    /// that cannot tell report running.
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        Ok(ProcessStatus::Running { ready: None })
     }
 
     // Noop by default (native/docker provider)

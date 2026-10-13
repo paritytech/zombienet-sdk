@@ -15,6 +15,7 @@ use configuration::types::AssetLocation;
 use flate2::read::GzDecoder;
 use futures::future::try_join_all;
 use nix::{
+    errno::Errno,
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
@@ -40,7 +41,8 @@ use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     native,
     types::{
-        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+        ExecutionResult, InnerSnapshotDb, ProcessStatus, RunCommandOptions, RunScriptOptions,
+        TransferedFile,
     },
     ProviderError, ProviderNode,
 };
@@ -443,9 +445,10 @@ where
             ProcessHandle::Spawned(mut child, _pid) => {
                 child.kill().await?;
             },
-            ProcessHandle::Attached(pid) => {
-                kill(pid, Signal::SIGKILL)
-                    .map_err(|err| anyhow!("Failed to kill attached process {pid}: {err}"))?;
+            ProcessHandle::Attached(pid) => match kill(pid, Signal::SIGKILL) {
+                // already gone: a finished one-shot, or a crashed node
+                Ok(()) | Err(Errno::ESRCH) => {},
+                Err(err) => return Err(anyhow!("Failed to kill attached process {pid}: {err}")),
             },
         }
 
@@ -627,6 +630,35 @@ where
             .await?;
 
         Ok(())
+    }
+
+    /// Running or exited. A spawned child is reaped on exit so its code is
+    /// known; an attached process can only be probed for existence.
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let mut guard = self
+            .process_handle
+            .write()
+            .map_err(|_e| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+        Ok(match guard.as_mut() {
+            Some(ProcessHandle::Spawned(child, _)) => match child.try_wait() {
+                Ok(Some(status)) => ProcessStatus::Exited {
+                    code: status.code(),
+                },
+                Ok(None) => ProcessStatus::Running { ready: None },
+                Err(err) => {
+                    return Err(ProviderError::InvalidConfig(format!(
+                        "{}: could not read the process status: {err}",
+                        self.name
+                    )))
+                },
+            },
+            Some(ProcessHandle::Attached(pid)) => match kill(*pid, None) {
+                // EPERM is someone else's process, so alive
+                Ok(()) | Err(Errno::EPERM) => ProcessStatus::Running { ready: None },
+                Err(_) => ProcessStatus::Exited { code: None },
+            },
+            None => ProcessStatus::Exited { code: None },
+        })
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {

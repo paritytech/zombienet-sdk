@@ -3,13 +3,16 @@ use std::{collections::BTreeMap, env};
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, ContainerPort, EnvVar, PodSpec, Probe,
+        ConfigMapVolumeSource, Container, ContainerPort, EnvVar, HTTPGetAction, PodSpec, Probe,
         ResourceRequirements, TCPSocketAction, Toleration, Volume, VolumeMount,
     },
     apimachinery::pkg::{api::resource::Quantity, util::intstr::IntOrString},
 };
 
-use crate::{constants::NODE_SCRIPTS_DIR, types::Port};
+use crate::{
+    constants::NODE_SCRIPTS_DIR,
+    types::{Port, ReadinessProbe, ReadinessTarget},
+};
 
 pub(super) struct PodSpecBuilder;
 
@@ -23,6 +26,7 @@ impl PodSpecBuilder {
         args: &[String],
         env: &[(String, String)],
         ports: &[(String, Port)],
+        readiness: Option<&ReadinessProbe>,
         wrapper: bool,
     ) -> PodSpec {
         let tolerations = if let Ok(node_type) = env::var("X_INFRA_NODETYPE") {
@@ -42,10 +46,15 @@ impl PodSpecBuilder {
             hostname: Some(name.to_string()),
             init_containers: Some(vec![Self::build_helper_binaries_setup_container()]),
             containers: vec![Self::build_main_container(
-                name, image, resources, program, args, env, ports, wrapper,
+                name, image, resources, program, args, env, ports, readiness, wrapper,
             )],
             volumes: Some(Self::build_volumes()),
             tolerations,
+            // A direct process that exits is done, by success or by failure: the
+            // pod ends with it, and so says what happened, instead of the
+            // kubelet restarting it in a loop. A wrapped node keeps its pod up
+            // through the wrapper either way.
+            restart_policy: (!wrapper).then(|| "Never".to_string()),
             ..Default::default()
         }
     }
@@ -59,6 +68,7 @@ impl PodSpecBuilder {
         args: &[String],
         env: &[(String, String)],
         ports: &[(String, Port)],
+        readiness: Option<&ReadinessProbe>,
         wrapper: bool,
     ) -> Container {
         // With the wrapper, `program` is started on demand through the pipe the
@@ -91,18 +101,37 @@ impl PodSpecBuilder {
 
         // A wrapped node reports readiness itself (the wrapper is up at once
         // and the node is waited on through its metrics). A direct process is
-        // Ready, and so routed to by its Service, once its first declared
-        // port accepts a connection on the pod address.
-        let readiness_probe = match (wrapper, ports.first()) {
-            (false, Some((_, port))) => Some(Probe {
-                tcp_socket: Some(TCPSocketAction {
-                    port: IntOrString::Int(i32::from(*port)),
+        // Ready, and so routed to by its Service, once the declared probe
+        // passes on the pod address.
+        let readiness_probe = match (wrapper, readiness) {
+            (false, Some(probe)) => {
+                let (tcp_socket, http_get) = match &probe.target {
+                    ReadinessTarget::Tcp(port) => (
+                        Some(TCPSocketAction {
+                            port: IntOrString::Int(i32::from(*port)),
+                            ..Default::default()
+                        }),
+                        None,
+                    ),
+                    ReadinessTarget::Http { port, path } => (
+                        None,
+                        Some(HTTPGetAction {
+                            port: IntOrString::Int(i32::from(*port)),
+                            path: Some(path.clone()),
+                            ..Default::default()
+                        }),
+                    ),
+                };
+                Some(Probe {
+                    tcp_socket,
+                    http_get,
+                    period_seconds: Some(i32::try_from(probe.period_secs).unwrap_or(i32::MAX)),
+                    // the same patience as the probe zombienet runs itself
+                    timeout_seconds: Some(5),
+                    failure_threshold: Some(3),
                     ..Default::default()
-                }),
-                period_seconds: Some(2),
-                failure_threshold: Some(3),
-                ..Default::default()
-            }),
+                })
+            },
             _ => None,
         };
 
@@ -287,8 +316,10 @@ mod tests {
             &["--dev".to_string()],
             &[],
             &[],
+            None,
             true,
         );
+        assert!(spec.restart_policy.is_none());
         let container = main_container(&spec);
         assert_eq!(
             container.command.as_deref().unwrap(),
@@ -305,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn a_direct_process_runs_its_command_exposes_ports_and_waits_on_the_first() {
+    fn a_direct_process_runs_its_command_exposes_ports_and_probes_as_told() {
         let ports = vec![("api".to_string(), 5001), ("gateway".to_string(), 8080)];
         let spec = PodSpecBuilder::build(
             "proc",
@@ -315,8 +346,16 @@ mod tests {
             &["daemon".to_string()],
             &[],
             &ports,
+            Some(&ReadinessProbe {
+                target: ReadinessTarget::Http {
+                    port: 8080,
+                    path: "/version".into(),
+                },
+                period_secs: 3,
+            }),
             false,
         );
+        assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
         let container = main_container(&spec);
         assert_eq!(container.command.as_deref().unwrap(), ["ipfs", "daemon"]);
 
@@ -330,10 +369,11 @@ mod tests {
         );
 
         let probe = container.readiness_probe.as_ref().unwrap();
-        assert_eq!(
-            probe.tcp_socket.as_ref().unwrap().port,
-            IntOrString::Int(5001)
-        );
+        let http = probe.http_get.as_ref().unwrap();
+        assert_eq!(http.port, IntOrString::Int(8080));
+        assert_eq!(http.path.as_deref(), Some("/version"));
+        assert_eq!(probe.period_seconds, Some(3));
+        assert_eq!(probe.timeout_seconds, Some(5));
         assert!(!container
             .volume_mounts
             .as_ref()
@@ -344,9 +384,34 @@ mod tests {
 
     #[test]
     fn a_direct_process_without_ports_has_no_probe() {
-        let spec = PodSpecBuilder::build("proc", "img", None, "job", &[], &[], &[], false);
+        let spec = PodSpecBuilder::build("proc", "img", None, "job", &[], &[], &[], None, false);
+        assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
         let container = main_container(&spec);
         assert!(container.readiness_probe.is_none());
         assert!(container.ports.is_none());
+    }
+
+    #[test]
+    fn a_tcp_probe_targets_the_given_port() {
+        let ports = vec![("api".to_string(), 5001)];
+        let spec = PodSpecBuilder::build(
+            "proc",
+            "img",
+            None,
+            "ipfs",
+            &[],
+            &[],
+            &ports,
+            Some(&ReadinessProbe {
+                target: ReadinessTarget::Tcp(5001),
+                period_secs: 1,
+            }),
+            false,
+        );
+        let probe = main_container(&spec).readiness_probe.as_ref().unwrap();
+        assert_eq!(
+            probe.tcp_socket.as_ref().unwrap().port,
+            IntOrString::Int(5001)
+        );
     }
 }

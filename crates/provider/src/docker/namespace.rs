@@ -12,7 +12,7 @@ use tracing::{debug, trace, warn};
 use uuid::Uuid;
 
 use super::{
-    client::{ContainerRunOptions, DockerClient},
+    client::{ownership_labels, ContainerRunOptions, DockerClient},
     node::DockerNode,
     DockerProvider,
 };
@@ -24,8 +24,8 @@ use crate::{
     },
     shared::helpers::extract_execution_result,
     types::{
-        GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
-        SpawnNodeOptions,
+        GenerateFileCommand, GenerateFilesOptions, NodeRole, ProviderCapabilities,
+        RunCommandOptions, SpawnNodeOptions,
     },
     DynNode, ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -153,13 +153,17 @@ where
         let zombie_wrapper_container_name = format!("{}-scripts", self.name);
 
         self.docker_client
-            .create_volume(&zombie_wrapper_volume_name)
+            .create_volume(
+                &zombie_wrapper_volume_name,
+                &ownership_labels(&self.name, "volume", "zombie-wrapper"),
+            )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
 
         self.docker_client
             .container_create(
                 ContainerRunOptions::new("alpine:latest", vec!["tail", "-f", "/dev/null"])
+                    .labels(ownership_labels(&self.name, "helper", "scripts"))
                     .volume_mounts(HashMap::from([(
                         zombie_wrapper_volume_name.as_str(),
                         "/scripts",
@@ -210,7 +214,10 @@ where
         let zombie_wrapper_volume_name = format!("{}-zombie-wrapper", self.name);
 
         self.docker_client
-            .create_volume(&helper_binaries_volume_name)
+            .create_volume(
+                &helper_binaries_volume_name,
+                &ownership_labels(&self.name, "volume", "helper-binaries"),
+            )
             .await
             .map_err(|err| ProviderError::CreateNamespaceFailed(self.name.clone(), err.into()))?;
 
@@ -309,7 +316,8 @@ where
         let temp_node = self
             .spawn_node(
                 &SpawnNodeOptions::new(format!("temp-{}", Uuid::new_v4()), "cat".to_string())
-                    .image(node_image.clone()),
+                    .image(node_image.clone())
+                    .role(NodeRole::Temp),
             )
             .await?;
 
@@ -343,6 +351,7 @@ where
             filesystem: &self.filesystem,
             port_mapping: options.port_mapping.as_ref().unwrap_or(&HashMap::default()),
             wrapper: options.wrapper,
+            role: options.role,
         })
         .await?;
 
@@ -393,7 +402,8 @@ where
             .spawn_node(
                 &SpawnNodeOptions::new(node_name, "cat".to_string())
                     .injected_files(options.injected_files)
-                    .image(node_image),
+                    .image(node_image)
+                    .role(NodeRole::Temp),
             )
             .await?;
 
@@ -435,11 +445,15 @@ where
     }
 
     async fn destroy(&self) -> Result<(), ProviderError> {
-        let _ = self
-            .docker_client
+        self.docker_client
             .namespaced_containers_rm(&self.name)
             .await
             .map_err(|err| ProviderError::DeleteNamespaceFailed(self.name.clone(), err.into()))?;
+        // Best effort: a `--rm` helper still finishing holds a volume for a
+        // moment, and docker's `volume rm --force` does not override that.
+        if let Err(err) = self.docker_client.namespaced_volumes_rm(&self.name).await {
+            warn!("⚠️  {}: could not remove the volumes: {err}", self.name);
+        }
 
         if let Some(provider) = self.provider.upgrade() {
             provider.namespaces.write().await.remove(&self.name);
@@ -465,6 +479,7 @@ where
                     rt.block_on(async move {
                         trace!("🧟 deleting ns {ns_name} from cluster");
                         let _ = client.namespaced_containers_rm(&ns_name).await;
+                        let _ = client.namespaced_volumes_rm(&ns_name).await;
                         trace!("✅ deleted");
                     });
                 });

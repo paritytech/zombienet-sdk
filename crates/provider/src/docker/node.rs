@@ -16,7 +16,7 @@ use tokio::{time::sleep, try_join};
 use tracing::{debug, trace};
 
 use super::{
-    client::{ContainerRunOptions, DockerClient},
+    client::{ownership_labels, ContainerRunOptions, DockerClient},
     namespace::DockerNamespace,
 };
 use crate::{
@@ -24,7 +24,8 @@ use crate::{
     docker,
     shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, Port, RunCommandOptions, RunScriptOptions, TransferedFile,
+        ExecutionResult, InnerSnapshotDb, NodeRole, Port, RunCommandOptions, RunScriptOptions,
+        TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -49,6 +50,8 @@ where
     /// Whether `program` runs through the zombie wrapper (see
     /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
     pub(super) wrapper: bool,
+    /// What the container is, for its `zombienet.kind` label.
+    pub(super) role: Option<NodeRole>,
 }
 
 impl<'a, FS> DockerNodeOptions<'a, FS>
@@ -77,6 +80,7 @@ where
             filesystem,
             port_mapping: &deserializable.port_mapping,
             wrapper: deserializable.wrapper,
+            role: None,
         }
     }
 }
@@ -176,7 +180,7 @@ where
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_docker().await?;
+        node.initialize_docker(options.role).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
@@ -237,7 +241,8 @@ where
         Ok(node)
     }
 
-    async fn initialize_docker(&self) -> Result<(), ProviderError> {
+    async fn initialize_docker(&self, role: Option<NodeRole>) -> Result<(), ProviderError> {
+        let kind = role.map(|r| r.as_label()).unwrap_or("node");
         // The entrypoint is the wrapper, which starts `program args` on demand
         // through its pipe, or `program` itself. Either way `program` replaces
         // the image's own entrypoint, as it does on kubernetes.
@@ -278,7 +283,8 @@ where
                         ),
                     ]))
                     .entrypoint(entrypoint)
-                    .port_mapping(&self.port_mapping),
+                    .port_mapping(&self.port_mapping)
+                    .labels(ownership_labels(&self.namespace_name(), kind, &self.name)),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;

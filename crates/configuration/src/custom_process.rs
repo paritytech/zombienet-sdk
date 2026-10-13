@@ -241,8 +241,8 @@ pub const MAX_TIMEOUT_SECS: u32 = 7 * 24 * 60 * 60;
 
 /// A custom process to spawn next to the nodes: its `command`, `args`, `env`,
 /// `image` (provider specific), named `ports`, `resources` (provider
-/// specific), and its lifecycle: `ready_check`, `depends_on`, `one_shot` and
-/// `timeout`.
+/// specific), and its lifecycle: `ready_check`, `depends_on`, `one_shot`,
+/// `timeout` and `allowed_to_fail`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomProcess {
     // Name of the process

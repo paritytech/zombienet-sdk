@@ -1,6 +1,6 @@
 # Custom processes with a lifecycle: `prepare` runs once, `files` starts after
 # it completed and is ready when GET / answers, `reader` starts once `files`
-# is ready.
+# is ready. `warmup` fails and is allowed to, so `report` is skipped.
 #
 #   zombie-cli spawn -p native crates/examples/examples/configs/custom_process_lifecycle.toml
 

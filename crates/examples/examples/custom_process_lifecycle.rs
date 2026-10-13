@@ -5,7 +5,9 @@ use zombienet_sdk::{
 
 // Custom processes with a lifecycle: a one-shot that prepares a directory, a
 // server that starts once the one-shot completed and is ready when its http
-// check passes, and a client that starts once the server is ready.
+// check passes, and a client that starts once the server is ready. Plus a
+// one-shot that fails and is allowed to, and a dependent of it that is
+// therefore skipped.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()

@@ -164,7 +164,7 @@ pub struct ParachainConfig {
     no_default_bootnodes: bool,
     #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     genesis_overrides: Option<serde_json::Value>,
-    /// RFC 6902 operations applied to the runtime genesis after `genesis`.
+    /// RFC 6902 operations applied to the runtime genesis after `genesis_overrides`.
     #[serde(skip_serializing_if = "Option::is_none")]
     genesis_patch: Option<json_patch::Patch>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]

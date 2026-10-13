@@ -43,6 +43,6 @@ let config = NetworkConfigBuilder::new()
 | `node_spawn_timeout` | Number | 600 | Individual node spawn timeout (seconds). Override with `ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS` env var |
 | `local_ip` | String | `127.0.0.1` | Local IP for exposed services |
 | `base_dir` | String | Random temp dir | Base directory for network artifacts |
-| `spawn_concurrency` | Number | — | How many nodes are spawned at a time (one whenever a node's args have `{{ZOMBIE:..}}` placeholders), and how many custom processes. Override with `ZOMBIE_SPAWN_CONCURRENCY` env var |
+| `spawn_concurrency` | Number | — | How many nodes are spawned at a time (one whenever a node or chain spec has `{{ZOMBIE:..}}` placeholders), and how many custom processes. Override with `ZOMBIE_SPAWN_CONCURRENCY` env var |
 | `tear_down_on_failure` | Boolean | `true` | Tear down network if nodes become unresponsive |
 | `bootnodes_addresses` | Array | — | External bootnode multiaddresses |

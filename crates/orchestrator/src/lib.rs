@@ -1357,10 +1357,10 @@ fn spawn_concurrency_from_env() -> Option<usize> {
     }
 }
 
-/// The spawn concurrency as set (env over settings), before any token limit:
-/// what custom processes spawn with, since their placeholders resolve from
-/// nodes that are all up and ports that are all reserved before any starts.
-/// At least 1: with 0 nothing would ever start.
+/// The spawn concurrency as set (env over settings, 100 when neither), before
+/// any token limit: what custom processes spawn with, since their placeholders
+/// resolve from nodes that are all up and ports that are all reserved before
+/// any starts. At least 1: with 0 nothing would ever start.
 fn configured_concurrency(spec: &NetworkSpec) -> usize {
     spawn_concurrency_from_env()
         .or(spec.global_settings.spawn_concurrency())
@@ -1368,38 +1368,22 @@ fn configured_concurrency(spec: &NetworkSpec) -> usize {
         .max(1)
 }
 
-/// Whether a node's spec has a `{{ZOMBIE:..}}` placeholder, which makes the
+/// Whether a chain's spec has a `{{ZOMBIE:..}}` placeholder, which makes the
 /// nodes spawn one at a time. Custom processes are left out: theirs resolve
 /// from nodes that are all up by then.
-fn nodes_have_tokens(spec: &NetworkSpec) -> Result<bool, anyhow::Error> {
+fn chains_have_tokens(spec: &NetworkSpec) -> Result<bool, anyhow::Error> {
     let chains = (&spec.relaychain, &spec.jamchain, &spec.parachains);
     Ok(has_tokens(&serde_json::to_string(&chains)?))
 }
 
+/// The concurrency nodes spawn with, and whether tokens limited it to 1.
 fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Error> {
-    let desired_spawn_concurrency =
-        spawn_concurrency_from_env().or(spec.global_settings.spawn_concurrency());
-
-    let (spawn_concurrency, limited_by_tokens) =
-        if let Some(spawn_concurrency) = desired_spawn_concurrency {
-            if spawn_concurrency == 1 {
-                (1, false)
-            } else if nodes_have_tokens(spec)? {
-                (1, true)
-            } else {
-                (spawn_concurrency, false)
-            }
-        } else {
-            // not set
-            if nodes_have_tokens(spec)? {
-                (1, true)
-            } else {
-                // use 100 as max concurrency, we can set a max by provider later
-                (100, false)
-            }
-        };
-
-    Ok((spawn_concurrency, limited_by_tokens))
+    let concurrency = configured_concurrency(spec);
+    if concurrency > 1 && chains_have_tokens(spec)? {
+        Ok((1, true))
+    } else {
+        Ok((concurrency, false))
+    }
 }
 
 /// Build deterministic dependency **levels** among the given nodes.

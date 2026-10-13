@@ -58,6 +58,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_args(vec![("-c", "echo reading; sleep 600").into()])
                 .with_dependency_on("files", DependencyCondition::ServiceHealthy)
         })
+        // exits with an error; allowed to fail, so the spawn goes on and the
+        // process is kept, in state `Failed`, for its logs
+        .with_custom_process(|c| {
+            c.with_name("warmup")
+                .with_command("sh")
+                .with_args(vec![("-c", "echo no cache; exit 1").into()])
+                .with_one_shot()
+                .with_allowed_to_fail()
+        })
+        // never starts, since `warmup` did not complete; allowed to fail too,
+        // else the spawn would fail here
+        .with_custom_process(|c| {
+            c.with_name("report")
+                .with_command("sh")
+                .with_args(vec![("-c", "echo reporting; sleep 600").into()])
+                .with_dependency("warmup")
+                .with_allowed_to_fail()
+        })
         .build()
         .unwrap()
         .spawn_native()
@@ -77,6 +95,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         network.get_custom_process("files")?.state(),
         &CustomProcessState::Ready
     );
+    assert!(matches!(
+        network.get_custom_process("warmup")?.state(),
+        CustomProcessState::Failed { .. }
+    ));
+    assert_eq!(network.skipped_custom_processes()[0].name, "report");
 
     Ok(())
 }

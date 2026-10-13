@@ -5,11 +5,7 @@
 //! is allowed to fail: then it is recorded on the network and the spawn goes
 //! on.
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use configuration::{CustomProcess, DependencyCondition};
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -127,29 +123,22 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
         .copied()
         .unwrap_or(LOCALHOST);
     let default_timeout = Duration::from_secs(u64::from(spec.global_settings.node_spawn_timeout()));
-    let by_name: HashMap<&str, &CustomProcess> = spec
-        .custom_processes
-        .iter()
-        .map(|cp| (cp.name(), cp))
-        .collect();
+    let mut by_name: HashMap<&str, &CustomProcess> = HashMap::new();
     let mut phases: HashMap<String, Phase> = HashMap::new();
 
     // The loader and the builder refuse a name a node or process already has,
     // but a `NetworkConfig` or `NetworkSpec` deserialized directly skips them,
     // and a process registered under a node's name would replace the node.
-    // Checked before spawning, so no process runs untracked. Every process
-    // parks its ports before any spawns, see `PreparedProcess`.
+    // A config error, so `allowed_to_fail` does not cover it. Checked before
+    // spawning, so no process runs untracked. Every process parks its ports
+    // before any spawns, see `PreparedProcess`.
     let mut pending: Vec<PreparedProcess> = vec![];
-    let mut seen: HashSet<&str> = HashSet::new();
     for cp in &spec.custom_processes {
-        if network.has_member(cp.name()) || !seen.insert(cp.name()) {
-            skip(
-                network,
-                &mut phases,
-                cp,
-                "the name is already taken by a node or custom process".into(),
-            )?;
-            continue;
+        if network.has_member(cp.name()) || by_name.insert(cp.name(), cp).is_some() {
+            return Err(OrchestratorError::CustomProcessFailed {
+                name: cp.name().to_string(),
+                reason: "the name is already taken by a node or custom process".into(),
+            });
         }
         match prepare_process(cp, ns.as_ref()) {
             Ok(prepared) => pending.push(prepared),

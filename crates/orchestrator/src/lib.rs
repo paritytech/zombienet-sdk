@@ -1360,10 +1360,12 @@ fn spawn_concurrency_from_env() -> Option<usize> {
 /// The spawn concurrency as set (env over settings), before any token limit:
 /// what custom processes spawn with, since their placeholders resolve from
 /// nodes that are all up and ports that are all reserved before any starts.
+/// At least 1: with 0 nothing would ever start.
 fn configured_concurrency(spec: &NetworkSpec) -> usize {
     spawn_concurrency_from_env()
         .or(spec.global_settings.spawn_concurrency())
         .unwrap_or(100)
+        .max(1)
 }
 
 fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Error> {

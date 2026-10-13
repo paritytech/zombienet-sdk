@@ -37,3 +37,21 @@ name = "reader"
 command = "sh"
 args = ["-c", "echo reading; sleep 600"]
 depends_on = [{ name = "files", condition = "service_healthy" }]
+
+# exits with an error; allowed to fail, so the spawn goes on and the process
+# is kept, in state `Failed`, for its logs
+[[custom_processes]]
+name = "warmup"
+command = "sh"
+args = ["-c", "echo no cache; exit 1"]
+one_shot = true
+allowed_to_fail = true
+
+# never starts, since `warmup` did not complete; allowed to fail too, else
+# the spawn would fail here
+[[custom_processes]]
+name = "report"
+command = "sh"
+args = ["-c", "echo reporting; sleep 600"]
+depends_on = ["warmup"]
+allowed_to_fail = true

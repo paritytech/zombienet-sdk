@@ -146,7 +146,7 @@ impl RelaychainConfig {
         self.runtime_genesis_patch.as_ref()
     }
 
-    /// The RFC 6902 patch applied to the runtime genesis after the overrides.
+    /// The RFC 6902 patch applied to the runtime genesis after the overrides_overrides.
     pub fn genesis_patch(&self) -> Option<&json_patch::Patch> {
         self.genesis_patch.as_ref()
     }

@@ -27,6 +27,13 @@ max_nominations = 16
 [relaychain.genesis.balances]
 balances = [["5GrwvaEF...", 1000000000000]]
 
+# Genesis patch as RFC 6902 operations, applied after `genesis`; paths are
+# relative to the runtime genesis, and `add` at `/-` appends to a list
+[[relaychain.genesis_patch]]
+op = "add"
+path = "/balances/balances/-"
+value = ["5FHneW46...", 1000000000000]
+
 [[relaychain.nodes]]
 name = "alice"
 invulnerable = true
@@ -71,5 +78,6 @@ let config = NetworkConfigBuilder::new()
 | `random_nominators_count` | Number | — | Number of random nominators for staking |
 | `max_nominations` | Number | — | Maximum nominations per nominator |
 | `genesis` | Object | — | Genesis overrides as JSON (alias: `runtime_genesis_patch`) |
+| `genesis_patch` | Array | — | RFC 6902 operations applied to the runtime genesis after `genesis` (see [How it works](../how-it-works.md)) |
 | `wasm_override` | String | — | WASM runtime override path/URL |
 | `raw_spec_override` | String/Object | — | Raw chain spec override (inline JSON or file path) |

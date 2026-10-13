@@ -18,6 +18,7 @@ tokio = { workspace = true, features = ["time"] }
 thiserror = { workspace = true }
 multiaddr = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
+json-patch = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 rand = { workspace = true }

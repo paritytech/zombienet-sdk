@@ -77,6 +77,9 @@ This directory contains a collection of examples demonstrating the features of t
 *   **`raw_spec_override`**
     *   **Description**: Demonstrates how to override fields in the relay chain's raw chain spec (such as the chain name or bootNodes) using the SDK's `.with_raw_spec_override()` method.
     *   **Run**: `cargo run --example raw_spec_override`
+*   **`genesis_patch`**
+    *   **Description**: Appends a funded account to the relay chain's genesis balances and replaces a configuration value with an RFC 6902 patch, through `.with_genesis_patch()`.
+    *   **Run**: `cargo run --example genesis_patch`
 
 *   **`chain_spec_command`**
     *   **Description**: Shows how to post-process chain-spec files using a custom script that runs after chain-spec generation. The script receives the path to the chain-spec file as its only argument.

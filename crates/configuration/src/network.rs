@@ -2378,6 +2378,56 @@ mode = "validator"
     }
 
     #[test]
+    fn genesis_patch_round_trips_through_toml() {
+        let toml = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.genesis_patch]]
+op = "add"
+path = "/balances/balances/-"
+value = ["5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty", 1000000000000]
+
+[[relaychain.genesis_patch]]
+op = "replace"
+path = "/staking/minimumValidatorCount"
+value = 7
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[parachains]]
+id = 100
+default_command = "polkadot-parachain"
+
+[[parachains.genesis_patch]]
+op = "remove"
+path = "/sudo"
+
+[[parachains.collators]]
+name = "collator"
+"#;
+        let loaded = NetworkConfig::load_from_toml_string(toml).unwrap();
+        let relay_patch = loaded.relaychain().genesis_patch().unwrap();
+        assert_eq!(relay_patch.0.len(), 2);
+        assert_eq!(
+            serde_json::to_value(&relay_patch.0[1]).unwrap(),
+            serde_json::json!({"op": "replace", "path": "/staking/minimumValidatorCount", "value": 7})
+        );
+        let para_patch = loaded.parachains()[0].genesis_patch().unwrap();
+        assert_eq!(
+            serde_json::to_value(para_patch).unwrap(),
+            serde_json::json!([{"op": "remove", "path": "/sudo"}])
+        );
+
+        let reloaded =
+            NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
+        assert_eq!(reloaded.relaychain().genesis_patch(), Some(relay_patch));
+        assert_eq!(reloaded.parachains()[0].genesis_patch(), Some(para_patch));
+    }
+
+    #[test]
     fn jamchain_toml_without_relaychain_works() {
         let config = NetworkConfig::load_from_toml_string(
             r#"

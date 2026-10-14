@@ -646,6 +646,16 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            &network_spec,
+            ns.clone(),
+            configured_concurrency(&network_spec),
+        )
+        .await?;
+
+        // After the processes: a failed one fails the spawn, and these
+        // containers are not torn down with the namespace.
         if network_spec.global_settings.observability().enabled() {
             match network
                 .start_observability(network_spec.global_settings.observability())
@@ -660,14 +670,6 @@ where
                 },
             }
         }
-
-        custom_processes::spawn_custom_processes(
-            &mut network,
-            &network_spec,
-            ns.clone(),
-            configured_concurrency(&network_spec),
-        )
-        .await?;
 
         network.set_start_time_ts(start_time);
 

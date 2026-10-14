@@ -1087,8 +1087,8 @@ fn make_url_internal(url: &Url) -> Url {
 
 /// A Secret or key that is not there would hold the pod in
 /// `CreateContainerConfigError` until the spawn times out, so it is looked
-/// up first. Not being allowed to read Secrets skips the check, since the
-/// pod itself does not need that permission.
+/// up first. A Secret this identity may not read is left to the pod, which
+/// needs no such permission.
 async fn check_secrets(
     client: &KubernetesClient,
     namespace: &str,
@@ -1105,8 +1105,11 @@ async fn check_secrets(
                 ))
             },
             SecretLookup::Forbidden => {
-                warn!("reading secrets in namespace {namespace} is forbidden, env {} is left to the pod", var.name);
-                return Ok(());
+                warn!(
+                    "secret '{}' in namespace {namespace} may not be read, env {} is left to the pod",
+                    var.secret, var.name
+                );
+                continue;
             },
         };
         if !secret

@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     error::Error,
     marker::PhantomData,
-    path::{Component, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
@@ -590,9 +590,13 @@ impl CustomProcess {
                 }
             }
         }
+        let mut env_names = HashSet::new();
         for var in &self.env {
             if var.name.is_empty() {
                 errors.push(FieldError::Env(anyhow::anyhow!("a variable has no name")).into());
+            } else if !env_names.insert(&var.name) {
+                errors
+                    .push(FieldError::Env(anyhow::anyhow!("'{}' is given twice", var.name)).into());
             }
             if let EnvValue::Secret { name, key } = &var.value {
                 if name.is_empty() || key.is_empty() {
@@ -606,23 +610,24 @@ impl CustomProcess {
                 }
             }
         }
-        let mut remote_paths = HashSet::new();
+        let mut remote_paths: Vec<&Path> = vec![];
         for file in &self.injected_files {
             if file.local_path.as_os_str().is_empty() {
                 errors.push(
                     FieldError::InjectedFiles(anyhow::anyhow!("a file has no local_path")).into(),
                 );
             }
-            // `Path` drops a trailing slash, so the text is what tells a directory;
-            // `..` would leave the process's directory and `:` splits a docker mount.
-            // Collecting the components folds `//` and `.` so a path given two
-            // ways is still seen once.
+            // The text is what every provider gets, so it has to be the one
+            // spelling of the path: `Path` drops a trailing slash, `.` and `//`
+            // fold away in the components, `..` would leave the process's
+            // directory and `:` splits a docker mount.
             let remote = file.remote_path.to_string_lossy();
-            let normalized: PathBuf = file.remote_path.components().collect();
+            let plain: PathBuf = file.remote_path.components().collect();
             if !file.remote_path.is_absolute()
                 || remote.ends_with('/')
                 || remote.contains(':')
-                || normalized.file_name().is_none()
+                || plain.file_name().is_none()
+                || plain.as_os_str() != file.remote_path.as_os_str()
                 || file
                     .remote_path
                     .components()
@@ -630,17 +635,30 @@ impl CustomProcess {
             {
                 errors.push(
                     FieldError::InjectedFiles(anyhow::anyhow!(
-                        "remote_path '{remote}' must be an absolute path to a file, without '..' or ':'"
+                        "remote_path '{remote}' must be an absolute path to a file, without '.', '..', '//' or ':'"
                     ))
                     .into(),
                 );
-            } else if !remote_paths.insert(normalized) {
+            } else if remote_paths.contains(&file.remote_path.as_path()) {
                 errors.push(
                     FieldError::InjectedFiles(anyhow::anyhow!(
                         "remote_path '{remote}' is given twice"
                     ))
                     .into(),
                 );
+            } else if let Some(other) = remote_paths
+                .iter()
+                .find(|p| p.starts_with(&file.remote_path) || file.remote_path.starts_with(p))
+            {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "remote_paths '{}' and '{remote}' cannot both be files",
+                        other.display()
+                    ))
+                    .into(),
+                );
+            } else {
+                remote_paths.push(&file.remote_path);
             }
             if let Some(mode) = &file.mode {
                 let octal =
@@ -1400,11 +1418,10 @@ mod tests {
         let errors = CustomProcessBuilder::new()
             .with_name("bad")
             .with_command("bad")
-            .with_env(vec![ProcessEnvVar::from_secret(
-                "TURN_SECRET",
-                "",
-                "secret",
-            )])
+            .with_env(vec![
+                ProcessEnvVar::from_secret("TURN_SECRET", "", "secret"),
+                ("TURN_SECRET", "plain").into(),
+            ])
             .with_injected_file(InjectedFile::new("./a", "schema/init.sql"))
             .with_injected_file(InjectedFile::new("./b", "/etc/"))
             .with_injected_file(InjectedFile::new("./c", "/c").with_mode("rwx"))
@@ -1415,6 +1432,7 @@ mod tests {
             .with_injected_file(InjectedFile::new("./h", "/c/."))
             .with_injected_file(InjectedFile::new("./i", "//c"))
             .with_injected_file(InjectedFile::new("./j", "/."))
+            .with_injected_file(InjectedFile::new("./k", "/c/k"))
             .build()
             .unwrap_err()
             .1
@@ -1425,16 +1443,18 @@ mod tests {
             errors,
             [
                 "env: 'TURN_SECRET' needs the secret's name and key",
-                "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file, without '..' or ':'",
-                "injected_files: remote_path '/etc/' must be an absolute path to a file, without '..' or ':'",
+                "env: 'TURN_SECRET' is given twice",
+                "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file, without '.', '..', '//' or ':'",
+                "injected_files: remote_path '/etc/' must be an absolute path to a file, without '.', '..', '//' or ':'",
                 "injected_files: mode 'rwx' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
                 "injected_files: remote_path '/c' is given twice",
-                "injected_files: remote_path '/x/../e' must be an absolute path to a file, without '..' or ':'",
-                "injected_files: remote_path '/f:g' must be an absolute path to a file, without '..' or ':'",
+                "injected_files: remote_path '/x/../e' must be an absolute path to a file, without '.', '..', '//' or ':'",
+                "injected_files: remote_path '/f:g' must be an absolute path to a file, without '.', '..', '//' or ':'",
                 "injected_files: mode '4755' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
-                "injected_files: remote_path '/c/.' is given twice",
-                "injected_files: remote_path '//c' is given twice",
-                "injected_files: remote_path '/.' must be an absolute path to a file, without '..' or ':'",
+                "injected_files: remote_path '/c/.' must be an absolute path to a file, without '.', '..', '//' or ':'",
+                "injected_files: remote_path '//c' must be an absolute path to a file, without '.', '..', '//' or ':'",
+                "injected_files: remote_path '/.' must be an absolute path to a file, without '.', '..', '//' or ':'",
+                "injected_files: remote_paths '/c' and '/c/k' cannot both be files",
             ]
         );
     }

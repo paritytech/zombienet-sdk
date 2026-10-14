@@ -1253,8 +1253,7 @@ fn validate_spec_with_provider_capabilities(
                 NODE_SCRIPTS_DIR,
                 "/helpers",
             ];
-            let remote: PathBuf = file.remote_path.components().collect();
-            if mounted.iter().any(|dir| Path::new(dir) == remote) {
+            if mounted.iter().any(|dir| Path::new(dir) == file.remote_path) {
                 errs.push(format!(
                     "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
                     process.name(),
@@ -1898,23 +1897,26 @@ mod tests {
             has_secrets: false,
         };
         let local = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-        spec.custom_processes.push(
+        let process = |remote: &str| {
             configuration::CustomProcessBuilder::new()
                 .with_name("api")
                 .with_command("api")
-                .with_injected_file(configuration::InjectedFile::new(local, "/data/."))
-                .with_injected_file(configuration::InjectedFile::new(local, "/data/init.sql"))
+                .with_injected_file(configuration::InjectedFile::new(local, remote))
                 .build()
-                .unwrap(),
-        );
+                .unwrap()
+        };
 
+        spec.custom_processes.push(process("/data"));
         let err = validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap_err();
         assert!(
             err.to_string().ends_with(
-                "custom_processes['api'].injected_files: '/data/.' is a directory zombienet mounts"
+                "custom_processes['api'].injected_files: '/data' is a directory zombienet mounts"
             ),
             "{err}"
         );
+
+        spec.custom_processes = vec![process("/data/init.sql")];
+        validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap();
     }
 
     #[tokio::test]

@@ -118,7 +118,7 @@ A process may name another's port the way it names its own, `{{ZOMBIE:<process>:
 
 ### Injected files
 
-`injected_files` puts files in place before the process starts, the way a node gets its chain spec: `local_path` on the host running zombienet (relative to where it runs), `remote_path` where the process reads it, an absolute path to a file, unique within the process and not one of the directories every process gets (`/cfg`, `/data`, `/relay-data`, `/scripts`), `mode` its permissions in octal (`0644` unless set, at most `0777`). A local file that is not there is rejected before anything spawns. On docker and kubernetes a parent directory that is not in the image is created for the mount, owned by root, so a file goes next to what a non-root process writes, not inside it.
+`injected_files` puts files in place before the process starts, the way a node gets its chain spec: `local_path` on the host running zombienet (relative to where it runs), `remote_path` where the process reads it, an absolute path to a file, unique within the process and written plainly (no `.`, `..` or `//`), not inside another injected file's path and not one of the directories every process gets (`/cfg`, `/data`, `/relay-data`, `/scripts`, `/helpers`), `mode` its permissions in octal (`0644` unless set, at most `0777`). A local file that is not there is rejected before anything spawns. On docker and kubernetes a parent directory that is not in the image is created for the mount, owned by root, so a file goes next to what a non-root process writes, not inside it.
 
 ```toml
 [[custom_processes]]
@@ -134,7 +134,7 @@ On docker each file is bind-mounted into the container and on kubernetes the fil
 
 ### Secrets
 
-On kubernetes an `env` value may come from a `Secret` in the namespace instead of the config: `{ name = "TURN_SECRET", secret = { name = "turn", key = "secret" } }` sets `TURN_SECRET` to the `secret` key of the Secret `turn`, as a pod's `valueFrom.secretKeyRef` does, so a credential never passes through the TOML or zombienet. The Secret has to be in the namespace, with that key, when the process is spawned, or the spawn fails naming both: a namespace zombienet creates is new, so the Secret goes in one created beforehand and the network is spawned into it with `spawn_k8s_in_namespace`; `destroy` then deletes that namespace, Secret included. `zombie-cli` always creates its namespace, so from the CLI there is no Secret to read. A config with such an entry is rejected on native and docker before anything spawns.
+On kubernetes an `env` value may come from a `Secret` in the namespace instead of the config: `{ name = "TURN_SECRET", secret = { name = "turn", key = "secret" } }` sets `TURN_SECRET` to the `secret` key of the Secret `turn`, as a pod's `valueFrom.secretKeyRef` does, so a credential never passes through the TOML or zombienet. The Secret has to be in the namespace, with that key, when the process is spawned, or the spawn fails naming both; where zombienet itself may not read Secrets that check is skipped with a warning and a missing one shows as the process timing out. A namespace zombienet creates is new, so the Secret goes in one created beforehand and the network is spawned into it with `spawn_k8s_in_namespace`; `destroy` then deletes that namespace, Secret included. `zombie-cli` always creates its namespace, so from the CLI there is no Secret to read. A config with such an entry is rejected on native and docker before anything spawns.
 
 ```toml
 [[custom_processes]]

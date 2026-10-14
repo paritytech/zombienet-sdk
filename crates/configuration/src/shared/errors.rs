@@ -108,6 +108,12 @@ pub enum FieldError {
 
     #[error("ports: {0}")]
     Ports(anyhow::Error),
+
+    #[error("env: {0}")]
+    Env(anyhow::Error),
+
+    #[error("injected_files: {0}")]
+    InjectedFiles(anyhow::Error),
 }
 
 /// A conversion error for shared types across fields.

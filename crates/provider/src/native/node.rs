@@ -593,6 +593,9 @@ where
             remote_file_path.to_string_lossy()
         ));
 
+        if let Some(parent) = namespaced_remote_file_path.parent() {
+            self.filesystem.create_dir_all(parent).await?;
+        }
         self.filesystem
             .copy(local_file_path, &namespaced_remote_file_path)
             .await?;

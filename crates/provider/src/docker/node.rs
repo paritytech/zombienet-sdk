@@ -180,17 +180,39 @@ where
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_docker(options.role).await?;
+        // A direct process runs `program` from the moment the container is
+        // up, so its files are bind-mounted in, from a copy with the asked
+        // mode; a wrapped node gets them sent while the wrapper holds
+        // `program` back.
+        let mut file_mounts = HashMap::new();
+        if !node.wrapper && !options.startup_files.is_empty() {
+            let staging = node.base_dir.join("files");
+            filesystem.create_dir_all(&staging).await?;
+            for (index, file) in options.startup_files.iter().enumerate() {
+                let name = file
+                    .remote_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let staged = staging.join(format!("{index}-{name}"));
+                filesystem.copy(&file.local_path, &staged).await?;
+                filesystem
+                    .set_mode(&staged, u32::from_str_radix(&file.mode, 8).unwrap_or(0o644))
+                    .await?;
+                file_mounts.insert(
+                    staged.to_string_lossy().into_owned(),
+                    format!("{}:ro", file.remote_path.to_string_lossy()),
+                );
+            }
+        }
+        node.initialize_docker(options.role, file_mounts).await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
 
-        node.initialize_startup_files(options.startup_files).await?;
-
-        // Without the wrapper there is no pipe to signal: the container runs
-        // `program` from the moment it is up.
         if node.wrapper {
+            node.initialize_startup_files(options.startup_files).await?;
             node.start().await?;
         }
 
@@ -241,7 +263,11 @@ where
         Ok(node)
     }
 
-    async fn initialize_docker(&self, role: Option<NodeRole>) -> Result<(), ProviderError> {
+    async fn initialize_docker(
+        &self,
+        role: Option<NodeRole>,
+        file_mounts: HashMap<String, String>,
+    ) -> Result<(), ProviderError> {
         let kind = role.map(|r| r.as_label()).unwrap_or("node");
         // The entrypoint is the wrapper, which starts `program args` on demand
         // through its pipe, or `program` itself. Either way `program` replaces
@@ -255,33 +281,36 @@ where
             (self.program.to_string(), self.args.to_vec())
         };
 
+        let mut volume_mounts = HashMap::from([
+            (
+                format!("{}-zombie-wrapper", self.namespace_name(),),
+                "/scripts".to_string(),
+            ),
+            (
+                format!("{}-helper-binaries", self.namespace_name()),
+                "/helpers".to_string(),
+            ),
+            (
+                self.config_dir.to_string_lossy().into_owned(),
+                "/cfg".to_string(),
+            ),
+            (
+                self.data_dir.to_string_lossy().into_owned(),
+                "/data".to_string(),
+            ),
+            (
+                self.relay_data_dir.to_string_lossy().into_owned(),
+                "/relay-data".to_string(),
+            ),
+        ]);
+        volume_mounts.extend(file_mounts);
+
         self.docker_client
             .container_run(
                 ContainerRunOptions::new(&self.image, command)
                     .name(&self.container_name)
                     .env(self.env.clone())
-                    .volume_mounts(HashMap::from([
-                        (
-                            format!("{}-zombie-wrapper", self.namespace_name(),),
-                            "/scripts".to_string(),
-                        ),
-                        (
-                            format!("{}-helper-binaries", self.namespace_name()),
-                            "/helpers".to_string(),
-                        ),
-                        (
-                            self.config_dir.to_string_lossy().into_owned(),
-                            "/cfg".to_string(),
-                        ),
-                        (
-                            self.data_dir.to_string_lossy().into_owned(),
-                            "/data".to_string(),
-                        ),
-                        (
-                            self.relay_data_dir.to_string_lossy().into_owned(),
-                            "/relay-data".to_string(),
-                        ),
-                    ]))
+                    .volume_mounts(volume_mounts)
                     .entrypoint(entrypoint)
                     .port_mapping(&self.port_mapping)
                     .labels(ownership_labels(&self.namespace_name(), kind, &self.name)),

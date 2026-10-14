@@ -1231,6 +1231,20 @@ fn validate_spec_with_provider_capabilities(
 ) -> Result<(), anyhow::Error> {
     let mut errs: Vec<String> = vec![];
 
+    if !capabilities.has_secrets {
+        for process in &network_spec.custom_processes {
+            for var in process.env() {
+                if matches!(var.value, configuration::EnvValue::Secret { .. }) {
+                    errs.push(format!(
+                        "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
+                        process.name(),
+                        var.name
+                    ));
+                }
+            }
+        }
+    }
+
     if capabilities.requires_image {
         // Relaychain
         if let Some(relaychain) = network_spec.try_relaychain() {
@@ -1713,6 +1727,7 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1728,6 +1743,7 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1743,6 +1759,7 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1758,11 +1775,49 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
         println!("{valid:?}");
         assert!(valid.is_ok())
+    }
+
+    #[tokio::test]
+    async fn secret_env_needs_a_provider_with_secrets() {
+        let network_config = generate(true, None).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_env(vec![configuration::ProcessEnvVar::from_secret(
+                    "TURN_SECRET",
+                    "turn",
+                    "secret",
+                )])
+                .build()
+                .unwrap(),
+        );
+        let without = ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: true,
+            has_secrets: false,
+        };
+
+        let err = validate_spec_with_provider_capabilities(&spec, &without).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['api'].env: 'TURN_SECRET' is read from a Secret"),
+            "{err}"
+        );
+        let with = ProviderCapabilities {
+            has_secrets: true,
+            ..without
+        };
+        validate_spec_with_provider_capabilities(&spec, &with).unwrap();
     }
 
     #[tokio::test]

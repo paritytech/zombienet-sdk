@@ -927,7 +927,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::{parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition};
+    use crate::{
+        parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition, InjectedFile,
+        ProcessEnvVar,
+    };
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -2695,6 +2698,51 @@ id = 1000
         );
         assert!(err.contains("'cache' cannot be service_healthy"), "{err}");
         assert!(err.contains("cycle among api, cache"), "{err}");
+    }
+
+    #[test]
+    fn custom_process_files_and_secret_env_load_from_toml_and_dump_back() {
+        let config = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            env = [
+                { name = "RUST_LOG", value = "info" },
+                { name = "TURN_SECRET", secret = { name = "turn", key = "secret" } },
+            ]
+            injected_files = [
+                { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" },
+                { local_path = "./run.sh", remote_path = "/run.sh", mode = "0755" },
+            ]
+            "#,
+        )
+        .unwrap();
+        let api = config.custom_processes()[0];
+        assert_eq!(
+            api.env()[1],
+            ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret")
+        );
+        assert_eq!(
+            api.injected_files()[1],
+            InjectedFile::new("./run.sh", "/run.sh").with_mode("0755")
+        );
+        let dumped = config.dump_to_toml().unwrap();
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(reloaded.custom_processes(), config.custom_processes());
+
+        let err = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            injected_files = [{ local_path = "./run.sh", remote_path = "run.sh" }]
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("remote_path 'run.sh' must be an absolute path"),
+            "{err}"
+        );
     }
 
     #[test]

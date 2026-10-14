@@ -1,4 +1,4 @@
-use std::{error::Error, marker::PhantomData};
+use std::{error::Error, marker::PhantomData, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +69,88 @@ fn validate_port_name(name: &str) -> Result<(), anyhow::Error> {
         ));
     }
     Ok(())
+}
+
+/// A file put in place before the process starts, as a node gets its chain
+/// spec: `local_path` on the host running zombienet, `remote_path` where the
+/// process reads it, `mode` its permissions in octal (`0644` when unset).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InjectedFile {
+    pub local_path: PathBuf,
+    pub remote_path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+}
+
+impl InjectedFile {
+    pub fn new(local_path: impl Into<PathBuf>, remote_path: impl Into<PathBuf>) -> Self {
+        Self {
+            local_path: local_path.into(),
+            remote_path: remote_path.into(),
+            mode: None,
+        }
+    }
+
+    /// The permissions of the file in the process, in octal (e.g. `0755`).
+    pub fn with_mode(mut self, mode: impl Into<String>) -> Self {
+        self.mode = Some(mode.into());
+        self
+    }
+}
+
+/// An environment variable of a custom process: a literal `value`, or on
+/// kubernetes a key of a `Secret` in the namespace, read by the pod itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessEnvVar {
+    pub name: String,
+    #[serde(flatten)]
+    pub value: EnvValue,
+}
+
+/// Where a [`ProcessEnvVar`] gets its value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EnvValue {
+    /// The text as given, `{{ZOMBIE:..}}` placeholders resolved.
+    Value(String),
+    /// The `key` of the kubernetes `Secret` named `name`, as a pod's
+    /// `valueFrom.secretKeyRef`; rejected on the other providers.
+    Secret { name: String, key: String },
+}
+
+impl ProcessEnvVar {
+    /// A variable set to the `key` of the kubernetes `Secret` named `secret`.
+    pub fn from_secret(
+        name: impl Into<String>,
+        secret: impl Into<String>,
+        key: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            value: EnvValue::Secret {
+                name: secret.into(),
+                key: key.into(),
+            },
+        }
+    }
+}
+
+impl From<(&str, &str)> for ProcessEnvVar {
+    fn from((name, value): (&str, &str)) -> Self {
+        Self {
+            name: name.to_owned(),
+            value: EnvValue::Value(value.to_owned()),
+        }
+    }
+}
+
+impl From<EnvVar> for ProcessEnvVar {
+    fn from(var: EnvVar) -> Self {
+        Self {
+            name: var.name,
+            value: EnvValue::Value(var.value),
+        }
+    }
 }
 
 /// How a custom process is known to be ready. `tcp` is a declared port name
@@ -240,9 +322,9 @@ impl From<&str> for Dependency {
 pub const MAX_TIMEOUT_SECS: u32 = 7 * 24 * 60 * 60;
 
 /// A custom process to spawn next to the nodes: its `command`, `args`, `env`,
-/// `image` (provider specific), named `ports`, `resources` (provider
-/// specific), and its lifecycle: `ready_check`, `depends_on`, `one_shot` and
-/// `timeout`.
+/// `injected_files`, `image` (provider specific), named `ports`, `resources`
+/// (provider specific), and its lifecycle: `ready_check`, `depends_on`,
+/// `one_shot` and `timeout`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomProcess {
     // Name of the process
@@ -257,7 +339,10 @@ pub struct CustomProcess {
     args: Vec<Arg>,
     // Environment to set
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
-    env: Vec<EnvVar>,
+    env: Vec<ProcessEnvVar>,
+    // Files put in place before the process starts
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    injected_files: Vec<InjectedFile>,
     // Named ports the process listens on
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     ports: Vec<NamedPort>,
@@ -286,6 +371,7 @@ impl Default for CustomProcess {
             command: Command::default(), // should be changed.
             args: vec![],
             env: vec![],
+            injected_files: vec![],
             ports: vec![],
             resources: None,
             ready_check: None,
@@ -318,8 +404,13 @@ impl CustomProcess {
     }
 
     /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
-    pub fn env(&self) -> Vec<&EnvVar> {
-        self.env.iter().collect()
+    pub fn env(&self) -> &[ProcessEnvVar] {
+        &self.env
+    }
+
+    /// Files put in place before the process starts.
+    pub fn injected_files(&self) -> &[InjectedFile] {
+        &self.injected_files
     }
 
     /// Named ports the process listens on.
@@ -452,6 +543,51 @@ impl CustomProcess {
                     errors.push(
                         FieldError::ReadyCheck(anyhow::anyhow!(
                             "http path '{path}' must start with '/'"
+                        ))
+                        .into(),
+                    );
+                }
+            }
+        }
+        for var in &self.env {
+            if var.name.is_empty() {
+                errors.push(FieldError::Env(anyhow::anyhow!("a variable has no name")).into());
+            }
+            if let EnvValue::Secret { name, key } = &var.value {
+                if name.is_empty() || key.is_empty() {
+                    errors.push(
+                        FieldError::Env(anyhow::anyhow!(
+                            "'{}' needs the secret's name and key",
+                            var.name
+                        ))
+                        .into(),
+                    );
+                }
+            }
+        }
+        for file in &self.injected_files {
+            if file.local_path.as_os_str().is_empty() {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!("a file has no local_path")).into(),
+                );
+            }
+            // `Path` drops a trailing slash, so the text is what tells a directory
+            if !file.remote_path.is_absolute() || file.remote_path.to_string_lossy().ends_with('/')
+            {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "remote_path '{}' must be an absolute path to a file",
+                        file.remote_path.display()
+                    ))
+                    .into(),
+                );
+            }
+            if let Some(mode) = &file.mode {
+                if !(3..=4).contains(&mode.len()) || !mode.chars().all(|c| ('0'..='7').contains(&c))
+                {
+                    errors.push(
+                        FieldError::InjectedFiles(anyhow::anyhow!(
+                            "mode '{mode}' must be 3 or 4 octal digits, e.g. '0755'"
                         ))
                         .into(),
                     );
@@ -695,11 +831,26 @@ impl CustomProcessBuilder<WithName, WithCmd> {
         )
     }
 
-    /// Set the  environment variables that will be used when spawn the process.
-    pub fn with_env(self, env: Vec<impl Into<EnvVar>>) -> Self {
+    /// Set the environment variables of the process: `(name, value)` pairs,
+    /// or a [`ProcessEnvVar`] read from a kubernetes `Secret`.
+    pub fn with_env(self, env: Vec<impl Into<ProcessEnvVar>>) -> Self {
         let env = env.into_iter().map(|var| var.into()).collect::<Vec<_>>();
 
         Self::transition(CustomProcess { env, ..self.config }, self.errors)
+    }
+
+    /// Put a file in place before the process starts; see [`InjectedFile`].
+    pub fn with_injected_file(self, file: InjectedFile) -> Self {
+        let mut injected_files = self.config.injected_files;
+        injected_files.push(file);
+
+        Self::transition(
+            CustomProcess {
+                injected_files,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     /// Declare a named port the process listens on; `0` lets zombienet pick a
@@ -1135,5 +1286,80 @@ mod tests {
                 .build()
                 .unwrap_or_else(|e| panic!("{good:?} should be accepted, got {:?}", e.1));
         }
+    }
+
+    #[test]
+    fn files_and_secret_env_round_trip_and_validate() {
+        let api = CustomProcessBuilder::new()
+            .with_name("api")
+            .with_command("api")
+            .with_env(vec![
+                ("RUST_LOG", "info").into(),
+                ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
+            ])
+            .with_injected_file(InjectedFile::new("./sql/init.sql", "/schema/init.sql"))
+            .with_injected_file(InjectedFile::new("./run.sh", "/run.sh").with_mode("0755"))
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            api.env(),
+            [
+                ProcessEnvVar {
+                    name: "RUST_LOG".into(),
+                    value: EnvValue::Value("info".into()),
+                },
+                ProcessEnvVar {
+                    name: "TURN_SECRET".into(),
+                    value: EnvValue::Secret {
+                        name: "turn".into(),
+                        key: "secret".into(),
+                    },
+                },
+            ]
+        );
+        assert_eq!(api.injected_files()[1].mode.as_deref(), Some("0755"));
+
+        let json = serde_json::to_value(&api).unwrap();
+        assert_eq!(
+            json["env"],
+            serde_json::json!([
+                { "name": "RUST_LOG", "value": "info" },
+                { "name": "TURN_SECRET", "secret": { "name": "turn", "key": "secret" } },
+            ])
+        );
+        assert_eq!(
+            json["injected_files"][0],
+            serde_json::json!({ "local_path": "./sql/init.sql", "remote_path": "/schema/init.sql" })
+        );
+        let reloaded: CustomProcess = serde_json::from_value(json).unwrap();
+        assert_eq!(reloaded, api);
+
+        let errors = CustomProcessBuilder::new()
+            .with_name("bad")
+            .with_command("bad")
+            .with_env(vec![ProcessEnvVar::from_secret(
+                "TURN_SECRET",
+                "",
+                "secret",
+            )])
+            .with_injected_file(InjectedFile::new("./a", "schema/init.sql"))
+            .with_injected_file(InjectedFile::new("./b", "/etc/"))
+            .with_injected_file(InjectedFile::new("./c", "/c").with_mode("rwx"))
+            .build()
+            .unwrap_err()
+            .1
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            errors,
+            [
+                "env: 'TURN_SECRET' needs the secret's name and key",
+                "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file",
+                "injected_files: remote_path '/etc/' must be an absolute path to a file",
+                "injected_files: mode 'rwx' must be 3 or 4 octal digits, e.g. '0755'",
+            ]
+        );
     }
 }

@@ -23,6 +23,17 @@ pub struct ProviderCapabilities {
     /// Use default ports in node cmd/args.
     /// NOTE: generally used in k8s/dockers since the images expose those ports.
     pub use_default_ports_in_cmd: bool,
+    /// An env value may be read from a `Secret` in the namespace (k8s).
+    pub has_secrets: bool,
+}
+
+/// An environment variable read from the `key` of the `Secret` named
+/// `secret` in the namespace, by the pod itself (k8s only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretEnvVar {
+    pub name: String,
+    pub secret: String,
+    pub key: String,
 }
 
 /// Role of a node in the network, exposed by providers that support labels
@@ -98,6 +109,8 @@ pub struct SpawnNodeOptions {
     pub args: Vec<String>,
     /// Environment to set when running the `program`
     pub env: Vec<(String, String)>,
+    /// Environment read from `Secret`s in the namespace (k8s only).
+    pub secret_env: Vec<SecretEnvVar>,
     // TODO: rename startup_files
     /// Files to inject at startup
     pub injected_files: Vec<TransferedFile>,
@@ -139,6 +152,7 @@ impl SpawnNodeOptions {
             program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
+            secret_env: vec![],
             injected_files: vec![],
             created_paths: vec![],
             db_snapshot: None,
@@ -242,14 +256,23 @@ impl SpawnNodeOptions {
         self
     }
 
+    pub fn secret_env<I>(mut self, secret_env: I) -> Self
+    where
+        I: IntoIterator<Item = SecretEnvVar>,
+    {
+        self.secret_env = secret_env.into_iter().collect();
+        self
+    }
+
     /// Run `program` directly instead of through the zombie wrapper script.
     ///
     /// The wrapper needs `bash` in the image and is what pause, resume and
     /// restart talk to, so those return an error for a node spawned this way
     /// on docker and kubernetes (native signals the process and needs no
-    /// wrapper). The wrapper also holds the program back until the injected
-    /// files are copied in; without it the program starts at once, so it must
-    /// not need any `injected_files` at startup.
+    /// wrapper). The wrapper holds the program back until the injected files
+    /// are copied in; without it they are mounted in before the program
+    /// starts, read-only, and on kubernetes within what a `ConfigMap` holds
+    /// (a megabyte).
     pub fn without_wrapper(mut self) -> Self {
         self.wrapper = false;
         self

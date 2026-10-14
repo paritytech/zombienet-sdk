@@ -6,7 +6,7 @@ use std::{
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
+    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Secret, Service, ServiceSpec,
 };
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
@@ -112,6 +112,13 @@ impl KubernetesClient {
         Ok(())
     }
 
+    pub(super) async fn get_secret(&self, namespace: &str, name: &str) -> Result<Option<Secret>> {
+        Api::<Secret>::namespaced(self.inner.clone(), namespace)
+            .get_opt(name)
+            .await
+            .map_err(|err| Error::from(anyhow!("error while getting secret {name}: {err}")))
+    }
+
     pub(super) async fn create_config_map_from_file(
         &self,
         namespace: &str,
@@ -120,8 +127,6 @@ impl KubernetesClient {
         file_contents: &str,
         labels: BTreeMap<String, String>,
     ) -> Result<ConfigMap> {
-        let config_maps = Api::<ConfigMap>::namespaced(self.inner.clone(), namespace);
-
         let config_map = ConfigMap {
             metadata: ObjectMeta {
                 name: Some(name.to_string()),
@@ -136,16 +141,23 @@ impl KubernetesClient {
             ..Default::default()
         };
 
+        self.create_config_map(namespace, config_map).await
+    }
+
+    pub(super) async fn create_config_map(
+        &self,
+        namespace: &str,
+        config_map: ConfigMap,
+    ) -> Result<ConfigMap> {
+        let name = config_map.metadata.name.clone().unwrap_or_default();
+        let config_maps = Api::<ConfigMap>::namespaced(self.inner.clone(), namespace);
+
         config_maps
             .create(&PostParams::default(), &config_map)
             .await
-            .map_err(|err| {
-                Error::from(anyhow!(
-                    "error while creating config map {name} for {file_name}: {err}"
-                ))
-            })?;
+            .map_err(|err| Error::from(anyhow!("error while creating config map {name}: {err}")))?;
 
-        self.wait_created(config_maps, name).await?;
+        self.wait_created(config_maps, &name).await?;
 
         Ok(config_map)
     }

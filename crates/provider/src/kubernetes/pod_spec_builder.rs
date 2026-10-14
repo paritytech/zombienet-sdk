@@ -3,16 +3,53 @@ use std::{collections::BTreeMap, env};
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, ContainerPort, EnvVar, HTTPGetAction, PodSpec, Probe,
-        ResourceRequirements, TCPSocketAction, Toleration, Volume, VolumeMount,
+        ConfigMapVolumeSource, Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction,
+        KeyToPath, PodSpec, Probe, ResourceRequirements, SecretKeySelector, TCPSocketAction,
+        Toleration, Volume, VolumeMount,
     },
     apimachinery::pkg::{api::resource::Quantity, util::intstr::IntOrString},
 };
 
 use crate::{
     constants::NODE_SCRIPTS_DIR,
-    types::{Port, ReadinessProbe, ReadinessTarget},
+    types::{Port, ReadinessProbe, ReadinessTarget, SecretEnvVar, TransferedFile},
 };
+
+/// The volume a direct process's injected files are mounted from, one by one.
+const FILES_VOLUME: &str = "files";
+
+/// The `ConfigMap` holding a direct process's injected files.
+pub(super) fn files_config_map_name(pod: &str) -> String {
+    format!("{pod}-files")
+}
+
+/// The `ConfigMap` key of the `index`th injected file: unique by the index,
+/// readable by the file name, within what a key may contain.
+pub(super) fn file_key(index: usize, file: &TransferedFile) -> String {
+    let name: String = file
+        .remote_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("{index}-{name}")
+}
+
+/// An octal mode as the volume takes it; the volume's default when it does
+/// not parse.
+fn file_mode(mode: &str) -> Option<i32> {
+    u32::from_str_radix(mode, 8)
+        .ok()
+        .and_then(|mode| i32::try_from(mode).ok())
+}
 
 pub(super) struct PodSpecBuilder;
 
@@ -25,6 +62,8 @@ impl PodSpecBuilder {
         program: &str,
         args: &[String],
         env: &[(String, String)],
+        secret_env: &[SecretEnvVar],
+        files: &[TransferedFile],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
         wrapper: bool,
@@ -46,9 +85,10 @@ impl PodSpecBuilder {
             hostname: Some(name.to_string()),
             init_containers: Some(vec![Self::build_helper_binaries_setup_container()]),
             containers: vec![Self::build_main_container(
-                name, image, resources, program, args, env, ports, readiness, wrapper,
+                name, image, resources, program, args, env, secret_env, files, ports, readiness,
+                wrapper,
             )],
-            volumes: Some(Self::build_volumes()),
+            volumes: Some(Self::build_volumes(name, files)),
             tolerations,
             // A direct process that exits is done, by success or by failure: the
             // pod ends with it, and so says what happened, instead of the
@@ -67,6 +107,8 @@ impl PodSpecBuilder {
         program: &str,
         args: &[String],
         env: &[(String, String)],
+        secret_env: &[SecretEnvVar],
+        files: &[TransferedFile],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
         wrapper: bool,
@@ -135,7 +177,7 @@ impl PodSpecBuilder {
             _ => None,
         };
 
-        let extra_mounts = if wrapper {
+        let mut extra_mounts = if wrapper {
             vec![VolumeMount {
                 name: "zombie-wrapper-volume".to_string(),
                 mount_path: "/zombie-wrapper.sh".to_string(),
@@ -145,6 +187,14 @@ impl PodSpecBuilder {
         } else {
             vec![]
         };
+        // Each file on its own path, wherever that is in the image.
+        extra_mounts.extend(files.iter().enumerate().map(|(index, file)| VolumeMount {
+            name: FILES_VOLUME.to_string(),
+            mount_path: file.remote_path.to_string_lossy().into_owned(),
+            sub_path: Some(file_key(index, file)),
+            read_only: Some(true),
+            ..Default::default()
+        }));
 
         Container {
             name: name.to_string(),
@@ -160,6 +210,18 @@ impl PodSpecBuilder {
                         value: Some(value.clone()),
                         value_from: None,
                     })
+                    .chain(secret_env.iter().map(|var| EnvVar {
+                        name: var.name.clone(),
+                        value: None,
+                        value_from: Some(EnvVarSource {
+                            secret_key_ref: Some(SecretKeySelector {
+                                name: Some(var.secret.clone()),
+                                key: var.key.clone(),
+                                optional: None,
+                            }),
+                            ..Default::default()
+                        }),
+                    }))
                     .collect(),
             ),
             volume_mounts: Some(Self::build_volume_mounts(extra_mounts)),
@@ -187,8 +249,8 @@ impl PodSpecBuilder {
         }
     }
 
-    fn build_volumes() -> Vec<Volume> {
-        vec![
+    fn build_volumes(name: &str, files: &[TransferedFile]) -> Vec<Volume> {
+        let mut volumes = vec![
             Volume {
                 name: "cfg".to_string(),
                 ..Default::default()
@@ -223,7 +285,29 @@ impl PodSpecBuilder {
                 }),
                 ..Default::default()
             },
-        ]
+        ];
+        if !files.is_empty() {
+            volumes.push(Volume {
+                name: FILES_VOLUME.to_string(),
+                config_map: Some(ConfigMapVolumeSource {
+                    name: Some(files_config_map_name(name)),
+                    items: Some(
+                        files
+                            .iter()
+                            .enumerate()
+                            .map(|(index, file)| KeyToPath {
+                                key: file_key(index, file),
+                                path: file_key(index, file),
+                                mode: file_mode(&file.mode),
+                            })
+                            .collect(),
+                    ),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        }
+        volumes
     }
 
     fn build_volume_mounts(non_default_mounts: Vec<VolumeMount>) -> Vec<VolumeMount> {
@@ -316,6 +400,8 @@ mod tests {
             &["--dev".to_string()],
             &[],
             &[],
+            &[],
+            &[],
             None,
             true,
         );
@@ -344,6 +430,8 @@ mod tests {
             None,
             "ipfs",
             &["daemon".to_string()],
+            &[],
+            &[],
             &[],
             &ports,
             Some(&ReadinessProbe {
@@ -384,7 +472,19 @@ mod tests {
 
     #[test]
     fn a_direct_process_without_ports_has_no_probe() {
-        let spec = PodSpecBuilder::build("proc", "img", None, "job", &[], &[], &[], None, false);
+        let spec = PodSpecBuilder::build(
+            "proc",
+            "img",
+            None,
+            "job",
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+            false,
+        );
         assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
         let container = main_container(&spec);
         assert!(container.readiness_probe.is_none());
@@ -401,6 +501,8 @@ mod tests {
             "ipfs",
             &[],
             &[],
+            &[],
+            &[],
             &ports,
             Some(&ReadinessProbe {
                 target: ReadinessTarget::Tcp(5001),
@@ -413,5 +515,84 @@ mod tests {
             probe.tcp_socket.as_ref().unwrap().port,
             IntOrString::Int(5001)
         );
+    }
+
+    #[test]
+    fn a_direct_process_mounts_its_files_and_reads_env_from_secrets() {
+        let files = vec![
+            TransferedFile::new("./sql/init.sql", "/schema/init.sql"),
+            TransferedFile::new("./run.sh", "/opt/app/run me.sh").mode("0755"),
+        ];
+        let secret_env = vec![SecretEnvVar {
+            name: "TURN_SECRET".into(),
+            secret: "turn".into(),
+            key: "secret".into(),
+        }];
+        let spec = PodSpecBuilder::build(
+            "proc",
+            "img",
+            None,
+            "api",
+            &[],
+            &[("RUST_LOG".to_string(), "info".to_string())],
+            &secret_env,
+            &files,
+            &[],
+            None,
+            false,
+        );
+
+        let volume = spec
+            .volumes
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|v| v.name == FILES_VOLUME)
+            .unwrap();
+        let config_map = volume.config_map.as_ref().unwrap();
+        assert_eq!(config_map.name.as_deref(), Some("proc-files"));
+        assert_eq!(
+            config_map
+                .items
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|item| (item.key.as_str(), item.path.as_str(), item.mode))
+                .collect::<Vec<_>>(),
+            [
+                ("0-init.sql", "0-init.sql", Some(0o644)),
+                ("1-run-me.sh", "1-run-me.sh", Some(0o755)),
+            ]
+        );
+
+        let container = main_container(&spec);
+        let mounts: Vec<_> = container
+            .volume_mounts
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|m| m.name == FILES_VOLUME)
+            .map(|m| (m.mount_path.as_str(), m.sub_path.as_deref(), m.read_only))
+            .collect();
+        assert_eq!(
+            mounts,
+            [
+                ("/schema/init.sql", Some("0-init.sql"), Some(true)),
+                ("/opt/app/run me.sh", Some("1-run-me.sh"), Some(true)),
+            ]
+        );
+
+        let env = container.env.as_ref().unwrap();
+        assert_eq!(env[0].value.as_deref(), Some("info"));
+        let from_secret = env[1]
+            .value_from
+            .as_ref()
+            .unwrap()
+            .secret_key_ref
+            .as_ref()
+            .unwrap();
+        assert_eq!(env[1].name, "TURN_SECRET");
+        assert_eq!(from_secret.name.as_deref(), Some("turn"));
+        assert_eq!(from_secret.key, "secret");
     }
 }

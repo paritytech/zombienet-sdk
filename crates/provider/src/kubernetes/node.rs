@@ -11,7 +11,11 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
-use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
+use k8s_openapi::{
+    api::core::v1::{ConfigMap, ServicePort, ServiceSpec},
+    ByteString,
+};
+use kube::core::ObjectMeta;
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -24,7 +28,7 @@ use super::{
         KubernetesClient,
     },
     namespace::KubernetesNamespace,
-    pod_spec_builder::PodSpecBuilder,
+    pod_spec_builder::{file_key, files_config_map_name, PodSpecBuilder},
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
@@ -32,7 +36,7 @@ use crate::{
     shared::helpers::{default_true, ensure_wrapper},
     types::{
         ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
-        RunCommandOptions, RunScriptOptions, TransferedFile,
+        RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -48,6 +52,8 @@ where
     pub(super) program: &'a str,
     pub(super) args: &'a [String],
     pub(super) env: &'a [(String, String)],
+    /// Env read from `Secret`s in the namespace, by the pod.
+    pub(super) secret_env: &'a [SecretEnvVar],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
     pub(super) db_snapshot: Option<&'a Path>,
@@ -82,6 +88,7 @@ where
             program: &deserializable.program,
             args: &deserializable.args,
             env: &deserializable.env,
+            secret_env: &[],
             startup_files: &[],
             resources: deserializable.resources.as_ref(),
             db_snapshot: None,
@@ -196,17 +203,28 @@ where
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_k8s(options.role, options.readiness).await?;
+        // A direct process runs `program` from the moment the pod is up, so
+        // its files are mounted in from a ConfigMap, in place before that; a
+        // wrapped node gets them sent while the wrapper holds `program` back.
+        let mounted_files: &[TransferedFile] = if node.wrapper {
+            &[]
+        } else {
+            options.startup_files
+        };
+        node.initialize_k8s(
+            options.role,
+            options.readiness,
+            options.secret_env,
+            mounted_files,
+        )
+        .await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
 
-        node.initialize_startup_files(options.startup_files).await?;
-
-        // Without the wrapper there is no pipe to signal: the container runs
-        // `program` from the moment the pod is up.
         if node.wrapper {
+            node.initialize_startup_files(options.startup_files).await?;
             node.start().await?;
         }
 
@@ -262,6 +280,8 @@ where
         &self,
         role: Option<NodeRole>,
         readiness: Option<&ReadinessProbe>,
+        secret_env: &[SecretEnvVar],
+        files: &[TransferedFile],
     ) -> Result<(), ProviderError> {
         let mut labels = BTreeMap::from([
             (
@@ -279,6 +299,11 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
+        self.check_secrets(secret_env).await?;
+        if !files.is_empty() {
+            self.create_files_config_map(files, labels.clone()).await?;
+        }
+
         // Create pod
         let pod_spec = PodSpecBuilder::build(
             &self.name,
@@ -287,6 +312,8 @@ where
             &self.program,
             &self.args,
             &self.env,
+            secret_env,
+            files,
             &self.ports,
             readiness,
             self.wrapper,
@@ -354,6 +381,80 @@ where
             .write(service_dest_path, serialized_service_manifest)
             .await?;
 
+        Ok(())
+    }
+
+    /// A Secret or key that is not there would hold the pod in
+    /// `CreateContainerConfigError` until the spawn times out, so it is
+    /// looked up first.
+    async fn check_secrets(&self, secret_env: &[SecretEnvVar]) -> Result<(), ProviderError> {
+        let namespace = self.namespace_name();
+        for var in secret_env {
+            let secret = self
+                .k8s_client
+                .get_secret(&namespace, &var.secret)
+                .await
+                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?
+                .ok_or_else(|| {
+                    ProviderError::NodeSpawningFailed(
+                        self.name.clone(),
+                        anyhow!(
+                            "env {}: secret '{}' not found in namespace {namespace}",
+                            var.name,
+                            var.secret
+                        ),
+                    )
+                })?;
+            let has_key = secret
+                .data
+                .as_ref()
+                .is_some_and(|data| data.contains_key(&var.key))
+                || secret
+                    .string_data
+                    .as_ref()
+                    .is_some_and(|data| data.contains_key(&var.key));
+            if !has_key {
+                return Err(ProviderError::NodeSpawningFailed(
+                    self.name.clone(),
+                    anyhow!(
+                        "env {}: secret '{}' has no key '{}'",
+                        var.name,
+                        var.secret,
+                        var.key
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The injected files of a direct process, mounted into its pod one by one
+    /// (see `PodSpecBuilder`); together they must fit a `ConfigMap`, a
+    /// megabyte.
+    async fn create_files_config_map(
+        &self,
+        files: &[TransferedFile],
+        labels: BTreeMap<String, String>,
+    ) -> Result<(), ProviderError> {
+        let mut binary_data = BTreeMap::new();
+        for (index, file) in files.iter().enumerate() {
+            let contents = self.filesystem.read(&file.local_path).await?;
+            binary_data.insert(file_key(index, file), ByteString(contents));
+        }
+        let config_map = ConfigMap {
+            metadata: ObjectMeta {
+                name: Some(files_config_map_name(&self.name)),
+                namespace: Some(self.namespace_name()),
+                labels: Some(labels),
+                ..Default::default()
+            },
+            binary_data: Some(binary_data),
+            ..Default::default()
+        };
+        self.k8s_client
+            .create_config_map(&self.namespace_name(), config_map)
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
         Ok(())
     }
 

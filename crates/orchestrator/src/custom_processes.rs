@@ -102,16 +102,34 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
                 "the name is already taken by a node or custom process".into(),
             ));
         }
+        if let Some(file) = cp.injected_files().iter().find(|f| !f.local_path.is_file()) {
+            return Err(failed(
+                cp,
+                format!(
+                    "injected file '{}' is not a file",
+                    file.local_path.display()
+                ),
+            ));
+        }
         let prepared = prepare_process(cp, ns.as_ref())
             .map_err(|e| failed(cp, format!("could not reserve its ports: {e}")))?;
         pending.push(prepared);
     }
 
     // Every process's ports are known now, so a process may name another's,
-    // `{{ZOMBIE:<process>:port_<name>}}`, the way it names its own.
+    // `{{ZOMBIE:<process>:port_<name>}}`, the way it names its own. `root` is
+    // where its absolute paths are: nowhere special in a container, its own
+    // directory on native, where an injected file lands and it runs.
     let mut nodes_by_name = network.nodes_json()?;
     for prepared in &pending {
-        nodes_by_name[prepared.spec.name()] = ports_json(&prepared.ports);
+        let name = prepared.spec.name();
+        nodes_by_name[name] = ports_json(&prepared.ports);
+        nodes_by_name[name]["root"] =
+            serde_json::Value::String(if ns.capabilities().prefix_with_full_path {
+                ns.base_dir().join(name).to_string_lossy().into_owned()
+            } else {
+                String::new()
+            });
     }
 
     // Spawning and waiting are two steps, so a `service_started` dependent

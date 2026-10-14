@@ -48,7 +48,8 @@ pub enum CustomProcessState {
     /// A one-shot that exited 0.
     Completed,
     /// The ready check failed or timed out, or the one-shot exited with an
-    /// error. The process is left as it is, for its logs.
+    /// error: what `wait_ready` reports then. During the spawn this fails
+    /// the spawn, so no process on a spawned network is in this state.
     Failed {
         #[serde(rename = "state_reason")]
         reason: String,
@@ -64,14 +65,6 @@ impl fmt::Display for CustomProcessState {
             Self::Failed { .. } => "failed",
         })
     }
-}
-
-/// A custom process that was never spawned: a dependency did not meet its
-/// condition, or its ports could not be reserved.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkippedProcess {
-    pub name: String,
-    pub reason: String,
 }
 
 /// A running custom process.

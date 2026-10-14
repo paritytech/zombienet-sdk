@@ -41,7 +41,7 @@ pub mod spawned;
 
 pub use self::{
     jam::JamNetworkNode,
-    process::{CustomProcessNode, CustomProcessState, ProcessPort, SkippedProcess},
+    process::{CustomProcessNode, CustomProcessState, ProcessPort},
     spawned::{NodeKind, SpawnedNode},
 };
 

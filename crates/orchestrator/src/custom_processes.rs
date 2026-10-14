@@ -1,6 +1,7 @@
 //! Starting the custom processes of a network once the nodes are up: each one
 //! as soon as its dependencies have met their conditions, in parallel with
-//! whatever else can start. Failures are recorded on the network, never fatal.
+//! whatever else can start, `spawn_concurrency` at a time. A process that
+//! does not meet its condition, or never starts, fails the spawn.
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -8,22 +9,14 @@ use configuration::{CustomProcess, DependencyCondition};
 use futures::{stream::FuturesUnordered, StreamExt};
 use provider::{constants::LOCALHOST, ProviderNamespace};
 use support::fs::FileSystem;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{
+    errors::OrchestratorError,
     network::{node::CustomProcessState, Network},
     network_spec::NetworkSpec,
     spawner::{ports_json, prepare_process, spawn_process, PreparedProcess},
 };
-
-/// What the scheduler knows about a process so far.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Phase {
-    /// Spawned; its state so far.
-    Reached(CustomProcessState),
-    /// Never spawned.
-    Skipped,
-}
 
 /// Whether a process may start, given what its dependencies reached.
 enum Startable {
@@ -35,63 +28,55 @@ enum Startable {
 fn startable(
     process: &CustomProcess,
     by_name: &HashMap<&str, &CustomProcess>,
-    phases: &HashMap<String, Phase>,
+    states: &HashMap<String, CustomProcessState>,
 ) -> Startable {
     for dep in process.depends_on() {
         let Some(target) = by_name.get(dep.name.as_str()) else {
-            return Startable::Never(format!("depends on '{}', which was not spawned", dep.name));
+            return Startable::Never(format!(
+                "depends on '{}', which is not a custom process",
+                dep.name
+            ));
         };
         let condition = dep.condition_on(target);
-        let Some(phase) = phases.get(dep.name.as_str()) else {
+        let Some(state) = states.get(dep.name.as_str()) else {
             return Startable::Later;
         };
-        let met = match (condition, phase) {
-            (_, Phase::Skipped) => false,
+        let met = match (condition, state) {
             (DependencyCondition::ServiceStarted, _) => true,
-            (DependencyCondition::ServiceHealthy, Phase::Reached(CustomProcessState::Ready)) => {
+            (DependencyCondition::ServiceHealthy, CustomProcessState::Ready) => true,
+            (DependencyCondition::ServiceCompletedSuccessfully, CustomProcessState::Completed) => {
                 true
             },
-            (
-                DependencyCondition::ServiceCompletedSuccessfully,
-                Phase::Reached(CustomProcessState::Completed),
-            ) => true,
-            (_, Phase::Reached(CustomProcessState::Starting)) => return Startable::Later,
+            (_, CustomProcessState::Starting) => return Startable::Later,
             _ => false,
         };
         if !met {
             return Startable::Never(format!(
-                "depends on '{}' being {}, which it is not ({})",
+                "depends on '{}' being {}, which it is not ({state})",
                 dep.name,
                 condition.as_str(),
-                match phase {
-                    Phase::Reached(state) => state.to_string(),
-                    Phase::Skipped => "skipped".into(),
-                }
             ));
         }
     }
     Startable::Now
 }
 
-/// A process that is not spawned: recorded on the network, and known to the
-/// scheduler so its dependents are refused too.
-fn skip<T: FileSystem>(
-    network: &mut Network<T>,
-    phases: &mut HashMap<String, Phase>,
-    name: &str,
-    reason: String,
-) {
-    network.add_skipped_custom_process(name, reason);
-    phases.insert(name.to_string(), Phase::Skipped);
+fn failed(process: &CustomProcess, reason: String) -> OrchestratorError {
+    OrchestratorError::CustomProcessFailed {
+        name: process.name().to_string(),
+        reason,
+    }
 }
 
-/// Start each process once its dependencies are met; a failed or skipped
-/// one is recorded on the network, nothing here fails the spawn.
+/// Start each process once its dependencies are met, at most
+/// `spawn_concurrency` spawning at a time. The first process that fails, or
+/// is never started, fails the spawn.
 pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     network: &mut Network<T>,
     spec: &NetworkSpec,
     ns: Arc<dyn ProviderNamespace + Send + Sync>,
-) -> Result<(), anyhow::Error> {
+    spawn_concurrency: usize,
+) -> Result<(), OrchestratorError> {
     if spec.custom_processes.is_empty() {
         return Ok(());
     }
@@ -101,36 +86,25 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
         .copied()
         .unwrap_or(LOCALHOST);
     let default_timeout = Duration::from_secs(u64::from(spec.global_settings.node_spawn_timeout()));
-    let by_name: HashMap<&str, &CustomProcess> = spec
-        .custom_processes
-        .iter()
-        .map(|cp| (cp.name(), cp))
-        .collect();
-    let mut phases: HashMap<String, Phase> = HashMap::new();
+    let mut by_name: HashMap<&str, &CustomProcess> = HashMap::new();
+    let mut states: HashMap<String, CustomProcessState> = HashMap::new();
 
-    // Checked before spawning: a process that ran and was then refused would
-    // be untracked, having taken the node's place in the provider's registry.
-    // Every process parks its ports before any spawns, see `PreparedProcess`.
+    // The loader and the builder refuse a name a node or process already has,
+    // but a `NetworkConfig` or `NetworkSpec` deserialized directly skips them,
+    // and a process registered under a node's name would replace the node.
+    // Checked before spawning, so no process runs untracked. Every process
+    // parks its ports before any spawns, see `PreparedProcess`.
     let mut pending: Vec<PreparedProcess> = vec![];
     for cp in &spec.custom_processes {
-        if network.has_member(cp.name()) {
-            skip(
-                network,
-                &mut phases,
-                cp.name(),
+        if network.has_member(cp.name()) || by_name.insert(cp.name(), cp).is_some() {
+            return Err(failed(
+                cp,
                 "the name is already taken by a node or custom process".into(),
-            );
-            continue;
+            ));
         }
-        match prepare_process(cp, ns.as_ref()) {
-            Ok(prepared) => pending.push(prepared),
-            Err(e) => skip(
-                network,
-                &mut phases,
-                cp.name(),
-                format!("could not reserve its ports: {e}"),
-            ),
-        }
+        let prepared = prepare_process(cp, ns.as_ref())
+            .map_err(|e| failed(cp, format!("could not reserve its ports: {e}")))?;
+        pending.push(prepared);
     }
 
     // Every process's ports are known now, so a process may name another's,
@@ -141,69 +115,63 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     }
 
     // Spawning and waiting are two steps, so a `service_started` dependent
-    // goes as soon as its dependency spawned, while that one is still waited on.
+    // goes as soon as its dependency spawned, while that one is still waited
+    // on. The concurrency limit is on the spawning step, as for nodes.
     let mut spawning = FuturesUnordered::new();
     let mut waiting = FuturesUnordered::new();
     loop {
         let mut i = 0;
         while i < pending.len() {
-            match startable(pending[i].spec, &by_name, &phases) {
+            match startable(pending[i].spec, &by_name, &states) {
+                Startable::Now if spawning.len() >= spawn_concurrency => i += 1,
                 Startable::Now => {
                     let prepared = pending.swap_remove(i);
-                    let name = prepared.spec.name().to_string();
+                    let spec = prepared.spec;
                     let ns = ns.clone();
                     let nodes_by_name = &nodes_by_name;
                     spawning.push(async move {
                         let outcome = spawn_process(prepared, ns, host_ip, nodes_by_name).await;
-                        (name, outcome)
+                        (spec, outcome)
                     });
                 },
                 Startable::Later => i += 1,
-                Startable::Never(reason) => {
-                    let prepared = pending.swap_remove(i);
-                    skip(network, &mut phases, prepared.spec.name(), reason);
-                },
+                Startable::Never(reason) => return Err(failed(pending[i].spec, reason)),
             }
         }
         if spawning.is_empty() && waiting.is_empty() {
             break;
         }
         tokio::select! {
-            Some((name, outcome)) = spawning.next(), if !spawning.is_empty() => match outcome {
-                Ok(node) => {
-                    phases.insert(name.clone(), Phase::Reached(CustomProcessState::Starting));
-                    let timeout = node
-                        .spec()
-                        .timeout()
-                        .map(|secs| Duration::from_secs(u64::from(secs)))
-                        .unwrap_or(default_timeout);
-                    waiting.push(async move {
-                        let state = node.wait_ready(timeout).await;
-                        (name, node, state)
-                    });
-                },
-                Err(e) => skip(network, &mut phases, &name, format!("failed to spawn: {e}")),
+            Some((spec, outcome)) = spawning.next(), if !spawning.is_empty() => {
+                let node = outcome.map_err(|e| failed(spec, format!("failed to spawn: {e}")))?;
+                states.insert(spec.name().to_string(), CustomProcessState::Starting);
+                let timeout = spec
+                    .timeout()
+                    .map(|secs| Duration::from_secs(u64::from(secs)))
+                    .unwrap_or(default_timeout);
+                waiting.push(async move {
+                    let state = node.wait_ready(timeout).await;
+                    (node, state)
+                });
             },
-            Some((name, mut node, state)) = waiting.next(), if !waiting.is_empty() => {
-                match &state {
-                    CustomProcessState::Failed { reason } => warn!("⚠️  {name}: {reason}"),
-                    state => info!("✅ {name}: {state}"),
+            Some((mut node, state)) = waiting.next(), if !waiting.is_empty() => {
+                if let CustomProcessState::Failed { reason } = state {
+                    return Err(failed(node.spec(), reason));
                 }
-                node.state = state.clone();
-                phases.insert(name, Phase::Reached(state));
+                info!("✅ {}: {state}", node.name());
+                states.insert(node.name().to_string(), state.clone());
+                node.state = state;
                 network.add_running_custom_process(node);
             },
         }
     }
     // Only a cycle leaves something pending; the config check should have
     // caught it, so this is defensive.
-    for prepared in pending {
-        skip(
-            network,
-            &mut phases,
-            prepared.spec.name(),
+    if let Some(prepared) = pending.first() {
+        return Err(failed(
+            prepared.spec,
             "its dependencies never started (cycle?)".into(),
-        );
+        ));
     }
 
     Ok(())
@@ -244,18 +212,23 @@ mod tests {
             false,
             false,
         );
+        let mismatch = mk(
+            "mismatch",
+            vec![("init", Some(DependencyCondition::ServiceHealthy))],
+            false,
+            false,
+        );
         let orphan = mk("orphan", vec![("ghost", None)], false, false);
-        let all = [&db, &init, &api, &eager, &orphan];
+        let all = [&db, &init, &api, &eager, &mismatch, &orphan];
         let by_name: HashMap<&str, &CustomProcess> = all.iter().map(|p| (p.name(), *p)).collect();
-        let reached = |state: CustomProcessState| Phase::Reached(state);
-        let phases = |pairs: Vec<(&str, Phase)>| -> HashMap<String, Phase> {
-            pairs.into_iter().map(|(n, p)| (n.to_string(), p)).collect()
-        };
-        let failed = || reached(CustomProcessState::Failed { reason: "x".into() });
+        let states =
+            |pairs: Vec<(&str, CustomProcessState)>| -> HashMap<String, CustomProcessState> {
+                pairs.into_iter().map(|(n, s)| (n.to_string(), s)).collect()
+            };
 
         // nothing known yet: wait
         assert!(matches!(
-            startable(&api, &by_name, &phases(vec![])),
+            startable(&api, &by_name, &states(vec![])),
             Startable::Later
         ));
         // db started but not ready, init done: healthy still pending
@@ -263,9 +236,9 @@ mod tests {
             startable(
                 &api,
                 &by_name,
-                &phases(vec![
-                    ("db", reached(CustomProcessState::Starting)),
-                    ("init", reached(CustomProcessState::Completed))
+                &states(vec![
+                    ("db", CustomProcessState::Starting),
+                    ("init", CustomProcessState::Completed)
                 ])
             ),
             Startable::Later
@@ -275,46 +248,48 @@ mod tests {
             startable(
                 &api,
                 &by_name,
-                &phases(vec![
-                    ("db", reached(CustomProcessState::Ready)),
-                    ("init", reached(CustomProcessState::Completed))
+                &states(vec![
+                    ("db", CustomProcessState::Ready),
+                    ("init", CustomProcessState::Completed)
                 ])
             ),
             Startable::Now
         ));
-        // db failed its check: never
+        // service_started is met as soon as the dependency spawned
         assert!(matches!(
             startable(
-                &api,
+                &eager,
                 &by_name,
-                &phases(vec![
-                    ("db", failed()),
-                    ("init", reached(CustomProcessState::Completed))
-                ])
+                &states(vec![("db", CustomProcessState::Starting)])
             ),
-            Startable::Never(_)
-        ));
-        // init skipped: never
-        assert!(matches!(
-            startable(
-                &api,
-                &by_name,
-                &phases(vec![
-                    ("db", reached(CustomProcessState::Ready)),
-                    ("init", Phase::Skipped)
-                ])
-            ),
-            Startable::Never(_)
-        ));
-        // service_started is met by a failed check too
-        assert!(matches!(
-            startable(&eager, &by_name, &phases(vec![("db", failed())])),
             Startable::Now
+        ));
+        // a one-shot never becomes healthy
+        assert!(matches!(
+            startable(
+                &mismatch,
+                &by_name,
+                &states(vec![("init", CustomProcessState::Completed)])
+            ),
+            Startable::Never(_)
         ));
         // an unknown dependency
         assert!(matches!(
-            startable(&orphan, &by_name, &phases(vec![])),
+            startable(&orphan, &by_name, &states(vec![])),
             Startable::Never(_)
         ));
+    }
+
+    #[test]
+    fn a_failure_names_the_process_and_the_reason() {
+        let api = CustomProcessBuilder::new()
+            .with_name("api")
+            .with_command("api")
+            .build()
+            .unwrap();
+        assert_eq!(
+            failed(&api, "exited with code 3".into()).to_string(),
+            "Custom process 'api': exited with code 3"
+        );
     }
 }

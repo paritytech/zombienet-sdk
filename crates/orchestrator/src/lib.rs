@@ -200,9 +200,6 @@ where
             }
             network.set_custom_processes(processes);
         }
-        if let Some(skipped) = zombie_json.get("skipped_custom_processes") {
-            network.set_skipped_custom_processes(serde_json::from_value(skipped.clone())?);
-        }
 
         Ok(network)
     }
@@ -664,7 +661,13 @@ where
             }
         }
 
-        custom_processes::spawn_custom_processes(&mut network, &network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            &network_spec,
+            ns.clone(),
+            configured_concurrency(&network_spec),
+        )
+        .await?;
 
         network.set_start_time_ts(start_time);
 
@@ -935,7 +938,13 @@ where
         )
         .await?;
 
-        custom_processes::spawn_custom_processes(&mut network, network_spec, ns.clone()).await?;
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            network_spec,
+            ns.clone(),
+            configured_concurrency(network_spec),
+        )
+        .await?;
 
         network.set_start_time_ts(start_time);
 
@@ -1345,36 +1354,33 @@ fn spawn_concurrency_from_env() -> Option<usize> {
     }
 }
 
+/// The spawn concurrency as set (env over settings, 20 when neither), before
+/// any token limit: what custom processes spawn with, since their placeholders
+/// resolve from nodes that are all up and ports that are all reserved before
+/// any starts. At least 1: with 0 nothing would ever start.
+fn configured_concurrency(spec: &NetworkSpec) -> usize {
+    spawn_concurrency_from_env()
+        .or(spec.global_settings.spawn_concurrency())
+        .unwrap_or(20)
+        .max(1)
+}
+
+/// Whether a chain's spec has a `{{ZOMBIE:..}}` placeholder, which makes the
+/// nodes spawn one at a time. Custom processes are left out: theirs resolve
+/// from nodes that are all up by then.
+fn chains_have_tokens(spec: &NetworkSpec) -> Result<bool, anyhow::Error> {
+    let chains = (&spec.relaychain, &spec.jamchain, &spec.parachains);
+    Ok(has_tokens(&serde_json::to_string(&chains)?))
+}
+
+/// The concurrency nodes spawn with, and whether tokens limited it to 1.
 fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Error> {
-    let desired_spawn_concurrency = match (
-        spawn_concurrency_from_env(),
-        spec.global_settings.spawn_concurrency(),
-    ) {
-        (Some(n), _) => Some(n),
-        (None, Some(n)) => Some(n),
-        _ => None,
-    };
-
-    let (spawn_concurrency, limited_by_tokens) =
-        if let Some(spawn_concurrency) = desired_spawn_concurrency {
-            if spawn_concurrency == 1 {
-                (1, false)
-            } else if has_tokens(&serde_json::to_string(spec)?) {
-                (1, true)
-            } else {
-                (spawn_concurrency, false)
-            }
-        } else {
-            // not set
-            if has_tokens(&serde_json::to_string(spec)?) {
-                (1, true)
-            } else {
-                // use 100 as max concurrency, we can set a max by provider later
-                (100, false)
-            }
-        };
-
-    Ok((spawn_concurrency, limited_by_tokens))
+    let concurrency = configured_concurrency(spec);
+    if concurrency > 1 && chains_have_tokens(spec)? {
+        Ok((1, true))
+    } else {
+        Ok((concurrency, false))
+    }
 }
 
 /// Build deterministic dependency **levels** among the given nodes.
@@ -1764,7 +1770,7 @@ mod tests {
         let network_config = generate(false, Some("cargo")).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let (concurrency, _) = calculate_concurrency(&spec).unwrap();
-        assert_eq!(concurrency, 100);
+        assert_eq!(concurrency, 20);
     }
 
     #[tokio::test]
@@ -1806,6 +1812,33 @@ mod tests {
         let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
         assert_eq!(concurrency, 1);
         assert!(limited);
+    }
+
+    #[tokio::test]
+    async fn custom_process_placeholders_do_not_limit_spawn_concurrency() {
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+
+        let global_settings = GlobalSettingsBuilder::new()
+            .with_spawn_concurrency(4)
+            .build()
+            .unwrap();
+
+        spec.set_global_settings(global_settings);
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_args(vec!["{{ZOMBIE:alice:ws_uri}}".into()])
+                .build()
+                .unwrap(),
+        );
+        let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 4);
+        assert!(!limited);
     }
 
     #[tokio::test]

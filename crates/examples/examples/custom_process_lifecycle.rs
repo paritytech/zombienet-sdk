@@ -66,9 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for process in network.custom_processes() {
         println!("{:<8} {:?}", process.name(), process.state());
     }
-    for skipped in network.skipped_custom_processes() {
-        println!("{:<8} skipped: {}", skipped.name, skipped.reason);
-    }
     assert_eq!(
         network.get_custom_process("prepare")?.state(),
         &CustomProcessState::Completed

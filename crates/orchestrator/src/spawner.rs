@@ -633,10 +633,8 @@ pub(crate) async fn spawn_process(
         port.drop_listener();
     }
 
-    let running_node = ns
-        .spawn_node(&spawn_ops)
-        .await
-        .with_context(|| format!("Failed to spawn node: {name} with opts: {:#?}", spawn_ops))?;
+    // the provider's error names the process and says why
+    let running_node = ns.spawn_node(&spawn_ops).await?;
 
     // From here on the process runs. Nothing below may lose it: a port we
     // cannot reach from here is reported by its in-network address instead.

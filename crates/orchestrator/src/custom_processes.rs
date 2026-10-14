@@ -102,15 +102,6 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
                 "the name is already taken by a node or custom process".into(),
             ));
         }
-        if let Some(file) = cp.injected_files().iter().find(|f| !f.local_path.is_file()) {
-            return Err(failed(
-                cp,
-                format!(
-                    "injected file '{}' is not a file",
-                    file.local_path.display()
-                ),
-            ));
-        }
         let prepared = prepare_process(cp, ns.as_ref())
             .map_err(|e| failed(cp, format!("could not reserve its ports: {e}")))?;
         pending.push(prepared);

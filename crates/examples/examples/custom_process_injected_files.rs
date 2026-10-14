@@ -2,8 +2,9 @@ use tracing_subscriber::{filter::LevelFilter, EnvFilter};
 use zombienet_sdk::{CustomProcessState, InjectedFile, NetworkConfigBuilder, NetworkConfigExt};
 
 // A custom process running a script injected from this repository: the file
-// is in place before the process starts, on every provider, and
-// `{{ZOMBIE:greeter:root}}` is where its absolute paths are on each.
+// is in place before the process starts, and `{{ZOMBIE:greeter:root}}` is
+// where its absolute paths are. Spawned on native, as the other custom
+// process examples are.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()

@@ -28,12 +28,12 @@ use super::{
         KubernetesClient,
     },
     namespace::KubernetesNamespace,
-    pod_spec_builder::{file_key, files_config_map_name, PodSpecBuilder},
+    pod_spec_builder::{files_config_map_name, PodSpecBuilder},
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     kubernetes,
-    shared::helpers::{default_true, ensure_wrapper},
+    shared::helpers::{default_true, ensure_wrapper, injected_file_name},
     types::{
         ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
         RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
@@ -408,11 +408,7 @@ where
             let has_key = secret
                 .data
                 .as_ref()
-                .is_some_and(|data| data.contains_key(&var.key))
-                || secret
-                    .string_data
-                    .as_ref()
-                    .is_some_and(|data| data.contains_key(&var.key));
+                .is_some_and(|data| data.contains_key(&var.key));
             if !has_key {
                 return Err(ProviderError::NodeSpawningFailed(
                     self.name.clone(),
@@ -439,7 +435,7 @@ where
         let mut binary_data = BTreeMap::new();
         for (index, file) in files.iter().enumerate() {
             let contents = self.filesystem.read(&file.local_path).await?;
-            binary_data.insert(file_key(index, file), ByteString(contents));
+            binary_data.insert(injected_file_name(index, file), ByteString(contents));
         }
         let config_map = ConfigMap {
             metadata: ObjectMeta {

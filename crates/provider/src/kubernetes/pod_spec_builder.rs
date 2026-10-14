@@ -12,6 +12,7 @@ use k8s_openapi::{
 
 use crate::{
     constants::NODE_SCRIPTS_DIR,
+    shared::helpers::injected_file_name,
     types::{Port, ReadinessProbe, ReadinessTarget, SecretEnvVar, TransferedFile},
 };
 
@@ -21,26 +22,6 @@ const FILES_VOLUME: &str = "files";
 /// The `ConfigMap` holding a direct process's injected files.
 pub(super) fn files_config_map_name(pod: &str) -> String {
     format!("{pod}-files")
-}
-
-/// The `ConfigMap` key of the `index`th injected file: unique by the index,
-/// readable by the file name, within what a key may contain.
-pub(super) fn file_key(index: usize, file: &TransferedFile) -> String {
-    let name: String = file
-        .remote_path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    format!("{index}-{name}")
 }
 
 /// An octal mode as the volume takes it; the volume's default when it does
@@ -191,7 +172,7 @@ impl PodSpecBuilder {
         extra_mounts.extend(files.iter().enumerate().map(|(index, file)| VolumeMount {
             name: FILES_VOLUME.to_string(),
             mount_path: file.remote_path.to_string_lossy().into_owned(),
-            sub_path: Some(file_key(index, file)),
+            sub_path: Some(injected_file_name(index, file)),
             read_only: Some(true),
             ..Default::default()
         }));
@@ -203,14 +184,12 @@ impl PodSpecBuilder {
             command: Some(command),
             ports: container_ports,
             readiness_probe,
+            // A literal value may `$(VAR)` a variable listed before it, a
+            // value from a Secret is never expanded, so the secrets go first.
             env: Some(
-                env.iter()
-                    .map(|(name, value)| EnvVar {
-                        name: name.clone(),
-                        value: Some(value.clone()),
-                        value_from: None,
-                    })
-                    .chain(secret_env.iter().map(|var| EnvVar {
+                secret_env
+                    .iter()
+                    .map(|var| EnvVar {
                         name: var.name.clone(),
                         value: None,
                         value_from: Some(EnvVarSource {
@@ -221,6 +200,11 @@ impl PodSpecBuilder {
                             }),
                             ..Default::default()
                         }),
+                    })
+                    .chain(env.iter().map(|(name, value)| EnvVar {
+                        name: name.clone(),
+                        value: Some(value.clone()),
+                        value_from: None,
                     }))
                     .collect(),
             ),
@@ -296,8 +280,8 @@ impl PodSpecBuilder {
                             .iter()
                             .enumerate()
                             .map(|(index, file)| KeyToPath {
-                                key: file_key(index, file),
-                                path: file_key(index, file),
+                                key: injected_file_name(index, file),
+                                path: injected_file_name(index, file),
                                 mode: file_mode(&file.mode),
                             })
                             .collect(),
@@ -583,15 +567,15 @@ mod tests {
         );
 
         let env = container.env.as_ref().unwrap();
-        assert_eq!(env[0].value.as_deref(), Some("info"));
-        let from_secret = env[1]
+        assert_eq!(env[1].value.as_deref(), Some("info"));
+        let from_secret = env[0]
             .value_from
             .as_ref()
             .unwrap()
             .secret_key_ref
             .as_ref()
             .unwrap();
-        assert_eq!(env[1].name, "TURN_SECRET");
+        assert_eq!(env[0].name, "TURN_SECRET");
         assert_eq!(from_secret.name.as_deref(), Some("turn"));
         assert_eq!(from_secret.key, "secret");
     }

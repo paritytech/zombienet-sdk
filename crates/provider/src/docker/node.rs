@@ -22,7 +22,7 @@ use super::{
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     docker,
-    shared::helpers::{default_true, ensure_wrapper},
+    shared::helpers::{default_true, ensure_wrapper, injected_file_name},
     types::{
         ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, RunCommandOptions,
         RunScriptOptions, TransferedFile,
@@ -189,12 +189,7 @@ where
             let staging = node.base_dir.join("files");
             filesystem.create_dir_all(&staging).await?;
             for (index, file) in options.startup_files.iter().enumerate() {
-                let name = file
-                    .remote_path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let staged = staging.join(format!("{index}-{name}"));
+                let staged = staging.join(injected_file_name(index, file));
                 filesystem.copy(&file.local_path, &staged).await?;
                 filesystem
                     .set_mode(&staged, u32::from_str_radix(&file.mode, 8).unwrap_or(0o644))

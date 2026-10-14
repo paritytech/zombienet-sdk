@@ -1,4 +1,9 @@
-use std::{error::Error, marker::PhantomData, path::PathBuf};
+use std::{
+    collections::HashSet,
+    error::Error,
+    marker::PhantomData,
+    path::{Component, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -100,11 +105,47 @@ impl InjectedFile {
 
 /// An environment variable of a custom process: a literal `value`, or on
 /// kubernetes a key of a `Secret` in the namespace, read by the pod itself.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProcessEnvVar {
     pub name: String,
     #[serde(flatten)]
     pub value: EnvValue,
+}
+
+/// The written shape of a [`ProcessEnvVar`], `{ name, value }` or
+/// `{ name, secret = { name, key } }`, read loosely so that the check for
+/// exactly one of the two can name the variable.
+#[derive(Deserialize)]
+struct RawProcessEnvVar {
+    name: String,
+    value: Option<String>,
+    secret: Option<SecretRef>,
+}
+
+#[derive(Deserialize)]
+struct SecretRef {
+    name: String,
+    key: String,
+}
+
+impl<'de> Deserialize<'de> for ProcessEnvVar {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = RawProcessEnvVar::deserialize(deserializer)?;
+        let value = match (raw.value, raw.secret) {
+            (Some(value), None) => EnvValue::Value(value),
+            (None, Some(SecretRef { name, key })) => EnvValue::Secret { name, key },
+            _ => {
+                return Err(serde::de::Error::custom(format!(
+                    "env '{}' needs exactly one of `value` or `secret`",
+                    raw.name
+                )))
+            },
+        };
+        Ok(Self {
+            name: raw.name,
+            value,
+        })
+    }
 }
 
 /// Where a [`ProcessEnvVar`] gets its value.
@@ -565,29 +606,46 @@ impl CustomProcess {
                 }
             }
         }
+        let mut remote_paths = HashSet::new();
         for file in &self.injected_files {
             if file.local_path.as_os_str().is_empty() {
                 errors.push(
                     FieldError::InjectedFiles(anyhow::anyhow!("a file has no local_path")).into(),
                 );
             }
-            // `Path` drops a trailing slash, so the text is what tells a directory
-            if !file.remote_path.is_absolute() || file.remote_path.to_string_lossy().ends_with('/')
+            // `Path` drops a trailing slash, so the text is what tells a directory;
+            // `..` would leave the process's directory and `:` splits a docker mount
+            let remote = file.remote_path.to_string_lossy();
+            if !file.remote_path.is_absolute()
+                || remote.ends_with('/')
+                || remote.contains(':')
+                || file
+                    .remote_path
+                    .components()
+                    .any(|c| c == Component::ParentDir)
             {
                 errors.push(
                     FieldError::InjectedFiles(anyhow::anyhow!(
-                        "remote_path '{}' must be an absolute path to a file",
-                        file.remote_path.display()
+                        "remote_path '{remote}' must be an absolute path to a file, without '..' or ':'"
+                    ))
+                    .into(),
+                );
+            } else if !remote_paths.insert(remote.clone()) {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "remote_path '{remote}' is given twice"
                     ))
                     .into(),
                 );
             }
             if let Some(mode) = &file.mode {
-                if !(3..=4).contains(&mode.len()) || !mode.chars().all(|c| ('0'..='7').contains(&c))
-                {
+                let octal =
+                    (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
+                // a volume takes no more than the permission bits
+                if !octal || u32::from_str_radix(mode, 8).is_ok_and(|mode| mode > 0o777) {
                     errors.push(
                         FieldError::InjectedFiles(anyhow::anyhow!(
-                            "mode '{mode}' must be 3 or 4 octal digits, e.g. '0755'"
+                            "mode '{mode}' must be 3 or 4 octal digits up to 0777, e.g. '0755'"
                         ))
                         .into(),
                     );
@@ -1346,6 +1404,10 @@ mod tests {
             .with_injected_file(InjectedFile::new("./a", "schema/init.sql"))
             .with_injected_file(InjectedFile::new("./b", "/etc/"))
             .with_injected_file(InjectedFile::new("./c", "/c").with_mode("rwx"))
+            .with_injected_file(InjectedFile::new("./d", "/c"))
+            .with_injected_file(InjectedFile::new("./e", "/x/../e"))
+            .with_injected_file(InjectedFile::new("./f", "/f:g"))
+            .with_injected_file(InjectedFile::new("./g", "/g").with_mode("4755"))
             .build()
             .unwrap_err()
             .1
@@ -1356,10 +1418,40 @@ mod tests {
             errors,
             [
                 "env: 'TURN_SECRET' needs the secret's name and key",
-                "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file",
-                "injected_files: remote_path '/etc/' must be an absolute path to a file",
-                "injected_files: mode 'rwx' must be 3 or 4 octal digits, e.g. '0755'",
+                "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file, without '..' or ':'",
+                "injected_files: remote_path '/etc/' must be an absolute path to a file, without '..' or ':'",
+                "injected_files: mode 'rwx' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
+                "injected_files: remote_path '/c' is given twice",
+                "injected_files: remote_path '/x/../e' must be an absolute path to a file, without '..' or ':'",
+                "injected_files: remote_path '/f:g' must be an absolute path to a file, without '..' or ':'",
+                "injected_files: mode '4755' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
             ]
         );
+    }
+
+    #[test]
+    fn an_env_entry_is_a_value_or_a_secret() {
+        let parse = |json: serde_json::Value| {
+            serde_json::from_value::<ProcessEnvVar>(json).map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            parse(serde_json::json!({ "name": "A", "value": "1" })).unwrap(),
+            ProcessEnvVar::from(("A", "1"))
+        );
+        assert_eq!(
+            parse(serde_json::json!({ "name": "A", "secret": { "name": "s", "key": "k" } }))
+                .unwrap(),
+            ProcessEnvVar::from_secret("A", "s", "k")
+        );
+        for json in [
+            serde_json::json!({ "name": "A" }),
+            serde_json::json!({ "name": "A", "valeu": "1" }),
+            serde_json::json!({ "name": "A", "value": "1", "secret": { "name": "s", "key": "k" } }),
+        ] {
+            assert_eq!(
+                parse(json).unwrap_err(),
+                "env 'A' needs exactly one of `value` or `secret`"
+            );
+        }
     }
 }

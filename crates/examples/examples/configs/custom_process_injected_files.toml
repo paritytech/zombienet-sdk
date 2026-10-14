@@ -1,6 +1,7 @@
 # A custom process running a script injected from the repository: the file is
-# in place before the process starts, on every provider, and
-# `{{ZOMBIE:greeter:root}}` is where its absolute paths are on each.
+# in place before the process starts, and `{{ZOMBIE:greeter:root}}` is where
+# its absolute paths are. Written for native, as the other custom process
+# configs are; docker and kubernetes need an `image` on the process.
 #
 #   zombie-cli spawn -p native crates/examples/examples/configs/custom_process_injected_files.toml
 #

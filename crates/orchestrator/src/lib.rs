@@ -1231,16 +1231,32 @@ fn validate_spec_with_provider_capabilities(
 ) -> Result<(), anyhow::Error> {
     let mut errs: Vec<String> = vec![];
 
-    if !capabilities.has_secrets {
-        for process in &network_spec.custom_processes {
-            for var in process.env() {
-                if matches!(var.value, configuration::EnvValue::Secret { .. }) {
-                    errs.push(format!(
-                        "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
-                        process.name(),
-                        var.name
-                    ));
-                }
+    for process in &network_spec.custom_processes {
+        for var in process.env() {
+            if !capabilities.has_secrets
+                && matches!(var.value, configuration::EnvValue::Secret { .. })
+            {
+                errs.push(format!(
+                    "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
+                    process.name(),
+                    var.name
+                ));
+            }
+        }
+        for file in process.injected_files() {
+            if !file.local_path.is_file() {
+                let from = if file.local_path.is_relative() {
+                    std::env::current_dir()
+                        .map(|cwd| format!(" (relative to {})", cwd.display()))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: no file at '{}'{from}",
+                    process.name(),
+                    file.local_path.display()
+                ));
             }
         }
     }
@@ -1818,6 +1834,39 @@ mod tests {
             ..without
         };
         validate_spec_with_provider_capabilities(&spec, &with).unwrap();
+    }
+
+    #[tokio::test]
+    async fn injected_files_must_exist_before_anything_spawns() {
+        let network_config = generate(true, None).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let capabilities = ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: true,
+            has_secrets: false,
+        };
+        let process = |local: &str| {
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_injected_file(configuration::InjectedFile::new(local, "/init.sql"))
+                .build()
+                .unwrap()
+        };
+
+        spec.custom_processes.push(process("./nowhere/init.sql"));
+        let err = validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "custom_processes['api'].injected_files: no file at './nowhere/init.sql' (relative to"
+            ),
+            "{err}"
+        );
+
+        spec.custom_processes = vec![process(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))];
+        validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap();
     }
 
     #[tokio::test]

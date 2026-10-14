@@ -56,7 +56,10 @@ where
                     custom_base_dir.to_string_lossy()
                 );
             }
-            PathBuf::from(custom_base_dir)
+            // nodes and processes run with their own directory as cwd, so a
+            // relative base_dir would resolve against the wrong place
+            std::path::absolute(custom_base_dir)
+                .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?
         } else {
             let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
             filesystem.create_dir(&base_dir).await?;
@@ -340,6 +343,22 @@ mod tests {
             .await
             .expect("should read produced file");
         assert_eq!(produced, "{\"hello\":\"world\"}");
+    }
+
+    #[tokio::test]
+    async fn a_relative_base_dir_is_made_absolute() {
+        let provider = NativeProvider::new(LocalFileSystem);
+        let relative = PathBuf::from(format!("znet_native_ns_test_{}", uuid::Uuid::new_v4()));
+        let ns = provider
+            .create_namespace_with_base_dir(&relative)
+            .await
+            .expect("namespace should be created");
+
+        assert_eq!(
+            ns.base_dir(),
+            &std::env::current_dir().unwrap().join(&relative)
+        );
+        std::fs::remove_dir_all(&relative).unwrap();
     }
 
     #[tokio::test]

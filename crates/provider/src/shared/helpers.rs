@@ -2,7 +2,10 @@ use std::{env, path::PathBuf};
 
 use anyhow::anyhow;
 
-use crate::{types::RunCommandOptions, DynNode, ProviderError};
+use crate::{
+    types::{RunCommandOptions, TransferedFile},
+    DynNode, ProviderError,
+};
 
 /// Check if we are running in `CI` by checking the 'RUN_IN_CI' env var
 pub fn running_in_ci() -> bool {
@@ -85,6 +88,27 @@ pub fn extract_namespace_info(
             ))?;
 
     Ok((base_dir, name.to_string()))
+}
+
+/// A name for the `index`th injected file of a process: unique by the index,
+/// readable by the file name, within what a `ConfigMap` key or a docker
+/// mount may contain.
+pub(crate) fn injected_file_name(index: usize, file: &TransferedFile) -> String {
+    let name: String = file
+        .remote_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("{index}-{name}")
 }
 
 #[cfg(test)]

@@ -1361,7 +1361,7 @@ fn spawn_concurrency_from_env() -> Option<usize> {
 fn configured_concurrency(spec: &NetworkSpec) -> usize {
     spawn_concurrency_from_env()
         .or(spec.global_settings.spawn_concurrency())
-        .unwrap_or(100)
+        .unwrap_or(20)
         .max(1)
 }
 

@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use configuration::{NetworkConfig, NetworkConfigBuilder};
-use zombienet_sdk::environment::get_spawn_fn;
+use configuration::{InjectedFile, NetworkConfig, NetworkConfigBuilder};
+use zombienet_sdk::{environment::get_spawn_fn, CustomProcessState};
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
@@ -31,7 +31,7 @@ fn small_network() -> NetworkConfig {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ci_native_smoke_should_works() {
-    tracing_subscriber::fmt::init();
+    let _ = tracing_subscriber::fmt::try_init();
     const BEST_BLOCK_METRIC: &str = "block_height{status=\"best\"}";
     let now = Instant::now();
     let config = small_network();
@@ -54,4 +54,53 @@ async fn ci_native_smoke_should_works() {
         .wait_metric(BEST_BLOCK_METRIC, |x| x > 9_f64)
         .await
         .unwrap();
+}
+
+/// A one-shot custom process running a script injected before it starts,
+/// found through `{{ZOMBIE:<process>:root}}` and told where alice is.
+#[tokio::test(flavor = "multi_thread")]
+async fn ci_native_custom_process_runs_an_injected_file() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let dir = std::env::temp_dir().join(format!("zombie-injected-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("greet.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\necho \"hello from an injected script, alice is at $1\"\n",
+    )
+    .unwrap();
+
+    let config = NetworkConfigBuilder::new()
+        .with_relaychain(|r| {
+            r.with_chain("rococo-local")
+                .with_default_command("polkadot")
+                .with_validator(|node| node.with_name("alice"))
+                .with_validator(|node| node.with_name("bob"))
+        })
+        .with_custom_process(|c| {
+            c.with_name("greeter")
+                .with_command("sh")
+                .with_args(vec![
+                    "{{ZOMBIE:greeter:root}}/opt/greet.sh".into(),
+                    "{{ZOMBIE:alice:ws_uri}}".into(),
+                ])
+                .with_injected_file(InjectedFile::new(&script, "/opt/greet.sh").with_mode("0755"))
+                .with_one_shot()
+        })
+        .build()
+        .unwrap();
+
+    let network = get_spawn_fn()(config).await.unwrap();
+
+    let greeter = network.get_custom_process("greeter").unwrap();
+    assert_eq!(greeter.state(), &CustomProcessState::Completed);
+    let logs = greeter.core().logs().await.unwrap();
+    assert!(
+        logs.contains("hello from an injected script, alice is at ws://"),
+        "greeter logs: {logs}"
+    );
+
+    network.destroy().await.unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -49,7 +49,8 @@ pub enum CustomProcessState {
     Completed,
     /// The ready check failed or timed out, or the one-shot exited with an
     /// error: what `wait_ready` reports then. During the spawn this fails
-    /// the spawn, so no process on a spawned network is in this state.
+    /// the spawn, so no process on a network this version spawned is in
+    /// this state.
     Failed {
         #[serde(rename = "state_reason")]
         reason: String,

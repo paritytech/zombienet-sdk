@@ -36,7 +36,7 @@ zombie-cli spawn <CONFIG> [OPTIONS]
 |--------|-------|---------|-------------|
 | `--provider` | `-p` | `docker` | Provider: `native`, `docker`, or `k8s` |
 | `--dir` | `-d` | Random temp | Base directory for network files |
-| `--spawn-concurrency` | `-c` | 100 | Concurrent node spawn processes |
+| `--spawn-concurrency` | `-c` | 20 | Concurrent node spawn processes |
 | `--node-verifier` | `-v` | `metric` | Readiness check: `metric` or `none` |
 
 ### Examples

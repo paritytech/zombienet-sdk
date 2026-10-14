@@ -1354,7 +1354,7 @@ fn spawn_concurrency_from_env() -> Option<usize> {
     }
 }
 
-/// The spawn concurrency as set (env over settings, 100 when neither), before
+/// The spawn concurrency as set (env over settings, 20 when neither), before
 /// any token limit: what custom processes spawn with, since their placeholders
 /// resolve from nodes that are all up and ports that are all reserved before
 /// any starts. At least 1: with 0 nothing would ever start.
@@ -1770,7 +1770,7 @@ mod tests {
         let network_config = generate(false, Some("cargo")).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let (concurrency, _) = calculate_concurrency(&spec).unwrap();
-        assert_eq!(concurrency, 100);
+        assert_eq!(concurrency, 20);
     }
 
     #[tokio::test]

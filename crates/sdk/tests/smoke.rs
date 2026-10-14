@@ -6,13 +6,22 @@ use k8s_openapi::api::core::v1::Secret;
 use kube::api::{Api, PostParams};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
 use zombienet_sdk::{
-    environment::{get_attach_fn, get_spawn_fn},
+    environment::{get_attach_fn, get_provider_from_env, get_spawn_fn, Provider},
     CustomProcessState,
 };
 
 /// What the `secret-reader` process must find in `TURN_SECRET`, put in the
 /// Secret `turn` of the namespace before the network is spawned.
 const SECRET_VALUE: &str = "only-in-the-namespace";
+
+/// On kubernetes `TURN_SECRET` comes from the Secret `turn`; docker has no
+/// Secrets, so there it is the plain value and only the file is exercised.
+fn turn_secret_env() -> ProcessEnvVar {
+    match get_provider_from_env() {
+        Provider::K8s => ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
+        _ => ("TURN_SECRET", SECRET_VALUE).into(),
+    }
+}
 
 /// The Secret the custom process reads, created ahead of the spawn in the
 /// namespace CI hands the test.
@@ -71,7 +80,7 @@ fn small_network() -> NetworkConfig {
                 .with_command("sh")
                 .with_image("docker.io/library/alpine:3.20")
                 .with_args(vec!["-c".into(), check.as_str().into()])
-                .with_env(vec![ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret")])
+                .with_env(vec![turn_secret_env()])
                 .with_injected_file(InjectedFile::new(hello, "/opt/hello.txt"))
                 .with_one_shot()
         })
@@ -93,7 +102,9 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let config = small_network();
     let spawn_fn = get_spawn_fn();
 
-    create_secret(&std::env::var("ZOMBIE_K8S_CI_NAMESPACE").unwrap()).await;
+    if matches!(get_provider_from_env(), Provider::K8s) {
+        create_secret(&std::env::var("ZOMBIE_K8S_CI_NAMESPACE").unwrap()).await;
+    }
     let network = spawn_fn(config).await.unwrap();
 
     let elapsed = now.elapsed();

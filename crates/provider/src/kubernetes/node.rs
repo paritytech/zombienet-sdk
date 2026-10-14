@@ -25,7 +25,7 @@ use url::Url;
 use super::{
     client::{
         helpers::{status_is_done, status_is_ready},
-        KubernetesClient,
+        KubernetesClient, SecretLookup,
     },
     namespace::KubernetesNamespace,
     pod_spec_builder::{files_config_map_name, PodSpecBuilder},
@@ -299,7 +299,9 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
-        self.check_secrets(secret_env).await?;
+        check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))?;
         if !files.is_empty() {
             self.create_files_config_map(files, labels.clone()).await?;
         }
@@ -381,46 +383,6 @@ where
             .write(service_dest_path, serialized_service_manifest)
             .await?;
 
-        Ok(())
-    }
-
-    /// A Secret or key that is not there would hold the pod in
-    /// `CreateContainerConfigError` until the spawn times out, so it is
-    /// looked up first.
-    async fn check_secrets(&self, secret_env: &[SecretEnvVar]) -> Result<(), ProviderError> {
-        let namespace = self.namespace_name();
-        for var in secret_env {
-            let secret = self
-                .k8s_client
-                .get_secret(&namespace, &var.secret)
-                .await
-                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?
-                .ok_or_else(|| {
-                    ProviderError::NodeSpawningFailed(
-                        self.name.clone(),
-                        anyhow!(
-                            "env {}: secret '{}' not found in namespace {namespace}",
-                            var.name,
-                            var.secret
-                        ),
-                    )
-                })?;
-            let has_key = secret
-                .data
-                .as_ref()
-                .is_some_and(|data| data.contains_key(&var.key));
-            if !has_key {
-                return Err(ProviderError::NodeSpawningFailed(
-                    self.name.clone(),
-                    anyhow!(
-                        "env {}: secret '{}' has no key '{}'",
-                        var.name,
-                        var.secret,
-                        var.key
-                    ),
-                ));
-            }
-        }
         Ok(())
     }
 
@@ -1121,4 +1083,139 @@ fn make_url_internal(url: &Url) -> Url {
     let _ = url.set_host(Some("fileserver"));
     let _ = url.set_port(Some(80));
     url
+}
+
+/// A Secret or key that is not there would hold the pod in
+/// `CreateContainerConfigError` until the spawn times out, so it is looked
+/// up first. Not being allowed to read Secrets skips the check, since the
+/// pod itself does not need that permission.
+async fn check_secrets(
+    client: &KubernetesClient,
+    namespace: &str,
+    secret_env: &[SecretEnvVar],
+) -> Result<(), anyhow::Error> {
+    for var in secret_env {
+        let secret = match client.get_secret(namespace, &var.secret).await? {
+            SecretLookup::Found(secret) => *secret,
+            SecretLookup::NotFound => {
+                return Err(anyhow!(
+                    "env {}: secret '{}' not found in namespace {namespace}",
+                    var.name,
+                    var.secret
+                ))
+            },
+            SecretLookup::Forbidden => {
+                warn!("reading secrets in namespace {namespace} is forbidden, env {} is left to the pod", var.name);
+                return Ok(());
+            },
+        };
+        if !secret
+            .data
+            .as_ref()
+            .is_some_and(|data| data.contains_key(&var.key))
+        {
+            return Err(anyhow!(
+                "env {}: secret '{}' has no key '{}'",
+                var.name,
+                var.secret,
+                var.key
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use mockito::{Matcher, Server, ServerGuard};
+
+    use super::*;
+
+    fn client(server: &ServerGuard) -> KubernetesClient {
+        let config = kube::Config::new(server.url().parse().unwrap());
+        KubernetesClient::from_inner(kube::Client::try_from(config).unwrap())
+    }
+
+    fn turn_secret() -> Vec<SecretEnvVar> {
+        vec![SecretEnvVar {
+            name: "TURN_SECRET".into(),
+            secret: "turn".into(),
+            key: "secret".into(),
+        }]
+    }
+
+    async fn mock_secret(server: &mut ServerGuard, status: usize, body: &str) {
+        server
+            .mock("GET", "/api/v1/namespaces/ns/secrets/turn")
+            .match_query(Matcher::Any)
+            .with_status(status)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_secret_with_the_key_passes() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            200,
+            r#"{"apiVersion":"v1","kind":"Secret","metadata":{"name":"turn"},"data":{"secret":"aGk="}}"#,
+        )
+        .await;
+        check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_secret_without_the_key_fails_naming_it() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            200,
+            r#"{"apiVersion":"v1","kind":"Secret","metadata":{"name":"turn"},"data":{"other":"aGk="}}"#,
+        )
+        .await;
+        let err = check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "env TURN_SECRET: secret 'turn' has no key 'secret'"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_missing_secret_fails_naming_it() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            404,
+            r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"not found","reason":"NotFound","code":404}"#,
+        )
+        .await;
+        let err = check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "env TURN_SECRET: secret 'turn' not found in namespace ns"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn not_being_allowed_to_read_secrets_skips_the_check() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            403,
+            r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"forbidden","reason":"Forbidden","code":403}"#,
+        )
+        .await;
+        check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap();
+    }
 }

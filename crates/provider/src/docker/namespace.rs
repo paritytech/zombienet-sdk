@@ -68,7 +68,9 @@ where
                     custom_base_dir.to_string_lossy()
                 );
             }
-            PathBuf::from(custom_base_dir)
+            // a relative bind-mount source is a named volume to docker
+            std::path::absolute(custom_base_dir)
+                .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?
         } else {
             let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
             filesystem.create_dir(&base_dir).await?;

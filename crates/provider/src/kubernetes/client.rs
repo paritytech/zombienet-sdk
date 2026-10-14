@@ -36,6 +36,12 @@ pub struct Error(#[from] anyhow::Error);
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+pub(super) enum SecretLookup {
+    Found(Box<Secret>),
+    NotFound,
+    Forbidden,
+}
+
 #[derive(Clone)]
 pub struct KubernetesClient {
     inner: kube::Client,
@@ -112,11 +118,20 @@ impl KubernetesClient {
         Ok(())
     }
 
-    pub(super) async fn get_secret(&self, namespace: &str, name: &str) -> Result<Option<Secret>> {
-        Api::<Secret>::namespaced(self.inner.clone(), namespace)
+    /// `Forbidden` when this identity may not read Secrets, which creating
+    /// a pod that uses one does not need.
+    pub(super) async fn get_secret(&self, namespace: &str, name: &str) -> Result<SecretLookup> {
+        match Api::<Secret>::namespaced(self.inner.clone(), namespace)
             .get_opt(name)
             .await
-            .map_err(|err| Error::from(anyhow!("error while getting secret {name}: {err}")))
+        {
+            Ok(Some(secret)) => Ok(SecretLookup::Found(Box::new(secret))),
+            Ok(None) => Ok(SecretLookup::NotFound),
+            Err(kube::Error::Api(err)) if err.code == 403 => Ok(SecretLookup::Forbidden),
+            Err(err) => Err(Error::from(anyhow!(
+                "error while getting secret {name}: {err}"
+            ))),
+        }
     }
 
     pub(super) async fn create_config_map_from_file(

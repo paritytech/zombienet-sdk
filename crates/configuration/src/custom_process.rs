@@ -614,11 +614,15 @@ impl CustomProcess {
                 );
             }
             // `Path` drops a trailing slash, so the text is what tells a directory;
-            // `..` would leave the process's directory and `:` splits a docker mount
+            // `..` would leave the process's directory and `:` splits a docker mount.
+            // Collecting the components folds `//` and `.` so a path given two
+            // ways is still seen once.
             let remote = file.remote_path.to_string_lossy();
+            let normalized: PathBuf = file.remote_path.components().collect();
             if !file.remote_path.is_absolute()
                 || remote.ends_with('/')
                 || remote.contains(':')
+                || normalized.file_name().is_none()
                 || file
                     .remote_path
                     .components()
@@ -630,7 +634,7 @@ impl CustomProcess {
                     ))
                     .into(),
                 );
-            } else if !remote_paths.insert(remote.clone()) {
+            } else if !remote_paths.insert(normalized) {
                 errors.push(
                     FieldError::InjectedFiles(anyhow::anyhow!(
                         "remote_path '{remote}' is given twice"
@@ -1408,6 +1412,9 @@ mod tests {
             .with_injected_file(InjectedFile::new("./e", "/x/../e"))
             .with_injected_file(InjectedFile::new("./f", "/f:g"))
             .with_injected_file(InjectedFile::new("./g", "/g").with_mode("4755"))
+            .with_injected_file(InjectedFile::new("./h", "/c/."))
+            .with_injected_file(InjectedFile::new("./i", "//c"))
+            .with_injected_file(InjectedFile::new("./j", "/."))
             .build()
             .unwrap_err()
             .1
@@ -1425,6 +1432,9 @@ mod tests {
                 "injected_files: remote_path '/x/../e' must be an absolute path to a file, without '..' or ':'",
                 "injected_files: remote_path '/f:g' must be an absolute path to a file, without '..' or ':'",
                 "injected_files: mode '4755' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
+                "injected_files: remote_path '/c/.' is given twice",
+                "injected_files: remote_path '//c' is given twice",
+                "injected_files: remote_path '/.' must be an absolute path to a file, without '..' or ':'",
             ]
         );
     }

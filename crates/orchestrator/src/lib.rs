@@ -37,6 +37,7 @@ use network::{
 pub use network_spec::NetworkSpec;
 use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
 use provider::{
+    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     shared::helpers::running_in_ci,
     types::{GenerateFileCommand, NodeRole, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
@@ -1244,6 +1245,22 @@ fn validate_spec_with_provider_capabilities(
             }
         }
         for file in process.injected_files() {
+            // the directories every process gets, `/helpers` on docker
+            let mounted = [
+                NODE_CONFIG_DIR,
+                NODE_DATA_DIR,
+                NODE_RELAY_DATA_DIR,
+                NODE_SCRIPTS_DIR,
+                "/helpers",
+            ];
+            let remote: PathBuf = file.remote_path.components().collect();
+            if mounted.iter().any(|dir| Path::new(dir) == remote) {
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
+                    process.name(),
+                    file.remote_path.display()
+                ));
+            }
             if !file.local_path.is_file() {
                 let from = if file.local_path.is_relative() {
                     std::env::current_dir()
@@ -1867,6 +1884,37 @@ mod tests {
 
         spec.custom_processes = vec![process(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))];
         validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap();
+    }
+
+    #[tokio::test]
+    async fn injected_files_may_not_replace_a_mounted_directory() {
+        let network_config = generate(true, None).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        let capabilities = ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: true,
+            has_secrets: false,
+        };
+        let local = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_injected_file(configuration::InjectedFile::new(local, "/data/."))
+                .with_injected_file(configuration::InjectedFile::new(local, "/data/init.sql"))
+                .build()
+                .unwrap(),
+        );
+
+        let err = validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap_err();
+        assert!(
+            err.to_string().ends_with(
+                "custom_processes['api'].injected_files: '/data/.' is a directory zombienet mounts"
+            ),
+            "{err}"
+        );
     }
 
     #[tokio::test]

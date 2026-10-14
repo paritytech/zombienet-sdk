@@ -14,7 +14,7 @@ pub use orchestrator::{
         jamchain::Jamchain,
         node::{
             CustomProcessNode, CustomProcessState, JamNetworkNode, NetworkNode, NodeKind,
-            ProcessPort, SkippedProcess, SpawnedNode,
+            ProcessPort, SpawnedNode,
         },
         Network,
     },

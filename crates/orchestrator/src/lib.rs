@@ -200,9 +200,6 @@ where
             }
             network.set_custom_processes(processes);
         }
-        if let Some(skipped) = zombie_json.get("skipped_custom_processes") {
-            network.set_skipped_custom_processes(serde_json::from_value(skipped.clone())?);
-        }
 
         Ok(network)
     }

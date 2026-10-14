@@ -2655,14 +2655,11 @@ id = 1000
             [[custom_processes]]
             name = "cache"
             command = "cache"
-            allowed_to_fail = true
             "#,
         )
         .unwrap();
         let processes = config.custom_processes();
         let api = processes[1];
-        assert!(!api.allowed_to_fail());
-        assert!(processes[2].allowed_to_fail());
         assert_eq!(api.timeout(), Some(120));
         assert_eq!(api.ready_check().unwrap().interval, 2);
         assert_eq!(api.depends_on().len(), 2);
@@ -2672,7 +2669,6 @@ id = 1000
         );
         assert!(processes[0].one_shot());
         let dumped = config.dump_to_toml().unwrap();
-        assert_eq!(dumped.matches("allowed_to_fail").count(), 1, "{dumped}");
         let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
         assert_eq!(reloaded.custom_processes(), config.custom_processes());
 

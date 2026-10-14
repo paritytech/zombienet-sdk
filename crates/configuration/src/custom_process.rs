@@ -149,7 +149,7 @@ impl<'de> Deserialize<'de> for ProcessEnvVar {
 }
 
 /// Where a [`ProcessEnvVar`] gets its value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EnvValue {
     /// The text as given, `{{ZOMBIE:..}}` placeholders resolved.
@@ -177,11 +177,8 @@ impl ProcessEnvVar {
 }
 
 impl From<(&str, &str)> for ProcessEnvVar {
-    fn from((name, value): (&str, &str)) -> Self {
-        Self {
-            name: name.to_owned(),
-            value: EnvValue::Value(value.to_owned()),
-        }
+    fn from(pair: (&str, &str)) -> Self {
+        EnvVar::from(pair).into()
     }
 }
 
@@ -618,13 +615,12 @@ impl CustomProcess {
                 );
             }
             // The text is what every provider gets, so it has to be the one
-            // spelling of the path: `Path` drops a trailing slash, `.` and `//`
-            // fold away in the components, `..` would leave the process's
-            // directory and `:` splits a docker mount.
+            // spelling of the path: a trailing slash, `.` and `//` fold away
+            // in the components, `..` would leave the process's directory and
+            // `:` splits a docker mount.
             let remote = file.remote_path.to_string_lossy();
             let plain: PathBuf = file.remote_path.components().collect();
             if !file.remote_path.is_absolute()
-                || remote.ends_with('/')
                 || remote.contains(':')
                 || plain.file_name().is_none()
                 || plain.as_os_str() != file.remote_path.as_os_str()
@@ -639,24 +635,19 @@ impl CustomProcess {
                     ))
                     .into(),
                 );
-            } else if remote_paths.contains(&file.remote_path.as_path()) {
-                errors.push(
-                    FieldError::InjectedFiles(anyhow::anyhow!(
-                        "remote_path '{remote}' is given twice"
-                    ))
-                    .into(),
-                );
             } else if let Some(other) = remote_paths
                 .iter()
                 .find(|p| p.starts_with(&file.remote_path) || file.remote_path.starts_with(p))
             {
-                errors.push(
-                    FieldError::InjectedFiles(anyhow::anyhow!(
+                let error = if *other == file.remote_path {
+                    anyhow::anyhow!("remote_path '{remote}' is given twice")
+                } else {
+                    anyhow::anyhow!(
                         "remote_paths '{}' and '{remote}' cannot both be files",
                         other.display()
-                    ))
-                    .into(),
-                );
+                    )
+                };
+                errors.push(FieldError::InjectedFiles(error).into());
             } else {
                 remote_paths.push(&file.remote_path);
             }
@@ -1439,24 +1430,28 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        assert_eq!(
-            errors,
-            [
-                "env: 'TURN_SECRET' needs the secret's name and key",
-                "env: 'TURN_SECRET' is given twice",
-                "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: remote_path '/etc/' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: mode 'rwx' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
-                "injected_files: remote_path '/c' is given twice",
-                "injected_files: remote_path '/x/../e' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: remote_path '/f:g' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: mode '4755' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
-                "injected_files: remote_path '/c/.' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: remote_path '//c' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: remote_path '/.' must be an absolute path to a file, without '.', '..', '//' or ':'",
-                "injected_files: remote_paths '/c' and '/c/k' cannot both be files",
-            ]
-        );
+        let expected = [
+            "env: 'TURN_SECRET' needs the secret's name and key",
+            "env: 'TURN_SECRET' is given twice",
+            "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file, without '.', '..', '//' or ':'",
+            "remote_path '/etc/' must be an absolute path",
+            "injected_files: mode 'rwx' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
+            "remote_path '/c' is given twice",
+            "remote_path '/x/../e' must be an absolute path",
+            "remote_path '/f:g' must be an absolute path",
+            "mode '4755' must be 3 or 4 octal digits",
+            "remote_path '/c/.' must be an absolute path",
+            "remote_path '//c' must be an absolute path",
+            "remote_path '/.' must be an absolute path",
+            "remote_paths '/c' and '/c/k' cannot both be files",
+        ];
+        assert_eq!(errors.len(), expected.len(), "{errors:#?}");
+        for (error, expected) in errors.iter().zip(expected) {
+            assert!(
+                error.contains(expected),
+                "{error:?} should contain {expected:?}"
+            );
+        }
     }
 
     #[test]

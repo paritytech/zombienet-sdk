@@ -37,7 +37,7 @@ use network::{
 pub use network_spec::NetworkSpec;
 use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
 use provider::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::{HELPERS_DIR, NODE_MOUNTED_DIRS, NODE_SCRIPTS_DIR},
     shared::helpers::running_in_ci,
     types::{GenerateFileCommand, NodeRole, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
@@ -1244,21 +1244,31 @@ fn validate_spec_with_provider_capabilities(
                 ));
             }
         }
+        let mut injected_bytes = 0;
         for file in process.injected_files() {
-            // the directories every process gets, `/helpers` on docker
-            let mounted = [
-                NODE_CONFIG_DIR,
-                NODE_DATA_DIR,
-                NODE_RELAY_DATA_DIR,
-                NODE_SCRIPTS_DIR,
-                "/helpers",
-            ];
-            if mounted.iter().any(|dir| Path::new(dir) == file.remote_path) {
+            if NODE_MOUNTED_DIRS
+                .iter()
+                .any(|dir| Path::new(dir) == file.remote_path)
+            {
                 errs.push(format!(
                     "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
                     process.name(),
                     file.remote_path.display()
                 ));
+            }
+            // on docker these two are volumes every container of the network shares
+            if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
+                .iter()
+                .find(|dir| file.remote_path.starts_with(dir))
+            {
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
+                    process.name(),
+                    file.remote_path.display()
+                ));
+            }
+            if let Ok(size) = std::fs::metadata(&file.local_path).map(|meta| meta.len()) {
+                injected_bytes += size;
             }
             if !file.local_path.is_file() {
                 let from = if file.local_path.is_relative() {
@@ -1272,6 +1282,14 @@ fn validate_spec_with_provider_capabilities(
                     "custom_processes['{}'].injected_files: no file at '{}'{from}",
                     process.name(),
                     file.local_path.display()
+                ));
+            }
+        }
+        if let Some(limit) = capabilities.injected_files_limit {
+            if injected_bytes > limit {
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: {injected_bytes} bytes together, over the {limit} the provider takes",
+                    process.name()
                 ));
             }
         }
@@ -1760,6 +1778,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1776,6 +1795,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1792,6 +1812,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1808,12 +1829,42 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
         println!("{valid:?}");
         assert!(valid.is_ok())
     }
+
+    /// A provider that needs images and has no Secrets, as docker does.
+    fn image_caps() -> ProviderCapabilities {
+        ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: true,
+            has_secrets: false,
+            injected_files_limit: None,
+        }
+    }
+
+    /// A spec with one custom process `api` injecting `local` at `remote`.
+    async fn spec_with_file(local: &str, remote: &str) -> NetworkSpec {
+        let network_config = generate(true, None).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_injected_file(configuration::InjectedFile::new(local, remote))
+                .build()
+                .unwrap(),
+        );
+        spec
+    }
+
+    const AN_EXISTING_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
 
     #[tokio::test]
     async fn secret_env_needs_a_provider_with_secrets() {
@@ -1831,15 +1882,8 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let without = ProviderCapabilities {
-            requires_image: true,
-            has_resources: false,
-            prefix_with_full_path: false,
-            use_default_ports_in_cmd: true,
-            has_secrets: false,
-        };
 
-        let err = validate_spec_with_provider_capabilities(&spec, &without).unwrap_err();
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
         assert!(
             err.to_string()
                 .contains("custom_processes['api'].env: 'TURN_SECRET' is read from a Secret"),
@@ -1847,33 +1891,15 @@ mod tests {
         );
         let with = ProviderCapabilities {
             has_secrets: true,
-            ..without
+            ..image_caps()
         };
         validate_spec_with_provider_capabilities(&spec, &with).unwrap();
     }
 
     #[tokio::test]
     async fn injected_files_must_exist_before_anything_spawns() {
-        let network_config = generate(true, None).unwrap();
-        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
-        let capabilities = ProviderCapabilities {
-            requires_image: true,
-            has_resources: false,
-            prefix_with_full_path: false,
-            use_default_ports_in_cmd: true,
-            has_secrets: false,
-        };
-        let process = |local: &str| {
-            configuration::CustomProcessBuilder::new()
-                .with_name("api")
-                .with_command("api")
-                .with_injected_file(configuration::InjectedFile::new(local, "/init.sql"))
-                .build()
-                .unwrap()
-        };
-
-        spec.custom_processes.push(process("./nowhere/init.sql"));
-        let err = validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap_err();
+        let spec = spec_with_file("./nowhere/init.sql", "/init.sql").await;
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
         assert!(
             err.to_string().contains(
                 "custom_processes['api'].injected_files: no file at './nowhere/init.sql' (relative to"
@@ -1881,33 +1907,14 @@ mod tests {
             "{err}"
         );
 
-        spec.custom_processes = vec![process(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))];
-        validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap();
+        let spec = spec_with_file(AN_EXISTING_FILE, "/init.sql").await;
+        validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap();
     }
 
     #[tokio::test]
     async fn injected_files_may_not_replace_a_mounted_directory() {
-        let network_config = generate(true, None).unwrap();
-        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
-        let capabilities = ProviderCapabilities {
-            requires_image: true,
-            has_resources: false,
-            prefix_with_full_path: false,
-            use_default_ports_in_cmd: true,
-            has_secrets: false,
-        };
-        let local = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-        let process = |remote: &str| {
-            configuration::CustomProcessBuilder::new()
-                .with_name("api")
-                .with_command("api")
-                .with_injected_file(configuration::InjectedFile::new(local, remote))
-                .build()
-                .unwrap()
-        };
-
-        spec.custom_processes.push(process("/data"));
-        let err = validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap_err();
+        let spec = spec_with_file(AN_EXISTING_FILE, "/data").await;
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
         assert!(
             err.to_string().ends_with(
                 "custom_processes['api'].injected_files: '/data' is a directory zombienet mounts"
@@ -1915,8 +1922,33 @@ mod tests {
             "{err}"
         );
 
-        spec.custom_processes = vec![process("/data/init.sql")];
-        validate_spec_with_provider_capabilities(&spec, &capabilities).unwrap();
+        let spec = spec_with_file(AN_EXISTING_FILE, "/data/init.sql").await;
+        validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap();
+
+        let spec = spec_with_file(AN_EXISTING_FILE, "/scripts/run.sh").await;
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
+        assert!(
+            err.to_string().ends_with(
+                "custom_processes['api'].injected_files: '/scripts/run.sh' is inside /scripts, which the containers of a network share"
+            ),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn injected_files_must_fit_the_providers_limit() {
+        let spec = spec_with_file(AN_EXISTING_FILE, "/init.sql").await;
+        let tight = ProviderCapabilities {
+            injected_files_limit: Some(16),
+            ..image_caps()
+        };
+        let err = validate_spec_with_provider_capabilities(&spec, &tight).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("bytes together, over the 16 the provider takes"),
+            "{err}"
+        );
+        validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap();
     }
 
     #[tokio::test]

@@ -4,8 +4,6 @@
 # configs are; docker and kubernetes need an `image` on the process.
 #
 #   zombie-cli spawn -p native crates/examples/examples/configs/custom_process_injected_files.toml
-#
-# from the repository root, which `local_path` is relative to.
 
 [settings]
 timeout = 1000
@@ -24,5 +22,5 @@ command = "polkadot"
 name = "greeter"
 command = "sh"
 args = ["{{ZOMBIE:greeter:root}}/opt/greet.sh", "{{ZOMBIE:alice:ws_uri}}"]
-injected_files = [{ local_path = "crates/examples/scripts/greet.sh", remote_path = "/opt/greet.sh", mode = "0755" }]
+injected_files = [{ local_path = "../../scripts/greet.sh", remote_path = "/opt/greet.sh", mode = "0755" }]
 one_shot = true

@@ -22,7 +22,7 @@ use crate::{
         node::{DeserializableDockerNodeOptions, DockerNodeOptions},
         provider,
     },
-    shared::helpers::extract_execution_result,
+    shared::helpers::{extract_execution_result, namespace_base_dir},
     types::{
         GenerateFileCommand, GenerateFilesOptions, NodeRole, ProviderCapabilities,
         RunCommandOptions, SpawnNodeOptions,
@@ -52,30 +52,14 @@ where
 {
     pub(super) async fn new(
         provider: &Weak<DockerProvider<FS>>,
-        tmp_dir: &PathBuf,
+        tmp_dir: &Path,
         capabilities: &ProviderCapabilities,
         docker_client: &DockerClient,
         filesystem: &FS,
         custom_base_dir: Option<&Path>,
     ) -> Result<Arc<Self>, ProviderError> {
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
-        let base_dir = if let Some(custom_base_dir) = custom_base_dir {
-            if !filesystem.exists(custom_base_dir).await {
-                filesystem.create_dir(custom_base_dir).await?;
-            } else {
-                warn!(
-                    "⚠️  Using and existing directory {} as base dir",
-                    custom_base_dir.to_string_lossy()
-                );
-            }
-            // a relative bind-mount source is a named volume to docker
-            std::path::absolute(custom_base_dir)
-                .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?
-        } else {
-            let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
-            filesystem.create_dir(&base_dir).await?;
-            base_dir
-        };
+        let base_dir = namespace_base_dir(filesystem, tmp_dir, &name, custom_base_dir).await?;
 
         let namespace = Arc::new_cyclic(|weak| DockerNamespace {
             weak: weak.clone(),

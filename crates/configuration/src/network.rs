@@ -157,7 +157,7 @@ impl NetworkConfig {
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
-        let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/]+)\""#)
+        let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path|local_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/_-]+)\""#)
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
         let path_replacer = |caps: &Captures| {
@@ -928,8 +928,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition, InjectedFile,
-        ProcessEnvVar,
+        parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition, ProcessEnvVar,
     };
 
     #[test]
@@ -2722,10 +2721,14 @@ id = 1000
             api.env()[1],
             ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret")
         );
-        assert_eq!(
-            api.injected_files()[1],
-            InjectedFile::new("./run.sh", "/run.sh").with_mode("0755")
+        // a `./` path is resolved against the TOML's directory, as `command` is
+        let run = &api.injected_files()[1];
+        assert!(
+            run.local_path.is_absolute() && run.local_path.ends_with("run.sh"),
+            "{run:?}"
         );
+        assert_eq!(run.remote_path.as_path(), std::path::Path::new("/run.sh"));
+        assert_eq!(run.mode.as_deref(), Some("0755"));
         let dumped = config.dump_to_toml().unwrap();
         let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
         assert_eq!(reloaded.custom_processes(), config.custom_processes());

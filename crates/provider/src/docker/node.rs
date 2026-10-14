@@ -20,7 +20,9 @@ use super::{
     namespace::DockerNamespace,
 };
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::{
+        HELPERS_DIR, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR,
+    },
     docker,
     shared::helpers::{default_true, ensure_wrapper, injected_file_name},
     types::{
@@ -180,27 +182,8 @@ where
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
-        // A direct process runs `program` from the moment the container is
-        // up, so its files are bind-mounted in, from a copy with the asked
-        // mode; a wrapped node gets them sent while the wrapper holds
-        // `program` back.
-        let mut file_mounts = HashMap::new();
-        if !node.wrapper && !options.startup_files.is_empty() {
-            let staging = node.base_dir.join("files");
-            filesystem.create_dir_all(&staging).await?;
-            for (index, file) in options.startup_files.iter().enumerate() {
-                let staged = staging.join(injected_file_name(index, file));
-                filesystem.copy(&file.local_path, &staged).await?;
-                filesystem
-                    .set_mode(&staged, u32::from_str_radix(&file.mode, 8).unwrap_or(0o644))
-                    .await?;
-                file_mounts.insert(
-                    staged.to_string_lossy().into_owned(),
-                    format!("{}:ro", file.remote_path.to_string_lossy()),
-                );
-            }
-        }
-        node.initialize_docker(options.role, file_mounts).await?;
+        node.initialize_docker(options.role, options.startup_files)
+            .await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
@@ -261,8 +244,33 @@ where
     async fn initialize_docker(
         &self,
         role: Option<NodeRole>,
-        file_mounts: HashMap<String, String>,
+        startup_files: &[TransferedFile],
     ) -> Result<(), ProviderError> {
+        // A direct process runs `program` from the moment the container is
+        // up, so its files are bind-mounted in, from a copy with the asked
+        // mode; a wrapped node gets them sent while the wrapper holds
+        // `program` back.
+        let mut file_mounts = HashMap::new();
+        if !self.wrapper && !startup_files.is_empty() {
+            let staging = self.base_dir.join("files");
+            self.filesystem.create_dir_all(&staging).await?;
+            let staging = &staging;
+            let staged = try_join_all(startup_files.iter().enumerate().map(
+                |(index, file)| async move {
+                    let staged = staging.join(injected_file_name(index, file));
+                    self.filesystem.copy(&file.local_path, &staged).await?;
+                    self.filesystem
+                        .set_mode(&staged, file.mode_bits().unwrap_or(0o644))
+                        .await?;
+                    Ok::<_, ProviderError>((
+                        staged.to_string_lossy().into_owned(),
+                        format!("{}:ro", file.remote_path.to_string_lossy()),
+                    ))
+                },
+            ))
+            .await?;
+            file_mounts.extend(staged);
+        }
         let kind = role.map(|r| r.as_label()).unwrap_or("node");
         // The entrypoint is the wrapper, which starts `program args` on demand
         // through its pipe, or `program` itself. Either way `program` replaces
@@ -283,7 +291,7 @@ where
             ),
             (
                 format!("{}-helper-binaries", self.namespace_name()),
-                "/helpers".to_string(),
+                HELPERS_DIR.to_string(),
             ),
             (
                 self.config_dir.to_string_lossy().into_owned(),

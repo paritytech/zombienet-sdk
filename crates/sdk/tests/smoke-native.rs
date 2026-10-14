@@ -65,11 +65,7 @@ async fn ci_native_custom_process_runs_an_injected_file() {
     let dir = std::env::temp_dir().join(format!("zombie-injected-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let script = dir.join("greet.sh");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\necho \"hello from an injected script, alice is at $1\"\n",
-    )
-    .unwrap();
+    std::fs::write(&script, include_str!("../../examples/scripts/greet.sh")).unwrap();
 
     let config = NetworkConfigBuilder::new()
         .with_relaychain(|r| {

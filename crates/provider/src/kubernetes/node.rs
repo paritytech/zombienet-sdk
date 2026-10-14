@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     env,
     net::IpAddr,
     path::{Component, Path, PathBuf},
@@ -299,12 +299,20 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
-        check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
-            .await
-            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))?;
-        if !files.is_empty() {
-            self.create_files_config_map(files, labels.clone()).await?;
-        }
+        let namespace = self.namespace_name();
+        let secrets = async {
+            check_secrets(&self.k8s_client, &namespace, secret_env)
+                .await
+                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))
+        };
+        let config_map = async {
+            if files.is_empty() {
+                Ok(())
+            } else {
+                self.create_files_config_map(files, labels.clone()).await
+            }
+        };
+        try_join!(secrets, config_map)?;
 
         // Create pod
         let pod_spec = PodSpecBuilder::build(
@@ -399,10 +407,11 @@ where
             let contents = self.filesystem.read(&file.local_path).await?;
             binary_data.insert(injected_file_name(index, file), ByteString(contents));
         }
+        let namespace = self.namespace_name();
         let config_map = ConfigMap {
             metadata: ObjectMeta {
                 name: Some(files_config_map_name(&self.name)),
-                namespace: Some(self.namespace_name()),
+                namespace: Some(namespace.clone()),
                 labels: Some(labels),
                 ..Default::default()
             },
@@ -410,7 +419,7 @@ where
             ..Default::default()
         };
         self.k8s_client
-            .create_config_map(&self.namespace_name(), config_map)
+            .create_config_map(&namespace, config_map)
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
         Ok(())
@@ -1094,9 +1103,18 @@ async fn check_secrets(
     namespace: &str,
     secret_env: &[SecretEnvVar],
 ) -> Result<(), anyhow::Error> {
+    // each Secret once, all at the same time
+    let names: Vec<&str> = secret_env
+        .iter()
+        .map(|var| var.secret.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let lookups = try_join_all(names.iter().map(|name| client.get_secret(namespace, name))).await?;
+    let secrets: BTreeMap<&str, SecretLookup> = names.into_iter().zip(lookups).collect();
     for var in secret_env {
-        let secret = match client.get_secret(namespace, &var.secret).await? {
-            SecretLookup::Found(secret) => *secret,
+        let secret = match &secrets[var.secret.as_str()] {
+            SecretLookup::Found(secret) => secret,
             SecretLookup::NotFound => {
                 return Err(anyhow!(
                     "env {}: secret '{}' not found in namespace {namespace}",

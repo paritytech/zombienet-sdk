@@ -554,13 +554,10 @@ pub(crate) async fn spawn_process(
         env,
         secret_env,
     } = resolve_placeholders(custom_process, nodes_by_name)?;
-    let files = custom_process.injected_files().iter().map(|file| {
-        let transfered = TransferedFile::new(&file.local_path, &file.remote_path);
-        match &file.mode {
-            Some(mode) => transfered.mode(mode),
-            None => transfered,
-        }
-    });
+    let files = custom_process
+        .injected_files()
+        .iter()
+        .map(TransferedFile::from);
 
     // On docker a published port answers for the proxy, so a tcp check there
     // proves nothing; said once, at spawn, where the config can still change.

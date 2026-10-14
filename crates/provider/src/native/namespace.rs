@@ -7,14 +7,14 @@ use std::{
 use async_trait::async_trait;
 use support::fs::FileSystem;
 use tokio::sync::RwLock;
-use tracing::{trace, warn};
+use tracing::trace;
 use uuid::Uuid;
 
 use super::node::{NativeNode, NativeNodeOptions};
 use crate::{
     constants::NAMESPACE_PREFIX,
     native::{node::DeserializableNativeNodeOptions, provider},
-    shared::helpers::extract_execution_result,
+    shared::helpers::{extract_execution_result, namespace_base_dir},
     types::{
         GenerateFileCommand, GenerateFilesOptions, ProviderCapabilities, RunCommandOptions,
         SpawnNodeOptions,
@@ -41,30 +41,13 @@ where
 {
     pub(super) async fn new(
         provider: &Weak<NativeProvider<FS>>,
-        tmp_dir: &PathBuf,
+        tmp_dir: &Path,
         capabilities: &ProviderCapabilities,
         filesystem: &FS,
         custom_base_dir: Option<&Path>,
     ) -> Result<Arc<Self>, ProviderError> {
         let name = format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4());
-        let base_dir = if let Some(custom_base_dir) = custom_base_dir {
-            if !filesystem.exists(custom_base_dir).await {
-                filesystem.create_dir_all(custom_base_dir).await?;
-            } else {
-                warn!(
-                    "⚠️ Using and existing directory {} as base dir",
-                    custom_base_dir.to_string_lossy()
-                );
-            }
-            // nodes and processes run with their own directory as cwd, so a
-            // relative base_dir would resolve against the wrong place
-            std::path::absolute(custom_base_dir)
-                .map_err(|err| ProviderError::CreateNamespaceFailed(name.clone(), err.into()))?
-        } else {
-            let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
-            filesystem.create_dir(&base_dir).await?;
-            base_dir
-        };
+        let base_dir = namespace_base_dir(filesystem, tmp_dir, &name, custom_base_dir).await?;
 
         Ok(Arc::new_cyclic(|weak| NativeNamespace {
             weak: weak.clone(),
@@ -354,11 +337,9 @@ mod tests {
             .await
             .expect("namespace should be created");
 
-        assert_eq!(
-            ns.base_dir(),
-            &std::env::current_dir().unwrap().join(&relative)
-        );
+        let base_dir = ns.base_dir().clone();
         std::fs::remove_dir_all(&relative).unwrap();
+        assert_eq!(base_dir, std::env::current_dir().unwrap().join(&relative));
     }
 
     #[tokio::test]

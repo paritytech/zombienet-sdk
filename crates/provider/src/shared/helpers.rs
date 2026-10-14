@@ -1,11 +1,42 @@
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use anyhow::anyhow;
+use support::fs::FileSystem;
+use tracing::warn;
 
 use crate::{
     types::{RunCommandOptions, TransferedFile},
     DynNode, ProviderError,
 };
+
+/// A namespace's base dir: `custom`, created if missing and made absolute,
+/// since nodes run from their own directory and docker takes a relative
+/// bind-mount source for a named volume; else a fresh `<tmp_dir>/<name>`.
+pub(crate) async fn namespace_base_dir<FS: FileSystem>(
+    filesystem: &FS,
+    tmp_dir: &Path,
+    name: &str,
+    custom: Option<&Path>,
+) -> Result<PathBuf, ProviderError> {
+    let Some(custom) = custom else {
+        let base_dir = tmp_dir.join(name);
+        filesystem.create_dir(&base_dir).await?;
+        return Ok(base_dir);
+    };
+    if filesystem.exists(custom).await {
+        warn!(
+            "⚠️ Using and existing directory {} as base dir",
+            custom.to_string_lossy()
+        );
+    } else {
+        filesystem.create_dir_all(custom).await?;
+    }
+    std::path::absolute(custom)
+        .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))
+}
 
 /// Check if we are running in `CI` by checking the 'RUN_IN_CI' env var
 pub fn running_in_ci() -> bool {

@@ -4,7 +4,7 @@ use std::{
     process::ExitStatus,
 };
 
-use configuration::shared::resources::Resources;
+use configuration::{shared::resources::Resources, InjectedFile};
 use serde::{Deserialize, Serialize};
 
 pub type Port = u16;
@@ -25,6 +25,9 @@ pub struct ProviderCapabilities {
     pub use_default_ports_in_cmd: bool,
     /// An env value may be read from a `Secret` in the namespace (k8s).
     pub has_secrets: bool,
+    /// How many bytes a process's injected files may total, where they go
+    /// through an object of bounded size (k8s, a `ConfigMap`).
+    pub injected_files_limit: Option<u64>,
 }
 
 /// An environment variable read from the `key` of the `Secret` named
@@ -495,6 +498,22 @@ impl TransferedFile {
     {
         self.mode = mode.as_ref().to_string();
         self
+    }
+
+    /// The mode as permission bits; `None` for text that is not octal, which
+    /// the configuration rejects, so only a file built by hand can be.
+    pub fn mode_bits(&self) -> Option<u32> {
+        u32::from_str_radix(&self.mode, 8).ok()
+    }
+}
+
+impl From<&InjectedFile> for TransferedFile {
+    fn from(file: &InjectedFile) -> Self {
+        let transfered = Self::new(&file.local_path, &file.remote_path);
+        match &file.mode {
+            Some(mode) => transfered.mode(mode),
+            None => transfered,
+        }
     }
 }
 

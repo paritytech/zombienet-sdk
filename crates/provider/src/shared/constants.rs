@@ -10,6 +10,16 @@ pub const NODE_DATA_DIR: &str = "/data";
 pub const NODE_RELAY_DATA_DIR: &str = "/relay-data";
 /// Directory for node scripts
 pub const NODE_SCRIPTS_DIR: &str = "/scripts";
+/// Directory for the helper binaries, on docker
+pub const HELPERS_DIR: &str = "/helpers";
+/// The directories every node and process gets mounted
+pub const NODE_MOUNTED_DIRS: &[&str] = &[
+    NODE_CONFIG_DIR,
+    NODE_DATA_DIR,
+    NODE_RELAY_DATA_DIR,
+    NODE_SCRIPTS_DIR,
+    HELPERS_DIR,
+];
 /// Localhost ip
 pub const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 /// The port substrate listens for p2p connections on

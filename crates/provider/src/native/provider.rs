@@ -40,6 +40,7 @@ where
                 prefix_with_full_path: true,
                 use_default_ports_in_cmd: false,
                 has_secrets: false,
+                injected_files_limit: None,
             },
             // NOTE: temp_dir in linux return `/tmp` but on mac something like
             //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having

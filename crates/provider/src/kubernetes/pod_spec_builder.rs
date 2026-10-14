@@ -24,14 +24,6 @@ pub(super) fn files_config_map_name(pod: &str) -> String {
     format!("{pod}-files")
 }
 
-/// An octal mode as the volume takes it; the volume's default when it does
-/// not parse.
-fn file_mode(mode: &str) -> Option<i32> {
-    u32::from_str_radix(mode, 8)
-        .ok()
-        .and_then(|mode| i32::try_from(mode).ok())
-}
-
 pub(super) struct PodSpecBuilder;
 
 impl PodSpecBuilder {
@@ -279,10 +271,15 @@ impl PodSpecBuilder {
                         files
                             .iter()
                             .enumerate()
-                            .map(|(index, file)| KeyToPath {
-                                key: injected_file_name(index, file),
-                                path: injected_file_name(index, file),
-                                mode: file_mode(&file.mode),
+                            .map(|(index, file)| {
+                                let name = injected_file_name(index, file);
+                                KeyToPath {
+                                    key: name.clone(),
+                                    path: name,
+                                    mode: file
+                                        .mode_bits()
+                                        .and_then(|mode| i32::try_from(mode).ok()),
+                                }
                             })
                             .collect(),
                     ),

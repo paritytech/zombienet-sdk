@@ -1255,12 +1255,11 @@ fn validate_spec_with_provider_capabilities(
                     process.name(),
                     file.remote_path.display()
                 ));
-            }
-            // on docker these two are volumes every container of the network shares
-            if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
+            } else if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
                 .iter()
                 .find(|dir| file.remote_path.starts_with(dir))
             {
+                // on docker these two are volumes every container of the network shares
                 errs.push(format!(
                     "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
                     process.name(),

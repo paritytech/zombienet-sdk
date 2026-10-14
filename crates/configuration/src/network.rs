@@ -157,8 +157,12 @@ impl NetworkConfig {
         let re: Regex = Regex::new(r"(?<field_name>(initial_)?balance)\s+=\s+(?<u128_value>\d+)")
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
-        let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path|local_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/_-]+)\""#)
+        let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/]+)\""#)
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
+        // a file on this host, so any character a path may hold
+        let re_local_paths: Regex =
+            Regex::new(r#"(?<field_name>local_path)\s+=\s+\"(?<value_string>[^"]+)\""#)
+                .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
@@ -170,6 +174,7 @@ impl NetworkConfig {
 
         let toml_text = re.replace_all(toml_text, "$field_name = \"$u128_value\"");
         let toml_text = re_paths.replace_all(&toml_text, &path_replacer);
+        let toml_text = re_local_paths.replace_all(&toml_text, &path_replacer);
 
         trace!("toml text to parse: {}", toml_text);
         // apply replacements from env in toml
@@ -2711,7 +2716,7 @@ id = 1000
             ]
             injected_files = [
                 { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" },
-                { local_path = "./run.sh", remote_path = "/run.sh", mode = "0755" },
+                { local_path = "./my-scripts/run_me.sh", remote_path = "/run.sh", mode = "0755" },
             ]
             "#,
         )
@@ -2724,7 +2729,7 @@ id = 1000
         // a `./` path is resolved against the TOML's directory, as `command` is
         let run = &api.injected_files()[1];
         assert!(
-            run.local_path.is_absolute() && run.local_path.ends_with("run.sh"),
+            run.local_path.is_absolute() && run.local_path.ends_with("my-scripts/run_me.sh"),
             "{run:?}"
         );
         assert_eq!(run.remote_path.as_path(), std::path::Path::new("/run.sh"));

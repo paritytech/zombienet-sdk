@@ -118,7 +118,7 @@ A process may name another's port the way it names its own, `{{ZOMBIE:<process>:
 
 ### Injected files
 
-`injected_files` puts files in place before the process starts, the way a node gets its chain spec: `local_path` on the host running zombienet (`./` paths relative to the TOML, as `command` is), `remote_path` where the process reads it, an absolute path to a file, unique within the process and written plainly (no `.`, `..` or `//`), not inside another injected file's path and not one of the directories every process gets (`/cfg`, `/data`, `/relay-data`) nor under `/scripts` or `/helpers`, which the containers share, `mode` its permissions in octal (`0644` unless set, at most `0777`). A local file that is not there is rejected before anything spawns. On docker and kubernetes a parent directory that is not in the image is created for the mount, owned by root, so a file goes next to what a non-root process writes, not inside it.
+`injected_files` puts files in place before the process starts, the way a node gets its chain spec: `local_path` on the host running zombienet (a path starting with `.` is resolved against the TOML's directory, as `command` is), `remote_path` where the process reads it, an absolute path to a file, unique within the process and written plainly (no `.`, `..` or `//`), not inside another injected file's path and not one of the directories every process gets (`/cfg`, `/data`, `/relay-data`) nor under `/scripts` or `/helpers`, which the containers share, `mode` its permissions in octal (`0644` unless set, at most `0777`). A local file that is not there is rejected before anything spawns. On docker and kubernetes a parent directory that is not in the image is created for the mount, owned by root, so a file goes next to what a non-root process writes, not inside it.
 
 ```toml
 [[custom_processes]]
@@ -130,7 +130,7 @@ one_shot = true
 injected_files = [ { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" } ]
 ```
 
-On docker each file is bind-mounted into the container and on kubernetes the files are mounted from a `ConfigMap`, read-only in both cases, so they are in place before the container starts whatever the image is; on kubernetes all of a process's files together must fit in a `ConfigMap`, 768 KiB of data, which is checked before anything spawns. On native the file is copied under the process's own directory in `base_dir`, which is its working directory, so `/schema/init.sql` is `schema/init.sql` from the process; `{{ZOMBIE:migrate:root}}` above is that directory on native and empty elsewhere, which makes the one config work on every provider.
+On docker each file is bind-mounted into the container and on kubernetes the files are mounted from a `ConfigMap`, read-only in both cases, so they are in place before the container starts whatever the image is; on kubernetes all of a process's files together must fit in a `ConfigMap`, 1 MiB together with their names, which is checked before anything spawns. On native the file is copied under the process's own directory in `base_dir`, which is its working directory, so `/schema/init.sql` is `schema/init.sql` from the process; `{{ZOMBIE:migrate:root}}` above is that directory on native and empty elsewhere, which makes the one config work on every provider.
 
 ### Secrets
 

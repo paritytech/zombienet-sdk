@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["NodeRole","ProcessStatus","ReadinessTarget"],"struct":["GenerateFileCommand","GenerateFilesOptions","InnerSnapshotDb","ProviderCapabilities","ReadinessProbe","RunCommandOptions","RunScriptOptions","SpawnNodeOptions","TransferedFile"],"type":["ExecutionResult","Port"]};

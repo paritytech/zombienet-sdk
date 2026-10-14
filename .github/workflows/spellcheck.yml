@@ -1,0 +1,31 @@
+name: Spellcheck
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  spellcheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1.0.0
+        with:
+          toolchain: stable
+
+      - name: Install cargo-spellcheck
+        run: |
+          sudo apt-get install libclang-dev
+          export LIBCLANG_PATH=/usr/lib/llvm-18/lib/
+          cargo install cargo-spellcheck
+
+      - name: Run cargo-spellcheck
+        run: cargo spellcheck

@@ -23,7 +23,15 @@ pub(crate) async fn namespace_base_dir<FS: FileSystem>(
 ) -> Result<PathBuf, ProviderError> {
     let Some(custom) = custom else {
         let base_dir = tmp_dir.join(name);
-        filesystem.create_dir(&base_dir).await?;
+        filesystem.create_dir(&base_dir).await.map_err(|err| {
+            ProviderError::CreateNamespaceFailed(
+                name.to_string(),
+                anyhow!(
+                    "can't create base dir {}: {err} (remove it, or set a base_dir)",
+                    base_dir.display()
+                ),
+            )
+        })?;
         return Ok(base_dir);
     };
     if filesystem.exists(custom).await {

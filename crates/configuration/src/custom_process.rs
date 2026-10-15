@@ -486,6 +486,89 @@ impl CustomProcess {
         }
     }
 
+    fn validate_env(&self, errors: &mut Vec<anyhow::Error>) {
+        let mut env_names = HashSet::new();
+        for var in &self.env {
+            if var.name.is_empty() {
+                errors.push(FieldError::Env(anyhow::anyhow!("a variable has no name")).into());
+            } else if !env_names.insert(&var.name) {
+                errors
+                    .push(FieldError::Env(anyhow::anyhow!("'{}' is given twice", var.name)).into());
+            }
+            if let EnvValue::Secret { name, key } = &var.value {
+                if name.is_empty() || key.is_empty() {
+                    errors.push(
+                        FieldError::Env(anyhow::anyhow!(
+                            "'{}' needs the secret's name and key",
+                            var.name
+                        ))
+                        .into(),
+                    );
+                }
+            }
+        }
+    }
+
+    fn validate_injected_files(&self, errors: &mut Vec<anyhow::Error>) {
+        let mut remote_paths: Vec<&Path> = vec![];
+        for file in &self.injected_files {
+            if file.local_path.as_os_str().is_empty() {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!("a file has no local_path")).into(),
+                );
+            }
+            // The text is what every provider gets, so it has to be the one
+            // spelling of the path: a trailing slash, `.` and `//` fold away
+            // in the components, `..` would leave the process's directory and
+            // `:` splits a docker mount.
+            let remote = file.remote_path.to_string_lossy();
+            let plain: PathBuf = file.remote_path.components().collect();
+            if !file.remote_path.is_absolute()
+                || remote.contains(':')
+                || plain.file_name().is_none()
+                || plain.as_os_str() != file.remote_path.as_os_str()
+                || file
+                    .remote_path
+                    .components()
+                    .any(|c| c == Component::ParentDir)
+            {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "remote_path '{remote}' must be an absolute path to a file, without '.', '..', '//' or ':'"
+                    ))
+                    .into(),
+                );
+            } else if let Some(other) = remote_paths
+                .iter()
+                .find(|p| p.starts_with(&file.remote_path) || file.remote_path.starts_with(p))
+            {
+                let error = if *other == file.remote_path {
+                    anyhow::anyhow!("remote_path '{remote}' is given twice")
+                } else {
+                    anyhow::anyhow!(
+                        "remote_paths '{}' and '{remote}' cannot both be files",
+                        other.display()
+                    )
+                };
+                errors.push(FieldError::InjectedFiles(error).into());
+            } else {
+                remote_paths.push(&file.remote_path);
+            }
+            let mode = &file.mode;
+            let octal =
+                (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
+            // a volume takes no more than the permission bits
+            if !octal || u32::from_str_radix(mode, 8).is_ok_and(|mode| mode > 0o777) {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "mode '{mode}' must be 3 or 4 octal digits up to 0777, e.g. '0755'"
+                    ))
+                    .into(),
+                );
+            }
+        }
+    }
+
     /// The field rules shared by the builder and the TOML loader. What is
     /// checked at spawn follows from them, see [`Self::effective_check`].
     pub fn validate(&self) -> Result<(), Vec<anyhow::Error>> {
@@ -560,83 +643,8 @@ impl CustomProcess {
                 }
             }
         }
-        let mut env_names = HashSet::new();
-        for var in &self.env {
-            if var.name.is_empty() {
-                errors.push(FieldError::Env(anyhow::anyhow!("a variable has no name")).into());
-            } else if !env_names.insert(&var.name) {
-                errors
-                    .push(FieldError::Env(anyhow::anyhow!("'{}' is given twice", var.name)).into());
-            }
-            if let EnvValue::Secret { name, key } = &var.value {
-                if name.is_empty() || key.is_empty() {
-                    errors.push(
-                        FieldError::Env(anyhow::anyhow!(
-                            "'{}' needs the secret's name and key",
-                            var.name
-                        ))
-                        .into(),
-                    );
-                }
-            }
-        }
-        let mut remote_paths: Vec<&Path> = vec![];
-        for file in &self.injected_files {
-            if file.local_path.as_os_str().is_empty() {
-                errors.push(
-                    FieldError::InjectedFiles(anyhow::anyhow!("a file has no local_path")).into(),
-                );
-            }
-            // The text is what every provider gets, so it has to be the one
-            // spelling of the path: a trailing slash, `.` and `//` fold away
-            // in the components, `..` would leave the process's directory and
-            // `:` splits a docker mount.
-            let remote = file.remote_path.to_string_lossy();
-            let plain: PathBuf = file.remote_path.components().collect();
-            if !file.remote_path.is_absolute()
-                || remote.contains(':')
-                || plain.file_name().is_none()
-                || plain.as_os_str() != file.remote_path.as_os_str()
-                || file
-                    .remote_path
-                    .components()
-                    .any(|c| c == Component::ParentDir)
-            {
-                errors.push(
-                    FieldError::InjectedFiles(anyhow::anyhow!(
-                        "remote_path '{remote}' must be an absolute path to a file, without '.', '..', '//' or ':'"
-                    ))
-                    .into(),
-                );
-            } else if let Some(other) = remote_paths
-                .iter()
-                .find(|p| p.starts_with(&file.remote_path) || file.remote_path.starts_with(p))
-            {
-                let error = if *other == file.remote_path {
-                    anyhow::anyhow!("remote_path '{remote}' is given twice")
-                } else {
-                    anyhow::anyhow!(
-                        "remote_paths '{}' and '{remote}' cannot both be files",
-                        other.display()
-                    )
-                };
-                errors.push(FieldError::InjectedFiles(error).into());
-            } else {
-                remote_paths.push(&file.remote_path);
-            }
-            let mode = &file.mode;
-            let octal =
-                (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
-            // a volume takes no more than the permission bits
-            if !octal || u32::from_str_radix(mode, 8).is_ok_and(|mode| mode > 0o777) {
-                errors.push(
-                    FieldError::InjectedFiles(anyhow::anyhow!(
-                        "mode '{mode}' must be 3 or 4 octal digits up to 0777, e.g. '0755'"
-                    ))
-                    .into(),
-                );
-            }
-        }
+        self.validate_env(&mut errors);
+        self.validate_injected_files(&mut errors);
         if self.ready_check.as_ref().is_some_and(|c| c.interval == 0) {
             errors.push(
                 FieldError::ReadyCheck(anyhow::anyhow!("interval must be at least 1 second"))

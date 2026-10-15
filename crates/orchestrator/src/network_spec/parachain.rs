@@ -31,7 +31,7 @@ pub struct ParachainSpec {
     /// Parachain id
     pub(crate) id: u32,
 
-    /// Unique id of the parachain, in the patter of <para_id>-<n>
+    /// Unique id of the parachain, in the pattern of <para_id>-<n>
     /// where the suffix is only present if more than one parachain is set with the same id
     pub(crate) unique_id: String,
 

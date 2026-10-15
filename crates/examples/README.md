@@ -55,7 +55,7 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Run**: `cargo run --example custom_process_lifecycle`
 
 *   **`custom_process_injected_files`**
-    *   **Description**: A one-shot `greeter` running a script injected from `scripts/greet.sh`, in place before it starts, found through `{{ZOMBIE:greeter:root}}`.
+    *   **Description**: A one-shot `greeter` running a script injected from `scripts/greet.sh`, in place before it starts.
     *   **Run**: `cargo run --example custom_process_injected_files`
 
 *   **`custom_process_positional_args`**

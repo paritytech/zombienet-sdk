@@ -2733,7 +2733,7 @@ id = 1000
             "{run:?}"
         );
         assert_eq!(run.remote_path.as_path(), std::path::Path::new("/run.sh"));
-        assert_eq!(run.mode.as_deref(), Some("0755"));
+        assert_eq!(run.mode, "0755");
         let dumped = config.dump_to_toml().unwrap();
         let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
         assert_eq!(reloaded.custom_processes(), config.custom_processes());

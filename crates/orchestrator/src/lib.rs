@@ -1856,7 +1856,7 @@ mod tests {
             configuration::CustomProcessBuilder::new()
                 .with_name("api")
                 .with_command("api")
-                .with_injected_file(configuration::InjectedFile::new(local, remote))
+                .with_injected_file(configuration::TransferedFile::new(local, remote))
                 .build()
                 .unwrap(),
         );

@@ -108,19 +108,10 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
     }
 
     // Every process's ports are known now, so a process may name another's,
-    // `{{ZOMBIE:<process>:port_<name>}}`, the way it names its own. `root` is
-    // where its absolute paths are: nowhere special in a container, its own
-    // directory on native, where an injected file lands and it runs.
+    // `{{ZOMBIE:<process>:port_<name>}}`, the way it names its own.
     let mut nodes_by_name = network.nodes_json()?;
     for prepared in &pending {
-        let name = prepared.spec.name();
-        nodes_by_name[name] = ports_json(&prepared.ports);
-        nodes_by_name[name]["root"] =
-            serde_json::Value::String(if ns.capabilities().prefix_with_full_path {
-                ns.base_dir().join(name).to_string_lossy().into_owned()
-            } else {
-                String::new()
-            });
+        nodes_by_name[prepared.spec.name()] = ports_json(&prepared.ports);
     }
 
     // Spawning and waiting are two steps, so a `service_started` dependent

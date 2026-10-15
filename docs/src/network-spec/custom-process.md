@@ -50,7 +50,7 @@ let cp = CustomProcessBuilder::new()
     .with_image("docker.io/ipfs/kubo:v0.39.0")
     .with_args(vec!["daemon".into()])
     .with_env(vec![("IPFS_PATH", "/data/ipfs"), ("IPFS_SWARM_KEY_FILE", "/etc/ipfs/swarm.key")])
-    .with_injected_file(InjectedFile::new("./ipfs/swarm.key", "/etc/ipfs/swarm.key"))
+    .with_injected_file(TransferedFile::new("./ipfs/swarm.key", "/etc/ipfs/swarm.key"))
     .with_named_port("api", 5001)
     .with_named_port("gateway", 8080)
     .with_resources(|r| r.with_limit_cpu("500m").with_limit_memory("512Mi"))
@@ -63,7 +63,7 @@ let cp = CustomProcessBuilder::new()
 
 ### Placeholders
 
-The `args` and `env` values of a process may refer to the nodes, which are all running by then, with the same `{{ZOMBIE:<node-name>:<field>}}` placeholders node args use: `ws_uri`, `internal_ws_uri` (the address other members of the network use, which is what a process wants), `multiaddr`, `prometheus_uri` for a substrate node, `rpc_uri` and `peer_addr` for a JAM node. On docker a node's addresses are host addresses, so a process in a container reaches a node only through the host (`host.docker.internal` on Docker Desktop). They may also refer to any custom process's ports, their own or another's, as `{{ZOMBIE:<process-name>:port_<port-name>}}`, since every port is picked before anything starts (see Lifecycle), and to `{{ZOMBIE:<process-name>:root}}`, where that process's absolute paths are: empty on docker and kubernetes, so `{{ZOMBIE:api:root}}/schema/init.sql` is `/schema/init.sql` there, and the process's own directory under `base_dir` on native, where it runs and where an injected file lands (see Injected files). A placeholder that resolves to nothing (a node or port that does not exist) means the process is never started, which fails the spawn (see Lifecycle).
+The `args` and `env` values of a process may refer to the nodes, which are all running by then, with the same `{{ZOMBIE:<node-name>:<field>}}` placeholders node args use: `ws_uri`, `internal_ws_uri` (the address other members of the network use, which is what a process wants), `multiaddr`, `prometheus_uri` for a substrate node, `rpc_uri` and `peer_addr` for a JAM node. On docker a node's addresses are host addresses, so a process in a container reaches a node only through the host (`host.docker.internal` on Docker Desktop). They may also refer to any custom process's ports, their own or another's, as `{{ZOMBIE:<process-name>:port_<port-name>}}`, since every port is picked before anything starts (see Lifecycle). A placeholder that resolves to nothing (a node or port that does not exist) means the process is never started, which fails the spawn (see Lifecycle).
 
 ### Ports
 
@@ -125,12 +125,12 @@ A process may name another's port the way it names its own, `{{ZOMBIE:<process>:
 name = "migrate"
 image = "docker.io/library/postgres:16"
 command = "psql"
-args = [ "-h", "db", "-f", "{{ZOMBIE:migrate:root}}/schema/init.sql" ]
+args = [ "-h", "db", "-f", "/schema/init.sql" ]
 one_shot = true
 injected_files = [ { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" } ]
 ```
 
-On docker each file is bind-mounted into the container and on kubernetes the files are mounted from a `ConfigMap`, read-only in both cases, so they are in place before the container starts whatever the image is; on kubernetes all of a process's files together must fit in a `ConfigMap`, 1 MiB together with their names, which is checked before anything spawns. On native the file is copied under the process's own directory in `base_dir`, which is its working directory, so `/schema/init.sql` is `schema/init.sql` from the process; `{{ZOMBIE:migrate:root}}` above is that directory on native and empty elsewhere, which makes the one config work on every provider.
+On docker each file is bind-mounted into the container and on kubernetes the files are mounted from a `ConfigMap`, read-only in both cases, so they are in place before the container starts whatever the image is; on kubernetes all of a process's files together must fit in a `ConfigMap`, 1 MiB together with their names, which is checked before anything spawns. On native the file is copied under the process's own directory in `base_dir`, and its `remote_path` wherever it appears in `args` and `env` is rewritten to that full path, so the one config works on every provider.
 
 ### Secrets
 

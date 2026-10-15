@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use configuration::{InjectedFile, NetworkConfig, NetworkConfigBuilder};
+use configuration::{NetworkConfig, NetworkConfigBuilder, TransferedFile};
 use zombienet_sdk::{environment::get_spawn_fn, CustomProcessState};
 
 fn small_network() -> NetworkConfig {
@@ -57,7 +57,7 @@ async fn ci_native_smoke_should_works() {
 }
 
 /// A one-shot custom process running a script injected before it starts,
-/// found through `{{ZOMBIE:<process>:root}}` and told where alice is.
+/// named by its `remote_path` and told where alice is.
 #[tokio::test(flavor = "multi_thread")]
 async fn ci_native_custom_process_runs_an_injected_file() {
     let _ = tracing_subscriber::fmt::try_init();
@@ -78,10 +78,10 @@ async fn ci_native_custom_process_runs_an_injected_file() {
             c.with_name("greeter")
                 .with_command("sh")
                 .with_args(vec![
-                    "{{ZOMBIE:greeter:root}}/opt/greet.sh".into(),
+                    "/opt/greet.sh".into(),
                     "{{ZOMBIE:alice:ws_uri}}".into(),
                 ])
-                .with_injected_file(InjectedFile::new(&script, "/opt/greet.sh").with_mode("0755"))
+                .with_injected_file(TransferedFile::new(&script, "/opt/greet.sh").mode("0755"))
                 .with_one_shot()
         })
         .build()

@@ -4,8 +4,7 @@ use std::{
     process::ExitStatus,
 };
 
-use configuration::{shared::resources::Resources, InjectedFile};
-use serde::{Deserialize, Serialize};
+use configuration::shared::resources::Resources;
 
 pub type Port = u16;
 
@@ -471,62 +470,7 @@ impl RunScriptOptions {
     }
 }
 
-// TODO(team): I think we can rename it to FileMap?
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransferedFile {
-    pub local_path: PathBuf,
-    pub remote_path: PathBuf,
-    // TODO: Can be narrowed to have strict typing on this?
-    pub mode: String,
-}
-
-impl TransferedFile {
-    pub fn new<P>(local_path: P, remote_path: P) -> Self
-    where
-        P: AsRef<Path>,
-    {
-        Self {
-            local_path: local_path.as_ref().into(),
-            remote_path: remote_path.as_ref().into(),
-            mode: "0644".to_string(), // default to rw-r--r--
-        }
-    }
-
-    pub fn mode<S>(mut self, mode: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.mode = mode.as_ref().to_string();
-        self
-    }
-
-    /// The mode as permission bits; `None` for text that is not octal, which
-    /// the configuration rejects, so only a file built by hand can be.
-    pub fn mode_bits(&self) -> Option<u32> {
-        u32::from_str_radix(&self.mode, 8).ok()
-    }
-}
-
-impl From<&InjectedFile> for TransferedFile {
-    fn from(file: &InjectedFile) -> Self {
-        let transfered = Self::new(&file.local_path, &file.remote_path);
-        match &file.mode {
-            Some(mode) => transfered.mode(mode),
-            None => transfered,
-        }
-    }
-}
-
-impl std::fmt::Display for TransferedFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "File to transfer (local: {}, remote: {})",
-            self.local_path.display(),
-            self.remote_path.display()
-        )
-    }
-}
+pub use configuration::TransferedFile;
 
 /// Result of [`ProviderNode::snapshot_db`].
 /// return the filename, hash and bytes of the generated `{node.name}.tgz`

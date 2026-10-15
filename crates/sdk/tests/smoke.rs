@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use configuration::{InjectedFile, NetworkConfig, NetworkConfigBuilder, ProcessEnvVar};
+use configuration::{NetworkConfig, NetworkConfigBuilder, ProcessEnvVar, TransferedFile};
 use futures::{stream::StreamExt, try_join};
 use k8s_openapi::api::core::v1::Secret;
 use kube::api::{Api, PostParams};
@@ -81,7 +81,7 @@ fn small_network() -> NetworkConfig {
                 .with_image("docker.io/library/alpine:3.20")
                 .with_args(vec!["-c".into(), check.as_str().into()])
                 .with_env(vec![turn_secret_env()])
-                .with_injected_file(InjectedFile::new(hello, "/opt/hello.txt"))
+                .with_injected_file(TransferedFile::new(hello, "/opt/hello.txt"))
                 .with_one_shot()
         })
         .with_global_settings(|g| {

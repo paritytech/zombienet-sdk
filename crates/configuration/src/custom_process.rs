@@ -15,7 +15,7 @@ use crate::{
         node::EnvVar,
         resources::{Resources, ResourcesBuilder},
     },
-    types::{Arg, Command, Image, Port},
+    types::{Arg, Command, Image, Port, TransferedFile},
     utils::is_false,
 };
 
@@ -74,33 +74,6 @@ fn validate_port_name(name: &str) -> Result<(), anyhow::Error> {
         ));
     }
     Ok(())
-}
-
-/// A file put in place before the process starts, as a node gets its chain
-/// spec: `local_path` on the host running zombienet, `remote_path` where the
-/// process reads it, `mode` its permissions in octal (`0644` when unset).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InjectedFile {
-    pub local_path: PathBuf,
-    pub remote_path: PathBuf,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-}
-
-impl InjectedFile {
-    pub fn new(local_path: impl Into<PathBuf>, remote_path: impl Into<PathBuf>) -> Self {
-        Self {
-            local_path: local_path.into(),
-            remote_path: remote_path.into(),
-            mode: None,
-        }
-    }
-
-    /// The permissions of the file in the process, in octal (e.g. `0755`).
-    pub fn with_mode(mut self, mode: impl Into<String>) -> Self {
-        self.mode = Some(mode.into());
-        self
-    }
 }
 
 /// An environment variable of a custom process: a literal `value`, or on
@@ -380,7 +353,7 @@ pub struct CustomProcess {
     env: Vec<ProcessEnvVar>,
     // Files put in place before the process starts
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
-    injected_files: Vec<InjectedFile>,
+    injected_files: Vec<TransferedFile>,
     // Named ports the process listens on
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     ports: Vec<NamedPort>,
@@ -447,7 +420,7 @@ impl CustomProcess {
     }
 
     /// Files put in place before the process starts.
-    pub fn injected_files(&self) -> &[InjectedFile] {
+    pub fn injected_files(&self) -> &[TransferedFile] {
         &self.injected_files
     }
 
@@ -651,18 +624,17 @@ impl CustomProcess {
             } else {
                 remote_paths.push(&file.remote_path);
             }
-            if let Some(mode) = &file.mode {
-                let octal =
-                    (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
-                // a volume takes no more than the permission bits
-                if !octal || u32::from_str_radix(mode, 8).is_ok_and(|mode| mode > 0o777) {
-                    errors.push(
-                        FieldError::InjectedFiles(anyhow::anyhow!(
-                            "mode '{mode}' must be 3 or 4 octal digits up to 0777, e.g. '0755'"
-                        ))
-                        .into(),
-                    );
-                }
+            let mode = &file.mode;
+            let octal =
+                (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
+            // a volume takes no more than the permission bits
+            if !octal || u32::from_str_radix(mode, 8).is_ok_and(|mode| mode > 0o777) {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "mode '{mode}' must be 3 or 4 octal digits up to 0777, e.g. '0755'"
+                    ))
+                    .into(),
+                );
             }
         }
         if self.ready_check.as_ref().is_some_and(|c| c.interval == 0) {
@@ -910,8 +882,8 @@ impl CustomProcessBuilder<WithName, WithCmd> {
         Self::transition(CustomProcess { env, ..self.config }, self.errors)
     }
 
-    /// Put a file in place before the process starts; see [`InjectedFile`].
-    pub fn with_injected_file(self, file: InjectedFile) -> Self {
+    /// Put a file in place before the process starts; see [`TransferedFile`].
+    pub fn with_injected_file(self, file: TransferedFile) -> Self {
         let mut injected_files = self.config.injected_files;
         injected_files.push(file);
 
@@ -1368,8 +1340,8 @@ mod tests {
                 ("RUST_LOG", "info").into(),
                 ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
             ])
-            .with_injected_file(InjectedFile::new("./sql/init.sql", "/schema/init.sql"))
-            .with_injected_file(InjectedFile::new("./run.sh", "/run.sh").with_mode("0755"))
+            .with_injected_file(TransferedFile::new("./sql/init.sql", "/schema/init.sql"))
+            .with_injected_file(TransferedFile::new("./run.sh", "/run.sh").mode("0755"))
             .build()
             .unwrap();
 
@@ -1389,7 +1361,7 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(api.injected_files()[1].mode.as_deref(), Some("0755"));
+        assert_eq!(api.injected_files()[1].mode, "0755");
 
         let json = serde_json::to_value(&api).unwrap();
         assert_eq!(
@@ -1413,17 +1385,17 @@ mod tests {
                 ProcessEnvVar::from_secret("TURN_SECRET", "", "secret"),
                 ("TURN_SECRET", "plain").into(),
             ])
-            .with_injected_file(InjectedFile::new("./a", "schema/init.sql"))
-            .with_injected_file(InjectedFile::new("./b", "/etc/"))
-            .with_injected_file(InjectedFile::new("./c", "/c").with_mode("rwx"))
-            .with_injected_file(InjectedFile::new("./d", "/c"))
-            .with_injected_file(InjectedFile::new("./e", "/x/../e"))
-            .with_injected_file(InjectedFile::new("./f", "/f:g"))
-            .with_injected_file(InjectedFile::new("./g", "/g").with_mode("4755"))
-            .with_injected_file(InjectedFile::new("./h", "/c/."))
-            .with_injected_file(InjectedFile::new("./i", "//c"))
-            .with_injected_file(InjectedFile::new("./j", "/."))
-            .with_injected_file(InjectedFile::new("./k", "/c/k"))
+            .with_injected_file(TransferedFile::new("./a", "schema/init.sql"))
+            .with_injected_file(TransferedFile::new("./b", "/etc/"))
+            .with_injected_file(TransferedFile::new("./c", "/c").mode("rwx"))
+            .with_injected_file(TransferedFile::new("./d", "/c"))
+            .with_injected_file(TransferedFile::new("./e", "/x/../e"))
+            .with_injected_file(TransferedFile::new("./f", "/f:g"))
+            .with_injected_file(TransferedFile::new("./g", "/g").mode("4755"))
+            .with_injected_file(TransferedFile::new("./h", "/c/."))
+            .with_injected_file(TransferedFile::new("./i", "//c"))
+            .with_injected_file(TransferedFile::new("./j", "/."))
+            .with_injected_file(TransferedFile::new("./k", "/c/k"))
             .build()
             .unwrap_err()
             .1

@@ -12,42 +12,31 @@ use crate::{
     DynNode, ProviderError,
 };
 
-/// A namespace's base dir: `custom`, created if missing and made absolute,
-/// since nodes run from their own directory and docker takes a relative
-/// bind-mount source for a named volume; else a fresh `<tmp_dir>/<name>`.
+/// A namespace's base dir, `custom` or `<tmp_dir>/<name>`: created if
+/// missing, used as it is with a warning if not (a namespace spawned into
+/// again), and made absolute, since nodes run from their own directory and
+/// docker takes a relative bind-mount source for a named volume.
 pub(crate) async fn namespace_base_dir<FS: FileSystem>(
     filesystem: &FS,
     tmp_dir: &Path,
     name: &str,
     custom: Option<&Path>,
 ) -> Result<PathBuf, ProviderError> {
-    let Some(custom) = custom else {
-        let base_dir = tmp_dir.join(name);
-        filesystem.create_dir(&base_dir).await.map_err(|err| {
-            ProviderError::CreateNamespaceFailed(
-                name.to_string(),
-                anyhow!(
-                    "can't create base dir {}: {err} (remove it, or set a base_dir)",
-                    base_dir.display()
-                ),
-            )
-        })?;
-        return Ok(base_dir);
-    };
-    if filesystem.exists(custom).await {
+    let base_dir = custom.map_or_else(|| tmp_dir.join(name), Path::to_path_buf);
+    if filesystem.exists(&base_dir).await {
         warn!(
-            "⚠️ Using and existing directory {} as base dir",
-            custom.to_string_lossy()
+            "⚠️ Using an existing directory {} as base dir",
+            base_dir.display()
         );
     } else {
-        filesystem.create_dir_all(custom).await.map_err(|err| {
+        filesystem.create_dir_all(&base_dir).await.map_err(|err| {
             ProviderError::CreateNamespaceFailed(
                 name.to_string(),
-                anyhow!("can't create base dir {}: {err}", custom.display()),
+                anyhow!("can't create base dir {}: {err}", base_dir.display()),
             )
         })?;
     }
-    std::path::absolute(custom)
+    std::path::absolute(&base_dir)
         .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))
 }
 
@@ -135,8 +124,8 @@ pub fn extract_namespace_info(
 }
 
 /// A name for the `index`th injected file of a process: unique by the index,
-/// readable by the file name, within what a `ConfigMap` key (253 characters
-/// at most) or a docker mount may contain.
+/// readable by the file name, within what a volume path or a docker mount
+/// may contain.
 pub(crate) fn injected_file_name(index: usize, file: &TransferedFile) -> String {
     let name: String = file
         .remote_path
@@ -144,7 +133,6 @@ pub(crate) fn injected_file_name(index: usize, file: &TransferedFile) -> String 
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
         .chars()
-        .take(200)
         .map(|c| {
             if c.is_ascii_alphanumeric() || "-_.".contains(c) {
                 c

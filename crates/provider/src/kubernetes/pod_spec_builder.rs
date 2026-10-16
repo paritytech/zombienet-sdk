@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, env};
 use configuration::shared::resources::{ResourceQuantity, Resources};
 use k8s_openapi::{
     api::core::v1::{
-        ConfigMapVolumeSource, Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction,
-        KeyToPath, PodSpec, Probe, ResourceRequirements, SecretKeySelector, TCPSocketAction,
-        Toleration, Volume, VolumeMount,
+        ConfigMapVolumeSource, Container, ContainerPort, EmptyDirVolumeSource, EnvVar,
+        EnvVarSource, HTTPGetAction, PodSpec, Probe, ResourceRequirements, SecretKeySelector,
+        TCPSocketAction, Toleration, Volume, VolumeMount,
     },
     apimachinery::pkg::{api::resource::Quantity, util::intstr::IntOrString},
 };
@@ -16,12 +16,20 @@ use crate::{
     types::{Port, ReadinessProbe, ReadinessTarget, SecretEnvVar, TransferedFile},
 };
 
-/// The volume a direct process's injected files are mounted from, one by one.
+/// The volume a direct process's injected files are mounted from, one by one,
+/// filled by an init container.
 const FILES_VOLUME: &str = "files";
 
-/// The `ConfigMap` holding a direct process's injected files.
-pub(super) fn files_config_map_name(pod: &str) -> String {
-    format!("{pod}-files")
+/// The image of the init containers: `wget`, `sha256sum` and `chmod` in it.
+const SETUP_IMAGE: &str =
+    "europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/alpine:latest";
+
+/// An injected file as the pod's init container fetches it: from the
+/// network's fileserver by `url`, checked against `hash` (sha256, hex).
+pub(super) struct FileToFetch {
+    pub file: TransferedFile,
+    pub url: String,
+    pub hash: String,
 }
 
 pub(super) struct PodSpecBuilder;
@@ -36,7 +44,7 @@ impl PodSpecBuilder {
         args: &[String],
         env: &[(String, String)],
         secret_env: &[SecretEnvVar],
-        files: &[TransferedFile],
+        files: &[FileToFetch],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
         wrapper: bool,
@@ -54,14 +62,19 @@ impl PodSpecBuilder {
             None
         };
 
+        let mut init_containers = vec![Self::build_helper_binaries_setup_container()];
+        if !files.is_empty() {
+            init_containers.push(Self::build_files_setup_container(files));
+        }
+
         PodSpec {
             hostname: Some(name.to_string()),
-            init_containers: Some(vec![Self::build_helper_binaries_setup_container()]),
+            init_containers: Some(init_containers),
             containers: vec![Self::build_main_container(
                 name, image, resources, program, args, env, secret_env, files, ports, readiness,
                 wrapper,
             )],
-            volumes: Some(Self::build_volumes(name, files)),
+            volumes: Some(Self::build_volumes(!files.is_empty())),
             tolerations,
             // A direct process that exits is done, by success or by failure: the
             // pod ends with it, and so says what happened, instead of the
@@ -81,7 +94,7 @@ impl PodSpecBuilder {
         args: &[String],
         env: &[(String, String)],
         secret_env: &[SecretEnvVar],
-        files: &[TransferedFile],
+        files: &[FileToFetch],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
         wrapper: bool,
@@ -161,10 +174,10 @@ impl PodSpecBuilder {
             vec![]
         };
         // Each file on its own path, wherever that is in the image.
-        extra_mounts.extend(files.iter().enumerate().map(|(index, file)| VolumeMount {
+        extra_mounts.extend(files.iter().enumerate().map(|(index, fetch)| VolumeMount {
             name: FILES_VOLUME.to_string(),
-            mount_path: file.remote_path.to_string_lossy().into_owned(),
-            sub_path: Some(injected_file_name(index, file)),
+            mount_path: fetch.file.remote_path.to_string_lossy().into_owned(),
+            sub_path: Some(injected_file_name(index, &fetch.file)),
             read_only: Some(true),
             ..Default::default()
         }));
@@ -206,10 +219,40 @@ impl PodSpecBuilder {
         }
     }
 
+    /// Fetches a direct process's injected files from the network's
+    /// fileserver into the `files` volume, checked and with their mode, so
+    /// they are in place when `program` starts, whatever the image.
+    fn build_files_setup_container(files: &[FileToFetch]) -> Container {
+        let script = files
+            .iter()
+            .enumerate()
+            .map(|(index, fetch)| {
+                let path = format!("/files/{}", injected_file_name(index, &fetch.file));
+                format!(
+                    "wget -q -O '{path}' '{}' && echo '{}  {path}' | sha256sum -c && chmod {} '{path}'",
+                    fetch.url, fetch.hash, fetch.file.mode
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" && ");
+        Container {
+            name: "files-setup".to_string(),
+            image: Some(SETUP_IMAGE.to_string()),
+            image_pull_policy: Some("IfNotPresent".to_string()),
+            volume_mounts: Some(vec![VolumeMount {
+                name: FILES_VOLUME.to_string(),
+                mount_path: "/files".to_string(),
+                ..Default::default()
+            }]),
+            command: Some(vec!["sh".to_string(), "-c".to_string(), script]),
+            ..Default::default()
+        }
+    }
+
     fn build_helper_binaries_setup_container() -> Container {
         Container {
             name: "helper-binaries-setup".to_string(),
-            image: Some("europe-west3-docker.pkg.dev/parity-zombienet/zombienet-public-images/alpine:latest".to_string()),
+            image: Some(SETUP_IMAGE.to_string()),
             image_pull_policy: Some("IfNotPresent".to_string()),
             volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
                 name: "helper-binaries-downloader-volume".to_string(),
@@ -225,7 +268,7 @@ impl PodSpecBuilder {
         }
     }
 
-    fn build_volumes(name: &str, files: &[TransferedFile]) -> Vec<Volume> {
+    fn build_volumes(with_files: bool) -> Vec<Volume> {
         let mut volumes = vec![
             Volume {
                 name: "cfg".to_string(),
@@ -262,29 +305,10 @@ impl PodSpecBuilder {
                 ..Default::default()
             },
         ];
-        if !files.is_empty() {
+        if with_files {
             volumes.push(Volume {
                 name: FILES_VOLUME.to_string(),
-                config_map: Some(ConfigMapVolumeSource {
-                    name: Some(files_config_map_name(name)),
-                    items: Some(
-                        files
-                            .iter()
-                            .enumerate()
-                            .map(|(index, file)| {
-                                let name = injected_file_name(index, file);
-                                KeyToPath {
-                                    key: name.clone(),
-                                    path: name,
-                                    mode: file
-                                        .mode_bits()
-                                        .and_then(|mode| i32::try_from(mode).ok()),
-                                }
-                            })
-                            .collect(),
-                    ),
-                    ..Default::default()
-                }),
+                empty_dir: Some(EmptyDirVolumeSource::default()),
                 ..Default::default()
             });
         }
@@ -501,8 +525,16 @@ mod tests {
     #[test]
     fn a_direct_process_mounts_its_files_and_reads_env_from_secrets() {
         let files = vec![
-            TransferedFile::new("./sql/init.sql", "/schema/init.sql"),
-            TransferedFile::new("./run.sh", "/opt/app/run me.sh").mode("0755"),
+            FileToFetch {
+                file: TransferedFile::new("./sql/init.sql", "/schema/init.sql"),
+                url: "http://fileserver:80/aa__init.sql".into(),
+                hash: "aa".into(),
+            },
+            FileToFetch {
+                file: TransferedFile::new("./run.sh", "/opt/app/run me.sh").mode("0755"),
+                url: "http://fileserver:80/bb__run.sh".into(),
+                hash: "bb".into(),
+            },
         ];
         let secret_env = vec![SecretEnvVar {
             name: "TURN_SECRET".into(),
@@ -530,20 +562,18 @@ mod tests {
             .iter()
             .find(|v| v.name == FILES_VOLUME)
             .unwrap();
-        let config_map = volume.config_map.as_ref().unwrap();
-        assert_eq!(config_map.name.as_deref(), Some("proc-files"));
+        assert!(volume.empty_dir.is_some());
+        let setup = spec
+            .init_containers
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|c| c.name == "files-setup")
+            .unwrap();
         assert_eq!(
-            config_map
-                .items
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|item| (item.key.as_str(), item.path.as_str(), item.mode))
-                .collect::<Vec<_>>(),
-            [
-                ("0-init.sql", "0-init.sql", Some(0o644)),
-                ("1-run-me.sh", "1-run-me.sh", Some(0o755)),
-            ]
+            setup.command.as_ref().unwrap()[2],
+            "wget -q -O '/files/0-init.sql' 'http://fileserver:80/aa__init.sql' && echo 'aa  /files/0-init.sql' | sha256sum -c && chmod 0644 '/files/0-init.sql' && \
+             wget -q -O '/files/1-run-me.sh' 'http://fileserver:80/bb__run.sh' && echo 'bb  /files/1-run-me.sh' | sha256sum -c && chmod 0755 '/files/1-run-me.sh'"
         );
 
         let container = main_container(&spec);

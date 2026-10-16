@@ -43,7 +43,6 @@ where
                 prefix_with_full_path: false,
                 use_default_ports_in_cmd: true,
                 has_secrets: false,
-                injected_files_limit: None,
             },
             tmp_dir: std::env::temp_dir(),
             docker_client,

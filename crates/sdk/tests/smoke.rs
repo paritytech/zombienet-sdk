@@ -70,11 +70,11 @@ fn small_network() -> NetworkConfig {
                 .with_default_image("docker.io/paritypr/test-parachain:master-d0393007")
                 .with_collator(|n| n.with_name("collator-test").with_command("test-parachain"))
         })
-        // A one-shot reading an env value from the Secret and a file mounted
-        // from a ConfigMap, both in place before it starts.
+        // A one-shot reading an env value from the Secret and an injected
+        // file, both in place before it starts.
         .with_custom_process(|c| {
             let hello = PathBuf::from("/tmp/zombie-1-hello.txt");
-            std::fs::write(&hello, "hello from a ConfigMap\n").unwrap();
+            std::fs::write(&hello, "hello from an injected file\n").unwrap();
             let check = format!("test \"$TURN_SECRET\" = \"{SECRET_VALUE}\" && cat /opt/hello.txt");
             c.with_name("secret-reader")
                 .with_command("sh")
@@ -114,7 +114,7 @@ async fn ci_k8s_basic_functionalities_should_works() {
     assert_eq!(reader.state(), &CustomProcessState::Completed);
     let logs = reader.core().logs().await.unwrap();
     assert!(
-        logs.contains("hello from a ConfigMap"),
+        logs.contains("hello from an injected file"),
         "secret-reader logs: {logs}"
     );
 

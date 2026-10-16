@@ -142,6 +142,8 @@ impl KubernetesClient {
         file_contents: &str,
         labels: BTreeMap<String, String>,
     ) -> Result<ConfigMap> {
+        let config_maps = Api::<ConfigMap>::namespaced(self.inner.clone(), namespace);
+
         let config_map = ConfigMap {
             metadata: ObjectMeta {
                 name: Some(name.to_string()),
@@ -156,39 +158,30 @@ impl KubernetesClient {
             ..Default::default()
         };
 
-        self.create_config_map(namespace, config_map).await
-    }
-
-    pub(super) async fn create_config_map(
-        &self,
-        namespace: &str,
-        config_map: ConfigMap,
-    ) -> Result<ConfigMap> {
-        let name = config_map.metadata.name.clone().unwrap_or_default();
-        let config_maps = Api::<ConfigMap>::namespaced(self.inner.clone(), namespace);
-
         match config_maps
             .create(&PostParams::default(), &config_map)
             .await
         {
             Ok(_) => {},
-            // left by an earlier spawn of the name into this namespace
+            // left by an earlier spawn into this namespace, so brought up to date
             Err(kube::Error::Api(err)) if err.code == 409 => {
                 config_maps
-                    .replace(&name, &PostParams::default(), &config_map)
+                    .replace(name, &PostParams::default(), &config_map)
                     .await
                     .map_err(|err| {
-                        Error::from(anyhow!("error while replacing config map {name}: {err}"))
+                        Error::from(anyhow!(
+                            "error while replacing config map {name} for {file_name}: {err}"
+                        ))
                     })?;
             },
             Err(err) => {
                 return Err(Error::from(anyhow!(
-                    "error while creating config map {name}: {err}"
+                    "error while creating config map {name} for {file_name}: {err}"
                 )))
             },
         }
 
-        self.wait_created(config_maps, &name).await?;
+        self.wait_created(config_maps, name).await?;
 
         Ok(config_map)
     }
@@ -387,19 +380,6 @@ impl KubernetesClient {
             None => {
                 panic!("command has no status following its execution, this is a bug");
             },
-        }
-    }
-
-    /// Delete the config map; done if there is none.
-    pub(super) async fn delete_config_map(&self, namespace: &str, name: &str) -> Result<()> {
-        let config_maps = Api::<ConfigMap>::namespaced(self.inner.clone(), namespace);
-
-        match config_maps.delete(name, &DeleteParams::default()).await {
-            Ok(_) => Ok(()),
-            Err(kube::Error::Api(err)) if err.code == 404 => Ok(()),
-            Err(err) => Err(Error::from(anyhow!(
-                "error when deleting config map {name}: {err}"
-            ))),
         }
     }
 

@@ -24,9 +24,6 @@ pub struct ProviderCapabilities {
     pub use_default_ports_in_cmd: bool,
     /// An env value may be read from a `Secret` in the namespace (k8s).
     pub has_secrets: bool,
-    /// How many bytes a process's injected files may total, where they go
-    /// through an object of bounded size (k8s, a `ConfigMap`).
-    pub injected_files_limit: Option<u64>,
 }
 
 /// An environment variable read from the `key` of the `Secret` named
@@ -274,8 +271,7 @@ impl SpawnNodeOptions {
     /// on docker and kubernetes (native signals the process and needs no
     /// wrapper). The wrapper holds the program back until the injected files
     /// are copied in; without it they are mounted in before the program
-    /// starts, read-only, and on kubernetes within what a `ConfigMap` holds
-    /// (a megabyte).
+    /// starts, read-only.
     pub fn without_wrapper(mut self) -> Self {
         self.wrapper = false;
         self

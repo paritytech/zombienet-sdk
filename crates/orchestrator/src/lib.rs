@@ -1244,7 +1244,6 @@ fn validate_spec_with_provider_capabilities(
                 ));
             }
         }
-        let mut injected_bytes = 0;
         for file in process.injected_files() {
             if NODE_MOUNTED_DIRS
                 .iter()
@@ -1266,29 +1265,18 @@ fn validate_spec_with_provider_capabilities(
                     file.remote_path.display()
                 ));
             }
-            match std::fs::metadata(&file.local_path) {
-                Ok(meta) if meta.is_file() => injected_bytes += meta.len(),
-                _ => {
-                    let from = if file.local_path.is_relative() {
-                        std::env::current_dir()
-                            .map(|cwd| format!(" (relative to {})", cwd.display()))
-                            .unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-                    errs.push(format!(
-                        "custom_processes['{}'].injected_files: no file at '{}'{from}",
-                        process.name(),
-                        file.local_path.display()
-                    ));
-                },
-            }
-        }
-        if let Some(limit) = capabilities.injected_files_limit {
-            if injected_bytes > limit {
+            if !file.local_path.is_file() {
+                let from = if file.local_path.is_relative() {
+                    std::env::current_dir()
+                        .map(|cwd| format!(" (relative to {})", cwd.display()))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
                 errs.push(format!(
-                    "custom_processes['{}'].injected_files: {injected_bytes} bytes together, over the {limit} the provider takes",
-                    process.name()
+                    "custom_processes['{}'].injected_files: no file at '{}'{from}",
+                    process.name(),
+                    file.local_path.display()
                 ));
             }
         }
@@ -1777,7 +1765,6 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
-            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1794,7 +1781,6 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
-            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1811,7 +1797,6 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
-            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1828,7 +1813,6 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
-            injected_files_limit: None,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1844,7 +1828,6 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: true,
             has_secrets: false,
-            injected_files_limit: None,
         }
     }
 
@@ -1932,22 +1915,6 @@ mod tests {
             ),
             "{err}"
         );
-    }
-
-    #[tokio::test]
-    async fn injected_files_must_fit_the_providers_limit() {
-        let spec = spec_with_file(AN_EXISTING_FILE, "/init.sql").await;
-        let tight = ProviderCapabilities {
-            injected_files_limit: Some(16),
-            ..image_caps()
-        };
-        let err = validate_spec_with_provider_capabilities(&spec, &tight).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("bytes together, over the 16 the provider takes"),
-            "{err}"
-        );
-        validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap();
     }
 
     #[tokio::test]

@@ -62,8 +62,6 @@ where
                 prefix_with_full_path: false,
                 use_default_ports_in_cmd: true,
                 has_secrets: true,
-                // a ConfigMap holds 1 MiB of data and keys together
-                injected_files_limit: Some(1024 * 1024 - 4096),
             },
             tmp_dir: std::env::temp_dir(),
             k8s_client,

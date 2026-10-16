@@ -11,11 +11,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
-use k8s_openapi::{
-    api::core::v1::{ConfigMap, ServicePort, ServiceSpec},
-    ByteString,
-};
-use kube::core::ObjectMeta;
+use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -28,12 +24,12 @@ use super::{
         KubernetesClient, SecretLookup,
     },
     namespace::KubernetesNamespace,
-    pod_spec_builder::{files_config_map_name, PodSpecBuilder},
+    pod_spec_builder::{FileToFetch, PodSpecBuilder},
 };
 use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     kubernetes,
-    shared::helpers::{default_true, ensure_wrapper, injected_file_name},
+    shared::helpers::{default_true, ensure_wrapper},
     types::{
         ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
         RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
@@ -175,10 +171,10 @@ where
         let log_path = base_dir.join("node.log");
 
         try_join!(
-            filesystem.create_dir(&config_dir),
-            filesystem.create_dir(&data_dir),
-            filesystem.create_dir(&relay_data_dir),
-            filesystem.create_dir(&scripts_dir),
+            filesystem.create_dir_all(&config_dir),
+            filesystem.create_dir_all(&data_dir),
+            filesystem.create_dir_all(&relay_data_dir),
+            filesystem.create_dir_all(&scripts_dir),
         )?;
 
         let node = Arc::new(KubernetesNode {
@@ -204,7 +200,7 @@ where
         });
 
         // A direct process runs `program` from the moment the pod is up, so
-        // its files are mounted in from a ConfigMap, in place before that; a
+        // its files are fetched by an init container, in place before that; a
         // wrapped node gets them sent while the wrapper holds `program` back.
         let mounted_files: &[TransferedFile] = if node.wrapper {
             &[]
@@ -299,13 +295,10 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
-        // the Secret check first, so a failed one leaves nothing behind
         check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))?;
-        if !files.is_empty() {
-            self.create_files_config_map(files, labels.clone()).await?;
-        }
+        let files = self.upload_injected_files(files).await?;
 
         // Create pod
         let pod_spec = PodSpecBuilder::build(
@@ -316,7 +309,7 @@ where
             &self.args,
             &self.env,
             secret_env,
-            files,
+            &files,
             &self.ports,
             readiness,
             self.wrapper,
@@ -387,35 +380,21 @@ where
         Ok(())
     }
 
-    /// The injected files of a direct process, mounted into its pod one by one
-    /// (see `PodSpecBuilder`); together they must fit a `ConfigMap`, a
-    /// megabyte.
-    async fn create_files_config_map(
+    /// Upload a direct process's injected files to the network's fileserver,
+    /// where the pod's init container fetches them from.
+    async fn upload_injected_files(
         &self,
         files: &[TransferedFile],
-        labels: BTreeMap<String, String>,
-    ) -> Result<(), ProviderError> {
-        let mut binary_data = BTreeMap::new();
-        for (index, file) in files.iter().enumerate() {
-            let contents = self.filesystem.read(&file.local_path).await?;
-            binary_data.insert(injected_file_name(index, file), ByteString(contents));
-        }
-        let namespace = self.namespace_name();
-        let config_map = ConfigMap {
-            metadata: ObjectMeta {
-                name: Some(files_config_map_name(&self.name)),
-                namespace: Some(namespace.clone()),
-                labels: Some(labels),
-                ..Default::default()
-            },
-            binary_data: Some(binary_data),
-            ..Default::default()
-        };
-        self.k8s_client
-            .create_config_map(&namespace, config_map)
-            .await
-            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
-        Ok(())
+    ) -> Result<Vec<FileToFetch>, ProviderError> {
+        try_join_all(files.iter().map(|file| async move {
+            let (url, hash) = self.upload_to_fileserver(&file.local_path).await?;
+            Ok::<_, ProviderError>(FileToFetch {
+                file: file.clone(),
+                url: make_url_internal(&url).to_string(),
+                hash,
+            })
+        }))
+        .await
     }
 
     async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
@@ -1066,12 +1045,6 @@ where
             .delete_pod(&self.namespace_name(), &self.name)
             .await
             .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
-        if !self.wrapper {
-            self.k8s_client
-                .delete_config_map(&self.namespace_name(), &files_config_map_name(&self.name))
-                .await
-                .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
-        }
 
         if let Some(namespace) = self.namespace.upgrade() {
             namespace.nodes.write().await.remove(&self.name);

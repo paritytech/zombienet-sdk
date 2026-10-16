@@ -265,6 +265,13 @@ where
                             err.into(),
                         )
                     };
+                    // a copy from an earlier spawn into this base dir may be read-only
+                    if self.filesystem.exists(&staged).await {
+                        self.filesystem
+                            .set_mode(&staged, 0o644)
+                            .await
+                            .map_err(failed)?;
+                    }
                     self.filesystem
                         .copy(&file.local_path, &staged)
                         .await

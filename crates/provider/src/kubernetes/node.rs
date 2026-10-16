@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
-use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
+use k8s_openapi::api::core::v1::{ContainerStatus, PodStatus, ServicePort, ServiceSpec};
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -295,10 +295,12 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
-        check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
-            .await
-            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))?;
-        let files = self.upload_injected_files(files).await?;
+        let secrets = async {
+            check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
+                .await
+                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))
+        };
+        let ((), files) = try_join!(secrets, self.upload_injected_files(files))?;
 
         // Create pod
         let pod_spec = PodSpecBuilder::build(
@@ -395,6 +397,7 @@ where
             })
         }))
         .await
+        .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))
     }
 
     async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
@@ -653,10 +656,27 @@ where
 
     // TODO: handle log rotation as we do in v1
     async fn logs(&self) -> Result<String, ProviderError> {
-        self.k8s_client
-            .pod_logs(&self.namespace_name(), &self.name)
-            .await
-            .map_err(|err| ProviderError::GetLogsFailed(self.name.to_string(), err.into()))
+        let namespace = self.namespace_name();
+        let failed = |err: anyhow::Error| ProviderError::GetLogsFailed(self.name.to_string(), err);
+        match self.k8s_client.pod_logs(&namespace, &self.name, None).await {
+            Ok(logs) => Ok(logs),
+            // the main container never ran: what the init container that
+            // failed, and so ended the pod, said
+            Err(err) => {
+                let status = self
+                    .k8s_client
+                    .pod_status(&namespace, &self.name)
+                    .await
+                    .map_err(|err| failed(err.into()))?;
+                let Some(init) = failed_init_container(&status) else {
+                    return Err(failed(err.into()));
+                };
+                self.k8s_client
+                    .pod_logs(&namespace, &self.name, Some(&init.name))
+                    .await
+                    .map_err(|err| failed(err.into()))
+            },
+        }
     }
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
@@ -836,14 +856,14 @@ where
             })?;
 
         if status_is_done(&status) {
+            // the container's code, or the init container's that ended the pod
             let code = status
                 .container_statuses
                 .iter()
                 .flatten()
                 .find(|c| c.name == self.name)
-                .and_then(|c| c.state.as_ref())
-                .and_then(|s| s.terminated.as_ref())
-                .map(|t| t.exit_code);
+                .and_then(exit_code)
+                .or_else(|| failed_init_container(&status).and_then(exit_code));
             return Ok(ProcessStatus::Exited { code });
         }
         Ok(ProcessStatus::Running {
@@ -1056,6 +1076,26 @@ where
     async fn snapshot_db(&self, _is_cumulus_based: bool) -> Result<InnerSnapshotDb, ProviderError> {
         todo!("snapshot db is not implemented yet for k8s");
     }
+}
+
+/// The exit code of a container that terminated.
+fn exit_code(container: &ContainerStatus) -> Option<i32> {
+    container
+        .state
+        .as_ref()?
+        .terminated
+        .as_ref()
+        .map(|t| t.exit_code)
+}
+
+/// The init container that failed, which is what ended the pod before its
+/// own container ran.
+fn failed_init_container(status: &PodStatus) -> Option<&ContainerStatus> {
+    status
+        .init_container_statuses
+        .iter()
+        .flatten()
+        .find(|c| exit_code(c).is_some_and(|code| code != 0))
 }
 
 // Helper fn to make a fileserver usable from inside of pods

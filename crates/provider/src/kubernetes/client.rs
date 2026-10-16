@@ -235,11 +235,18 @@ impl KubernetesClient {
         Ok(pod)
     }
 
-    pub(super) async fn pod_logs(&self, namespace: &str, name: &str) -> Result<String> {
+    /// The logs of the pod's main container, or of `container`.
+    pub(super) async fn pod_logs(
+        &self,
+        namespace: &str,
+        name: &str,
+        container: Option<&str>,
+    ) -> Result<String> {
         Api::<Pod>::namespaced(self.inner.clone(), namespace)
             .logs(
                 name,
                 &LogParams {
+                    container: container.map(str::to_string),
                     pretty: true,
                     timestamps: true,
                     ..Default::default()

@@ -223,14 +223,24 @@ impl PodSpecBuilder {
     /// fileserver into the `files` volume, checked and with their mode, so
     /// they are in place when `program` starts, whatever the image.
     fn build_files_setup_container(files: &[FileToFetch]) -> Container {
+        // The URLs go in through the environment, so nothing of a file name
+        // reaches the shell; a download is retried as `send_file`'s is, and
+        // the hash check after the loop catches one that never came.
+        let mut env = vec![];
         let script = files
             .iter()
             .enumerate()
             .map(|(index, fetch)| {
                 let path = format!("/files/{}", injected_file_name(index, &fetch.file));
+                env.push(EnvVar {
+                    name: format!("URL_{index}"),
+                    value: Some(fetch.url.clone()),
+                    value_from: None,
+                });
                 format!(
-                    "wget -q -O '{path}' '{}' && echo '{}  {path}' | sha256sum -c && chmod {} '{path}'",
-                    fetch.url, fetch.hash, fetch.file.mode
+                    "for i in 1 2 3 4 5; do wget -q -O '{path}' \"$URL_{index}\" && break; sleep $i; done && echo '{}  {path}' | sha256sum -c && chmod {:04o} '{path}'",
+                    fetch.hash,
+                    fetch.file.mode_bits().unwrap_or(0o644)
                 )
             })
             .collect::<Vec<_>>()
@@ -239,6 +249,7 @@ impl PodSpecBuilder {
             name: "files-setup".to_string(),
             image: Some(SETUP_IMAGE.to_string()),
             image_pull_policy: Some("IfNotPresent".to_string()),
+            env: Some(env),
             volume_mounts: Some(vec![VolumeMount {
                 name: FILES_VOLUME.to_string(),
                 mount_path: "/files".to_string(),
@@ -572,8 +583,21 @@ mod tests {
             .unwrap();
         assert_eq!(
             setup.command.as_ref().unwrap()[2],
-            "wget -q -O '/files/0-init.sql' 'http://fileserver:80/aa__init.sql' && echo 'aa  /files/0-init.sql' | sha256sum -c && chmod 0644 '/files/0-init.sql' && \
-             wget -q -O '/files/1-run-me.sh' 'http://fileserver:80/bb__run.sh' && echo 'bb  /files/1-run-me.sh' | sha256sum -c && chmod 0755 '/files/1-run-me.sh'"
+            "for i in 1 2 3 4 5; do wget -q -O '/files/0-init.sql' \"$URL_0\" && break; sleep $i; done && echo 'aa  /files/0-init.sql' | sha256sum -c && chmod 0644 '/files/0-init.sql' && \
+             for i in 1 2 3 4 5; do wget -q -O '/files/1-run-me.sh' \"$URL_1\" && break; sleep $i; done && echo 'bb  /files/1-run-me.sh' | sha256sum -c && chmod 0755 '/files/1-run-me.sh'"
+        );
+        assert_eq!(
+            setup
+                .env
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|var| (var.name.as_str(), var.value.as_deref().unwrap()))
+                .collect::<Vec<_>>(),
+            [
+                ("URL_0", "http://fileserver:80/aa__init.sql"),
+                ("URL_1", "http://fileserver:80/bb__run.sh"),
+            ]
         );
 
         let container = main_container(&spec);

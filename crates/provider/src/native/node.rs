@@ -626,6 +626,12 @@ where
         if let Some(parent) = namespaced_remote_file_path.parent() {
             self.filesystem.create_dir_all(parent).await?;
         }
+        // a copy from an earlier spawn into this base dir may be read-only
+        if self.filesystem.exists(&namespaced_remote_file_path).await {
+            self.filesystem
+                .set_mode(&namespaced_remote_file_path, 0o644)
+                .await?;
+        }
         self.filesystem
             .copy(local_file_path, &namespaced_remote_file_path)
             .await?;

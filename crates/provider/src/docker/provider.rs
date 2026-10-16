@@ -42,6 +42,7 @@ where
                 has_resources: false,
                 prefix_with_full_path: false,
                 use_default_ports_in_cmd: true,
+                has_secrets: false,
             },
             tmp_dir: std::env::temp_dir(),
             docker_client,

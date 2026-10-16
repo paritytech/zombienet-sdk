@@ -159,6 +159,11 @@ impl NetworkConfig {
 
         let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/]+)\""#)
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
+        // a file on this host, so any character a path may hold
+        let re_local_paths: Regex = Regex::new(
+            r#"(?m)(?<field_name>(?:^|[\s{,])local_path)\s*=\s*"(?<value_string>[^"]+)""#,
+        )
+        .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
@@ -170,6 +175,7 @@ impl NetworkConfig {
 
         let toml_text = re.replace_all(toml_text, "$field_name = \"$u128_value\"");
         let toml_text = re_paths.replace_all(&toml_text, &path_replacer);
+        let toml_text = re_local_paths.replace_all(&toml_text, &path_replacer);
 
         trace!("toml text to parse: {}", toml_text);
         // apply replacements from env in toml
@@ -927,7 +933,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::{parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition};
+    use crate::{
+        parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition, ProcessEnvVar,
+    };
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -2695,6 +2703,55 @@ id = 1000
         );
         assert!(err.contains("'cache' cannot be service_healthy"), "{err}");
         assert!(err.contains("cycle among api, cache"), "{err}");
+    }
+
+    #[test]
+    fn custom_process_files_and_secret_env_load_from_toml_and_dump_back() {
+        let config = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            env = [
+                { name = "RUST_LOG", value = "info" },
+                { name = "TURN_SECRET", secret = { name = "turn", key = "secret" } },
+            ]
+            injected_files = [
+                { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" },
+                { local_path="./my-scripts/run_me.sh", remote_path = "/run.sh", mode = "0755" },
+            ]
+            "#,
+        )
+        .unwrap();
+        let api = config.custom_processes()[0];
+        assert_eq!(
+            api.env()[1],
+            ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret")
+        );
+        // a `./` path is resolved against the TOML's directory, as `command` is
+        let run = &api.injected_files()[1];
+        assert!(
+            run.local_path.is_absolute() && run.local_path.ends_with("my-scripts/run_me.sh"),
+            "{run:?}"
+        );
+        assert_eq!(run.remote_path.as_path(), std::path::Path::new("/run.sh"));
+        assert_eq!(run.mode, "0755");
+        let dumped = config.dump_to_toml().unwrap();
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(reloaded.custom_processes(), config.custom_processes());
+
+        let err = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            injected_files = [{ local_path = "./run.sh", remote_path = "run.sh" }]
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("remote_path 'run.sh' must be an absolute path"),
+            "{err}"
+        );
     }
 
     #[test]

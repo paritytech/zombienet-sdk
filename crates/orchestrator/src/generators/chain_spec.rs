@@ -421,7 +421,7 @@ impl ChainSpec {
         if is_raw(maybe_plain_spec_path.clone(), scoped_fs).await? {
             let spec_path = PathBuf::from(format!("{}.json", self.chain_spec_name));
             let tf_file = TransferedFile::new(
-                &PathBuf::from_iter([ns.base_dir(), &maybe_plain_spec_path]),
+                PathBuf::from_iter([ns.base_dir(), &maybe_plain_spec_path]),
                 &spec_path,
             );
             scoped_fs.copy_files(vec![&tf_file]).await.map_err(|e| {
@@ -1307,7 +1307,7 @@ impl ChainSpec {
 
             let full_tmp = scoped_fs.full_path(&tmp_path);
             // Prepare transfer object: copy local tmp -> remote final path inside scoped fs
-            let tf = TransferedFile::new(full_tmp, spec_path.to_path_buf());
+            let tf = TransferedFile::new(full_tmp, spec_path);
             scoped_fs.copy_files(vec![&tf]).await.map_err(|e| {
                 GeneratorError::ChainSpecGeneration(format!(
                     "Failed to copy temp spec into final path: {}",

@@ -1,4 +1,9 @@
-use std::{error::Error, marker::PhantomData};
+use std::{
+    collections::HashSet,
+    error::Error,
+    marker::PhantomData,
+    path::{Component, Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +15,7 @@ use crate::{
         node::EnvVar,
         resources::{Resources, ResourcesBuilder},
     },
-    types::{Arg, Command, Image, Port},
+    types::{Arg, Command, Image, Port, TransferedFile},
     utils::is_false,
 };
 
@@ -69,6 +74,94 @@ fn validate_port_name(name: &str) -> Result<(), anyhow::Error> {
         ));
     }
     Ok(())
+}
+
+/// An environment variable of a custom process: a literal `value`, or on
+/// kubernetes a key of a `Secret` in the namespace, read by the pod itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProcessEnvVar {
+    pub name: String,
+    #[serde(flatten)]
+    pub value: EnvValue,
+}
+
+/// The written shape of a [`ProcessEnvVar`], `{ name, value }` or
+/// `{ name, secret = { name, key } }`, read loosely so that the check for
+/// exactly one of the two can name the variable.
+#[derive(Deserialize)]
+struct RawProcessEnvVar {
+    name: String,
+    value: Option<String>,
+    secret: Option<SecretRef>,
+}
+
+#[derive(Deserialize)]
+struct SecretRef {
+    name: String,
+    key: String,
+}
+
+impl<'de> Deserialize<'de> for ProcessEnvVar {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = RawProcessEnvVar::deserialize(deserializer)?;
+        let value = match (raw.value, raw.secret) {
+            (Some(value), None) => EnvValue::Value(value),
+            (None, Some(SecretRef { name, key })) => EnvValue::Secret { name, key },
+            _ => {
+                return Err(serde::de::Error::custom(format!(
+                    "env '{}' needs exactly one of `value` or `secret`",
+                    raw.name
+                )))
+            },
+        };
+        Ok(Self {
+            name: raw.name,
+            value,
+        })
+    }
+}
+
+/// Where a [`ProcessEnvVar`] gets its value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EnvValue {
+    /// The text as given, `{{ZOMBIE:..}}` placeholders resolved.
+    Value(String),
+    /// The `key` of the kubernetes `Secret` named `name`, as a pod's
+    /// `valueFrom.secretKeyRef`; rejected on the other providers.
+    Secret { name: String, key: String },
+}
+
+impl ProcessEnvVar {
+    /// A variable set to the `key` of the kubernetes `Secret` named `secret`.
+    pub fn from_secret(
+        name: impl Into<String>,
+        secret: impl Into<String>,
+        key: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            value: EnvValue::Secret {
+                name: secret.into(),
+                key: key.into(),
+            },
+        }
+    }
+}
+
+impl From<(&str, &str)> for ProcessEnvVar {
+    fn from(pair: (&str, &str)) -> Self {
+        EnvVar::from(pair).into()
+    }
+}
+
+impl From<EnvVar> for ProcessEnvVar {
+    fn from(var: EnvVar) -> Self {
+        Self {
+            name: var.name,
+            value: EnvValue::Value(var.value),
+        }
+    }
 }
 
 /// How a custom process is known to be ready. `tcp` is a declared port name
@@ -240,9 +333,9 @@ impl From<&str> for Dependency {
 pub const MAX_TIMEOUT_SECS: u32 = 7 * 24 * 60 * 60;
 
 /// A custom process to spawn next to the nodes: its `command`, `args`, `env`,
-/// `image` (provider specific), named `ports`, `resources` (provider
-/// specific), and its lifecycle: `ready_check`, `depends_on`, `one_shot` and
-/// `timeout`.
+/// `injected_files`, `image` (provider specific), named `ports`, `resources`
+/// (provider specific), and its lifecycle: `ready_check`, `depends_on`,
+/// `one_shot` and `timeout`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomProcess {
     // Name of the process
@@ -257,7 +350,10 @@ pub struct CustomProcess {
     args: Vec<Arg>,
     // Environment to set
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
-    env: Vec<EnvVar>,
+    env: Vec<ProcessEnvVar>,
+    // Files put in place before the process starts
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    injected_files: Vec<TransferedFile>,
     // Named ports the process listens on
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     ports: Vec<NamedPort>,
@@ -286,6 +382,7 @@ impl Default for CustomProcess {
             command: Command::default(), // should be changed.
             args: vec![],
             env: vec![],
+            injected_files: vec![],
             ports: vec![],
             resources: None,
             ready_check: None,
@@ -318,8 +415,13 @@ impl CustomProcess {
     }
 
     /// Environment variables to set (inside pod for podman/k8s, inside shell for native).
-    pub fn env(&self) -> Vec<&EnvVar> {
-        self.env.iter().collect()
+    pub fn env(&self) -> &[ProcessEnvVar] {
+        &self.env
+    }
+
+    /// Files put in place before the process starts.
+    pub fn injected_files(&self) -> &[TransferedFile] {
+        &self.injected_files
     }
 
     /// Named ports the process listens on.
@@ -381,6 +483,89 @@ impl CustomProcess {
             DependencyCondition::ServiceHealthy
         } else {
             DependencyCondition::ServiceStarted
+        }
+    }
+
+    fn validate_env(&self, errors: &mut Vec<anyhow::Error>) {
+        let mut env_names = HashSet::new();
+        for var in &self.env {
+            if var.name.is_empty() {
+                errors.push(FieldError::Env(anyhow::anyhow!("a variable has no name")).into());
+            } else if !env_names.insert(&var.name) {
+                errors
+                    .push(FieldError::Env(anyhow::anyhow!("'{}' is given twice", var.name)).into());
+            }
+            if let EnvValue::Secret { name, key } = &var.value {
+                if name.is_empty() || key.is_empty() {
+                    errors.push(
+                        FieldError::Env(anyhow::anyhow!(
+                            "'{}' needs the secret's name and key",
+                            var.name
+                        ))
+                        .into(),
+                    );
+                }
+            }
+        }
+    }
+
+    fn validate_injected_files(&self, errors: &mut Vec<anyhow::Error>) {
+        let mut remote_paths: Vec<&Path> = vec![];
+        for file in &self.injected_files {
+            if file.local_path.as_os_str().is_empty() {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!("a file has no local_path")).into(),
+                );
+            }
+            // The text is what every provider gets, so it has to be the one
+            // spelling of the path: a trailing slash, `.` and `//` fold away
+            // in the components, `..` would leave the process's directory and
+            // `:` splits a docker mount.
+            let remote = file.remote_path.to_string_lossy();
+            let plain: PathBuf = file.remote_path.components().collect();
+            if !file.remote_path.is_absolute()
+                || remote.contains(':')
+                || plain.file_name().is_none()
+                || plain.as_os_str() != file.remote_path.as_os_str()
+                || file
+                    .remote_path
+                    .components()
+                    .any(|c| c == Component::ParentDir)
+            {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "remote_path '{remote}' must be an absolute path to a file, without '.', '..', '//' or ':'"
+                    ))
+                    .into(),
+                );
+            } else if let Some(other) = remote_paths
+                .iter()
+                .find(|p| p.starts_with(&file.remote_path) || file.remote_path.starts_with(p))
+            {
+                let error = if *other == file.remote_path {
+                    anyhow::anyhow!("remote_path '{remote}' is given twice")
+                } else {
+                    anyhow::anyhow!(
+                        "remote_paths '{}' and '{remote}' cannot both be files",
+                        other.display()
+                    )
+                };
+                errors.push(FieldError::InjectedFiles(error).into());
+            } else {
+                remote_paths.push(&file.remote_path);
+            }
+            let mode = &file.mode;
+            let octal =
+                (3..=4).contains(&mode.len()) && mode.chars().all(|c| ('0'..='7').contains(&c));
+            // a volume takes no more than the permission bits
+            if !octal || u32::from_str_radix(mode, 8).is_ok_and(|mode| mode > 0o777) {
+                errors.push(
+                    FieldError::InjectedFiles(anyhow::anyhow!(
+                        "mode '{mode}' must be 3 or 4 octal digits up to 0777, e.g. '0755'"
+                    ))
+                    .into(),
+                );
+            }
         }
     }
 
@@ -458,6 +643,8 @@ impl CustomProcess {
                 }
             }
         }
+        self.validate_env(&mut errors);
+        self.validate_injected_files(&mut errors);
         if self.ready_check.as_ref().is_some_and(|c| c.interval == 0) {
             errors.push(
                 FieldError::ReadyCheck(anyhow::anyhow!("interval must be at least 1 second"))
@@ -695,11 +882,26 @@ impl CustomProcessBuilder<WithName, WithCmd> {
         )
     }
 
-    /// Set the  environment variables that will be used when spawn the process.
-    pub fn with_env(self, env: Vec<impl Into<EnvVar>>) -> Self {
+    /// Set the environment variables of the process: `(name, value)` pairs,
+    /// or a [`ProcessEnvVar`] read from a kubernetes `Secret`.
+    pub fn with_env(self, env: Vec<impl Into<ProcessEnvVar>>) -> Self {
         let env = env.into_iter().map(|var| var.into()).collect::<Vec<_>>();
 
         Self::transition(CustomProcess { env, ..self.config }, self.errors)
+    }
+
+    /// Put a file in place before the process starts; see [`TransferedFile`].
+    pub fn with_injected_file(self, file: TransferedFile) -> Self {
+        let mut injected_files = self.config.injected_files;
+        injected_files.push(file);
+
+        Self::transition(
+            CustomProcess {
+                injected_files,
+                ..self.config
+            },
+            self.errors,
+        )
     }
 
     /// Declare a named port the process listens on; `0` lets zombienet pick a
@@ -1134,6 +1336,127 @@ mod tests {
                 .with_named_port(good, 5001)
                 .build()
                 .unwrap_or_else(|e| panic!("{good:?} should be accepted, got {:?}", e.1));
+        }
+    }
+
+    #[test]
+    fn files_and_secret_env_round_trip_and_validate() {
+        let api = CustomProcessBuilder::new()
+            .with_name("api")
+            .with_command("api")
+            .with_env(vec![
+                ("RUST_LOG", "info").into(),
+                ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
+            ])
+            .with_injected_file(TransferedFile::new("./sql/init.sql", "/schema/init.sql"))
+            .with_injected_file(TransferedFile::new("./run.sh", "/run.sh").mode("0755"))
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            api.env(),
+            [
+                ProcessEnvVar {
+                    name: "RUST_LOG".into(),
+                    value: EnvValue::Value("info".into()),
+                },
+                ProcessEnvVar {
+                    name: "TURN_SECRET".into(),
+                    value: EnvValue::Secret {
+                        name: "turn".into(),
+                        key: "secret".into(),
+                    },
+                },
+            ]
+        );
+        assert_eq!(api.injected_files()[1].mode, "0755");
+
+        let json = serde_json::to_value(&api).unwrap();
+        assert_eq!(
+            json["env"],
+            serde_json::json!([
+                { "name": "RUST_LOG", "value": "info" },
+                { "name": "TURN_SECRET", "secret": { "name": "turn", "key": "secret" } },
+            ])
+        );
+        assert_eq!(
+            json["injected_files"][0],
+            serde_json::json!({ "local_path": "./sql/init.sql", "remote_path": "/schema/init.sql" })
+        );
+        let reloaded: CustomProcess = serde_json::from_value(json).unwrap();
+        assert_eq!(reloaded, api);
+
+        let errors = CustomProcessBuilder::new()
+            .with_name("bad")
+            .with_command("bad")
+            .with_env(vec![
+                ProcessEnvVar::from_secret("TURN_SECRET", "", "secret"),
+                ("TURN_SECRET", "plain").into(),
+            ])
+            .with_injected_file(TransferedFile::new("./a", "schema/init.sql"))
+            .with_injected_file(TransferedFile::new("./b", "/etc/"))
+            .with_injected_file(TransferedFile::new("./c", "/c").mode("rwx"))
+            .with_injected_file(TransferedFile::new("./d", "/c"))
+            .with_injected_file(TransferedFile::new("./e", "/x/../e"))
+            .with_injected_file(TransferedFile::new("./f", "/f:g"))
+            .with_injected_file(TransferedFile::new("./g", "/g").mode("4755"))
+            .with_injected_file(TransferedFile::new("./h", "/c/."))
+            .with_injected_file(TransferedFile::new("./i", "//c"))
+            .with_injected_file(TransferedFile::new("./j", "/."))
+            .with_injected_file(TransferedFile::new("./k", "/c/k"))
+            .build()
+            .unwrap_err()
+            .1
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let expected = [
+            "env: 'TURN_SECRET' needs the secret's name and key",
+            "env: 'TURN_SECRET' is given twice",
+            "injected_files: remote_path 'schema/init.sql' must be an absolute path to a file, without '.', '..', '//' or ':'",
+            "remote_path '/etc/' must be an absolute path",
+            "injected_files: mode 'rwx' must be 3 or 4 octal digits up to 0777, e.g. '0755'",
+            "remote_path '/c' is given twice",
+            "remote_path '/x/../e' must be an absolute path",
+            "remote_path '/f:g' must be an absolute path",
+            "mode '4755' must be 3 or 4 octal digits",
+            "remote_path '/c/.' must be an absolute path",
+            "remote_path '//c' must be an absolute path",
+            "remote_path '/.' must be an absolute path",
+            "remote_paths '/c' and '/c/k' cannot both be files",
+        ];
+        assert_eq!(errors.len(), expected.len(), "{errors:#?}");
+        for (error, expected) in errors.iter().zip(expected) {
+            assert!(
+                error.contains(expected),
+                "{error:?} should contain {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_env_entry_is_a_value_or_a_secret() {
+        let parse = |json: serde_json::Value| {
+            serde_json::from_value::<ProcessEnvVar>(json).map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            parse(serde_json::json!({ "name": "A", "value": "1" })).unwrap(),
+            ProcessEnvVar::from(("A", "1"))
+        );
+        assert_eq!(
+            parse(serde_json::json!({ "name": "A", "secret": { "name": "s", "key": "k" } }))
+                .unwrap(),
+            ProcessEnvVar::from_secret("A", "s", "k")
+        );
+        for json in [
+            serde_json::json!({ "name": "A" }),
+            serde_json::json!({ "name": "A", "valeu": "1" }),
+            serde_json::json!({ "name": "A", "value": "1", "secret": { "name": "s", "key": "k" } }),
+        ] {
+            assert_eq!(
+                parse(json).unwrap_err(),
+                "env 'A' needs exactly one of `value` or `secret`"
+            );
         }
     }
 }

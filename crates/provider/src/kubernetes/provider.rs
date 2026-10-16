@@ -61,6 +61,7 @@ where
                 has_resources: true,
                 prefix_with_full_path: false,
                 use_default_ports_in_cmd: true,
+                has_secrets: true,
             },
             tmp_dir: std::env::temp_dir(),
             k8s_client,

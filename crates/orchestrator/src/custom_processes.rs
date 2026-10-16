@@ -143,7 +143,7 @@ pub(crate) async fn spawn_custom_processes<T: FileSystem>(
         }
         tokio::select! {
             Some((spec, outcome)) = spawning.next(), if !spawning.is_empty() => {
-                let node = outcome.map_err(|e| failed(spec, format!("failed to spawn: {e}")))?;
+                let node = outcome.map_err(|e| failed(spec, format!("{e:#}")))?;
                 states.insert(spec.name().to_string(), CustomProcessState::Starting);
                 let timeout = spec
                     .timeout()

@@ -76,7 +76,7 @@ pub struct Network<T: FileSystem> {
     #[serde(skip_serializing_if = "Option::is_none")]
     jamchain: Option<Jamchain>,
     /// The custom processes running next to the nodes, in the order each one
-    /// met (or failed) its condition; `zombie.json` keeps that order.
+    /// met its condition; `zombie.json` keeps that order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     custom_processes: Vec<Arc<node::CustomProcessNode>>,
     /// Every node spawned in this network, by name, regardless of its kind.

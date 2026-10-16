@@ -4,9 +4,9 @@ use async_trait::async_trait;
 pub use configuration::{
     json_patch,
     types::{Arg, AssetLocation},
-    Buildable, CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition,
+    Buildable, CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, EnvValue,
     GlobalSettings, GlobalSettingsBuilder, NamedPort, NetworkConfig, NetworkConfigBuilder,
-    ReadyCheck, ReadyTarget, RegistrationStrategy,
+    ProcessEnvVar, ReadyCheck, ReadyTarget, RegistrationStrategy, TransferedFile,
 };
 pub use orchestrator::{
     errors::OrchestratorError,

@@ -258,10 +258,21 @@ where
             let staged = try_join_all(startup_files.iter().enumerate().map(
                 |(index, file)| async move {
                     let staged = staging.join(injected_file_name(index, file));
-                    self.filesystem.copy(&file.local_path, &staged).await?;
+                    let failed = |err: support::fs::FileSystemError| {
+                        ProviderError::SendFile(
+                            self.name.clone(),
+                            file.local_path.to_string_lossy().to_string(),
+                            err.into(),
+                        )
+                    };
+                    self.filesystem
+                        .copy(&file.local_path, &staged)
+                        .await
+                        .map_err(failed)?;
                     self.filesystem
                         .set_mode(&staged, file.mode_bits().unwrap_or(0o644))
-                        .await?;
+                        .await
+                        .map_err(failed)?;
                     Ok::<_, ProviderError>((
                         staged.to_string_lossy().into_owned(),
                         format!("{}:ro", file.remote_path.to_string_lossy()),

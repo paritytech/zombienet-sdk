@@ -160,9 +160,10 @@ impl NetworkConfig {
         let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/]+)\""#)
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
         // a file on this host, so any character a path may hold
-        let re_local_paths: Regex =
-            Regex::new(r#"(?<field_name>local_path)\s+=\s+\"(?<value_string>[^"]+)\""#)
-                .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
+        let re_local_paths: Regex = Regex::new(
+            r#"(?m)(?<field_name>(?:^|[\s{,])local_path)\s*=\s*"(?<value_string>[^"]+)""#,
+        )
+        .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
@@ -2716,7 +2717,7 @@ id = 1000
             ]
             injected_files = [
                 { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" },
-                { local_path = "./my-scripts/run_me.sh", remote_path = "/run.sh", mode = "0755" },
+                { local_path="./my-scripts/run_me.sh", remote_path = "/run.sh", mode = "0755" },
             ]
             "#,
         )

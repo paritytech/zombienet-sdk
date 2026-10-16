@@ -40,7 +40,12 @@ pub(crate) async fn namespace_base_dir<FS: FileSystem>(
             custom.to_string_lossy()
         );
     } else {
-        filesystem.create_dir_all(custom).await?;
+        filesystem.create_dir_all(custom).await.map_err(|err| {
+            ProviderError::CreateNamespaceFailed(
+                name.to_string(),
+                anyhow!("can't create base dir {}: {err}", custom.display()),
+            )
+        })?;
     }
     std::path::absolute(custom)
         .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))
@@ -130,8 +135,8 @@ pub fn extract_namespace_info(
 }
 
 /// A name for the `index`th injected file of a process: unique by the index,
-/// readable by the file name, within what a `ConfigMap` key or a docker
-/// mount may contain.
+/// readable by the file name, within what a `ConfigMap` key (253 characters
+/// at most) or a docker mount may contain.
 pub(crate) fn injected_file_name(index: usize, file: &TransferedFile) -> String {
     let name: String = file
         .remote_path
@@ -139,6 +144,7 @@ pub(crate) fn injected_file_name(index: usize, file: &TransferedFile) -> String 
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
         .chars()
+        .take(200)
         .map(|c| {
             if c.is_ascii_alphanumeric() || "-_.".contains(c) {
                 c

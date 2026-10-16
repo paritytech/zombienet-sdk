@@ -56,8 +56,8 @@ async fn ci_native_smoke_should_works() {
         .unwrap();
 }
 
-/// A one-shot custom process running a script injected before it starts,
-/// named by its `remote_path` and told where alice is.
+/// A one-shot custom process that is a script injected before it starts, run
+/// as its `command` by `remote_path` and told where alice is.
 #[tokio::test(flavor = "multi_thread")]
 async fn ci_native_custom_process_runs_an_injected_file() {
     let _ = tracing_subscriber::fmt::try_init();
@@ -76,11 +76,8 @@ async fn ci_native_custom_process_runs_an_injected_file() {
         })
         .with_custom_process(|c| {
             c.with_name("greeter")
-                .with_command("sh")
-                .with_args(vec![
-                    "/opt/greet.sh".into(),
-                    "{{ZOMBIE:alice:ws_uri}}".into(),
-                ])
+                .with_command("/opt/greet.sh")
+                .with_args(vec!["{{ZOMBIE:alice:ws_uri}}".into()])
                 .with_injected_file(TransferedFile::new(&script, "/opt/greet.sh").mode("0755"))
                 .with_one_shot()
         })

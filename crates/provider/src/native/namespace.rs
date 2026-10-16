@@ -149,6 +149,7 @@ where
             db_snapshot: options.db_snapshot.as_deref(),
             filesystem: &self.filesystem,
             node_log_path: options.node_log_path.as_ref(),
+            wrapper: options.wrapper,
         })
         .await?;
 

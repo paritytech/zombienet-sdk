@@ -130,7 +130,7 @@ one_shot = true
 injected_files = [ { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" } ]
 ```
 
-On docker each file is bind-mounted into the container and on kubernetes the files are mounted from a `ConfigMap`, read-only in both cases, so they are in place before the container starts whatever the image is; on kubernetes all of a process's files together must fit in a `ConfigMap`, 1 MiB together with their names, which is checked before anything spawns. On native the file is copied under the process's own directory in `base_dir`, and its `remote_path` wherever it appears in `args` and `env` is rewritten to that full path, so the one config works on every provider.
+On docker each file is bind-mounted into the container and on kubernetes the files are mounted from a `ConfigMap`, read-only in both cases, so they are in place before the container starts whatever the image is; on kubernetes all of a process's files together must fit in a `ConfigMap`, 1 MiB together with their names, which is checked before anything spawns. On native the file is copied under the process's own directory in `base_dir`, read-only as well, and its `remote_path` wherever it stands in `command`, `args` and `env` becomes that full path, so the one config works on every provider and a `command` may be an injected script.
 
 ### Secrets
 

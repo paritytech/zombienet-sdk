@@ -390,25 +390,6 @@ struct ResolvedInputs {
     secret_env: Vec<SecretEnvVar>,
 }
 
-/// `text` with each `path` in it swapped for `full`, where `path` stands on
-/// its own and not as part of a longer path (`/opt/a` is left in `/opt/ab`,
-/// `/opt/a.bak` and `/x/opt/a`).
-fn replace_path(text: &str, path: &str, full: &str) -> String {
-    let is_path_char = |c: char| c.is_ascii_alphanumeric() || "./_-".contains(c);
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find(path) {
-        let (before, after) = (&rest[..at], &rest[at + path.len()..]);
-        let alone = !before.chars().next_back().is_some_and(is_path_char)
-            && !after.chars().next().is_some_and(is_path_char);
-        out.push_str(before);
-        out.push_str(if alone { full } else { path });
-        rest = after;
-    }
-    out.push_str(rest);
-    out
-}
-
 /// The args and env of `custom_process` with every `{{ZOMBIE:<name>:<field>}}`
 /// resolved against `context`: the nodes as the orchestrator keeps them, and
 /// every custom process's ports as `port_<name>` (see `ports_json`).
@@ -569,26 +550,11 @@ pub(crate) async fn spawn_process(
     let name = custom_process.name();
 
     let ResolvedInputs {
-        mut args,
-        mut env,
+        args,
+        env,
         secret_env,
     } = resolve_placeholders(custom_process, nodes_by_name)?;
     let files = custom_process.injected_files().to_vec();
-    // On native a file lands under the process's own directory, so its path
-    // in the args and env becomes the full one, as a node's `/data` does.
-    if capabilities.prefix_with_full_path {
-        let root = ns.base_dir().join(name);
-        for file in &files {
-            let remote = file.remote_path.to_string_lossy();
-            let full = format!("{}{remote}", root.to_string_lossy());
-            for text in args
-                .iter_mut()
-                .chain(env.iter_mut().map(|(_, value)| value))
-            {
-                *text = replace_path(text, &remote, &full);
-            }
-        }
-    }
 
     // On docker a published port answers for the proxy, so a tcp check there
     // proves nothing; said once, at spawn, where the config can still change.
@@ -967,19 +933,6 @@ mod tests {
                 secret: "turn".into(),
                 key: "secret".into(),
             }]
-        );
-    }
-
-    #[test]
-    fn an_injected_path_is_replaced_only_where_it_stands_alone() {
-        let full = "/base/api/opt/a";
-        assert_eq!(
-            replace_path(
-                "/opt/a FILE=/opt/a /opt/ab /opt/a.bak /x/opt/a",
-                "/opt/a",
-                full
-            ),
-            format!("{full} FILE={full} /opt/ab /opt/a.bak /x/opt/a")
         );
     }
 

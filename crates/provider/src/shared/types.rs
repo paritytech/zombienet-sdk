@@ -114,7 +114,8 @@ pub struct SpawnNodeOptions {
     /// Environment read from `Secret`s in the namespace (k8s only).
     pub secret_env: Vec<SecretEnvVar>,
     // TODO: rename startup_files
-    /// Files to inject at startup
+    /// Files to inject at startup. On native, where a file's `remote_path`
+    /// stands in `program`, `args` or `env` it becomes the file's full path.
     pub injected_files: Vec<TransferedFile>,
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order

@@ -1266,22 +1266,22 @@ fn validate_spec_with_provider_capabilities(
                     file.remote_path.display()
                 ));
             }
-            if let Ok(size) = std::fs::metadata(&file.local_path).map(|meta| meta.len()) {
-                injected_bytes += size;
-            }
-            if !file.local_path.is_file() {
-                let from = if file.local_path.is_relative() {
-                    std::env::current_dir()
-                        .map(|cwd| format!(" (relative to {})", cwd.display()))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: no file at '{}'{from}",
-                    process.name(),
-                    file.local_path.display()
-                ));
+            match std::fs::metadata(&file.local_path) {
+                Ok(meta) if meta.is_file() => injected_bytes += meta.len(),
+                _ => {
+                    let from = if file.local_path.is_relative() {
+                        std::env::current_dir()
+                            .map(|cwd| format!(" (relative to {})", cwd.display()))
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    errs.push(format!(
+                        "custom_processes['{}'].injected_files: no file at '{}'{from}",
+                        process.name(),
+                        file.local_path.display()
+                    ));
+                },
             }
         }
         if let Some(limit) = capabilities.injected_files_limit {

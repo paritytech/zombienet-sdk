@@ -299,20 +299,13 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
-        let namespace = self.namespace_name();
-        let secrets = async {
-            check_secrets(&self.k8s_client, &namespace, secret_env)
-                .await
-                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))
-        };
-        let config_map = async {
-            if files.is_empty() {
-                Ok(())
-            } else {
-                self.create_files_config_map(files, labels.clone()).await
-            }
-        };
-        try_join!(secrets, config_map)?;
+        // the Secret check first, so a failed one leaves nothing behind
+        check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
+            .await
+            .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))?;
+        if !files.is_empty() {
+            self.create_files_config_map(files, labels.clone()).await?;
+        }
 
         // Create pod
         let pod_spec = PodSpecBuilder::build(
@@ -1073,6 +1066,12 @@ where
             .delete_pod(&self.namespace_name(), &self.name)
             .await
             .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
+        if !self.wrapper {
+            self.k8s_client
+                .delete_config_map(&self.namespace_name(), &files_config_map_name(&self.name))
+                .await
+                .map_err(|err| ProviderError::KillNodeFailed(self.name.to_string(), err.into()))?;
+        }
 
         if let Some(namespace) = self.namespace.upgrade() {
             namespace.nodes.write().await.remove(&self.name);

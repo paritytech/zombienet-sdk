@@ -6,7 +6,7 @@ use std::{
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
+    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Secret, Service, ServiceSpec,
 };
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
@@ -35,6 +35,12 @@ use crate::{constants::LOCALHOST, types::ExecutionResult};
 pub struct Error(#[from] anyhow::Error);
 
 pub type Result<T> = core::result::Result<T, Error>;
+
+pub(super) enum SecretLookup {
+    Found(Box<Secret>),
+    NotFound,
+    Forbidden,
+}
 
 #[derive(Clone)]
 pub struct KubernetesClient {
@@ -112,6 +118,22 @@ impl KubernetesClient {
         Ok(())
     }
 
+    /// `Forbidden` when this identity may not read Secrets, which creating
+    /// a pod that uses one does not need.
+    pub(super) async fn get_secret(&self, namespace: &str, name: &str) -> Result<SecretLookup> {
+        match Api::<Secret>::namespaced(self.inner.clone(), namespace)
+            .get_opt(name)
+            .await
+        {
+            Ok(Some(secret)) => Ok(SecretLookup::Found(Box::new(secret))),
+            Ok(None) => Ok(SecretLookup::NotFound),
+            Err(kube::Error::Api(err)) if err.code == 403 => Ok(SecretLookup::Forbidden),
+            Err(err) => Err(Error::from(anyhow!(
+                "error while getting secret {name}: {err}"
+            ))),
+        }
+    }
+
     pub(super) async fn create_config_map_from_file(
         &self,
         namespace: &str,
@@ -136,14 +158,28 @@ impl KubernetesClient {
             ..Default::default()
         };
 
-        config_maps
+        match config_maps
             .create(&PostParams::default(), &config_map)
             .await
-            .map_err(|err| {
-                Error::from(anyhow!(
+        {
+            Ok(_) => {},
+            // left by an earlier spawn into this namespace, so brought up to date
+            Err(kube::Error::Api(err)) if err.code == 409 => {
+                config_maps
+                    .replace(name, &PostParams::default(), &config_map)
+                    .await
+                    .map_err(|err| {
+                        Error::from(anyhow!(
+                            "error while replacing config map {name} for {file_name}: {err}"
+                        ))
+                    })?;
+            },
+            Err(err) => {
+                return Err(Error::from(anyhow!(
                     "error while creating config map {name} for {file_name}: {err}"
-                ))
-            })?;
+                )))
+            },
+        }
 
         self.wait_created(config_maps, name).await?;
 
@@ -199,11 +235,18 @@ impl KubernetesClient {
         Ok(pod)
     }
 
-    pub(super) async fn pod_logs(&self, namespace: &str, name: &str) -> Result<String> {
+    /// The logs of the pod's main container, or of `container`.
+    pub(super) async fn pod_logs(
+        &self,
+        namespace: &str,
+        name: &str,
+        container: Option<&str>,
+    ) -> Result<String> {
         Api::<Pod>::namespaced(self.inner.clone(), namespace)
             .logs(
                 name,
                 &LogParams {
+                    container: container.map(str::to_string),
                     pretty: true,
                     timestamps: true,
                     ..Default::default()

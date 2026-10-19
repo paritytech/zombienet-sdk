@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 use anyhow::Context;
 use configuration::{
     types::{JamNodeMode, Port},
-    CustomProcess, GlobalSettings, ReadyTarget,
+    CustomProcess, EnvValue, GlobalSettings, ReadyTarget,
 };
 use jam_std_common::hash_raw;
 use provider::{
@@ -12,7 +12,9 @@ use provider::{
         RPC_WS_PORT,
     },
     shared::helpers::running_in_ci,
-    types::{NodeRole, ReadinessProbe, ReadinessTarget, SpawnNodeOptions, TransferedFile},
+    types::{
+        NodeRole, ReadinessProbe, ReadinessTarget, SecretEnvVar, SpawnNodeOptions, TransferedFile,
+    },
     DynNamespace, DynNode, ProviderNamespace,
 };
 use support::{
@@ -379,8 +381,14 @@ where
     ))
 }
 
-/// The `args` and `env` of a custom process, placeholders resolved.
-type ResolvedArgsAndEnv = (Vec<String>, Vec<(String, String)>);
+/// The args and env of a custom process, placeholders resolved.
+#[derive(Debug)]
+struct ResolvedInputs {
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    /// Read from kubernetes Secrets, nothing in it to resolve.
+    secret_env: Vec<SecretEnvVar>,
+}
 
 /// The args and env of `custom_process` with every `{{ZOMBIE:<name>:<field>}}`
 /// resolved against `context`: the nodes as the orchestrator keeps them, and
@@ -391,7 +399,7 @@ type ResolvedArgsAndEnv = (Vec<String>, Vec<(String, String)>);
 fn resolve_placeholders(
     custom_process: &CustomProcess,
     context: &serde_json::Value,
-) -> Result<ResolvedArgsAndEnv, anyhow::Error> {
+) -> Result<ResolvedInputs, anyhow::Error> {
     let name = custom_process.name();
     let resolve = |text: &str| -> Result<String, anyhow::Error> {
         let resolved = apply_running_network_replacements(text, context);
@@ -414,13 +422,24 @@ fn resolve_placeholders(
         .flat_map(|arg| arg.to_vec())
         .map(|arg| resolve(&arg))
         .collect::<Result<Vec<_>, _>>()?;
-    let env = custom_process
-        .env()
-        .iter()
-        .map(|var| Ok((var.name.clone(), resolve(&var.value)?)))
-        .collect::<Result<Vec<_>, anyhow::Error>>()?;
+    let mut env = vec![];
+    let mut secret_env = vec![];
+    for var in custom_process.env() {
+        match &var.value {
+            EnvValue::Value(value) => env.push((var.name.clone(), resolve(value)?)),
+            EnvValue::Secret { name: secret, key } => secret_env.push(SecretEnvVar {
+                name: var.name.clone(),
+                secret: secret.clone(),
+                key: key.clone(),
+            }),
+        }
+    }
 
-    Ok((args, env))
+    Ok(ResolvedInputs {
+        args,
+        env,
+        secret_env,
+    })
 }
 
 /// A custom process with its ports parked, ready to spawn.
@@ -530,7 +549,12 @@ pub(crate) async fn spawn_process(
     let capabilities = ns.capabilities();
     let name = custom_process.name();
 
-    let (args, env) = resolve_placeholders(custom_process, nodes_by_name)?;
+    let ResolvedInputs {
+        args,
+        env,
+        secret_env,
+    } = resolve_placeholders(custom_process, nodes_by_name)?;
+    let files = custom_process.injected_files().to_vec();
 
     // On docker a published port answers for the proxy, so a tcp check there
     // proves nothing; said once, at spawn, where the config can still change.
@@ -567,6 +591,8 @@ pub(crate) async fn spawn_process(
     let spawn_ops = SpawnNodeOptions::new(name, custom_process.command().as_str())
         .args(&args)
         .env(env)
+        .secret_env(secret_env)
+        .injected_files(files)
         .ports(resolved_ports.iter().map(|(n, p)| (n.as_str(), *p)))
         // only docker publishes ports; k8s and native ignore the mapping
         .port_mapping(host_ports.clone())
@@ -601,10 +627,8 @@ pub(crate) async fn spawn_process(
         port.drop_listener();
     }
 
-    let running_node = ns
-        .spawn_node(&spawn_ops)
-        .await
-        .with_context(|| format!("Failed to spawn node: {name} with opts: {:#?}", spawn_ops))?;
+    // the provider's error names the process and says why
+    let running_node = ns.spawn_node(&spawn_ops).await?;
 
     // From here on the process runs. Nothing below may lose it: a port we
     // cannot reach from here is reported by its in-network address instead.
@@ -841,7 +865,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use configuration::CustomProcessBuilder;
+    use configuration::{CustomProcessBuilder, ProcessEnvVar};
 
     use super::*;
 
@@ -855,8 +879,9 @@ mod tests {
                 "--rpc-external".into(),
             ])
             .with_env(vec![
-                ("RUST_LOG", "info"),
-                ("UPSTREAM", "{{ZOMBIE:asset-hub-1:ws_uri}}"),
+                ("RUST_LOG", "info").into(),
+                ("UPSTREAM", "{{ZOMBIE:asset-hub-1:ws_uri}}").into(),
+                ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
             ])
             .with_named_port("http", 0)
             .build()
@@ -878,8 +903,11 @@ mod tests {
 
     #[test]
     fn placeholders_resolve_nodes_and_own_ports() {
-        let (args, env) =
-            resolve_placeholders(&eth_rpc(), &context(&[("http".into(), 8545)])).unwrap();
+        let ResolvedInputs {
+            args,
+            env,
+            secret_env,
+        } = resolve_placeholders(&eth_rpc(), &context(&[("http".into(), 8545)])).unwrap();
 
         assert_eq!(
             args,
@@ -897,6 +925,14 @@ mod tests {
                 ("RUST_LOG".to_string(), "info".to_string()),
                 ("UPSTREAM".to_string(), "ws://127.0.0.1:51234".to_string()),
             ]
+        );
+        assert_eq!(
+            secret_env,
+            vec![SecretEnvVar {
+                name: "TURN_SECRET".into(),
+                secret: "turn".into(),
+                key: "secret".into(),
+            }]
         );
     }
 

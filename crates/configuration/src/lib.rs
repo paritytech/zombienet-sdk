@@ -87,8 +87,8 @@ pub mod shared;
 mod utils;
 
 pub use custom_process::{
-    CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, NamedPort, ReadyCheck,
-    ReadyTarget, MAX_TIMEOUT_SECS,
+    CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, EnvValue, NamedPort,
+    ProcessEnvVar, ReadyCheck, ReadyTarget, MAX_TIMEOUT_SECS,
 };
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
@@ -102,4 +102,4 @@ pub use parachain::{
 };
 pub use relaychain::{RelaychainConfig, RelaychainConfigBuilder};
 // re-export shared
-pub use shared::{node::NodeConfig, types};
+pub use shared::{node::NodeConfig, types, types::TransferedFile};

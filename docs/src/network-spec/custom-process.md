@@ -49,7 +49,8 @@ let cp = CustomProcessBuilder::new()
     .with_command("/usr/local/bin/start_ipfs")
     .with_image("docker.io/ipfs/kubo:v0.39.0")
     .with_args(vec!["daemon".into()])
-    .with_env(vec![("IPFS_PATH", "/data/ipfs")])
+    .with_env(vec![("IPFS_PATH", "/data/ipfs"), ("IPFS_SWARM_KEY_FILE", "/etc/ipfs/swarm.key")])
+    .with_injected_file(TransferedFile::new("./ipfs/swarm.key", "/etc/ipfs/swarm.key"))
     .with_named_port("api", 5001)
     .with_named_port("gateway", 8080)
     .with_resources(|r| r.with_limit_cpu("500m").with_limit_memory("512Mi"))
@@ -62,7 +63,7 @@ let cp = CustomProcessBuilder::new()
 
 ### Placeholders
 
-The `args` and `env` values of a process may refer to the nodes, which are all running by then, with the same `{{ZOMBIE:<node-name>:<field>}}` placeholders node args use: `ws_uri`, `internal_ws_uri` (the address other members of the network use, which is what a process wants), `multiaddr`, `prometheus_uri` for a substrate node, `rpc_uri` and `peer_addr` for a JAM node. On docker a node's addresses are host addresses, so a process in a container reaches a node only through the host (`host.docker.internal` on Docker Desktop). They may also refer to any custom process's ports, their own or another's, as `{{ZOMBIE:<process-name>:port_<port-name>}}`, since every port is picked before anything starts (see Lifecycle). A placeholder that resolves to nothing (a node or port that does not exist) means the process is never started, which fails the spawn unless the process is allowed to fail (see Lifecycle).
+The `args` and `env` values of a process may refer to the nodes, which are all running by then, with the same `{{ZOMBIE:<node-name>:<field>}}` placeholders node args use: `ws_uri`, `internal_ws_uri` (the address other members of the network use, which is what a process wants), `multiaddr`, `prometheus_uri` for a substrate node, `rpc_uri` and `peer_addr` for a JAM node. On docker a node's addresses are host addresses, so a process in a container reaches a node only through the host (`host.docker.internal` on Docker Desktop). They may also refer to any custom process's ports, their own or another's, as `{{ZOMBIE:<process-name>:port_<port-name>}}`, since every port is picked before anything starts (see Lifecycle). A placeholder that resolves to nothing (a node or port that does not exist) means the process is never started, which fails the spawn (see Lifecycle).
 
 ### Ports
 
@@ -115,6 +116,37 @@ Processes start at most `spawn_concurrency` at a time, the value as set, where n
 
 A process may name another's port the way it names its own, `{{ZOMBIE:<process>:port_<name>}}`, since every port is picked before anything starts. The host part of the address is the other process's name on kubernetes and the host itself on native; on docker the containers have no names for each other, so the placeholder is of little use there.
 
+### Injected files
+
+`injected_files` puts files in place before the process starts, the way a node gets its chain spec: `local_path` on the host running zombienet (a path starting with `.` is resolved against the TOML's directory, as `command` is), `remote_path` where the process reads it, an absolute path to a file, unique within the process and written plainly (no `.`, `..` or `//`), not inside another injected file's path and not one of the directories every process gets (`/cfg`, `/data`, `/relay-data`) nor under `/scripts` or `/helpers`, which the containers share, `mode` its permissions in octal (`0644` unless set, at most `0777`). A local file that is not there is rejected before anything spawns. On docker and kubernetes a parent directory that is not in the image is created for the mount, owned by root, so a file goes next to what a non-root process writes, not inside it.
+
+```toml
+[[custom_processes]]
+name = "migrate"
+image = "docker.io/library/postgres:16"
+command = "psql"
+args = [ "-h", "db", "-f", "/schema/init.sql" ]
+one_shot = true
+injected_files = [ { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" } ]
+```
+
+On docker each file is bind-mounted into the container and on kubernetes an init container fetches the files from the network's fileserver into a volume the container mounts them from, read-only in both cases, so they are in place before the container starts whatever the image is. On native the file is copied under the process's own directory in `base_dir`, read-only as well, and its `remote_path` wherever it stands in `command`, `args` and `env` becomes that full path, so the one config works on every provider and a `command` may be an injected script.
+
+### Secrets
+
+On kubernetes an `env` value may come from a `Secret` in the namespace instead of the config: `{ name = "TURN_SECRET", secret = { name = "turn", key = "secret" } }` sets `TURN_SECRET` to the `secret` key of the Secret `turn`, as a pod's `valueFrom.secretKeyRef` does, so a credential never passes through the TOML or zombienet. The Secret has to be in the namespace, with that key, when the process is spawned, or the spawn fails naming both; where zombienet itself may not read Secrets that check is skipped with a warning and a missing one shows as the process timing out. A namespace zombienet creates is new, so the Secret goes in one created beforehand and the network is spawned into it with `spawn_k8s_in_namespace`; `destroy` then deletes that namespace, Secret included. `zombie-cli` always creates its namespace, so from the CLI there is no Secret to read. A config with such an entry is rejected on native and docker before anything spawns.
+
+```toml
+[[custom_processes]]
+name = "api"
+image = "example/api:1.0"
+command = "api"
+env = [
+    { name = "RUST_LOG", value = "info" },
+    { name = "TURN_SECRET", secret = { name = "turn", key = "secret" } },
+]
+```
+
 ### Reference
 
 | Option | Type | Default | Description |
@@ -123,7 +155,8 @@ A process may name another's port the way it names its own, `{{ZOMBIE:<process>:
 | `command` | String | — | **Required.** Command to execute; replaces the image's entrypoint |
 | `image` | String | — | Container image |
 | `args` | Array | — | CLI arguments; may use the placeholders above |
-| `env` | Array | — | Environment variables as `{name, value}` pairs; values may use the same placeholders |
+| `env` | Array | — | Environment variables as `{name, value}` pairs, values may use the same placeholders, or `{name, secret = {name, key}}` read from a kubernetes `Secret` (see Secrets) |
+| `injected_files` | Array | — | Files put in place before the process starts, as `{local_path, remote_path, mode}`; `remote_path` absolute, `mode` octal, `0644` unless set (see Injected files) |
 | `ports` | Array | — | TCP ports the process listens on, as `{name, port}` pairs. Names are 1 to 15 lowercase letters, digits or `-`, with a letter, unique per process; `port: 0` is picked at spawn |
 | `resources` | Table | — | CPU/memory `requests` and `limits` (kubernetes only; a warning is logged where ignored), as for nodes |
 | `ready_check` | Table | first port over TCP | `{ tcp = "<port>" }` or `{ http = { port = "<port>", path = "..." } }`, plus `interval` in seconds |

@@ -1,9 +1,44 @@
 use std::{path::PathBuf, time::Instant};
 
-use configuration::{NetworkConfig, NetworkConfigBuilder};
+use configuration::{NetworkConfig, NetworkConfigBuilder, ProcessEnvVar, TransferedFile};
 use futures::{stream::StreamExt, try_join};
+use k8s_openapi::api::core::v1::Secret;
+use kube::api::{Api, PostParams};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
-use zombienet_sdk::environment::{get_attach_fn, get_spawn_fn};
+use zombienet_sdk::{
+    environment::{get_attach_fn, get_provider_from_env, get_spawn_fn, Provider},
+    CustomProcessState,
+};
+
+/// What the `secret-reader` process must find in `TURN_SECRET`, put in the
+/// Secret `turn` of the namespace before the network is spawned.
+const SECRET_VALUE: &str = "only-in-the-namespace";
+
+/// On kubernetes `TURN_SECRET` comes from the Secret `turn`; docker has no
+/// Secrets, so there it is the plain value and only the file is exercised.
+fn turn_secret_env() -> ProcessEnvVar {
+    match get_provider_from_env() {
+        Provider::K8s => ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
+        _ => ("TURN_SECRET", SECRET_VALUE).into(),
+    }
+}
+
+/// The Secret the custom process reads, created ahead of the spawn in the
+/// namespace CI hands the test.
+async fn create_secret(namespace: &str) {
+    let client = kube::Client::try_default().await.unwrap();
+    let mut secret = Secret::default();
+    secret.metadata.name = Some("turn".into());
+    secret.string_data = Some([("secret".to_string(), SECRET_VALUE.to_string())].into());
+    match Api::<Secret>::namespaced(client, namespace)
+        .create(&PostParams::default(), &secret)
+        .await
+    {
+        Ok(_) => {},
+        Err(kube::Error::Api(err)) if err.code == 409 => {},
+        Err(err) => panic!("creating the Secret in {namespace}: {err}"),
+    }
+}
 
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
@@ -35,6 +70,20 @@ fn small_network() -> NetworkConfig {
                 .with_default_image("docker.io/paritypr/test-parachain:master-d0393007")
                 .with_collator(|n| n.with_name("collator-test").with_command("test-parachain"))
         })
+        // A one-shot reading an env value from the Secret and an injected
+        // file, both in place before it starts.
+        .with_custom_process(|c| {
+            let hello = PathBuf::from("/tmp/zombie-1-hello.txt");
+            std::fs::write(&hello, "hello from an injected file\n").unwrap();
+            let check = format!("test \"$TURN_SECRET\" = \"{SECRET_VALUE}\" && cat /opt/hello.txt");
+            c.with_name("secret-reader")
+                .with_command("sh")
+                .with_image("docker.io/library/alpine:3.20")
+                .with_args(vec!["-c".into(), check.as_str().into()])
+                .with_env(vec![turn_secret_env()])
+                .with_injected_file(TransferedFile::new(hello, "/opt/hello.txt"))
+                .with_one_shot()
+        })
         .with_global_settings(|g| {
             g.with_base_dir(PathBuf::from("/tmp/zombie-1"))
                 .with_tear_down_on_failure(false)
@@ -53,10 +102,21 @@ async fn ci_k8s_basic_functionalities_should_works() {
     let config = small_network();
     let spawn_fn = get_spawn_fn();
 
+    if matches!(get_provider_from_env(), Provider::K8s) {
+        create_secret(&std::env::var("ZOMBIE_K8S_CI_NAMESPACE").unwrap()).await;
+    }
     let network = spawn_fn(config).await.unwrap();
 
     let elapsed = now.elapsed();
     println!("🚀🚀🚀🚀 network deployed in {elapsed:.2?}");
+
+    let reader = network.get_custom_process("secret-reader").unwrap();
+    assert_eq!(reader.state(), &CustomProcessState::Completed);
+    let logs = reader.core().logs().await.unwrap();
+    assert!(
+        logs.contains("hello from an injected file"),
+        "secret-reader logs: {logs}"
+    );
 
     // detach and attach to running
     network.detach().await;

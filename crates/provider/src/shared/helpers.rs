@@ -1,8 +1,44 @@
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use anyhow::anyhow;
+use support::fs::FileSystem;
+use tracing::warn;
 
-use crate::{types::RunCommandOptions, DynNode, ProviderError};
+use crate::{
+    types::{RunCommandOptions, TransferedFile},
+    DynNode, ProviderError,
+};
+
+/// A namespace's base dir, `custom` or `<tmp_dir>/<name>`: created if
+/// missing, used as it is with a warning if not (a namespace spawned into
+/// again), and made absolute, since nodes run from their own directory and
+/// docker takes a relative bind-mount source for a named volume.
+pub(crate) async fn namespace_base_dir<FS: FileSystem>(
+    filesystem: &FS,
+    tmp_dir: &Path,
+    name: &str,
+    custom: Option<&Path>,
+) -> Result<PathBuf, ProviderError> {
+    let base_dir = custom.map_or_else(|| tmp_dir.join(name), Path::to_path_buf);
+    if filesystem.exists(&base_dir).await {
+        warn!(
+            "⚠️ Using an existing directory {} as base dir",
+            base_dir.display()
+        );
+    } else {
+        filesystem.create_dir_all(&base_dir).await.map_err(|err| {
+            ProviderError::CreateNamespaceFailed(
+                name.to_string(),
+                anyhow!("can't create base dir {}: {err}", base_dir.display()),
+            )
+        })?;
+    }
+    std::path::absolute(&base_dir)
+        .map_err(|err| ProviderError::CreateNamespaceFailed(name.to_string(), err.into()))
+}
 
 /// Check if we are running in `CI` by checking the 'RUN_IN_CI' env var
 pub fn running_in_ci() -> bool {
@@ -85,6 +121,27 @@ pub fn extract_namespace_info(
             ))?;
 
     Ok((base_dir, name.to_string()))
+}
+
+/// A name for the `index`th injected file of a process: unique by the index,
+/// readable by the file name, within what a volume path or a docker mount
+/// may contain.
+pub(crate) fn injected_file_name(index: usize, file: &TransferedFile) -> String {
+    let name: String = file
+        .remote_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    format!("{index}-{name}")
 }
 
 #[cfg(test)]

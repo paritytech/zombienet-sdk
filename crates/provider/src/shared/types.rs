@@ -5,7 +5,6 @@ use std::{
 };
 
 use configuration::shared::resources::Resources;
-use serde::{Deserialize, Serialize};
 
 pub type Port = u16;
 
@@ -23,6 +22,17 @@ pub struct ProviderCapabilities {
     /// Use default ports in node cmd/args.
     /// NOTE: generally used in k8s/dockers since the images expose those ports.
     pub use_default_ports_in_cmd: bool,
+    /// An env value may be read from a `Secret` in the namespace (k8s).
+    pub has_secrets: bool,
+}
+
+/// An environment variable read from the `key` of the `Secret` named
+/// `secret` in the namespace, by the pod itself (k8s only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretEnvVar {
+    pub name: String,
+    pub secret: String,
+    pub key: String,
 }
 
 /// Role of a node in the network, exposed by providers that support labels
@@ -98,8 +108,11 @@ pub struct SpawnNodeOptions {
     pub args: Vec<String>,
     /// Environment to set when running the `program`
     pub env: Vec<(String, String)>,
+    /// Environment read from `Secret`s in the namespace (k8s only).
+    pub secret_env: Vec<SecretEnvVar>,
     // TODO: rename startup_files
-    /// Files to inject at startup
+    /// Files to inject at startup. On native, where a file's `remote_path`
+    /// stands in `program`, `args` or `env` it becomes the file's full path.
     pub injected_files: Vec<TransferedFile>,
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order
@@ -139,6 +152,7 @@ impl SpawnNodeOptions {
             program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
+            secret_env: vec![],
             injected_files: vec![],
             created_paths: vec![],
             db_snapshot: None,
@@ -242,14 +256,22 @@ impl SpawnNodeOptions {
         self
     }
 
+    pub fn secret_env<I>(mut self, secret_env: I) -> Self
+    where
+        I: IntoIterator<Item = SecretEnvVar>,
+    {
+        self.secret_env = secret_env.into_iter().collect();
+        self
+    }
+
     /// Run `program` directly instead of through the zombie wrapper script.
     ///
     /// The wrapper needs `bash` in the image and is what pause, resume and
     /// restart talk to, so those return an error for a node spawned this way
     /// on docker and kubernetes (native signals the process and needs no
-    /// wrapper). The wrapper also holds the program back until the injected
-    /// files are copied in; without it the program starts at once, so it must
-    /// not need any `injected_files` at startup.
+    /// wrapper). The wrapper holds the program back until the injected files
+    /// are copied in; without it they are mounted in before the program
+    /// starts, read-only.
     pub fn without_wrapper(mut self) -> Self {
         self.wrapper = false;
         self
@@ -445,46 +467,7 @@ impl RunScriptOptions {
     }
 }
 
-// TODO(team): I think we can rename it to FileMap?
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransferedFile {
-    pub local_path: PathBuf,
-    pub remote_path: PathBuf,
-    // TODO: Can be narrowed to have strict typing on this?
-    pub mode: String,
-}
-
-impl TransferedFile {
-    pub fn new<P>(local_path: P, remote_path: P) -> Self
-    where
-        P: AsRef<Path>,
-    {
-        Self {
-            local_path: local_path.as_ref().into(),
-            remote_path: remote_path.as_ref().into(),
-            mode: "0644".to_string(), // default to rw-r--r--
-        }
-    }
-
-    pub fn mode<S>(mut self, mode: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.mode = mode.as_ref().to_string();
-        self
-    }
-}
-
-impl std::fmt::Display for TransferedFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "File to transfer (local: {}, remote: {})",
-            self.local_path.display(),
-            self.remote_path.display()
-        )
-    }
-}
+pub use configuration::TransferedFile;
 
 /// Result of [`ProviderNode::snapshot_db`].
 /// return the filename, hash and bytes of the generated `{node.name}.tgz`

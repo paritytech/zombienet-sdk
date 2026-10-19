@@ -5,9 +5,10 @@ use configuration::{
         helpers::generate_unique_node_name_from_names,
         node::JamNodeConfig,
         resources::Resources,
-        types::{Arg, Chain, Command, Image},
+        types::{Arg, AssetLocation, Chain, Command, Image},
     },
-    JamchainConfig,
+    types::JamProtocolParameterType,
+    JamGenesisConfig, JamchainConfig,
 };
 use serde::{Deserialize, Serialize};
 use support::replacer::apply_replacements;
@@ -17,6 +18,18 @@ use crate::{
     network_spec::jamnode::JamNodeSpec,
     shared::{constants::DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND, types::ChainDefaultContext},
 };
+
+/// How the chain spec of a JAM chain is produced.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum JamChainSpecSource {
+    /// A pre-existing JIP-4 spec, used as given.
+    Path(AssetLocation),
+    /// An external `<cmd> gen-spec <config> <spec>`, opted into with `chain_spec_command` or
+    /// `genesis_overrides`.
+    Generator { command: String },
+    /// Built in process by `jam-chainspec`. The default.
+    JamBuilder(Box<JamGenesisConfig>),
+}
 
 /// A relaychain configuration spec
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,10 +49,11 @@ pub struct JamchainSpec {
     /// Default arguments to use in nodes. Can be overridden on each node.
     pub(crate) default_args: Vec<Arg>,
 
-    // chain_spec_path: Option<AssetLocation>,
-    // pub(crate) chain_spec: ChainSpec,
-    /// Chain-spec generator resolved
-    pub chain_spec_command: String,
+    /// Protocol parameters preset.
+    pub(crate) protocol_params_type: JamProtocolParameterType,
+
+    /// How the chain spec is produced.
+    pub chain_spec_source: JamChainSpecSource,
 
     /// Nodes to run.
     pub(crate) nodes: Vec<JamNodeSpec>,
@@ -71,24 +85,13 @@ impl JamchainSpec {
             ));
         }
 
+        let chain_spec_source = Self::chain_spec_source(config, main_cmd)?;
+
         // TODO: support podman/docker/k8s
         // let main_image = config
         //     .default_image()
         //     .or(config.nodes().first().and_then(|node| node.image()))
         //     .map(|image| image.as_str().to_string());
-
-        let replacements = HashMap::from([
-            ("mainCommand", main_cmd.as_str()),
-            ("subCommand", "gen-spec"),
-        ]);
-
-        let chain_spec_cmd_augmented = if let Some(tmpl) = config.chain_spec_command() {
-            apply_replacements(tmpl.as_str(), &replacements)
-        } else {
-            apply_replacements(DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND, &replacements)
-        };
-
-        // TODO: handle chain-spec build/customization
 
         // build the `node_specs`
         let chain_context = ChainDefaultContext {
@@ -135,10 +138,62 @@ impl JamchainSpec {
             default_image: config.default_image().cloned(),
             default_resources: config.default_resources().cloned(),
             default_args: config.default_args().into_iter().cloned().collect(),
-            chain_spec_command: chain_spec_cmd_augmented,
+            protocol_params_type: config.protocol_params_type().clone(),
+            chain_spec_source,
             nodes,
             genesis_overrides: config.genesis_overrides().cloned(),
         })
+    }
+
+    /// Pick how the spec is produced: a given spec, an external generator when one is asked
+    /// for, or else the built-in builder.
+    fn chain_spec_source(
+        config: &JamchainConfig,
+        main_cmd: &Command,
+    ) -> Result<JamChainSpecSource, OrchestratorError> {
+        let generator_field = if config.chain_spec_command().is_some() {
+            Some("chain_spec_command")
+        } else if config.genesis_overrides().is_some() {
+            Some("genesis_overrides")
+        } else {
+            None
+        };
+
+        // The configuration crate refuses these too, this keeps hand-built configs honest.
+        if let (Some(field), Some(_)) = (generator_field, config.genesis()) {
+            return Err(OrchestratorError::InvalidConfig(format!(
+                "Jamchain, `genesis` can't be used with `{field}`."
+            )));
+        }
+
+        if let Some(path) = config.chain_spec_path() {
+            if config.genesis().is_some() || generator_field.is_some() {
+                return Err(OrchestratorError::InvalidConfig(
+                    "Jamchain, `chain_spec_path` can't be used with `genesis`, \
+                     `chain_spec_command` or `genesis_overrides`."
+                        .to_string(),
+                ));
+            }
+            return Ok(JamChainSpecSource::Path(path.clone()));
+        }
+
+        if generator_field.is_some() {
+            let replacements = HashMap::from([
+                ("mainCommand", main_cmd.as_str()),
+                ("subCommand", "gen-spec"),
+            ]);
+            let tmpl = config
+                .chain_spec_command()
+                .map(|cmd| cmd.as_str())
+                .unwrap_or(DEFAULT_JAM_CHAIN_SPEC_TPL_COMMAND);
+            return Ok(JamChainSpecSource::Generator {
+                command: apply_replacements(tmpl, &replacements),
+            });
+        }
+
+        Ok(JamChainSpecSource::JamBuilder(Box::new(
+            config.genesis().cloned().unwrap_or_default(),
+        )))
     }
 
     // pub fn chain_spec(&self) -> &ChainSpec {
@@ -171,7 +226,12 @@ mod tests {
 
         let spec = JamchainSpec::from_config(&config).expect("the spec builds");
 
-        assert_eq!(spec.chain_spec_command, "/bin/spec-binary");
+        assert_eq!(
+            spec.chain_spec_source,
+            JamChainSpecSource::Generator {
+                command: "/bin/spec-binary".into()
+            }
+        );
     }
 
     /// The override is merged key by key into the generated config, so anything but an object
@@ -192,10 +252,9 @@ mod tests {
         assert!(error.to_string().contains("genesis_overrides"), "{error}");
     }
 
-    /// With nothing named, the node binary generates its own spec — which is the arrangement
-    /// every existing user has.
+    /// With nothing named, zombienet builds the spec itself, with the default genesis.
     #[test]
-    fn the_node_binary_generates_its_own_spec_by_default() {
+    fn the_spec_is_built_in_process_by_default() {
         let config = JamchainConfigBuilder::new(Default::default())
             .with_id("dev")
             .with_default_command("/bin/node-binary")
@@ -205,6 +264,68 @@ mod tests {
 
         let spec = JamchainSpec::from_config(&config).expect("the spec builds");
 
-        assert_eq!(spec.chain_spec_command, "/bin/node-binary gen-spec");
+        assert_eq!(
+            spec.chain_spec_source,
+            JamChainSpecSource::JamBuilder(Box::default())
+        );
+    }
+
+    /// The overrides only mean something to an external generator, so they pick it, with the
+    /// node binary's own `gen-spec`.
+    #[test]
+    fn genesis_overrides_pick_the_node_binary_generator() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_default_command("/bin/node-binary")
+            .with_validator(|node| node.with_name("jam0"))
+            .with_genesis_overrides(serde_json::json!({}))
+            .build()
+            .expect("the chain config builds");
+
+        let spec = JamchainSpec::from_config(&config).expect("the spec builds");
+
+        assert_eq!(
+            spec.chain_spec_source,
+            JamChainSpecSource::Generator {
+                command: "/bin/node-binary gen-spec".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_genesis_customizes_the_built_in_builder() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_bootstrap_service("/blobs/bootstrap.jam")
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        let spec = JamchainSpec::from_config(&config).expect("the spec builds");
+
+        let JamChainSpecSource::JamBuilder(genesis) = spec.chain_spec_source else {
+            panic!("expected the built-in builder");
+        };
+        assert_eq!(
+            genesis.bootstrap_service(),
+            Some(&AssetLocation::from("/blobs/bootstrap.jam"))
+        );
+    }
+
+    #[test]
+    fn a_chain_spec_path_is_used_as_given() {
+        let config = JamchainConfigBuilder::new(Default::default())
+            .with_id("dev")
+            .with_chain_spec_path("/specs/jam.json")
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        let spec = JamchainSpec::from_config(&config).expect("the spec builds");
+
+        assert_eq!(
+            spec.chain_spec_source,
+            JamChainSpecSource::Path("/specs/jam.json".into())
+        );
     }
 }

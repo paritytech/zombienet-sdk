@@ -88,10 +88,17 @@ walkdir = "2.5"
 codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive"] }
 socket2 = "0.6.5"
 mockito = "1.7"
+tempfile = "3"
 
 # JAM
-jam-std-common = "0.1.28"
-jam-types = "0.1.28"
+jam-std-common = "0.1.29"
+jam-types = "0.1.29"
+jam-chainspec = "0.1.29"
+jam-null-authorizer-bin = "0.1.29"
+# Built into the embedded bootstrap service blob, see `crates/orchestrator/build.rs`.
+jam-bootstrap-service = "=0.1.29"
+cargo-jam-build = "0.1.29"
+cargo_metadata = "0.19"
 
 
 # Zombienet workspace crates:

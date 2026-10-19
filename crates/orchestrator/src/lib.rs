@@ -25,7 +25,7 @@ use std::{
 use anyhow::anyhow;
 use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
 use errors::OrchestratorError;
-use generators::{core_assignment, errors::GeneratorError, jam_config};
+use generators::{core_assignment, errors::GeneratorError, jam_chain_spec, jam_config};
 use network::{
     node::{NetworkNode, SpawnedNode},
     parachain::Parachain,
@@ -34,7 +34,11 @@ use network::{
 };
 // re-exported
 pub use network_spec::NetworkSpec;
-use network_spec::{jamchain::JamchainSpec, node::NodeSpec, parachain::ParachainSpec};
+use network_spec::{
+    jamchain::{JamChainSpecSource, JamchainSpec},
+    node::NodeSpec,
+    parachain::ParachainSpec,
+};
 use provider::{
     types::{GenerateFileCommand, NodeRole, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
@@ -786,34 +790,57 @@ where
         let base_dir = ns.base_dir().to_string_lossy().to_string();
         let scoped_fs = ScopedFilesystem::new(&self.filesystem, &base_dir);
 
-        // generate config
-        let jam_config = jam_config::generate(jam_spec)?;
-        // store the config file
-        scoped_fs
-            .write(
-                "jam_config.json",
-                serde_json::to_string_pretty(&jam_config)?,
-            )
-            .await?;
-        // generate spec
-        let cmd_parts: Vec<&str> = jam_spec.chain_spec_command.split(" ").collect();
-        let cmd = cmd_parts
-            .first()
-            .expect("jam chain-spec generator cmd should be valid");
-        let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
         let jam_spec_full_path = format!("{}/{}", base_dir, "jam_spec.json");
-        let args = vec![
-            "gen-spec",
-            jam_config_full_path.as_str(),
-            jam_spec_full_path.as_str(),
-        ];
-        let generate_command = GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
-        generators::chain_spec::build_locally(
-            generate_command,
-            &scoped_fs,
-            Some(&PathBuf::from(&jam_spec_full_path)),
-        )
-        .await?;
+        match &jam_spec.chain_spec_source {
+            JamChainSpecSource::Path(location) => {
+                info!("📜 using JAM chain spec {location}");
+                let spec = location.get_asset().await.map_err(|e| {
+                    GeneratorError::ChainSpecGeneration(format!("JAM chain spec {location}: {e}"))
+                })?;
+                scoped_fs.write("jam_spec.json", spec).await?;
+            },
+            JamChainSpecSource::JamBuilder(genesis) => {
+                info!("🛠️ building the JAM chain spec in process");
+                let built = jam_chain_spec::build(jam_spec, genesis).await?;
+                scoped_fs.write("jam_spec.json", built.spec).await?;
+                scoped_fs
+                    .write(
+                        "jam_genesis.json",
+                        serde_json::to_string_pretty(&built.summary)?,
+                    )
+                    .await?;
+            },
+            JamChainSpecSource::Generator { command } => {
+                // generate config
+                let jam_config = jam_config::generate(jam_spec)?;
+                // store the config file
+                scoped_fs
+                    .write(
+                        "jam_config.json",
+                        serde_json::to_string_pretty(&jam_config)?,
+                    )
+                    .await?;
+                // generate spec
+                let cmd_parts: Vec<&str> = command.split(" ").collect();
+                let cmd = cmd_parts
+                    .first()
+                    .expect("jam chain-spec generator cmd should be valid");
+                let jam_config_full_path = format!("{}/{}", base_dir, "jam_config.json");
+                let args = vec![
+                    "gen-spec",
+                    jam_config_full_path.as_str(),
+                    jam_spec_full_path.as_str(),
+                ];
+                let generate_command =
+                    GenerateFileCommand::new(cmd, jam_spec_full_path.clone()).args(args);
+                generators::chain_spec::build_locally(
+                    generate_command,
+                    &scoped_fs,
+                    Some(&PathBuf::from(&jam_spec_full_path)),
+                )
+                .await?;
+            },
+        }
 
         // Create parachain artifacts (chain-spec, wasm, state). The parachains are anchored
         // to the JAM chain, so its id is the one written into their chain-spec.

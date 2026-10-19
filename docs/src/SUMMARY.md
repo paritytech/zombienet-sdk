@@ -9,6 +9,7 @@
   - [Global Settings](./network-spec/global-settings.md)
   - [Relaychain](./network-spec/relaychain.md)
   - [Parachain](./network-spec/parachain.md)
+  - [JAM chain](./network-spec/jamchain.md)
   - [Node](./network-spec/node.md)
   - [HRMP Channels](./network-spec/hrmp-channels.md)
   - [Custom Processes](./network-spec/custom-process.md)

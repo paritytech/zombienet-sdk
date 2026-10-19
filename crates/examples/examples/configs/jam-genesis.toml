@@ -1,0 +1,56 @@
+# A JAM network whose chain spec zombienet builds itself (the default), with a genesis of its
+# own on top of the defaults (the embedded bootstrap service as service 0, and the null
+# authorizer on every core).
+#
+# Paths are relative to this file; any of them can be a url instead.
+
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+protocol_params_type = "tiny"
+
+[jamchain.genesis]
+# Use another bootstrap service than the embedded one:
+# bootstrap_service = "./blobs/jam-bootstrap-service.jam"
+
+[jamchain.genesis.services.5]
+code = "./blobs/my-service.jam"
+balance = "min+1000000"
+preimages = ["./blobs/my-authorizer.jam"]
+storage = { "0x6772656574696e67" = "0x68656c6c6f" } # "greeting" = "hello"
+
+[jamchain.genesis.auth_queues]
+# Core 0 takes work packages authorized by `my-authorizer.jam`, core 1 keeps the null authorizer.
+0 = [{ code = "./blobs/my-authorizer.jam" }]
+
+[jamchain.genesis.privileges]
+# Service 5 may re-authorize core 0 from its accumulate.
+assign = { 0 = 5 }
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam1"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam2"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam3"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam4"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam5"
+mode = "validator"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"

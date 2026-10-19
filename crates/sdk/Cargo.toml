@@ -34,10 +34,25 @@ orchestrator = { workspace = true }
 provider = { workspace = true }
 support = { workspace = true }
 
+[features]
+default = []
+# Embed the JAM bootstrap service (see `zombienet-orchestrator`'s `jam` feature).
+jam = ["orchestrator/jam"]
+
 [dev-dependencies]
+tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 kube = { workspace = true, features = ["ws", "runtime"] }
 k8s-openapi = { workspace = true, features = ["v1_27"] }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 tracing = { workspace = true }
+
+# The JAM smoke tests building the spec with the embedded bootstrap service.
+[[test]]
+name = "jam-smoke-native"
+required-features = ["jam"]
+
+[[test]]
+name = "jam-smoke-genesis-native"
+required-features = ["jam"]

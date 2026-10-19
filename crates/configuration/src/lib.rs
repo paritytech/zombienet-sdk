@@ -78,6 +78,7 @@
 mod custom_process;
 mod global_settings;
 mod hrmp_channel;
+mod jam_genesis;
 mod jamchain;
 mod network;
 mod observability;
@@ -89,6 +90,11 @@ mod utils;
 pub use custom_process::{CustomProcess, CustomProcessBuilder};
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
+pub use jam_genesis::{
+    JamAmount, JamAuthorizer, JamBalance, JamBytes, JamCoreIndex, JamGenesisConfig,
+    JamGenesisConfigBuilder, JamGenesisPrivileges, JamGenesisService, JamGenesisServiceBuilder,
+    JamServiceId, JAM_BOOTSTRAP_SERVICE_ID,
+};
 pub use jamchain::{JamchainConfig, JamchainConfigBuilder};
 pub use network::{Buildable, NetworkConfig, NetworkConfigBuilder};
 pub use observability::{ObservabilityConfig, ObservabilityConfigBuilder};

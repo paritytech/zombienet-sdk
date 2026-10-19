@@ -39,7 +39,7 @@ jobs:
         run: cargo +nightly fmt --check --all
 
       - name: Init install
-        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy
+        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }} && rustup component add clippy rust-src
 
       - name: Fetch cache
         uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
@@ -55,6 +55,10 @@ jobs:
 
       - name: Tests
         run: cargo test --workspace -- --skip ci_ --skip polkadot_local_with_chain_spec_runtime --skip rococo_local_with_omni_node_and_wasm_runtime
+
+      # The `jam` feature builds the embedded JAM bootstrap service (needs `rust-src`).
+      - name: Test JAM spec building with the embedded bootstrap service
+        run: cargo test -p zombienet-orchestrator --features jam --lib jam_
 
   # TODO: fix and re-enable
   # coverage:

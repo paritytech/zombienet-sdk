@@ -47,6 +47,8 @@ socket2 = { workspace = true }
 # JAM
 jam-std-common = { workspace = true }
 jam-types = { workspace = true }
+jam-chainspec = { workspace = true }
+jam-null-authorizer-bin = { workspace = true }
 
 # Zombienet deps
 configuration = { workspace = true }
@@ -54,7 +56,22 @@ support = { workspace = true }
 provider = { workspace = true }
 prom-metrics-parser = { workspace = true }
 
+[build-dependencies]
+# The crate the embedded bootstrap service blob is built from (see `build.rs`), with the `jam`
+# feature.
+jam-bootstrap-service = { workspace = true, optional = true }
+cargo-jam-build = { workspace = true, optional = true }
+cargo_metadata = { workspace = true, optional = true }
+
+[features]
+default = []
+# Embed the JAM bootstrap service, built from the `jam-bootstrap-service` crate, so a JAM chain
+# spec can be built in process without any external file. Building it needs the `rust-src`
+# component of the toolchain.
+jam = ["dep:jam-bootstrap-service", "dep:cargo-jam-build", "dep:cargo_metadata"]
+
 [dev-dependencies]
+tempfile = { workspace = true }
 toml = { workspace = true }
 async-trait = { workspace = true }
 lazy_static = { workspace = true }

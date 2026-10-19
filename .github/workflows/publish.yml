@@ -2,25 +2,43 @@ name: Publish to crates.io
 
 on:
   release:
-    types: [published]
+    types:
+      - published
 
 jobs:
-  check-publish:
+  publish:
+    name: Package & publish to crates.io
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+      # Packages (and build-verifies) the crates in YOUR CI.
+      # Use `-p <crate>` flags or `--exclude` to control which
+      # workspace members get packaged.
+      - name: Cargo package
+        run: cargo package --workspace
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          name: crates
+          path: target/package/*.crate
+          override: true
 
-      - name: install parity-publish
-        run: cargo install parity-publish@0.10.6 --locked -q
+      - name: Generate content write token
+        id: generate-content-write-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.CRATES_NPM_PUBLISHING_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CRATES_NPM_PUBLISHING_APP_PRIVATE_KEY }}
+          owner: paritytech
 
-      - name: parity-publish check
-        run: parity-publish --color always check --allow-unpublished
-
-        # TODO: remove dry-run once we confirm everything works as expected
-      - name: parity-publish dry-run
-        run: parity-publish --color always apply --dry-run
+      - name: Trigger publishing in the crates_publish_automation repo
+        uses: octokit/request-action@b91aabaa861c777dcdb14e2387e30eddf04619ae #v3.0.0
+        with:
+          route: POST /repos/paritytech/crates_publish_automation/actions/workflows/publish.yml/dispatches
+          ref: main
+          inputs: '${{ format(''{{ "repo": "{0}", "run_id": "{1}" }}'', github.repository, github.run_id) }}'
+        env:
+          GITHUB_TOKEN: ${{steps.generate-content-write-token.outputs.token }}

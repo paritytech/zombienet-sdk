@@ -15,11 +15,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libssl-dev build-essential
+
       # Packages (and build-verifies) the crates in YOUR CI.
       # Use `-p <crate>` flags or `--exclude` to control which
       # workspace members get packaged.
       - name: Cargo package
-        run: cargo package --workspace
+        run: |
+          cargo package \
+            -p zombienet-support \
+            -p zombienet-prom-metrics-parser \
+            -p zombienet-configuration \
+            -p zombienet-provider \
+            -p zombienet-orchestrator \
+            -p zombienet-sdk \
+            -p zombie-cli
 
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1

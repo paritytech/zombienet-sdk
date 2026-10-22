@@ -20,6 +20,9 @@ pub enum ConfigError {
 
     #[error("collators['{0}'].{1}")]
     Collator(String, anyhow::Error),
+
+    #[error("custom_processes['{0}'].{1}")]
+    CustomProcess(String, anyhow::Error),
 }
 
 /// An error at the field level.
@@ -52,6 +55,9 @@ pub enum FieldError {
     #[error("genesis_state_generator: {0}")]
     GenesisStateGenerator(anyhow::Error),
 
+    #[error("genesis_patch: {0}")]
+    GenesisPatch(anyhow::Error),
+
     #[error("local_ip: {0}")]
     LocalIp(anyhow::Error),
 
@@ -60,6 +66,15 @@ pub enum FieldError {
 
     #[error("resources.{0}")]
     Resources(anyhow::Error),
+
+    #[error("ready_check: {0}")]
+    ReadyCheck(anyhow::Error),
+
+    #[error("depends_on: {0}")]
+    DependsOn(anyhow::Error),
+
+    #[error("timeout: {0}")]
+    Timeout(anyhow::Error),
 
     #[error("request_memory: {0}")]
     RequestMemory(anyhow::Error),
@@ -90,6 +105,15 @@ pub enum FieldError {
 
     #[error("registration_strategy: {0}")]
     RegistrationStrategy(anyhow::Error),
+
+    #[error("ports: {0}")]
+    Ports(anyhow::Error),
+
+    #[error("env: {0}")]
+    Env(anyhow::Error),
+
+    #[error("injected_files: {0}")]
+    InjectedFiles(anyhow::Error),
 }
 
 /// A conversion error for shared types across fields.

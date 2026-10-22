@@ -15,6 +15,7 @@ use configuration::types::AssetLocation;
 use flate2::read::GzDecoder;
 use futures::future::try_join_all;
 use nix::{
+    errno::Errno,
     sys::signal::{kill, Signal},
     unistd::Pid,
 };
@@ -40,7 +41,8 @@ use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     native,
     types::{
-        ExecutionResult, InnerSnapshotDb, RunCommandOptions, RunScriptOptions, TransferedFile,
+        ExecutionResult, InnerSnapshotDb, ProcessStatus, RunCommandOptions, RunScriptOptions,
+        TransferedFile,
     },
     ProviderError, ProviderNode,
 };
@@ -60,6 +62,8 @@ where
     pub(super) db_snapshot: Option<&'a Path>,
     pub(super) filesystem: &'a FS,
     pub(super) node_log_path: Option<&'a PathBuf>,
+    /// Through zombienet's wrapper, as a node, or `program` directly.
+    pub(super) wrapper: bool,
 }
 
 impl<'a, FS> NativeNodeOptions<'a, FS>
@@ -84,6 +88,8 @@ where
             db_snapshot: None,
             filesystem,
             node_log_path: deserializable.node_log_path.as_ref(),
+            // nothing to send to a process attached by pid
+            wrapper: true,
         }
     }
 }
@@ -168,12 +174,30 @@ where
         )?;
         trace!("created!");
 
+        // An injected file lands under `base_dir`, so where its `remote_path`
+        // stands in the program, args or env it becomes that path. A node's
+        // paths come from the orchestrator already prefixed, so nothing of a
+        // node's matches.
+        let mut program = options.program.to_string();
+        let mut args = options.args.to_vec();
+        let mut env = options.env.to_vec();
+        for file in options.startup_files {
+            let remote = file.remote_path.to_string_lossy();
+            let full = format!("{base_dir_raw}{remote}");
+            for text in std::iter::once(&mut program)
+                .chain(args.iter_mut())
+                .chain(env.iter_mut().map(|(_, value)| value))
+            {
+                *text = replace_path(text, &remote, &full);
+            }
+        }
+
         let node = Arc::new(NativeNode {
             namespace: options.namespace.clone(),
             name: options.name.to_string(),
-            program: options.program.to_string(),
-            args: options.args.to_vec(),
-            env: options.env.to_vec(),
+            program,
+            args,
+            env,
             base_dir,
             config_dir,
             data_dir,
@@ -194,7 +218,8 @@ where
             node.initialize_db_snapshot(db_snap).await?;
         }
 
-        node.initialize_startup_files(options.startup_files).await?;
+        node.initialize_startup_files(options.startup_files, options.wrapper)
+            .await?;
 
         let (stdout, stderr) = node.initialize_process(None, None).await?;
 
@@ -266,13 +291,20 @@ where
     async fn initialize_startup_files(
         &self,
         startup_files: &[TransferedFile],
+        wrapper: bool,
     ) -> Result<(), ProviderError> {
         trace!("creating files {:?}", startup_files);
-        try_join_all(
-            startup_files
-                .iter()
-                .map(|file| self.send_file(&file.local_path, &file.remote_path, &file.mode)),
-        )
+        try_join_all(startup_files.iter().map(|file| async move {
+            // a direct process gets its files read-only, as docker and
+            // kubernetes mount them
+            let mode = if wrapper {
+                file.mode.clone()
+            } else {
+                format!("{:04o}", file.mode_bits().unwrap_or(0o644) & 0o555)
+            };
+            self.send_file(&file.local_path, &file.remote_path, &mode)
+                .await
+        }))
         .await?;
         trace!("files created!");
 
@@ -443,9 +475,10 @@ where
             ProcessHandle::Spawned(mut child, _pid) => {
                 child.kill().await?;
             },
-            ProcessHandle::Attached(pid) => {
-                kill(pid, Signal::SIGKILL)
-                    .map_err(|err| anyhow!("Failed to kill attached process {pid}: {err}"))?;
+            ProcessHandle::Attached(pid) => match kill(pid, Signal::SIGKILL) {
+                // already gone: a finished one-shot, or a crashed node
+                Ok(()) | Err(Errno::ESRCH) => {},
+                Err(err) => return Err(anyhow!("Failed to kill attached process {pid}: {err}")),
             },
         }
 
@@ -590,6 +623,15 @@ where
             remote_file_path.to_string_lossy()
         ));
 
+        if let Some(parent) = namespaced_remote_file_path.parent() {
+            self.filesystem.create_dir_all(parent).await?;
+        }
+        // a copy from an earlier spawn into this base dir may be read-only
+        if self.filesystem.exists(&namespaced_remote_file_path).await {
+            self.filesystem
+                .set_mode(&namespaced_remote_file_path, 0o644)
+                .await?;
+        }
         self.filesystem
             .copy(local_file_path, &namespaced_remote_file_path)
             .await?;
@@ -627,6 +669,35 @@ where
             .await?;
 
         Ok(())
+    }
+
+    /// Running or exited. A spawned child is reaped on exit so its code is
+    /// known; an attached process can only be probed for existence.
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let mut guard = self
+            .process_handle
+            .write()
+            .map_err(|_e| ProviderError::FailedToAcquireLock(self.name.clone()))?;
+        Ok(match guard.as_mut() {
+            Some(ProcessHandle::Spawned(child, _)) => match child.try_wait() {
+                Ok(Some(status)) => ProcessStatus::Exited {
+                    code: status.code(),
+                },
+                Ok(None) => ProcessStatus::Running { ready: None },
+                Err(err) => {
+                    return Err(ProviderError::InvalidConfig(format!(
+                        "{}: could not read the process status: {err}",
+                        self.name
+                    )))
+                },
+            },
+            Some(ProcessHandle::Attached(pid)) => match kill(*pid, None) {
+                // EPERM is someone else's process, so alive
+                Ok(()) | Err(Errno::EPERM) => ProcessStatus::Running { ready: None },
+                Err(_) => ProcessStatus::Exited { code: None },
+            },
+            None => ProcessStatus::Exited { code: None },
+        })
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
@@ -832,4 +903,45 @@ where
             ProcessHandle::Attached(pid) => pid.as_raw(),
         });
     pid.serialize(serializer)
+}
+
+/// `text` with each `path` in it swapped for `full`, where `path` stands on
+/// its own and not as part of a longer path (`/opt/a` is left in `/opt/ab`,
+/// `/opt/a.bak` and `/x/opt/a`).
+fn replace_path(text: &str, path: &str, full: &str) -> String {
+    if path.is_empty() {
+        return text.to_string();
+    }
+    let is_path_char = |c: char| c.is_ascii_alphanumeric() || "./_-".contains(c);
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(path) {
+        let (before, after) = (&rest[..at], &rest[at + path.len()..]);
+        let alone = !before.chars().next_back().is_some_and(is_path_char)
+            && !after.chars().next().is_some_and(is_path_char);
+        out.push_str(before);
+        out.push_str(if alone { full } else { path });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_path;
+
+    #[test]
+    fn an_injected_path_is_replaced_only_where_it_stands_alone() {
+        let full = "/base/api/opt/a";
+        assert_eq!(
+            replace_path(
+                "/opt/a FILE=/opt/a /opt/ab /opt/a.bak /x/opt/a",
+                "/opt/a",
+                full
+            ),
+            format!("{full} FILE={full} /opt/ab /opt/a.bak /x/opt/a")
+        );
+        assert_eq!(replace_path("/opt/a", "", full), "/opt/a");
+    }
 }

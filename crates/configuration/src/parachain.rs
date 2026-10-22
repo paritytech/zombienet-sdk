@@ -164,6 +164,9 @@ pub struct ParachainConfig {
     no_default_bootnodes: bool,
     #[serde(rename = "genesis", skip_serializing_if = "Option::is_none")]
     genesis_overrides: Option<serde_json::Value>,
+    /// RFC 6902 operations applied to the runtime genesis after `genesis_overrides`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    genesis_patch: Option<json_patch::Patch>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     pub(crate) collators: Vec<NodeConfig>,
     // Single collator config, added for backward compatibility
@@ -263,6 +266,11 @@ impl ParachainConfig {
     /// The genesis overrides as a JSON value.
     pub fn genesis_overrides(&self) -> Option<&serde_json::Value> {
         self.genesis_overrides.as_ref()
+    }
+
+    /// The RFC 6902 patch applied to the runtime genesis after the overrides.
+    pub fn genesis_patch(&self) -> Option<&json_patch::Patch> {
+        self.genesis_patch.as_ref()
     }
 
     /// The location of a pre-existing chain specification for the parachain.
@@ -392,6 +400,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 genesis_state_path: None,
                 genesis_state_generator: None,
                 genesis_overrides: None,
+                genesis_patch: None,
                 chain_spec_path: None,
                 chain_spec_runtime: None,
                 chain_spec_command: None,
@@ -806,6 +815,27 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
             self.validation_context,
             self.errors,
         )
+    }
+
+    /// Set the RFC 6902 patch applied to the runtime genesis after the
+    /// overrides, as a JSON list of operations. Paths are relative to the
+    /// runtime genesis, so `add` at `/balances/balances/-` appends a balance.
+    pub fn with_genesis_patch(self, patch: impl Into<serde_json::Value>) -> Self {
+        match serde_json::from_value::<json_patch::Patch>(patch.into()) {
+            Ok(patch) => Self::transition(
+                ParachainConfig {
+                    genesis_patch: Some(patch),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(error) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors(self.errors, FieldError::GenesisPatch(error.into()).into()),
+            ),
+        }
     }
 
     /// Set the location of a pre-existing chain specification for the parachain.
@@ -1443,6 +1473,34 @@ mod tests {
                 Arg::Flag("--simple-flag".into()),
                 Arg::Option("--flag".into(), "value".into())
             ]
+        );
+    }
+
+    #[test]
+    fn genesis_patch_is_kept_when_valid_and_reported_when_not() {
+        let patch = serde_json::json!([{"op": "remove", "path": "/sudo"}]);
+        let config = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_genesis_patch(patch.clone())
+            .with_collator(|collator| collator.with_name("collator").with_command("command"))
+            .build()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(config.genesis_patch().unwrap()).unwrap(),
+            patch
+        );
+
+        let errors = ParachainConfigBuilder::new(Default::default())
+            .with_id(1000)
+            .with_genesis_patch(serde_json::json!([{"op": "add", "path": "no-slash", "value": 1}]))
+            .with_collator(|collator| collator.with_name("collator").with_command("command"))
+            .build()
+            .unwrap_err();
+        assert_eq!(errors.len(), 1);
+        let error = errors.first().unwrap().to_string();
+        assert!(
+            error.starts_with("parachain[1000].genesis_patch: "),
+            "{error}"
         );
     }
 

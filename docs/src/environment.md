@@ -37,7 +37,7 @@ ZOMBIE_PROVIDER=native zombie-cli spawn network.toml
 
 | Variable | Description |
 |----------|-------------|
-| `ZOMBIE_SPAWN_CONCURRENCY` | Override spawn concurrency (default: 100). Set to lower values for resource-constrained environments. |
+| `ZOMBIE_SPAWN_CONCURRENCY` | Override spawn concurrency (default: 20). Set to lower values for resource-constrained environments. |
 | `ZOMBIE_NODE_SPAWN_TIMEOUT_SECONDS` | Override per-node spawn timeout in seconds |
 
 Example:

@@ -87,7 +87,10 @@ mod relaychain;
 pub mod shared;
 mod utils;
 
-pub use custom_process::{CustomProcess, CustomProcessBuilder};
+pub use custom_process::{
+    CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, EnvValue, NamedPort,
+    ProcessEnvVar, ReadyCheck, ReadyTarget, MAX_TIMEOUT_SECS,
+};
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
 pub use jam_genesis::{
@@ -96,6 +99,8 @@ pub use jam_genesis::{
     JamServiceId, JAM_BOOTSTRAP_SERVICE_ID,
 };
 pub use jamchain::{JamchainConfig, JamchainConfigBuilder};
+/// RFC 6902 patches, the type behind `genesis_patch`.
+pub use json_patch;
 pub use network::{Buildable, NetworkConfig, NetworkConfigBuilder};
 pub use observability::{ObservabilityConfig, ObservabilityConfigBuilder};
 pub use parachain::{
@@ -103,4 +108,4 @@ pub use parachain::{
 };
 pub use relaychain::{RelaychainConfig, RelaychainConfigBuilder};
 // re-export shared
-pub use shared::{node::NodeConfig, types};
+pub use shared::{node::NodeConfig, types, types::TransferedFile};

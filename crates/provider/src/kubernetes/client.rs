@@ -6,13 +6,16 @@ use std::{
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Service, ServiceSpec,
+    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Secret, Service, ServiceSpec,
 };
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
     core::{DynamicObject, GroupVersionKind, ObjectMeta, TypeMeta, WatchEvent},
     discovery::ApiResource,
-    runtime::{conditions, wait::await_condition},
+    runtime::{
+        conditions,
+        wait::{await_condition, Condition},
+    },
     Api, Resource,
 };
 use serde::de::DeserializeOwned;
@@ -32,6 +35,12 @@ use crate::{constants::LOCALHOST, types::ExecutionResult};
 pub struct Error(#[from] anyhow::Error);
 
 pub type Result<T> = core::result::Result<T, Error>;
+
+pub(super) enum SecretLookup {
+    Found(Box<Secret>),
+    NotFound,
+    Forbidden,
+}
 
 #[derive(Clone)]
 pub struct KubernetesClient {
@@ -109,6 +118,22 @@ impl KubernetesClient {
         Ok(())
     }
 
+    /// `Forbidden` when this identity may not read Secrets, which creating
+    /// a pod that uses one does not need.
+    pub(super) async fn get_secret(&self, namespace: &str, name: &str) -> Result<SecretLookup> {
+        match Api::<Secret>::namespaced(self.inner.clone(), namespace)
+            .get_opt(name)
+            .await
+        {
+            Ok(Some(secret)) => Ok(SecretLookup::Found(Box::new(secret))),
+            Ok(None) => Ok(SecretLookup::NotFound),
+            Err(kube::Error::Api(err)) if err.code == 403 => Ok(SecretLookup::Forbidden),
+            Err(err) => Err(Error::from(anyhow!(
+                "error while getting secret {name}: {err}"
+            ))),
+        }
+    }
+
     pub(super) async fn create_config_map_from_file(
         &self,
         namespace: &str,
@@ -133,26 +158,44 @@ impl KubernetesClient {
             ..Default::default()
         };
 
-        config_maps
+        match config_maps
             .create(&PostParams::default(), &config_map)
             .await
-            .map_err(|err| {
-                Error::from(anyhow!(
+        {
+            Ok(_) => {},
+            // left by an earlier spawn into this namespace, so brought up to date
+            Err(kube::Error::Api(err)) if err.code == 409 => {
+                config_maps
+                    .replace(name, &PostParams::default(), &config_map)
+                    .await
+                    .map_err(|err| {
+                        Error::from(anyhow!(
+                            "error while replacing config map {name} for {file_name}: {err}"
+                        ))
+                    })?;
+            },
+            Err(err) => {
+                return Err(Error::from(anyhow!(
                     "error while creating config map {name} for {file_name}: {err}"
-                ))
-            })?;
+                )))
+            },
+        }
 
         self.wait_created(config_maps, name).await?;
 
         Ok(config_map)
     }
 
+    /// Create the pod and wait for it: until Ready for a wrapped node (the
+    /// wrapper answers at once), else until it runs or is already done, since
+    /// a direct process may be quick and its readiness is its own check.
     pub(super) async fn create_pod(
         &self,
         namespace: &str,
         name: &str,
         spec: PodSpec,
         labels: BTreeMap<String, String>,
+        wait_ready: bool,
     ) -> Result<Pod> {
         let pods = Api::<Pod>::namespaced(self.inner.clone(), namespace);
 
@@ -171,24 +214,39 @@ impl KubernetesClient {
             .await
             .map_err(|err| Error::from(anyhow!("error while creating pod {name}: {err}")))?;
 
-        trace!("Pod {name} checking for ready state!");
-        let wait_ready = await_condition(pods, name, helpers::is_pod_ready());
+        let (state, is_there): (&str, fn(Option<&Pod>) -> bool) = if wait_ready {
+            ("ready", |pod| helpers::is_pod_ready().matches_object(pod))
+        } else {
+            ("running or done", |pod| {
+                conditions::is_pod_running().matches_object(pod)
+                    || helpers::is_pod_done().matches_object(pod)
+            })
+        };
+        trace!("Pod {name} checking for {state} state!");
         // TODO: we should use the `node_spawn_timeout` from global settings here.
-        let _ = tokio::time::timeout(Duration::from_secs(600), wait_ready)
-            .await
-            .map_err(|err| {
-                Error::from(anyhow!("error while awaiting pod {name} running: {err}"))
-            })?;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(600),
+            await_condition(pods, name, is_there),
+        )
+        .await
+        .map_err(|err| Error::from(anyhow!("error while awaiting pod {name} {state}: {err}")))?;
+        debug!("Pod {name} is {state}!");
 
-        debug!("Pod {name} is Ready!");
         Ok(pod)
     }
 
-    pub(super) async fn pod_logs(&self, namespace: &str, name: &str) -> Result<String> {
+    /// The logs of the pod's main container, or of `container`.
+    pub(super) async fn pod_logs(
+        &self,
+        namespace: &str,
+        name: &str,
+        container: Option<&str>,
+    ) -> Result<String> {
         Api::<Pod>::namespaced(self.inner.clone(), namespace)
             .logs(
                 name,
                 &LogParams {
+                    container: container.map(str::to_string),
                     pretty: true,
                     timestamps: true,
                     ..Default::default()
@@ -578,30 +636,42 @@ impl KubernetesClient {
     }
 }
 
-mod helpers {
-    use k8s_openapi::api::core::v1::Pod;
+pub(super) mod helpers {
+    use k8s_openapi::api::core::v1::{Pod, PodStatus};
     use kube::runtime::wait::Condition;
-    use tracing::trace;
+
+    /// Whether the pod's phase is terminal, `Succeeded` or `Failed`.
+    pub fn status_is_done(status: &PodStatus) -> bool {
+        status
+            .phase
+            .as_deref()
+            .is_some_and(|phase| phase == "Succeeded" || phase == "Failed")
+    }
+
+    /// Whether the pod's Ready condition is true.
+    pub fn status_is_ready(status: &PodStatus) -> bool {
+        status
+            .conditions
+            .iter()
+            .flatten()
+            .any(|cond| cond.status == "True" && cond.type_ == "Ready")
+    }
+
+    /// An await condition for `Pod` that returns `true` once its phase is
+    /// terminal, `Succeeded` or `Failed`.
+    pub fn is_pod_done() -> impl Condition<Pod> {
+        |obj: Option<&Pod>| {
+            obj.and_then(|pod| pod.status.as_ref())
+                .is_some_and(status_is_done)
+        }
+    }
 
     /// An await condition for `Pod` that returns `true` once it is ready
     /// based on [`kube::runtime::wait::conditions::is_pod_running`]
     pub fn is_pod_ready() -> impl Condition<Pod> {
         |obj: Option<&Pod>| {
-            if let Some(pod) = &obj {
-                if let Some(status) = &pod.status {
-                    if let Some(conditions) = &status.conditions {
-                        let ready = conditions
-                            .iter()
-                            .any(|cond| cond.status == "True" && cond.type_ == "Ready");
-
-                        if ready {
-                            trace!("{:#?}", status);
-                            return ready;
-                        }
-                    }
-                }
-            }
-            false
+            obj.and_then(|pod| pod.status.as_ref())
+                .is_some_and(status_is_ready)
         }
     }
 }

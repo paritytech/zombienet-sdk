@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     env,
     net::IpAddr,
     path::{Component, Path, PathBuf},
@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use configuration::{shared::resources::Resources, types::AssetLocation};
 use futures::future::try_join_all;
-use k8s_openapi::api::core::v1::{ServicePort, ServiceSpec};
+use k8s_openapi::api::core::v1::{ContainerStatus, PodStatus, ServicePort, ServiceSpec};
 use serde::{Deserialize, Serialize};
 use support::{constants::THIS_IS_A_BUG, fs::FileSystem};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep, try_join};
@@ -19,17 +19,20 @@ use tracing::{debug, trace, warn};
 use url::Url;
 
 use super::{
-    client::KubernetesClient, namespace::KubernetesNamespace, pod_spec_builder::PodSpecBuilder,
+    client::{
+        helpers::{status_is_done, status_is_ready},
+        KubernetesClient, SecretLookup,
+    },
+    namespace::KubernetesNamespace,
+    pod_spec_builder::{FileToFetch, PodSpecBuilder},
 };
 use crate::{
-    constants::{
-        NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR, P2P_PORT,
-        PROMETHEUS_PORT, RPC_HTTP_PORT, RPC_WS_PORT,
-    },
+    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     kubernetes,
+    shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, RunCommandOptions, RunScriptOptions,
-        TransferedFile,
+        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
+        RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -45,10 +48,19 @@ where
     pub(super) program: &'a str,
     pub(super) args: &'a [String],
     pub(super) env: &'a [(String, String)],
+    /// Env read from `Secret`s in the namespace, by the pod.
+    pub(super) secret_env: &'a [SecretEnvVar],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
     pub(super) db_snapshot: Option<&'a Path>,
     pub(super) role: Option<NodeRole>,
+    /// Named ports exposed on the pod's `Service`, headless when none.
+    pub(super) ports: &'a [(String, Port)],
+    /// Whether `program` runs through the zombie wrapper (see
+    /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
+    pub(super) wrapper: bool,
+    /// The pod's readiness probe, for a process without the wrapper.
+    pub(super) readiness: Option<&'a ReadinessProbe>,
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -72,10 +84,14 @@ where
             program: &deserializable.program,
             args: &deserializable.args,
             env: &deserializable.env,
+            secret_env: &[],
             startup_files: &[],
             resources: deserializable.resources.as_ref(),
             db_snapshot: None,
             role: None,
+            ports: &deserializable.ports,
+            wrapper: deserializable.wrapper,
+            readiness: None,
             k8s_client,
             filesystem,
         }
@@ -90,6 +106,10 @@ pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) args: Vec<String>,
     pub(super) env: Vec<(String, String)>,
     pub(super) resources: Option<Resources>,
+    #[serde(default)]
+    pub(super) ports: Vec<(String, Port)>,
+    #[serde(default = "default_true")]
+    pub(super) wrapper: bool,
 }
 
 type FwdInfo = (u16, JoinHandle<()>);
@@ -107,6 +127,10 @@ where
     args: Vec<String>,
     env: Vec<(String, String)>,
     resources: Option<Resources>,
+    /// Named ports exposed on the pod's `Service`, headless when none.
+    ports: Vec<(String, Port)>,
+    /// Whether `program` runs through the zombie wrapper.
+    wrapper: bool,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
@@ -147,10 +171,10 @@ where
         let log_path = base_dir.join("node.log");
 
         try_join!(
-            filesystem.create_dir(&config_dir),
-            filesystem.create_dir(&data_dir),
-            filesystem.create_dir(&relay_data_dir),
-            filesystem.create_dir(&scripts_dir),
+            filesystem.create_dir_all(&config_dir),
+            filesystem.create_dir_all(&data_dir),
+            filesystem.create_dir_all(&relay_data_dir),
+            filesystem.create_dir_all(&scripts_dir),
         )?;
 
         let node = Arc::new(KubernetesNode {
@@ -161,6 +185,8 @@ where
             args: options.args.to_vec(),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
+            ports: options.ports.to_vec(),
+            wrapper: options.wrapper,
             base_dir,
             config_dir,
             data_dir,
@@ -173,15 +199,30 @@ where
             provider_tag: kubernetes::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_k8s(options.role).await?;
+        // A direct process runs `program` from the moment the pod is up, so
+        // its files are fetched by an init container, in place before that; a
+        // wrapped node gets them sent while the wrapper holds `program` back.
+        let mounted_files: &[TransferedFile] = if node.wrapper {
+            &[]
+        } else {
+            options.startup_files
+        };
+        node.initialize_k8s(
+            options.role,
+            options.readiness,
+            options.secret_env,
+            mounted_files,
+        )
+        .await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
 
-        node.initialize_startup_files(options.startup_files).await?;
-
-        node.start().await?;
+        if node.wrapper {
+            node.initialize_startup_files(options.startup_files).await?;
+            node.start().await?;
+        }
 
         Ok(node)
     }
@@ -214,6 +255,8 @@ where
             args: options.args.to_vec(),
             env: options.env.to_vec(),
             resources: options.resources.cloned(),
+            ports: options.ports.to_vec(),
+            wrapper: options.wrapper,
             base_dir,
             config_dir,
             data_dir,
@@ -229,7 +272,13 @@ where
         Ok(node)
     }
 
-    async fn initialize_k8s(&self, role: Option<NodeRole>) -> Result<(), ProviderError> {
+    async fn initialize_k8s(
+        &self,
+        role: Option<NodeRole>,
+        readiness: Option<&ReadinessProbe>,
+        secret_env: &[SecretEnvVar],
+        files: &[TransferedFile],
+    ) -> Result<(), ProviderError> {
         let mut labels = BTreeMap::from([
             (
                 "app.kubernetes.io/name".to_string(),
@@ -246,6 +295,13 @@ where
             labels.insert("zombie-role".to_string(), role.as_label().to_string());
         }
 
+        let secrets = async {
+            check_secrets(&self.k8s_client, &self.namespace_name(), secret_env)
+                .await
+                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))
+        };
+        let ((), files) = try_join!(secrets, self.upload_injected_files(files))?;
+
         // Create pod
         let pod_spec = PodSpecBuilder::build(
             &self.name,
@@ -254,11 +310,22 @@ where
             &self.program,
             &self.args,
             &self.env,
+            secret_env,
+            &files,
+            &self.ports,
+            readiness,
+            self.wrapper,
         );
 
         let manifest = self
             .k8s_client
-            .create_pod(&self.namespace_name(), &self.name, pod_spec, labels.clone())
+            .create_pod(
+                &self.namespace_name(),
+                &self.name,
+                pod_spec,
+                labels.clone(),
+                self.wrapper,
+            )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
 
@@ -275,31 +342,22 @@ where
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.to_string(), err.into()))?;
 
-        // Create service for pod
+        // Create service for pod, with the ports the spawn declared; headless
+        // when it declared none (a ClusterIP Service needs at least one port,
+        // a headless one does not).
+        let service_ports: Vec<ServicePort> = self
+            .ports
+            .iter()
+            .map(|(name, port)| ServicePort {
+                port: (*port).into(),
+                name: Some(name.clone()),
+                ..Default::default()
+            })
+            .collect();
         let service_spec = ServiceSpec {
             selector: Some(labels.clone()),
-            ports: Some(vec![
-                ServicePort {
-                    port: P2P_PORT.into(),
-                    name: Some("p2p".into()),
-                    ..Default::default()
-                },
-                ServicePort {
-                    port: RPC_WS_PORT.into(),
-                    name: Some("rpc".into()),
-                    ..Default::default()
-                },
-                ServicePort {
-                    port: RPC_HTTP_PORT.into(),
-                    name: Some("rpc-http".into()),
-                    ..Default::default()
-                },
-                ServicePort {
-                    port: PROMETHEUS_PORT.into(),
-                    name: Some("prom".into()),
-                    ..Default::default()
-                },
-            ]),
+            cluster_ip: service_ports.is_empty().then(|| "None".to_string()),
+            ports: (!service_ports.is_empty()).then_some(service_ports),
             ..Default::default()
         };
 
@@ -322,6 +380,24 @@ where
             .await?;
 
         Ok(())
+    }
+
+    /// Upload a direct process's injected files to the network's fileserver,
+    /// where the pod's init container fetches them from.
+    async fn upload_injected_files(
+        &self,
+        files: &[TransferedFile],
+    ) -> Result<Vec<FileToFetch>, ProviderError> {
+        try_join_all(files.iter().map(|file| async move {
+            let (url, hash) = self.upload_to_fileserver(&file.local_path).await?;
+            Ok::<_, ProviderError>(FileToFetch {
+                file: file.clone(),
+                url: make_url_internal(&url).to_string(),
+                hash,
+            })
+        }))
+        .await
+        .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))
     }
 
     async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
@@ -580,10 +656,27 @@ where
 
     // TODO: handle log rotation as we do in v1
     async fn logs(&self) -> Result<String, ProviderError> {
-        self.k8s_client
-            .pod_logs(&self.namespace_name(), &self.name)
-            .await
-            .map_err(|err| ProviderError::GetLogsFailed(self.name.to_string(), err.into()))
+        let namespace = self.namespace_name();
+        let failed = |err: anyhow::Error| ProviderError::GetLogsFailed(self.name.to_string(), err);
+        match self.k8s_client.pod_logs(&namespace, &self.name, None).await {
+            Ok(logs) => Ok(logs),
+            // the main container never ran: what the init container that
+            // failed, and so ended the pod, said
+            Err(err) => {
+                let status = self
+                    .k8s_client
+                    .pod_status(&namespace, &self.name)
+                    .await
+                    .map_err(|err| failed(err.into()))?;
+                let Some(init) = failed_init_container(&status) else {
+                    return Err(failed(err.into()));
+                };
+                self.k8s_client
+                    .pod_logs(&namespace, &self.name, Some(&init.name))
+                    .await
+                    .map_err(|err| failed(err.into()))
+            },
+        }
     }
 
     async fn dump_logs(&self, local_dest: PathBuf) -> Result<(), ProviderError> {
@@ -747,6 +840,37 @@ where
         Ok(())
     }
 
+    /// The pod's phase and, while it runs, its Ready condition. A direct
+    /// process's pod ends with it (see `PodSpecBuilder`), so an exit shows as
+    /// a terminal phase with the container's exit code.
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let status = self
+            .k8s_client
+            .pod_status(&self.namespace_name(), &self.name)
+            .await
+            .map_err(|err| {
+                ProviderError::InvalidConfig(format!(
+                    "{}: could not read the pod: {err}",
+                    self.name
+                ))
+            })?;
+
+        if status_is_done(&status) {
+            // the container's code, or the init container's that ended the pod
+            let code = status
+                .container_statuses
+                .iter()
+                .flatten()
+                .find(|c| c.name == self.name)
+                .and_then(exit_code)
+                .or_else(|| failed_init_container(&status).and_then(exit_code));
+            return Ok(ProcessStatus::Exited { code });
+        }
+        Ok(ProcessStatus::Running {
+            ready: Some(status_is_ready(&status)),
+        })
+    }
+
     async fn ip(&self) -> Result<IpAddr, ProviderError> {
         let status = self
             .k8s_client
@@ -768,6 +892,13 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "pause",
+            ProviderError::PauseNodeFailed,
+        )?;
+
         self.k8s_client
             .pod_exec(
                 &self.namespace_name(),
@@ -787,6 +918,13 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "resume",
+            ProviderError::ResumeNodeFailed,
+        )?;
+
         self.k8s_client
             .pod_exec(
                 &self.namespace_name(),
@@ -806,6 +944,13 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         if let Some(duration) = after {
             sleep(duration).await;
         }
@@ -835,6 +980,13 @@ where
         args: &[String],
         after: Option<Duration>,
     ) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         // get the assets
         for asset in assets {
             match asset {
@@ -926,10 +1078,177 @@ where
     }
 }
 
+/// The exit code of a container that terminated.
+fn exit_code(container: &ContainerStatus) -> Option<i32> {
+    container
+        .state
+        .as_ref()?
+        .terminated
+        .as_ref()
+        .map(|t| t.exit_code)
+}
+
+/// The init container that failed, which is what ended the pod before its
+/// own container ran.
+fn failed_init_container(status: &PodStatus) -> Option<&ContainerStatus> {
+    status
+        .init_container_statuses
+        .iter()
+        .flatten()
+        .find(|c| exit_code(c).is_some_and(|code| code != 0))
+}
+
 // Helper fn to make a fileserver usable from inside of pods
 fn make_url_internal(url: &Url) -> Url {
     let mut url = url.clone();
     let _ = url.set_host(Some("fileserver"));
     let _ = url.set_port(Some(80));
     url
+}
+
+/// A Secret or key that is not there would hold the pod in
+/// `CreateContainerConfigError` until the spawn times out, so it is looked
+/// up first. A Secret this identity may not read is left to the pod, which
+/// needs no such permission.
+async fn check_secrets(
+    client: &KubernetesClient,
+    namespace: &str,
+    secret_env: &[SecretEnvVar],
+) -> Result<(), anyhow::Error> {
+    // each Secret once, all at the same time
+    let names: Vec<&str> = secret_env
+        .iter()
+        .map(|var| var.secret.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let lookups = try_join_all(names.iter().map(|name| client.get_secret(namespace, name))).await?;
+    let secrets: BTreeMap<&str, SecretLookup> = names.into_iter().zip(lookups).collect();
+    for var in secret_env {
+        let secret = match &secrets[var.secret.as_str()] {
+            SecretLookup::Found(secret) => secret,
+            SecretLookup::NotFound => {
+                return Err(anyhow!(
+                    "env {}: secret '{}' not found in namespace {namespace}",
+                    var.name,
+                    var.secret
+                ))
+            },
+            SecretLookup::Forbidden => {
+                warn!(
+                    "secret '{}' in namespace {namespace} may not be read, env {} is left to the pod",
+                    var.secret, var.name
+                );
+                continue;
+            },
+        };
+        if !secret
+            .data
+            .as_ref()
+            .is_some_and(|data| data.contains_key(&var.key))
+        {
+            return Err(anyhow!(
+                "env {}: secret '{}' has no key '{}'",
+                var.name,
+                var.secret,
+                var.key
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use mockito::{Matcher, Server, ServerGuard};
+
+    use super::*;
+
+    fn client(server: &ServerGuard) -> KubernetesClient {
+        let config = kube::Config::new(server.url().parse().unwrap());
+        KubernetesClient::from_inner(kube::Client::try_from(config).unwrap())
+    }
+
+    fn turn_secret() -> Vec<SecretEnvVar> {
+        vec![SecretEnvVar {
+            name: "TURN_SECRET".into(),
+            secret: "turn".into(),
+            key: "secret".into(),
+        }]
+    }
+
+    async fn mock_secret(server: &mut ServerGuard, status: usize, body: &str) {
+        server
+            .mock("GET", "/api/v1/namespaces/ns/secrets/turn")
+            .match_query(Matcher::Any)
+            .with_status(status)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_secret_with_the_key_passes() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            200,
+            r#"{"apiVersion":"v1","kind":"Secret","metadata":{"name":"turn"},"data":{"secret":"aGk="}}"#,
+        )
+        .await;
+        check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_secret_without_the_key_fails_naming_it() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            200,
+            r#"{"apiVersion":"v1","kind":"Secret","metadata":{"name":"turn"},"data":{"other":"aGk="}}"#,
+        )
+        .await;
+        let err = check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "env TURN_SECRET: secret 'turn' has no key 'secret'"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_missing_secret_fails_naming_it() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            404,
+            r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"not found","reason":"NotFound","code":404}"#,
+        )
+        .await;
+        let err = check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "env TURN_SECRET: secret 'turn' not found in namespace ns"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn not_being_allowed_to_read_secrets_skips_the_check() {
+        let mut server = Server::new_async().await;
+        mock_secret(
+            &mut server,
+            403,
+            r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"forbidden","reason":"Forbidden","code":403}"#,
+        )
+        .await;
+        check_secrets(&client(&server), "ns", &turn_secret())
+            .await
+            .unwrap();
+    }
 }

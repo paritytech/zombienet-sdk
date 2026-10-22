@@ -56,6 +56,7 @@ Scale networks with grouped nodes.
 | [`db_snapshot`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/db_snapshot.rs) | Database snapshots for faster init |
 | [`docker_db_snapshot`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/docker_db_snapshot.rs) | DB snapshots in Docker environments |
 | [`raw_spec_override`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/raw_spec_override.rs) | Override raw chain spec fields |
+| [`genesis_patch`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/genesis_patch.rs) | Append to and replace runtime genesis values with an RFC 6902 patch |
 
 ---
 
@@ -86,6 +87,10 @@ Scale networks with grouped nodes.
 |---------|-------------|
 | [`from_live`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/from_live.rs) | Attach to running network via `zombie.json` |
 | [`test_run_script`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/test_run_script.rs) | Run scripts on nodes |
+| [`custom_process_ports`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/custom_process_ports.rs) | A custom process with a declared port, reached through the network |
+| [`custom_process_lifecycle`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/custom_process_lifecycle.rs) | A one-shot, a server with an http ready check that depends on it, a client that waits for the server |
+| [`custom_process_injected_files`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/custom_process_injected_files.rs) | A custom process running an injected script |
+| [`custom_process_positional_args`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/custom_process_positional_args.rs) | A custom process script told where a node is |
 
 ---
 
@@ -101,3 +106,7 @@ Example TOML configs are in [`crates/examples/examples/configs/`](https://github
 | [`wasm-override.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/wasm-override.toml) | WASM runtime override |
 | [`arg-removal.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/arg-removal.toml) | CLI argument removal |
 | [`polkadot-ah-chain-spec-runtime.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/polkadot-ah-chain-spec-runtime.toml) | Polkadot + Asset Hub with custom runtimes |
+| [`custom_process_ports.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/custom_process_ports.toml) | Custom process with a declared port |
+| [`custom_process_lifecycle.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/custom_process_lifecycle.toml) | Custom processes with `one_shot`, `ready_check` and `depends_on` |
+| [`custom_process_injected_files.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/custom_process_injected_files.toml) | A custom process with `injected_files` |
+| [`custom_process_positional_args.toml`](https://github.com/paritytech/zombienet-sdk/blob/main/crates/examples/examples/configs/custom_process_positional_args.toml) | Custom processes with positional arguments |

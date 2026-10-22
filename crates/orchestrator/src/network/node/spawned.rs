@@ -26,6 +26,9 @@ pub enum NodeKind {
     Substrate,
     /// A JAM node.
     Jam,
+    /// A custom process declared in the network config, running next to the nodes.
+    #[serde(rename = "custom-process")]
+    CustomProcess,
 }
 
 impl std::fmt::Display for NodeKind {
@@ -33,6 +36,7 @@ impl std::fmt::Display for NodeKind {
         match self {
             NodeKind::Substrate => write!(f, "substrate"),
             NodeKind::Jam => write!(f, "jam"),
+            NodeKind::CustomProcess => write!(f, "custom-process"),
         }
     }
 }

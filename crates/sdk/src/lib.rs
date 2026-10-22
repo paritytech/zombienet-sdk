@@ -2,15 +2,20 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 pub use configuration::{
+    json_patch,
     types::{Arg, AssetLocation},
-    Buildable, CustomProcess, CustomProcessBuilder, GlobalSettings, GlobalSettingsBuilder,
-    NetworkConfig, NetworkConfigBuilder, RegistrationStrategy,
+    Buildable, CustomProcess, CustomProcessBuilder, Dependency, DependencyCondition, EnvValue,
+    GlobalSettings, GlobalSettingsBuilder, NamedPort, NetworkConfig, NetworkConfigBuilder,
+    ProcessEnvVar, ReadyCheck, ReadyTarget, RegistrationStrategy, TransferedFile,
 };
 pub use orchestrator::{
     errors::OrchestratorError,
     network::{
         jamchain::Jamchain,
-        node::{JamNetworkNode, NetworkNode, NodeKind, SpawnedNode},
+        node::{
+            CustomProcessNode, CustomProcessState, JamNetworkNode, NetworkNode, NodeKind,
+            ProcessPort, SpawnedNode,
+        },
         Network,
     },
     sc_chain_spec, AddCollatorOptions, AddNodeOptions, Orchestrator,

@@ -52,6 +52,9 @@ pub struct RelaychainSpec {
     /// Genesis overrides as JSON value.
     pub(crate) runtime_genesis_patch: Option<serde_json::Value>,
 
+    /// RFC 6902 patch applied after the overrides.
+    pub(crate) genesis_patch: Option<json_patch::Patch>,
+
     /// Wasm override path/url to use.
     pub(crate) wasm_override: Option<AssetLocation>,
 
@@ -169,6 +172,7 @@ impl RelaychainSpec {
             random_nominators_count: config.random_nominators_count().unwrap_or(0),
             max_nominations: config.max_nominations().unwrap_or(24),
             runtime_genesis_patch: config.runtime_genesis_patch().cloned(),
+            genesis_patch: config.genesis_patch().cloned(),
             nodes,
             raw_spec_override: config.raw_spec_override().cloned(),
             post_process_script: config.post_process_script().map(str::to_string),

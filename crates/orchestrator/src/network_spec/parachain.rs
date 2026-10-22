@@ -83,6 +83,9 @@ pub struct ParachainSpec {
     /// Genesis overrides as JSON value.
     pub(crate) genesis_overrides: Option<serde_json::Value>,
 
+    /// RFC 6902 patch applied after the overrides.
+    pub(crate) genesis_patch: Option<json_patch::Patch>,
+
     /// Wasm override path/url to use.
     pub(crate) wasm_override: Option<AssetLocation>,
 
@@ -117,6 +120,13 @@ impl ParachainSpec {
                 config.id()
             )));
         };
+
+        if !config.is_cumulus_based() && config.genesis_patch().is_some() {
+            return Err(OrchestratorError::InvalidConfig(format!(
+                "parachain[{}]: genesis_patch requires a cumulus-based parachain",
+                config.id()
+            )));
+        }
 
         // TODO: internally we use image as String
         let main_image = config
@@ -298,6 +308,7 @@ impl ParachainSpec {
             genesis_state,
             genesis_wasm,
             genesis_overrides: config.genesis_overrides().cloned(),
+            genesis_patch: config.genesis_patch().cloned(),
             collators,
             raw_spec_override: config.raw_spec_override().cloned(),
             bootnodes_addresses: config.bootnodes_addresses().into_iter().cloned().collect(),

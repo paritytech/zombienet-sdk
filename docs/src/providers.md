@@ -84,6 +84,10 @@ Override via environment variables:
 | `MALUS_IMAGE` | `docker.io/paritypr/malus:latest` | Malus (malicious node) |
 | `COL_IMAGE` | `docker.io/paritypr/colander:latest` | Colander |
 
+### Labels
+
+Every node container of a network, its scripts container and both of its volumes carry `zombienet.namespace` (the namespace name), `zombienet.kind` (`node`, `collator`, `custom-process`, `temp` and the other `zombie-role` values for containers, `helper` for the scripts container, `volume` for volumes) and `zombienet.name`. The short-lived `--rm` containers that set a namespace up are not labelled. Teardown removes the containers that carry the namespace label or the namespace name prefix, then tries to remove its volumes. To list a network's containers: `docker ps --filter label=zombienet.namespace=<namespace>`.
+
 ## Kubernetes
 
 Deploys nodes as Kubernetes pods.
@@ -108,7 +112,7 @@ let network = config.spawn_k8s().await?;
 
 ### Pod Labels
 
-Node pods carry a `zombie-role` label with the same values as zombienet v1: `node` (relay chain nodes, validators or not), `collator`, `cumulus-collator`, `bootnode` (dedicated bootnodes) and `temp` (short-lived helper pods). The file server and custom processes have no `zombie-role`.
+Node pods carry a `zombie-role` label with the same values as zombienet v1: `node` (relay chain nodes, validators or not), `collator`, `cumulus-collator`, `bootnode` (dedicated bootnodes) and `temp` (short-lived helper pods). Custom processes carry `custom-process`. The file server has no `zombie-role`.
 
 ## Attaching to Running Networks
 

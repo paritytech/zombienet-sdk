@@ -159,6 +159,11 @@ impl NetworkConfig {
 
         let re_paths: Regex = Regex::new(r#"(?<field_name>(default_)?(command|db_snapshot|chain_spec_path|genesis_wasm_path|genesis_state_path))\s+=\s+\"(?<value_string>[a-zA-Z0-9\.\/]+)\""#)
             .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
+        // a file on this host, so any character a path may hold
+        let re_local_paths: Regex = Regex::new(
+            r#"(?m)(?<field_name>(?:^|[\s{,])local_path)\s*=\s*"(?<value_string>[^"]+)""#,
+        )
+        .expect(&format!("{VALID_REGEX} {THIS_IS_A_BUG}"));
 
         let path_replacer = |caps: &Captures| {
             trace!("cmd replacer captures: {:?}", caps);
@@ -170,6 +175,7 @@ impl NetworkConfig {
 
         let toml_text = re.replace_all(toml_text, "$field_name = \"$u128_value\"");
         let toml_text = re_paths.replace_all(&toml_text, &path_replacer);
+        let toml_text = re_local_paths.replace_all(&toml_text, &path_replacer);
 
         trace!("toml text to parse: {}", toml_text);
         // apply replacements from env in toml
@@ -329,6 +335,36 @@ impl NetworkConfig {
                 let _ = TryInto::<Command>::try_into(default_command.as_str());
             }
         });
+
+        // Custom processes bypass their builder here, so apply its rules (see
+        // `CustomProcess::validate`), and a name that is not already a node's
+        // (they share one registry on the running network).
+        let mut errors: Vec<String> = vec![];
+        for process in &network_config.custom_processes {
+            if names.contains(process.name()) {
+                errors.push(format!(
+                    "custom_processes['{}'].name: already used by a node or custom process",
+                    process.name()
+                ));
+            }
+            names.insert(process.name().to_string());
+            if let Err(port_errors) = process.validate() {
+                errors.extend(
+                    port_errors
+                        .into_iter()
+                        .map(|e| format!("custom_processes['{}'].{e}", process.name())),
+                );
+            }
+        }
+        if let Err(dependency_errors) =
+            custom_process::validate_custom_processes(&network_config.custom_processes)
+        {
+            errors.extend(dependency_errors);
+        }
+        if !errors.is_empty() {
+            Err(anyhow!(errors.join("\n")))?
+        }
+
         Ok(network_config)
     }
 }
@@ -767,6 +803,11 @@ impl NetworkConfigBuilder<Buildable> {
     }
 
     /// Add a custom process using a nested [`CustomProcessBuilder`].
+    ///
+    /// Processes and nodes share one registry on the running network, so the
+    /// name must be free. Declare processes after the nodes: a node declared
+    /// later with a process's name is renamed (`<name>-1`), as it would be
+    /// after another node, where a process taking a node's name is an error.
     pub fn with_custom_process(
         self,
         f: impl FnOnce(
@@ -775,14 +816,39 @@ impl NetworkConfigBuilder<Buildable> {
             -> CustomProcessBuilder<custom_process::WithName, custom_process::WithCmd>,
     ) -> Self {
         match f(CustomProcessBuilder::new()).build() {
-            Ok(custom_process) => Self::transition(
-                NetworkConfig {
-                    custom_processes: [self.config.custom_processes, vec![custom_process]].concat(),
-                    ..self.config
-                },
-                self.validation_context,
-                self.errors,
-            ),
+            Ok(custom_process) => {
+                // Processes and nodes share one registry on the running network,
+                // so a process may not take a node's name. Recording it also keeps
+                // a node declared later from taking the process's.
+                let taken = !self
+                    .validation_context
+                    .borrow_mut()
+                    .used_nodes_names
+                    .insert(custom_process.name().to_string());
+                if taken {
+                    return Self::transition(
+                        self.config,
+                        self.validation_context,
+                        merge_errors(
+                            self.errors,
+                            ConfigError::CustomProcess(
+                                custom_process.name().to_string(),
+                                anyhow!("name: already used by a node or custom process"),
+                            )
+                            .into(),
+                        ),
+                    );
+                }
+                Self::transition(
+                    NetworkConfig {
+                        custom_processes: [self.config.custom_processes, vec![custom_process]]
+                            .concat(),
+                        ..self.config
+                    },
+                    self.validation_context,
+                    self.errors,
+                )
+            },
             Err((name, errors)) => Self::transition(
                 self.config,
                 self.validation_context,
@@ -790,7 +856,7 @@ impl NetworkConfigBuilder<Buildable> {
                     self.errors,
                     errors
                         .into_iter()
-                        .map(|error| ConfigError::Node(name.clone(), error).into())
+                        .map(|error| ConfigError::CustomProcess(name.clone(), error).into())
                         .collect::<Vec<_>>(),
                 ),
             ),
@@ -830,6 +896,12 @@ impl NetworkConfigBuilder<Buildable> {
             })
             .collect();
 
+        if let Err(dependency_errors) =
+            custom_process::validate_custom_processes(&self.config.custom_processes)
+        {
+            errs.extend(dependency_errors.into_iter().map(|e| anyhow!(e)));
+        }
+
         // ensure we can make this check
         if let Some(rc_config) = self.config.relaychain.as_ref() {
             // check we have num_validators >= num_requested_cores
@@ -868,7 +940,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::{parachain::RegistrationStrategy, types::JamNodeMode};
+    use crate::{
+        parachain::RegistrationStrategy, types::JamNodeMode, DependencyCondition, ProcessEnvVar,
+    };
 
     #[test]
     fn network_config_builder_should_succeeds_and_returns_a_network_config() {
@@ -2420,6 +2494,53 @@ mode = "validator"
                 .contains("genesis: can't be used with `chain_spec_command`"),
             "{error}"
         );
+    fn genesis_patch_round_trips_through_toml() {
+        let toml = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.genesis_patch]]
+op = "add"
+path = "/balances/balances/-"
+value = ["5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty", 1000000000000]
+
+[[relaychain.genesis_patch]]
+op = "replace"
+path = "/staking/minimumValidatorCount"
+value = 7
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[parachains]]
+id = 100
+default_command = "polkadot-parachain"
+
+[[parachains.genesis_patch]]
+op = "remove"
+path = "/sudo"
+
+[[parachains.collators]]
+name = "collator"
+"#;
+        let loaded = NetworkConfig::load_from_toml_string(toml).unwrap();
+        let relay_patch = loaded.relaychain().genesis_patch().unwrap();
+        assert_eq!(relay_patch.0.len(), 2);
+        assert_eq!(
+            serde_json::to_value(&relay_patch.0[1]).unwrap(),
+            serde_json::json!({"op": "replace", "path": "/staking/minimumValidatorCount", "value": 7})
+        );
+        let para_patch = loaded.parachains()[0].genesis_patch().unwrap();
+        assert_eq!(
+            serde_json::to_value(para_patch).unwrap(),
+            serde_json::json!([{"op": "remove", "path": "/sudo"}])
+        );
+
+        let reloaded =
+            NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
+        assert_eq!(reloaded.relaychain().genesis_patch(), Some(relay_patch));
+        assert_eq!(reloaded.parachains()[0].genesis_patch(), Some(para_patch));
     }
 
     #[test]
@@ -2599,6 +2720,278 @@ id = 1000
         assert_eq!(
             network_config.parachains()[0].collators()[0].name(),
             "collator-1000"
+        );
+    }
+
+    /// A one-node relaychain with the given `[[custom_processes]]` entries.
+    fn load_with_processes(processes: &str) -> Result<NetworkConfig, anyhow::Error> {
+        NetworkConfig::load_from_toml_string(&format!(
+            r#"
+            [relaychain]
+            chain = "rococo-local"
+            default_command = "polkadot"
+
+            [[relaychain.nodes]]
+            name = "alice"
+
+            [[custom_processes]]
+            {processes}
+            "#
+        ))
+    }
+
+    #[test]
+    fn custom_process_lifecycle_loads_from_toml_and_is_validated() {
+        let config = load_with_processes(
+            r#"
+            name = "init"
+            command = "sh"
+            one_shot = true
+            timeout = 30
+
+            [[custom_processes]]
+            name = "api"
+            command = "api"
+            ports = [{ name = "http", port = 8080 }]
+            ready_check = { http = { port = "http", path = "/health" }, interval = 2 }
+            timeout = 120
+            depends_on = ["init", { name = "cache", condition = "service_started" }]
+
+            [[custom_processes]]
+            name = "cache"
+            command = "cache"
+            "#,
+        )
+        .unwrap();
+        let processes = config.custom_processes();
+        let api = processes[1];
+        assert_eq!(api.timeout(), Some(120));
+        assert_eq!(api.ready_check().unwrap().interval, 2);
+        assert_eq!(api.depends_on().len(), 2);
+        assert_eq!(
+            api.depends_on()[1].condition,
+            Some(DependencyCondition::ServiceStarted)
+        );
+        assert!(processes[0].one_shot());
+        let dumped = config.dump_to_toml().unwrap();
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(reloaded.custom_processes(), config.custom_processes());
+
+        // the cross-process rules apply on this path too
+        let err = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            ports = [{ name = "http", port = 8080 }]
+            ready_check = { http = { port = "http", path = "health" } }
+            depends_on = [{ name = "cache", condition = "service_healthy" }]
+
+            [[custom_processes]]
+            name = "cache"
+            command = "cache"
+            depends_on = ["api"]
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("http path 'health' must start with '/'"),
+            "{err}"
+        );
+        assert!(err.contains("'cache' cannot be service_healthy"), "{err}");
+        assert!(err.contains("cycle among api, cache"), "{err}");
+    }
+
+    #[test]
+    fn custom_process_files_and_secret_env_load_from_toml_and_dump_back() {
+        let config = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            env = [
+                { name = "RUST_LOG", value = "info" },
+                { name = "TURN_SECRET", secret = { name = "turn", key = "secret" } },
+            ]
+            injected_files = [
+                { local_path = "./sql/init.sql", remote_path = "/schema/init.sql" },
+                { local_path="./my-scripts/run_me.sh", remote_path = "/run.sh", mode = "0755" },
+            ]
+            "#,
+        )
+        .unwrap();
+        let api = config.custom_processes()[0];
+        assert_eq!(
+            api.env()[1],
+            ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret")
+        );
+        // a `./` path is resolved against the TOML's directory, as `command` is
+        let run = &api.injected_files()[1];
+        assert!(
+            run.local_path.is_absolute() && run.local_path.ends_with("my-scripts/run_me.sh"),
+            "{run:?}"
+        );
+        assert_eq!(run.remote_path.as_path(), std::path::Path::new("/run.sh"));
+        assert_eq!(run.mode, "0755");
+        let dumped = config.dump_to_toml().unwrap();
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(reloaded.custom_processes(), config.custom_processes());
+
+        let err = load_with_processes(
+            r#"
+            name = "api"
+            command = "api"
+            injected_files = [{ local_path = "./run.sh", remote_path = "run.sh" }]
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("remote_path 'run.sh' must be an absolute path"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn custom_process_ports_and_resources_load_from_toml_and_dump_back() {
+        let network_config = load_with_processes(
+            r#"
+            name = "ipfs"
+            command = "ipfs"
+            image = "docker.io/ipfs/kubo:v0.39.0"
+            args = ["daemon"]
+            ports = [{ name = "api", port = 5001 }, { name = "gateway", port = 8080 }]
+
+            [custom_processes.resources]
+            limits = { cpu = "500m", memory = "512Mi" }
+
+            [[custom_processes]]
+            name = "eth-rpc"
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap();
+
+        let processes = network_config.custom_processes();
+        assert_eq!(processes.len(), 2);
+        let ipfs = processes[0];
+        assert_eq!(
+            ipfs.ports()
+                .iter()
+                .map(|p| (p.name.as_str(), p.port))
+                .collect::<Vec<_>>(),
+            [("api", 5001), ("gateway", 8080)]
+        );
+        assert_eq!(
+            ipfs.resources().unwrap().limit_cpu().unwrap().as_str(),
+            "500m"
+        );
+        assert!(processes[1].ports().is_empty());
+        assert!(processes[1].resources().is_none());
+
+        // What is dumped loads back to the same config: ports and resources included.
+        let dumped = network_config.dump_to_toml().unwrap();
+        assert!(dumped.contains("[[custom_processes.ports]]"));
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(
+            reloaded.custom_processes(),
+            network_config.custom_processes()
+        );
+    }
+
+    #[test]
+    fn custom_processes_loaded_from_toml_are_validated() {
+        // A port name k8s would reject, caught before anything is spawned.
+        let err = load_with_processes(
+            r#"
+            name = "eth-rpc"
+            command = "eth-rpc"
+            ports = [{ name = "json_rpc", port = 8545 }]
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['eth-rpc'].ports: port name 'json_rpc'"),
+            "{err}"
+        );
+
+        // A process may not take a node's name: they share one registry.
+        let err = load_with_processes(
+            r#"
+            name = "alice"
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['alice'].name: already used by a node"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_custom_process_name_is_rejected_where_a_node_name_would_be_corrected() {
+        let err = load_with_processes(
+            r#"
+            name = "eth_rpc"
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['eth_rpc'].name: 'eth_rpc' must be"),
+            "{err}"
+        );
+        assert!(err.to_string().contains("(e.g. 'eth-rpc')"), "{err}");
+
+        let err = load_with_processes(
+            r#"
+            name = ""
+            command = "eth-rpc"
+            "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes[''].name: can't be empty"),
+            "{err}"
+        );
+
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_validator(|node| node.with_name("alice"))
+            })
+            .with_custom_process(|c| c.with_name("Eth-RPC").with_command("eth-rpc"))
+            .build()
+            .unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.to_string().contains("custom_processes['Eth-RPC'].name:")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn a_custom_process_may_not_take_a_node_name_in_the_builder() {
+        let errors = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_validator(|node| node.with_name("alice"))
+            })
+            .with_custom_process(|c| c.with_name("alice").with_command("eth-rpc"))
+            .build()
+            .unwrap_err();
+        assert!(
+            errors.iter().any(|e| e
+                .to_string()
+                .contains("already used by a node or custom process")),
+            "{errors:?}"
         );
     }
 }

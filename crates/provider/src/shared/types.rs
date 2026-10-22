@@ -5,7 +5,6 @@ use std::{
 };
 
 use configuration::shared::resources::Resources;
-use serde::{Deserialize, Serialize};
 
 pub type Port = u16;
 
@@ -23,6 +22,17 @@ pub struct ProviderCapabilities {
     /// Use default ports in node cmd/args.
     /// NOTE: generally used in k8s/dockers since the images expose those ports.
     pub use_default_ports_in_cmd: bool,
+    /// An env value may be read from a `Secret` in the namespace (k8s).
+    pub has_secrets: bool,
+}
+
+/// An environment variable read from the `key` of the `Secret` named
+/// `secret` in the namespace, by the pod itself (k8s only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretEnvVar {
+    pub name: String,
+    pub secret: String,
+    pub key: String,
 }
 
 /// Role of a node in the network, exposed by providers that support labels
@@ -39,6 +49,8 @@ pub enum NodeRole {
     CumulusCollator,
     /// Short-lived helper node (e.g used to generate chain-specs)
     Temp,
+    /// A custom process declared in the network config, running next to the nodes
+    CustomProcess,
 }
 
 impl NodeRole {
@@ -49,8 +61,37 @@ impl NodeRole {
             NodeRole::Collator => "collator",
             NodeRole::CumulusCollator => "cumulus-collator",
             NodeRole::Temp => "temp",
+            NodeRole::CustomProcess => "custom-process",
         }
     }
+}
+
+/// How a provider tells that a node spawned without the wrapper is ready.
+/// On kubernetes it becomes the pod's readiness probe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadinessProbe {
+    pub target: ReadinessTarget,
+    /// Seconds between two attempts.
+    pub period_secs: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadinessTarget {
+    /// The port accepts a TCP connection.
+    Tcp(Port),
+    /// `GET <path>` on the port answers 2xx.
+    Http { port: Port, path: String },
+}
+
+/// What a provider knows about a node's process.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessStatus {
+    /// The process runs. `ready` is what the provider's own check says, where
+    /// it has one (kubernetes: the pod's Ready condition); `None` otherwise.
+    Running { ready: Option<bool> },
+    /// The process exited, with its code where the provider knows it (not for
+    /// a process attached by pid that is gone).
+    Exited { code: Option<i32> },
 }
 
 #[derive(Debug, Clone)]
@@ -67,8 +108,11 @@ pub struct SpawnNodeOptions {
     pub args: Vec<String>,
     /// Environment to set when running the `program`
     pub env: Vec<(String, String)>,
+    /// Environment read from `Secret`s in the namespace (k8s only).
+    pub secret_env: Vec<SecretEnvVar>,
     // TODO: rename startup_files
-    /// Files to inject at startup
+    /// Files to inject at startup. On native, where a file's `remote_path`
+    /// stands in `program`, `args` or `env` it becomes the file's full path.
     pub injected_files: Vec<TransferedFile>,
     /// Paths to create before start the node (e.g keystore)
     /// should be created with `create_dir_all` in order
@@ -79,10 +123,21 @@ pub struct SpawnNodeOptions {
     /// download). See `orchestrator::generators::resolve_db_snapshots`.
     pub db_snapshot: Option<PathBuf>,
     pub port_mapping: Option<HashMap<Port, Port>>,
+    /// Named ports the process listens on. On k8s they are the pod's container
+    /// ports and its `Service` ports (none gives a headless Service); the other
+    /// providers ignore them.
+    pub ports: Vec<(String, Port)>,
+    /// How the provider may check readiness itself; on k8s the pod's probe.
+    pub readiness: Option<ReadinessProbe>,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
     /// Role of the node in the network
     pub role: Option<NodeRole>,
+    /// Run `program` through zombienet's wrapper script, which gives the
+    /// pause/resume/restart controls nodes have. The wrapper needs `bash` in
+    /// the image and replaces the image's entrypoint, so a custom process that
+    /// is just an off-the-shelf image runs without it.
+    pub wrapper: bool,
 }
 
 impl SpawnNodeOptions {
@@ -97,12 +152,16 @@ impl SpawnNodeOptions {
             program: program.as_ref().to_string(),
             args: vec![],
             env: vec![],
+            secret_env: vec![],
             injected_files: vec![],
             created_paths: vec![],
             db_snapshot: None,
             port_mapping: None,
+            ports: vec![],
+            readiness: None,
             node_log_path: None,
             role: None,
+            wrapper: true,
         }
     }
 
@@ -177,6 +236,44 @@ impl SpawnNodeOptions {
 
     pub fn role(mut self, role: NodeRole) -> Self {
         self.role = Some(role);
+        self
+    }
+
+    pub fn ports<S, I>(mut self, ports: I) -> Self
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (S, Port)>,
+    {
+        self.ports = ports
+            .into_iter()
+            .map(|(name, port)| (name.as_ref().to_string(), port))
+            .collect();
+        self
+    }
+
+    pub fn readiness(mut self, probe: Option<ReadinessProbe>) -> Self {
+        self.readiness = probe;
+        self
+    }
+
+    pub fn secret_env<I>(mut self, secret_env: I) -> Self
+    where
+        I: IntoIterator<Item = SecretEnvVar>,
+    {
+        self.secret_env = secret_env.into_iter().collect();
+        self
+    }
+
+    /// Run `program` directly instead of through the zombie wrapper script.
+    ///
+    /// The wrapper needs `bash` in the image and is what pause, resume and
+    /// restart talk to, so those return an error for a node spawned this way
+    /// on docker and kubernetes (native signals the process and needs no
+    /// wrapper). The wrapper holds the program back until the injected files
+    /// are copied in; without it they are mounted in before the program
+    /// starts, read-only.
+    pub fn without_wrapper(mut self) -> Self {
+        self.wrapper = false;
         self
     }
 }
@@ -370,46 +467,7 @@ impl RunScriptOptions {
     }
 }
 
-// TODO(team): I think we can rename it to FileMap?
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransferedFile {
-    pub local_path: PathBuf,
-    pub remote_path: PathBuf,
-    // TODO: Can be narrowed to have strict typing on this?
-    pub mode: String,
-}
-
-impl TransferedFile {
-    pub fn new<P>(local_path: P, remote_path: P) -> Self
-    where
-        P: AsRef<Path>,
-    {
-        Self {
-            local_path: local_path.as_ref().into(),
-            remote_path: remote_path.as_ref().into(),
-            mode: "0644".to_string(), // default to rw-r--r--
-        }
-    }
-
-    pub fn mode<S>(mut self, mode: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.mode = mode.as_ref().to_string();
-        self
-    }
-}
-
-impl std::fmt::Display for TransferedFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "File to transfer (local: {}, remote: {})",
-            self.local_path.display(),
-            self.remote_path.display()
-        )
-    }
-}
+pub use configuration::TransferedFile;
 
 /// Result of [`ProviderNode::snapshot_db`].
 /// return the filename, hash and bytes of the generated `{node.name}.tgz`

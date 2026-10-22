@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     error::Error,
     fmt::{self, Display},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -1179,5 +1179,60 @@ mod tests {
             inline.into(),
             JsonOverrides::Json(serde_json::Value::Object(_))
         ));
+    }
+}
+
+/// A file put in place before a process starts: `local_path` on the host
+/// running zombienet, `remote_path` where the process reads it, `mode` its
+/// permissions in octal (`0644` when unset).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferedFile {
+    pub local_path: PathBuf,
+    pub remote_path: PathBuf,
+    #[serde(
+        default = "default_file_mode",
+        skip_serializing_if = "is_default_file_mode"
+    )]
+    pub mode: String,
+}
+
+fn default_file_mode() -> String {
+    "0644".to_string()
+}
+
+fn is_default_file_mode(mode: &str) -> bool {
+    mode == "0644"
+}
+
+impl TransferedFile {
+    pub fn new(local_path: impl AsRef<Path>, remote_path: impl AsRef<Path>) -> Self {
+        Self {
+            local_path: local_path.as_ref().into(),
+            remote_path: remote_path.as_ref().into(),
+            mode: default_file_mode(),
+        }
+    }
+
+    /// The permissions of the file in the process, in octal (e.g. `0755`).
+    pub fn mode(mut self, mode: impl AsRef<str>) -> Self {
+        self.mode = mode.as_ref().to_string();
+        self
+    }
+
+    /// The mode as permission bits; `None` for text that is not octal, which
+    /// the configuration rejects, so only a file built by hand can be.
+    pub fn mode_bits(&self) -> Option<u32> {
+        u32::from_str_radix(&self.mode, 8).ok()
+    }
+}
+
+impl Display for TransferedFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "File to transfer (local: {}, remote: {})",
+            self.local_path.display(),
+            self.remote_path.display()
+        )
     }
 }

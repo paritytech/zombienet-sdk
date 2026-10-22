@@ -37,10 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             c.with_name("block-monitor")
                 .with_command("bash")
                 .with_args(vec![
-                    // Positional arguments - script path and WebSocket URL
+                    // Positional arguments: script path, WebSocket URL, block count.
+                    // The URL is alice's, filled in once she is running.
                     script_path.into(),
-                    "ws://127.0.0.1:9944".into(),
-                    "5".into(), // Monitor 5 blocks
+                    "{{ZOMBIE:alice:ws_uri}}".into(),
+                    "5".into(),
                 ])
         })
         .build()

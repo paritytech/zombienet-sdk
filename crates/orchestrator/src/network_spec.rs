@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -79,6 +79,32 @@ impl NetworkSpec {
                     Ok(para) => parachains.push(para),
                     Err(err) => errs.push(err),
                 }
+            }
+        }
+
+        // Processes and nodes share one registry on the running network. The
+        // names are final here (groups expanded, collisions between nodes
+        // resolved), so this is where a process taking one is caught.
+        let mut names: HashSet<&str> = relaychain
+            .iter()
+            .flat_map(|relay| relay.nodes.iter().map(|node| node.name.as_str()))
+            .chain(
+                jamchain
+                    .iter()
+                    .flat_map(|jam| jam.nodes.iter().map(|node| node.name.as_str())),
+            )
+            .chain(
+                parachains
+                    .iter()
+                    .flat_map(|para| para.collators.iter().map(|node| node.name.as_str())),
+            )
+            .collect();
+        for process in network_config.custom_processes() {
+            if !names.insert(process.name()) {
+                errs.push(OrchestratorError::InvalidConfig(format!(
+                    "custom_processes['{}'].name: already used by a node or custom process",
+                    process.name()
+                )));
             }
         }
 
@@ -425,6 +451,57 @@ name = "collator"
         assert_eq!(para.id, 100);
         let collator = para.collators.first().unwrap();
         assert_eq!(collator.command.as_str(), "polkadot-omni-node");
+    }
+
+    #[tokio::test]
+    async fn a_custom_process_may_not_take_the_name_of_any_node() {
+        use configuration::NetworkConfig;
+
+        use super::*;
+
+        // A JAM node, and a node whose final name comes from a group.
+        for (taken, toml) in [
+            (
+                "jam-or",
+                r#"
+[jamchain]
+id = "dev"
+default_command = "polkajam"
+
+[[jamchain.nodes]]
+name = "jam-or"
+mode = "ordinary"
+
+[[custom_processes]]
+name = "jam-or"
+command = "eth-rpc"
+"#,
+            ),
+            (
+                "eth-1",
+                r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.node_groups]]
+name = "eth"
+count = 2
+
+[[custom_processes]]
+name = "eth-1"
+command = "eth-rpc"
+"#,
+            ),
+        ] {
+            let config = NetworkConfig::load_from_toml_string(toml).unwrap();
+            let err = NetworkSpec::from_config(&config).await.unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains(&format!("custom_processes['{taken}'].name: already used")),
+                "{err}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -16,14 +16,18 @@ use tokio::{time::sleep, try_join};
 use tracing::{debug, trace};
 
 use super::{
-    client::{ContainerRunOptions, DockerClient},
+    client::{ownership_labels, ContainerRunOptions, DockerClient},
     namespace::DockerNamespace,
 };
 use crate::{
-    constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
+    constants::{
+        HELPERS_DIR, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR,
+    },
     docker,
+    shared::helpers::{default_true, ensure_wrapper, injected_file_name},
     types::{
-        ExecutionResult, InnerSnapshotDb, Port, RunCommandOptions, RunScriptOptions, TransferedFile,
+        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, RunCommandOptions,
+        RunScriptOptions, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -45,6 +49,11 @@ where
     pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
     pub(super) port_mapping: &'a HashMap<Port, Port>,
+    /// Whether `program` runs through the zombie wrapper (see
+    /// [`SpawnNodeOptions::wrapper`](crate::types::SpawnNodeOptions)).
+    pub(super) wrapper: bool,
+    /// What the container is, for its `zombienet.kind` label.
+    pub(super) role: Option<NodeRole>,
 }
 
 impl<'a, FS> DockerNodeOptions<'a, FS>
@@ -72,6 +81,8 @@ where
             container_name: deserializable.container_name.clone(),
             filesystem,
             port_mapping: &deserializable.port_mapping,
+            wrapper: deserializable.wrapper,
+            role: None,
         }
     }
 }
@@ -85,6 +96,8 @@ pub(super) struct DeserializableDockerNodeOptions {
     pub(super) env: Vec<(String, String)>,
     pub(super) container_name: String,
     pub(super) port_mapping: HashMap<Port, Port>,
+    #[serde(default = "default_true")]
+    pub(super) wrapper: bool,
 }
 
 #[derive(Serialize)]
@@ -109,6 +122,8 @@ where
     docker_client: DockerClient,
     container_name: String,
     port_mapping: HashMap<Port, Port>,
+    /// Whether `program` runs through the zombie wrapper.
+    wrapper: bool,
     #[allow(dead_code)]
     #[serde(skip)]
     filesystem: FS,
@@ -163,18 +178,21 @@ where
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
             port_mapping: options.port_mapping.clone(),
+            wrapper: options.wrapper,
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
-        node.initialize_docker().await?;
+        node.initialize_docker(options.role, options.startup_files)
+            .await?;
 
         if let Some(db_snap) = options.db_snapshot {
             node.initialize_db_snapshot(db_snap).await?;
         }
 
-        node.initialize_startup_files(options.startup_files).await?;
-
-        node.start().await?;
+        if node.wrapper {
+            node.initialize_startup_files(options.startup_files).await?;
+            node.start().await?;
+        }
 
         Ok(node)
     }
@@ -216,44 +234,107 @@ where
             docker_client: options.docker_client.clone(),
             container_name: options.container_name,
             port_mapping: options.port_mapping.clone(),
+            wrapper: options.wrapper,
             provider_tag: docker::provider::PROVIDER_NAME.to_string(),
         });
 
         Ok(node)
     }
 
-    async fn initialize_docker(&self) -> Result<(), ProviderError> {
-        let command = [vec![self.program.to_string()], self.args.to_vec()].concat();
+    async fn initialize_docker(
+        &self,
+        role: Option<NodeRole>,
+        startup_files: &[TransferedFile],
+    ) -> Result<(), ProviderError> {
+        // A direct process runs `program` from the moment the container is
+        // up, so its files are bind-mounted in, from a copy with the asked
+        // mode; a wrapped node gets them sent while the wrapper holds
+        // `program` back.
+        let mut file_mounts = HashMap::new();
+        if !self.wrapper && !startup_files.is_empty() {
+            let staging = self.base_dir.join("files");
+            self.filesystem.create_dir_all(&staging).await?;
+            let staging = &staging;
+            let staged = try_join_all(startup_files.iter().enumerate().map(
+                |(index, file)| async move {
+                    let staged = staging.join(injected_file_name(index, file));
+                    let failed = |err: support::fs::FileSystemError| {
+                        ProviderError::SendFile(
+                            self.name.clone(),
+                            file.local_path.to_string_lossy().to_string(),
+                            err.into(),
+                        )
+                    };
+                    // a copy from an earlier spawn into this base dir may be read-only
+                    if self.filesystem.exists(&staged).await {
+                        self.filesystem
+                            .set_mode(&staged, 0o644)
+                            .await
+                            .map_err(failed)?;
+                    }
+                    self.filesystem
+                        .copy(&file.local_path, &staged)
+                        .await
+                        .map_err(failed)?;
+                    self.filesystem
+                        .set_mode(&staged, file.mode_bits().unwrap_or(0o644))
+                        .await
+                        .map_err(failed)?;
+                    Ok::<_, ProviderError>((
+                        staged.to_string_lossy().into_owned(),
+                        format!("{}:ro", file.remote_path.to_string_lossy()),
+                    ))
+                },
+            ))
+            .await?;
+            file_mounts.extend(staged);
+        }
+        let kind = role.map(|r| r.as_label()).unwrap_or("node");
+        // The entrypoint is the wrapper, which starts `program args` on demand
+        // through its pipe, or `program` itself. Either way `program` replaces
+        // the image's own entrypoint, as it does on kubernetes.
+        let (entrypoint, command) = if self.wrapper {
+            (
+                "/scripts/zombie-wrapper.sh".to_string(),
+                [vec![self.program.to_string()], self.args.to_vec()].concat(),
+            )
+        } else {
+            (self.program.to_string(), self.args.to_vec())
+        };
+
+        let mut volume_mounts = HashMap::from([
+            (
+                format!("{}-zombie-wrapper", self.namespace_name(),),
+                "/scripts".to_string(),
+            ),
+            (
+                format!("{}-helper-binaries", self.namespace_name()),
+                HELPERS_DIR.to_string(),
+            ),
+            (
+                self.config_dir.to_string_lossy().into_owned(),
+                "/cfg".to_string(),
+            ),
+            (
+                self.data_dir.to_string_lossy().into_owned(),
+                "/data".to_string(),
+            ),
+            (
+                self.relay_data_dir.to_string_lossy().into_owned(),
+                "/relay-data".to_string(),
+            ),
+        ]);
+        volume_mounts.extend(file_mounts);
 
         self.docker_client
             .container_run(
                 ContainerRunOptions::new(&self.image, command)
                     .name(&self.container_name)
                     .env(self.env.clone())
-                    .volume_mounts(HashMap::from([
-                        (
-                            format!("{}-zombie-wrapper", self.namespace_name(),),
-                            "/scripts".to_string(),
-                        ),
-                        (
-                            format!("{}-helper-binaries", self.namespace_name()),
-                            "/helpers".to_string(),
-                        ),
-                        (
-                            self.config_dir.to_string_lossy().into_owned(),
-                            "/cfg".to_string(),
-                        ),
-                        (
-                            self.data_dir.to_string_lossy().into_owned(),
-                            "/data".to_string(),
-                        ),
-                        (
-                            self.relay_data_dir.to_string_lossy().into_owned(),
-                            "/relay-data".to_string(),
-                        ),
-                    ]))
-                    .entrypoint("/scripts/zombie-wrapper.sh")
-                    .port_mapping(&self.port_mapping),
+                    .volume_mounts(volume_mounts)
+                    .entrypoint(entrypoint)
+                    .port_mapping(&self.port_mapping)
+                    .labels(ownership_labels(&self.namespace_name(), kind, &self.name)),
             )
             .await
             .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))?;
@@ -585,6 +666,20 @@ where
         Ok(())
     }
 
+    async fn status(&self) -> Result<ProcessStatus, ProviderError> {
+        let (state, code) = self
+            .docker_client
+            .container_state(&self.container_name)
+            .await
+            .map_err(|err| {
+                ProviderError::InvalidConfig(format!("Error getting container state, err: {err}"))
+            })?;
+        Ok(match state.as_str() {
+            "exited" | "dead" | "stopped" => ProcessStatus::Exited { code },
+            _ => ProcessStatus::Running { ready: None },
+        })
+    }
+
     async fn ip(&self) -> Result<IpAddr, ProviderError> {
         let ip = self
             .docker_client
@@ -602,6 +697,13 @@ where
     }
 
     async fn pause(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "pause",
+            ProviderError::PauseNodeFailed,
+        )?;
+
         self.docker_client
             .container_exec(
                 &self.container_name,
@@ -622,6 +724,13 @@ where
     }
 
     async fn resume(&self) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "resume",
+            ProviderError::ResumeNodeFailed,
+        )?;
+
         self.docker_client
             .container_exec(
                 &self.container_name,
@@ -642,6 +751,13 @@ where
     }
 
     async fn restart(&self, after: Option<Duration>) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         if let Some(duration) = after {
             sleep(duration).await;
         }
@@ -672,6 +788,13 @@ where
         args: &[String],
         after: Option<Duration>,
     ) -> Result<(), ProviderError> {
+        ensure_wrapper(
+            &self.name,
+            self.wrapper,
+            "restart",
+            ProviderError::RestartNodeFailed,
+        )?;
+
         // get the assets
         for asset in assets {
             match asset {

@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use futures::future::try_join_all;
 use serde::{Deserialize, Deserializer};
 use tokio::process::Command;
-use tracing::{info, trace};
+use tracing::{info, trace, warn};
 
 use crate::types::{ExecutionResult, Port};
 
@@ -19,6 +19,23 @@ pub struct DockerClient {
     using_podman: bool,
 }
 
+/// The namespace a container or volume belongs to; teardown goes by it.
+pub const LABEL_NAMESPACE: &str = "zombienet.namespace";
+/// What it is: a `zombie-role` value for a node's container, `helper` for
+/// the namespace's scripts container, `volume` for a volume.
+pub const LABEL_KIND: &str = "zombienet.kind";
+/// Its name within the namespace.
+pub const LABEL_NAME: &str = "zombienet.name";
+
+/// The three ownership labels as key/value pairs.
+pub fn ownership_labels(namespace: &str, kind: &str, name: &str) -> Vec<(String, String)> {
+    vec![
+        (LABEL_NAMESPACE.into(), namespace.into()),
+        (LABEL_KIND.into(), kind.into()),
+        (LABEL_NAME.into(), name.into()),
+    ]
+}
+
 #[derive(Debug)]
 pub struct ContainerRunOptions {
     image: String,
@@ -28,6 +45,7 @@ pub struct ContainerRunOptions {
     name: Option<String>,
     entrypoint: Option<String>,
     port_mapping: HashMap<Port, Port>,
+    labels: Vec<(String, String)>,
     rm: bool,
     detach: bool,
 }
@@ -116,6 +134,7 @@ impl ContainerRunOptions {
             name: None,
             entrypoint: None,
             port_mapping: HashMap::default(),
+            labels: vec![],
             rm: false,
             detach: true, // add -d flag by default
         }
@@ -164,6 +183,11 @@ impl ContainerRunOptions {
 
     pub fn port_mapping(mut self, port_mapping: &HashMap<Port, Port>) -> Self {
         self.port_mapping.clone_from(port_mapping);
+        self
+    }
+
+    pub fn labels(mut self, labels: Vec<(String, String)>) -> Self {
+        self.labels = labels;
         self
     }
 
@@ -220,10 +244,14 @@ impl DockerClient {
         tokio::process::Command::new(self.client_binary())
     }
 
-    pub async fn create_volume(&self, name: &str) -> Result<()> {
-        let result = self
-            .client_command()
-            .args(["volume", "create", name])
+    pub async fn create_volume(&self, name: &str, labels: &[(String, String)]) -> Result<()> {
+        let mut cmd = self.client_command();
+        cmd.args(["volume", "create"]);
+        for (key, value) in labels {
+            cmd.args(["--label", &format!("{key}={value}")]);
+        }
+        let result = cmd
+            .arg(name)
             .output()
             .await
             .map_err(|err| anyhow!("Failed to create volume '{name}': {err}"))?;
@@ -444,32 +472,33 @@ impl DockerClient {
         Ok(())
     }
 
+    /// Remove every container of the namespace: the ones labelled with it,
+    /// plus any named with its prefix (containers from before the labels).
     pub async fn namespaced_containers_rm(&self, namespace: &str) -> Result<()> {
-        let container_names: Vec<String> = self
+        let mut container_names: Vec<String> = self
             .get_containers()
             .await?
             .into_iter()
             .filter_map(|container| match container {
-                Container::Docker(container) => {
-                    if let Some(name) = container.names.first() {
-                        if name.starts_with(namespace) {
-                            return Some(name.to_string());
-                        }
-                    }
-
-                    None
-                },
-                Container::Podman(container) => {
-                    if let Some(name) = container.names.first() {
-                        if name.starts_with(namespace) {
-                            return Some(name.to_string());
-                        }
-                    }
-
-                    None
-                },
+                Container::Docker(container) => container.names.into_iter().next(),
+                Container::Podman(container) => container.names.into_iter().next(),
             })
+            .filter(|name| name.starts_with(namespace))
             .collect();
+        match self
+            .names_by_label("ps", &["--all"], "{{.Names}}", LABEL_NAMESPACE, namespace)
+            .await
+        {
+            Ok(labelled) => {
+                for name in labelled {
+                    if !container_names.contains(&name) {
+                        container_names.push(name);
+                    }
+                }
+            },
+            // Still remove what the name prefix found.
+            Err(err) => warn!("{namespace}: could not list containers by label: {err}"),
+        }
 
         info!("{:?}", container_names);
         let futures = container_names
@@ -481,13 +510,76 @@ impl DockerClient {
         Ok(())
     }
 
+    /// Remove the volumes labelled with the namespace. Containers go first,
+    /// a volume in use cannot be removed.
+    pub async fn namespaced_volumes_rm(&self, namespace: &str) -> Result<()> {
+        let volumes = self
+            .names_by_label("volume", &["ls"], "{{.Name}}", LABEL_NAMESPACE, namespace)
+            .await?;
+        if volumes.is_empty() {
+            return Ok(());
+        }
+
+        let result = self
+            .client_command()
+            .args(["volume", "rm", "--force"])
+            .args(&volumes)
+            .output()
+            .await
+            .map_err(|err| anyhow!("Failed to remove volumes {volumes:?}: {err}"))?;
+        if !result.status.success() {
+            return Err(anyhow!(
+                "Failed to remove volumes {volumes:?}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
+    /// Names of the objects `subcommand args` lists that carry `label=value`;
+    /// `format` is the template for the name (`ps` and `volume ls` differ).
+    async fn names_by_label(
+        &self,
+        subcommand: &str,
+        args: &[&str],
+        format: &str,
+        label: &str,
+        value: &str,
+    ) -> Result<Vec<String>> {
+        let result = self
+            .client_command()
+            .arg(subcommand)
+            .args(args)
+            .args(["--filter", &format!("label={label}={value}")])
+            .args(["--format", format])
+            .output()
+            .await
+            .map_err(|err| anyhow!("Failed to list by label {label}={value}: {err}"))?;
+        if !result.status.success() {
+            return Err(anyhow!(
+                "Failed to list by label {label}={value}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            )
+            .into());
+        }
+
+        Ok(String::from_utf8_lossy(&result.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(String::from)
+            .collect())
+    }
+
     pub async fn container_ip(&self, container_name: &str) -> Result<String> {
         let ip = if self.using_podman {
             "127.0.0.1".into()
         } else {
             // try the old ip template
             let mut ip_str = self
-                .container_ip_inner(container_name, "{{ .NetworkSettings.IPAddress }}")
+                .container_ip_inner(container_name, "{{ .NetworkSettings.IPAddress }}", true)
                 .await?;
             if ip_str.is_empty() {
                 // try the new template version
@@ -495,6 +587,7 @@ impl DockerClient {
                     .container_ip_inner(
                         container_name,
                         "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                        false,
                     )
                     .await?;
             }
@@ -505,23 +598,49 @@ impl DockerClient {
         Ok(ip)
     }
 
-    async fn container_ip_inner(&self, container_name: &str, ip_template: &str) -> Result<String> {
-        let mut cmd = tokio::process::Command::new("docker");
-        cmd.args(vec!["inspect", "-f", ip_template, container_name]);
+    /// The container's state (`running`, `exited`, ...) and exit code.
+    pub async fn container_state(&self, container_name: &str) -> Result<(String, Option<i32>)> {
+        let text = self
+            .inspect(container_name, "{{.State.Status}} {{.State.ExitCode}}")
+            .await?;
+        let mut parts = text.split_whitespace();
+        let state = parts.next().unwrap_or_default().to_string();
+        let code = parts.next().and_then(|c| c.parse().ok());
+        Ok((state, code))
+    }
 
-        trace!("CMD: {cmd:?}");
-
-        let res = cmd
+    /// `inspect -f <template>` on the container, trimmed.
+    async fn inspect(&self, container_name: &str, template: &str) -> Result<String> {
+        let out = self
+            .client_command()
+            .args(["inspect", "-f", template, container_name])
             .output()
             .await
-            .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?;
+            .map_err(|err| anyhow!("Failed to inspect container '{container_name}': {err}"))?;
+        if !out.status.success() {
+            return Err(anyhow!(
+                "Failed to inspect container '{container_name}': {}",
+                String::from_utf8_lossy(&out.stderr)
+            )
+            .into());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
 
-        let ip_str = String::from_utf8(res.stdout)
-            .map_err(|err| anyhow!("Failed to get docker container ip,  output: {err}"))?
-            .trim()
-            .into();
-
-        Ok(ip_str)
+    /// `lenient` tolerates a template that does not apply to this engine's
+    /// output (empty, so the caller tries the next one); otherwise an error
+    /// is an error.
+    async fn container_ip_inner(
+        &self,
+        container_name: &str,
+        ip_template: &str,
+        lenient: bool,
+    ) -> Result<String> {
+        match self.inspect(container_name, ip_template).await {
+            Ok(ip) => Ok(ip),
+            Err(_) if lenient => Ok(String::new()),
+            Err(err) => Err(err),
+        }
     }
 
     async fn get_containers(&self) -> Result<Vec<Container>> {
@@ -633,6 +752,10 @@ impl DockerClient {
 
         if let Some(name) = options.name.as_ref() {
             cmd.args(["--name", name]);
+        }
+
+        for (key, value) in &options.labels {
+            cmd.args(["--label", &format!("{key}={value}")]);
         }
 
         cmd.arg(&options.image);

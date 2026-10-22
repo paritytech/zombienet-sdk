@@ -28,7 +28,7 @@ use crate::{
         node::{DeserializableKubernetesNodeOptions, KubernetesNodeOptions},
         provider,
     },
-    shared::helpers::{extract_execution_result, running_in_ci},
+    shared::helpers::{extract_execution_result, namespace_base_dir, running_in_ci},
     types::{
         GenerateFileCommand, GenerateFilesOptions, NodeRole, ProviderCapabilities,
         RunCommandOptions, SpawnNodeOptions,
@@ -64,7 +64,7 @@ where
 {
     pub(super) async fn new(
         provider: &Weak<KubernetesProvider<FS>>,
-        tmp_dir: &PathBuf,
+        tmp_dir: &Path,
         capabilities: &ProviderCapabilities,
         k8s_client: &KubernetesClient,
         filesystem: &FS,
@@ -80,21 +80,7 @@ where
             format!("{}{}", NAMESPACE_PREFIX, Uuid::new_v4())
         };
 
-        let base_dir = if let Some(custom_base_dir) = custom_base_dir {
-            if !filesystem.exists(custom_base_dir).await {
-                filesystem.create_dir(custom_base_dir).await?;
-            } else {
-                warn!(
-                    "⚠️ Using and existing directory {} as base dir",
-                    custom_base_dir.to_string_lossy()
-                );
-            }
-            PathBuf::from(custom_base_dir)
-        } else {
-            let base_dir = PathBuf::from_iter([tmp_dir, &PathBuf::from(&name)]);
-            filesystem.create_dir(&base_dir).await?;
-            base_dir
-        };
+        let base_dir = namespace_base_dir(filesystem, tmp_dir, &name, custom_base_dir).await?;
 
         let namespace = Arc::new_cyclic(|weak| KubernetesNamespace {
             weak: weak.clone(),
@@ -285,7 +271,7 @@ where
 
         let pod_manifest = self
             .k8s_client
-            .create_pod(&self.name, &name, pod_spec, labels.clone())
+            .create_pod(&self.name, &name, pod_spec, labels.clone(), true)
             .await
             .map_err(|err| ProviderError::FileServerSetupError(err.into()))?;
 
@@ -607,10 +593,14 @@ where
             program: &options.program,
             args: &options.args,
             env: &options.env,
+            secret_env: &options.secret_env,
             startup_files: &options.injected_files,
             resources: options.resources.as_ref(),
             db_snapshot: options.db_snapshot.as_deref(),
             role: options.role,
+            ports: &options.ports,
+            readiness: options.readiness.as_ref(),
+            wrapper: options.wrapper,
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,
         })

@@ -1,29 +1,50 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, net::IpAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use configuration::{types::JamNodeMode, CustomProcess, GlobalSettings};
+use configuration::{
+    types::{JamNodeMode, Port},
+    CustomProcess, EnvValue, GlobalSettings, ReadyTarget,
+};
 use jam_std_common::hash_raw;
 use provider::{
-    constants::{LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT},
+    constants::{
+        LOCALHOST, NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, P2P_PORT, RPC_HTTP_PORT,
+        RPC_WS_PORT,
+    },
     shared::helpers::running_in_ci,
-    types::{SpawnNodeOptions, TransferedFile},
-    DynNamespace, ProviderNamespace,
+    types::{
+        NodeRole, ReadinessProbe, ReadinessTarget, SecretEnvVar, SpawnNodeOptions, TransferedFile,
+    },
+    DynNamespace, DynNode, ProviderNamespace,
 };
 use support::{
-    constants::THIS_IS_A_BUG, fs::FileSystem, replacer::apply_running_network_replacements,
+    constants::THIS_IS_A_BUG,
+    fs::FileSystem,
+    replacer::{apply_running_network_replacements, has_tokens},
 };
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::{
     generators::{self, ResolvedDbSnapshots},
     network::{
-        node::{JamNetworkNode, NetworkNode},
+        node::{CustomProcessNode, CustomProcessState, JamNetworkNode, NetworkNode, ProcessPort},
         NodeContext,
     },
     network_spec::{jamnode::JamNodeSpec, node::NodeSpec, parachain::ParachainSpec},
-    shared::constants::{FULL_NODE_PROMETHEUS_PORT, JAM_PORT, PROMETHEUS_PORT, RPC_PORT},
+    shared::{
+        constants::{FULL_NODE_PROMETHEUS_PORT, JAM_PORT, PROMETHEUS_PORT, RPC_PORT},
+        types::ParkedPort,
+    },
     ScopedFilesystem, ZombieRole,
 };
+
+/// The ports a node is reachable on inside the network (its k8s `Service`).
+const NODE_SERVICE_PORTS: [(&str, Port); 4] = [
+    ("p2p", P2P_PORT),
+    ("rpc", RPC_WS_PORT),
+    ("rpc-http", RPC_HTTP_PORT),
+    ("prom", PROMETHEUS_PORT),
+];
 
 #[derive(Clone)]
 pub struct SpawnNodeCtx<'a, T: FileSystem> {
@@ -223,6 +244,7 @@ where
         .created_paths(created_paths)
         .db_snapshot(resolved_db_snapshot)
         .port_mapping(HashMap::from(ports))
+        .ports(NODE_SERVICE_PORTS)
         .node_log_path(node.node_log_path.clone())
         .role(ctx.role.node_role());
 
@@ -359,24 +381,224 @@ where
     ))
 }
 
-pub async fn spawn_process(
+/// The args and env of a custom process, placeholders resolved.
+#[derive(Debug)]
+struct ResolvedInputs {
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    /// Read from kubernetes Secrets, nothing in it to resolve.
+    secret_env: Vec<SecretEnvVar>,
+}
+
+/// The args and env of `custom_process` with every `{{ZOMBIE:<name>:<field>}}`
+/// resolved against `context`: the nodes as the orchestrator keeps them, and
+/// every custom process's ports as `port_<name>` (see `ports_json`).
+///
+/// A placeholder that stays unresolved is an error: the process would start
+/// with the literal text.
+fn resolve_placeholders(
     custom_process: &CustomProcess,
-    ns: Arc<dyn ProviderNamespace + Send + Sync>,
-) -> Result<(), anyhow::Error> {
-    let args: Vec<String> = custom_process
+    context: &serde_json::Value,
+) -> Result<ResolvedInputs, anyhow::Error> {
+    let name = custom_process.name();
+    let resolve = |text: &str| -> Result<String, anyhow::Error> {
+        let resolved = apply_running_network_replacements(text, context);
+        if has_tokens(&resolved) {
+            Err(anyhow::anyhow!(
+                "{name}: unresolved placeholder in {resolved:?} (in context: {})",
+                context
+                    .as_object()
+                    .map(|nodes| nodes.keys().cloned().collect::<Vec<_>>().join(", "))
+                    .unwrap_or_default()
+            ))
+        } else {
+            Ok(resolved)
+        }
+    };
+
+    let args = custom_process
         .args()
         .iter()
         .flat_map(|arg| arg.to_vec())
-        .collect();
+        .map(|arg| resolve(&arg))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut env = vec![];
+    let mut secret_env = vec![];
+    for var in custom_process.env() {
+        match &var.value {
+            EnvValue::Value(value) => env.push((var.name.clone(), resolve(value)?)),
+            EnvValue::Secret { name: secret, key } => secret_env.push(SecretEnvVar {
+                name: var.name.clone(),
+                secret: secret.clone(),
+                key: key.clone(),
+            }),
+        }
+    }
 
-    let spawn_ops = SpawnNodeOptions::new(custom_process.name(), custom_process.command().as_str())
+    Ok(ResolvedInputs {
+        args,
+        env,
+        secret_env,
+    })
+}
+
+/// A custom process with its ports parked, ready to spawn.
+///
+/// Parking happens for every process before any of them spawns, so a port one
+/// process picks (or declares, on native) cannot be handed to another; each
+/// process releases its own right before its spawn.
+pub(crate) struct PreparedProcess<'a> {
+    pub(crate) spec: &'a CustomProcess,
+    /// Every declared port by name, `0`s resolved to the picked number.
+    pub(crate) ports: Vec<(String, Port)>,
+    /// On docker, the host port each port is published on.
+    host_ports: HashMap<Port, Port>,
+    parked: Vec<ParkedPort>,
+}
+
+/// A process's ports as placeholder context: `{ "port_<name>": "<number>" }`.
+pub(crate) fn ports_json(ports: &[(String, Port)]) -> serde_json::Value {
+    serde_json::json!(ports
+        .iter()
+        .map(|(port_name, port)| (format!("port_{port_name}"), port.to_string()))
+        .collect::<HashMap<_, _>>())
+}
+
+/// Resolve and park the ports of `custom_process`: a `0` is picked free, a
+/// fixed one on native has to be free too (or the process loses the bind and
+/// whoever holds the port answers for it), and on docker each port gets a
+/// parked host port to be published on, so two networks can share a host.
+pub(crate) fn prepare_process<'a>(
+    custom_process: &'a CustomProcess,
+    ns: &dyn ProviderNamespace,
+) -> Result<PreparedProcess<'a>, anyhow::Error> {
+    let name = custom_process.name();
+    let mut ports: Vec<(String, Port)> = Vec::with_capacity(custom_process.ports().len());
+    let mut host_ports: HashMap<Port, Port> = HashMap::new();
+    let mut parked = vec![];
+    // A picked port may not land on a fixed one of the same process.
+    let fixed: Vec<Port> = custom_process
+        .ports()
+        .iter()
+        .map(|p| p.port)
+        .filter(|p| *p != 0)
+        .collect();
+    for declared in custom_process.ports() {
+        let port = if declared.port == 0 {
+            let picked = loop {
+                let picked = generators::generate_node_port(None)?;
+                if !fixed.contains(&picked.0) {
+                    break picked;
+                }
+            };
+            let port = picked.0;
+            parked.push(picked);
+            port
+        } else if !ns.capabilities().requires_image {
+            let picked =
+                generators::generate_node_port(Some(declared.port)).with_context(|| {
+                    format!(
+                        "{name}: port {} ('{}') is already in use",
+                        declared.port, declared.name
+                    )
+                })?;
+            parked.push(picked);
+            declared.port
+        } else {
+            declared.port
+        };
+        if ns.provider_name() == "docker" {
+            let host = generators::generate_node_port(None)?;
+            host_ports.insert(port, host.0);
+            parked.push(host);
+        }
+        ports.push((declared.name.clone(), port));
+    }
+
+    Ok(PreparedProcess {
+        spec: custom_process,
+        ports,
+        host_ports,
+        parked,
+    })
+}
+
+/// Spawn a custom process and make it a member of the network: the running
+/// handle is returned with every declared port resolved to where it is
+/// reachable, so it can be tracked, written to `zombie.json` and reattached.
+///
+/// The process runs without zombienet's wrapper script: it is an
+/// off-the-shelf image most of the time, which may lack `bash`, and the
+/// pause/resume controls the wrapper provides are for nodes.
+///
+/// Every port is offered to the process as `{{ZOMBIE:<process>:port_<name>}}`
+/// in its args and env.
+pub(crate) async fn spawn_process(
+    prepared: PreparedProcess<'_>,
+    ns: Arc<dyn ProviderNamespace + Send + Sync>,
+    host_ip: IpAddr,
+    nodes_by_name: &serde_json::Value,
+) -> Result<CustomProcessNode, anyhow::Error> {
+    let PreparedProcess {
+        spec: custom_process,
+        ports: resolved_ports,
+        host_ports,
+        parked,
+    } = prepared;
+    let provider = ns.provider_name();
+    let capabilities = ns.capabilities();
+    let name = custom_process.name();
+
+    let ResolvedInputs {
+        args,
+        env,
+        secret_env,
+    } = resolve_placeholders(custom_process, nodes_by_name)?;
+    let files = custom_process.injected_files().to_vec();
+
+    // On docker a published port answers for the proxy, so a tcp check there
+    // proves nothing; said once, at spawn, where the config can still change.
+    let check = custom_process.effective_check();
+    if let Some(check) = &check {
+        if provider == "docker" && check.http_path().is_none() {
+            warn!(
+                "⚠️  {name}: the tcp check on port '{}' passes as soon as docker publishes it, whether or not the process listens; use an http ready_check for real readiness on docker",
+                check.port_name()
+            );
+        }
+    }
+
+    // What the provider may check itself (k8s: the pod's probe).
+    let readiness = check.and_then(|check| {
+        let port = resolved_ports
+            .iter()
+            .find(|(n, _)| n == check.port_name())
+            .map(|(_, p)| *p)?;
+        Some(ReadinessProbe {
+            target: match check {
+                ReadyTarget::Tcp(_) => ReadinessTarget::Tcp(port),
+                ReadyTarget::Http { path, .. } => ReadinessTarget::Http { port, path },
+            },
+            period_secs: u64::from(
+                custom_process
+                    .ready_check()
+                    .map(|c| c.interval)
+                    .unwrap_or(1),
+            ),
+        })
+    });
+
+    let spawn_ops = SpawnNodeOptions::new(name, custom_process.command().as_str())
         .args(&args)
-        .env(
-            custom_process
-                .env()
-                .iter()
-                .map(|var| (var.name.clone(), var.value.clone())),
-        );
+        .env(env)
+        .secret_env(secret_env)
+        .injected_files(files)
+        .ports(resolved_ports.iter().map(|(n, p)| (n.as_str(), *p)))
+        // only docker publishes ports; k8s and native ignore the mapping
+        .port_mapping(host_ports.clone())
+        .role(NodeRole::CustomProcess)
+        .readiness(readiness)
+        .without_wrapper();
 
     let spawn_ops = if let Some(image) = custom_process.image() {
         spawn_ops.image(image.as_str())
@@ -384,24 +606,118 @@ pub async fn spawn_process(
         spawn_ops
     };
 
+    let spawn_ops = match custom_process.resources() {
+        Some(resources) if capabilities.has_resources => spawn_ops.resources(resources.clone()),
+        Some(_) => {
+            warn!(
+                "⚠️  {name}: resources are not supported by the {provider} provider, ignoring them"
+            );
+            spawn_ops
+        },
+        None => spawn_ops,
+    };
+
     info!(
-        "🚀 {}, spawning custom process.... with command: {} {}",
-        custom_process.name(),
+        "🚀 {name}, spawning custom process.... with command: {} {}",
         custom_process.command().as_str(),
         args.join(" ")
     );
 
-    let running_node = ns.spawn_node(&spawn_ops).await.with_context(|| {
-        format!(
-            "Failed to spawn node: {} with opts: {:#?}",
-            custom_process.name(),
-            spawn_ops
-        )
-    })?;
+    for port in &parked {
+        port.drop_listener();
+    }
 
+    // the provider's error names the process and says why
+    let running_node = ns.spawn_node(&spawn_ops).await?;
+
+    // From here on the process runs. Nothing below may lose it: a port we
+    // cannot reach from here is reported by its in-network address instead.
+    let running_ip = match running_node.ip().await {
+        Ok(ip) => ip,
+        // a one-shot may be done already, with no address left to report
+        Err(err) if custom_process.one_shot() => {
+            debug!("{name}: no process ip ({err}); using {host_ip}");
+            host_ip
+        },
+        Err(err) => {
+            warn!("⚠️  {name}: could not get the process ip ({err}); using {host_ip}");
+            host_ip
+        },
+    };
+
+    let in_ci = running_in_ci();
+    let mut ports = std::collections::BTreeMap::new();
+    for (port_name, port) in &resolved_ports {
+        // `internal` is the address inside the network, `external` the one
+        // from where zombienet runs.
+        let (internal, external) = match provider {
+            // The Service named after the process; the pod itself from inside
+            // the cluster (CI), a port-forward on this host otherwise.
+            "k8s" => {
+                let internal = format!("{name}:{port}");
+                // a one-shot may be gone already, nothing to forward to
+                let external = if in_ci || custom_process.one_shot() {
+                    format!("{running_ip}:{port}")
+                } else {
+                    forward_or_keep(&running_node, name, port_name, *port, internal.clone()).await
+                };
+                (internal, external)
+            },
+            // The container; the port it is published on.
+            "docker" => (
+                format!("{running_ip}:{port}"),
+                format!("{host_ip}:{}", host_ports[port]),
+            ),
+            // The host, both ways.
+            _ => (format!("{host_ip}:{port}"), format!("{host_ip}:{port}")),
+        };
+
+        ports.insert(
+            port_name.clone(),
+            ProcessPort {
+                port: *port,
+                external,
+                internal,
+            },
+        );
+    }
+
+    info!("🚀 {name}, should be running now");
+    for (port_name, port) in &ports {
+        info!(
+            "🔌 {name}: port {port_name} ({}) reachable at {}",
+            port.port, port.external
+        );
+    }
     info!("📓 logs cmd: {}", running_node.log_cmd());
 
-    Ok(())
+    Ok(CustomProcessNode::new(
+        name,
+        running_node,
+        custom_process.clone(),
+        running_ip,
+        ports,
+        CustomProcessState::Starting,
+    ))
+}
+
+/// A port-forward to `port` of `node`, as `host:port` on this host, or
+/// `fallback` where the provider has none to offer or it could not be opened.
+pub(crate) async fn forward_or_keep(
+    node: &DynNode,
+    process: &str,
+    port_name: &str,
+    port: Port,
+    fallback: String,
+) -> String {
+    match node.create_port_forward(0, port).await {
+        Ok(Some(local_port)) => format!("{LOCALHOST}:{local_port}"),
+        Ok(None) => fallback,
+        Err(err) => {
+            warn!("⚠️  {process}: could not forward port {port_name} ({port}): {err}");
+            fallback
+        },
+    }
 }
 
 pub async fn spawn_jam_node<'a, T>(
@@ -488,7 +804,8 @@ where
         )
         .injected_files(files_to_inject)
         .created_paths(created_paths)
-        .port_mapping(HashMap::from(ports));
+        .port_mapping(HashMap::from(ports))
+        .ports(NODE_SERVICE_PORTS);
 
     let spawn_ops = if let Some(image) = node.image.as_ref() {
         spawn_ops.image(image.as_str())
@@ -544,4 +861,89 @@ where
         ip_to_use,
         gen_opts,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use configuration::{CustomProcessBuilder, ProcessEnvVar};
+
+    use super::*;
+
+    fn eth_rpc() -> CustomProcess {
+        CustomProcessBuilder::new()
+            .with_name("eth-rpc")
+            .with_command("eth-rpc")
+            .with_args(vec![
+                ("--node-rpc-url", "{{ZOMBIE:asset-hub-1:internal_ws_uri}}").into(),
+                ("--rpc-port", "{{ZOMBIE:eth-rpc:port_http}}").into(),
+                "--rpc-external".into(),
+            ])
+            .with_env(vec![
+                ("RUST_LOG", "info").into(),
+                ("UPSTREAM", "{{ZOMBIE:asset-hub-1:ws_uri}}").into(),
+                ProcessEnvVar::from_secret("TURN_SECRET", "turn", "secret"),
+            ])
+            .with_named_port("http", 0)
+            .build()
+            .unwrap()
+    }
+
+    /// A node plus the process's own ports, as the scheduler builds it.
+    fn context(own_ports: &[(String, Port)]) -> serde_json::Value {
+        let mut context = serde_json::json!({
+            "asset-hub-1": {
+                "name": "asset-hub-1",
+                "ws_uri": "ws://127.0.0.1:51234",
+                "internal_ws_uri": "ws://asset-hub-1:9944",
+            }
+        });
+        context["eth-rpc"] = ports_json(own_ports);
+        context
+    }
+
+    #[test]
+    fn placeholders_resolve_nodes_and_own_ports() {
+        let ResolvedInputs {
+            args,
+            env,
+            secret_env,
+        } = resolve_placeholders(&eth_rpc(), &context(&[("http".into(), 8545)])).unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                "--node-rpc-url",
+                "ws://asset-hub-1:9944",
+                "--rpc-port",
+                "8545",
+                "--rpc-external"
+            ]
+        );
+        assert_eq!(
+            env,
+            vec![
+                ("RUST_LOG".to_string(), "info".to_string()),
+                ("UPSTREAM".to_string(), "ws://127.0.0.1:51234".to_string()),
+            ]
+        );
+        assert_eq!(
+            secret_env,
+            vec![SecretEnvVar {
+                name: "TURN_SECRET".into(),
+                secret: "turn".into(),
+                key: "secret".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn an_unresolved_placeholder_is_an_error() {
+        // no such port
+        let err = resolve_placeholders(&eth_rpc(), &context(&[("rpc".into(), 8545)])).unwrap_err();
+        assert!(err.to_string().contains("port_http"), "{err}");
+
+        // no such node
+        let err = resolve_placeholders(&eth_rpc(), &serde_json::json!({})).unwrap_err();
+        assert!(err.to_string().contains("asset-hub-1"), "{err}");
+    }
 }

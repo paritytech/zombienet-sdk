@@ -118,8 +118,13 @@ impl NodeCore {
     /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
     /// with global setting `teardown_on_failure` disabled.
     pub async fn pause(&self) -> Result<(), anyhow::Error> {
+        // Cleared first so the watcher does not read the pause as a crash;
+        // put back if the provider refused (a process without the wrapper).
+        let was_running = self.is_running();
         self.set_is_running(false);
-        self.inner.pause().await?;
+        self.inner.pause().await.inspect_err(|_| {
+            self.set_is_running(was_running);
+        })?;
         Ok(())
     }
 
@@ -129,8 +134,11 @@ impl NodeCore {
     /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
     /// with global setting `teardown_on_failure` disabled.
     pub async fn resume(&self) -> Result<(), anyhow::Error> {
+        let was_running = self.is_running();
         self.set_is_running(true);
-        self.inner.resume().await?;
+        self.inner.resume().await.inspect_err(|_| {
+            self.set_is_running(was_running);
+        })?;
         Ok(())
     }
 
@@ -139,6 +147,8 @@ impl NodeCore {
     /// Note: If you're using this method with the native provider on the attached network, the live network has to be running
     /// with global setting `teardown_on_failure` disabled.
     pub async fn restart(&self, after: Option<Duration>) -> Result<(), anyhow::Error> {
+        // Not put back on failure: the provider may have stopped the process
+        // before failing to start it again.
         self.set_is_running(false);
         self.inner.restart(after).await?;
         self.set_is_running(true);

@@ -46,8 +46,20 @@ This directory contains a collection of examples demonstrating the features of t
     *   **Description**: Demonstrates how to remove default command-line arguments from a node's startup command.
     *   **Run**: `cargo run --example arg_removal`
 
+*   **`custom_process_ports`**
+    *   **Description**: A custom process that declares a port. Zombienet picks it, hands it to the process through `{{ZOMBIE:files:port_http}}`, and the example reaches it through `get_custom_process("files").get_uri_for_name("http")`.
+    *   **Run**: `cargo run --example custom_process_ports`
+
+*   **`custom_process_lifecycle`**
+    *   **Description**: A one-shot `prepare`, a `files` server that starts once it completed and is ready when its http check passes, and a `reader` that starts once `files` is healthy. Prints each process's state.
+    *   **Run**: `cargo run --example custom_process_lifecycle`
+
+*   **`custom_process_injected_files`**
+    *   **Description**: A one-shot `greeter` running a script injected from `scripts/greet.sh`, in place before it starts.
+    *   **Run**: `cargo run --example custom_process_injected_files`
+
 *   **`custom_process_positional_args`**
-    *   **Description**: Shows how to spawn custom processes with positional arguments (arguments without `--` or `-` prefix). The example runs a monitoring script that takes a WebSocket URL and block count as positional arguments.
+    *   **Description**: Shows how to spawn custom processes with positional arguments (arguments without `--` or `-` prefix). The example runs a monitoring script that is told alice's WebSocket URL through `{{ZOMBIE:alice:ws_uri}}`, plus a block count.
     *   **Run**: `cargo run --example custom_process_positional_args`
 
 *   **`db_snapshot`**
@@ -73,6 +85,9 @@ This directory contains a collection of examples demonstrating the features of t
 *   **`raw_spec_override`**
     *   **Description**: Demonstrates how to override fields in the relay chain's raw chain spec (such as the chain name or bootNodes) using the SDK's `.with_raw_spec_override()` method.
     *   **Run**: `cargo run --example raw_spec_override`
+*   **`genesis_patch`**
+    *   **Description**: Appends a funded account to the relay chain's genesis balances and replaces a configuration value with an RFC 6902 patch, through `.with_genesis_patch()`.
+    *   **Run**: `cargo run --example genesis_patch`
 
 *   **`chain_spec_command`**
     *   **Description**: Shows how to post-process chain-spec files using a custom script that runs after chain-spec generation. The script receives the path to the chain-spec file as its only argument.

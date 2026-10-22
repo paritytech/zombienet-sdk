@@ -8,6 +8,7 @@ pub mod network_helper;
 pub mod observability;
 pub mod tx_helper;
 
+mod custom_processes;
 mod network_spec;
 pub mod shared;
 mod spawner;
@@ -40,6 +41,8 @@ use network_spec::{
     parachain::ParachainSpec,
 };
 use provider::{
+    constants::{HELPERS_DIR, NODE_MOUNTED_DIRS, NODE_SCRIPTS_DIR},
+    shared::helpers::running_in_ci,
     types::{GenerateFileCommand, NodeRole, ProviderCapabilities, TransferedFile},
     DynNamespace, DynProvider,
 };
@@ -58,7 +61,10 @@ use tracing::{debug, info, trace, warn};
 use crate::{
     network::{
         jamchain::{Jamchain, RawJamchain},
-        node::{jam::RawJamNetworkNode, JamNetworkNode, RawNetworkNode},
+        node::{
+            jam::RawJamNetworkNode, process::RawCustomProcessNode, CustomProcessNode,
+            CustomProcessState, JamNetworkNode, RawNetworkNode,
+        },
         parachain::RawParachain,
         relaychain::RawRelaychain,
     },
@@ -183,6 +189,21 @@ where
                 }
                 network.insert_node(node);
             }
+        }
+
+        let processes =
+            recreate_custom_processes_from_json(zombie_json, ns.clone(), self.provider.name())
+                .await?;
+        if !processes.is_empty() {
+            info!("recreating custom processes...");
+            for process in &processes {
+                // On docker and k8s this reaches a forward or proxy that
+                // answers for a gone process too; a real check is #596.
+                if process.is_responsive().await {
+                    process.core().set_is_running(true);
+                }
+            }
+            network.set_custom_processes(processes);
         }
 
         Ok(network)
@@ -630,6 +651,16 @@ where
             Parachain::register(register_para_options, &scoped_fs).await?;
         }
 
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            &network_spec,
+            ns.clone(),
+            configured_concurrency(&network_spec),
+        )
+        .await?;
+
+        // After the processes: a failed one fails the spawn, and these
+        // containers are not torn down with the namespace.
         if network_spec.global_settings.observability().enabled() {
             match network
                 .start_observability(network_spec.global_settings.observability())
@@ -642,13 +673,6 @@ where
                 Err(e) => {
                     warn!("⚠️  Failed to spawn observability stack: {e}");
                 },
-            }
-        }
-
-        // start custom processes if needed
-        for cp in &network_spec.custom_processes {
-            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
-                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
             }
         }
 
@@ -944,12 +968,13 @@ where
         )
         .await?;
 
-        // start custom processes if needed
-        for cp in &network_spec.custom_processes {
-            if let Err(e) = spawner::spawn_process(cp, ns.clone()).await {
-                warn!("⚠️  Failed to spawn custom process {}, err: {e}", cp.name())
-            }
-        }
+        custom_processes::spawn_custom_processes(
+            &mut network,
+            network_spec,
+            ns.clone(),
+            configured_concurrency(network_spec),
+        )
+        .await?;
 
         network.set_start_time_ts(start_time);
 
@@ -1085,6 +1110,60 @@ async fn recreate_jamchain_from_json(
     Ok(Some(jamchain_raw.inner))
 }
 
+/// Rebuild the `custom_processes` section of a `zombie.json`; empty when the
+/// network had none (or predates custom processes being tracked).
+async fn recreate_custom_processes_from_json(
+    zombie_json: &serde_json::Value,
+    ns: DynNamespace,
+    provider_name: &str,
+) -> Result<Vec<Arc<CustomProcessNode>>, OrchestratorError> {
+    let Some(processes_json) = zombie_json.get("custom_processes") else {
+        return Ok(vec![]);
+    };
+
+    let raw_processes: Vec<RawCustomProcessNode> = serde_json::from_value(processes_json.clone())?;
+
+    let mut processes = Vec::with_capacity(raw_processes.len());
+    for raw in raw_processes {
+        validate_provider_tag(&raw.inner, &raw.name, provider_name)?;
+
+        // Attached as recorded, like a node, with the state it had; `state()`
+        // and `wait_ready()` say more afterwards. A record the provider cannot
+        // take back is skipped with a warning, the rest of the network attaches.
+        let inner = match ns.spawn_node_from_json(&raw.inner).await {
+            Ok(inner) => inner,
+            Err(err) => {
+                warn!(
+                    "⚠️  {}: could not attach to the custom process, skipping it: {err}",
+                    raw.name
+                );
+                continue;
+            },
+        };
+
+        // The `external` addresses saved on k8s were port-forwards of the
+        // process that spawned the network, gone with it. Open new ones, and
+        // keep the saved address where there is none to open.
+        let mut ports = raw.ports;
+        let state = raw.state.unwrap_or(CustomProcessState::Ready);
+        // a one-shot is done by now, nothing to forward to; anything else may
+        // still be up, whatever its recorded state
+        if !running_in_ci() && !raw.spec.one_shot() {
+            for (port_name, port) in ports.iter_mut() {
+                let saved = std::mem::take(&mut port.external);
+                port.external =
+                    spawner::forward_or_keep(&inner, &raw.name, port_name, port.port, saved).await;
+            }
+        }
+
+        processes.push(Arc::new(CustomProcessNode::new(
+            raw.name, inner, raw.spec, raw.ip, ports, state,
+        )));
+    }
+
+    Ok(processes)
+}
+
 async fn recreate_parachains_from_json(
     zombie_json: &serde_json::Value,
     ns: DynNamespace,
@@ -1179,6 +1258,56 @@ fn validate_spec_with_provider_capabilities(
     capabilities: &ProviderCapabilities,
 ) -> Result<(), anyhow::Error> {
     let mut errs: Vec<String> = vec![];
+
+    for process in &network_spec.custom_processes {
+        for var in process.env() {
+            if !capabilities.has_secrets
+                && matches!(var.value, configuration::EnvValue::Secret { .. })
+            {
+                errs.push(format!(
+                    "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
+                    process.name(),
+                    var.name
+                ));
+            }
+        }
+        for file in process.injected_files() {
+            if NODE_MOUNTED_DIRS
+                .iter()
+                .any(|dir| Path::new(dir) == file.remote_path)
+            {
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
+                    process.name(),
+                    file.remote_path.display()
+                ));
+            } else if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
+                .iter()
+                .find(|dir| file.remote_path.starts_with(dir))
+            {
+                // on docker these two are volumes every container of the network shares
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
+                    process.name(),
+                    file.remote_path.display()
+                ));
+            }
+            if !file.local_path.is_file() {
+                let from = if file.local_path.is_relative() {
+                    std::env::current_dir()
+                        .map(|cwd| format!(" (relative to {})", cwd.display()))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                errs.push(format!(
+                    "custom_processes['{}'].injected_files: no file at '{}'{from}",
+                    process.name(),
+                    file.local_path.display()
+                ));
+            }
+        }
+    }
 
     if capabilities.requires_image {
         // Relaychain
@@ -1305,36 +1434,33 @@ fn spawn_concurrency_from_env() -> Option<usize> {
     }
 }
 
+/// The spawn concurrency as set (env over settings, 20 when neither), before
+/// any token limit: what custom processes spawn with, since their placeholders
+/// resolve from nodes that are all up and ports that are all reserved before
+/// any starts. At least 1: with 0 nothing would ever start.
+fn configured_concurrency(spec: &NetworkSpec) -> usize {
+    spawn_concurrency_from_env()
+        .or(spec.global_settings.spawn_concurrency())
+        .unwrap_or(20)
+        .max(1)
+}
+
+/// Whether a chain's spec has a `{{ZOMBIE:..}}` placeholder, which makes the
+/// nodes spawn one at a time. Custom processes are left out: theirs resolve
+/// from nodes that are all up by then.
+fn chains_have_tokens(spec: &NetworkSpec) -> Result<bool, anyhow::Error> {
+    let chains = (&spec.relaychain, &spec.jamchain, &spec.parachains);
+    Ok(has_tokens(&serde_json::to_string(&chains)?))
+}
+
+/// The concurrency nodes spawn with, and whether tokens limited it to 1.
 fn calculate_concurrency(spec: &NetworkSpec) -> Result<(usize, bool), anyhow::Error> {
-    let desired_spawn_concurrency = match (
-        spawn_concurrency_from_env(),
-        spec.global_settings.spawn_concurrency(),
-    ) {
-        (Some(n), _) => Some(n),
-        (None, Some(n)) => Some(n),
-        _ => None,
-    };
-
-    let (spawn_concurrency, limited_by_tokens) =
-        if let Some(spawn_concurrency) = desired_spawn_concurrency {
-            if spawn_concurrency == 1 {
-                (1, false)
-            } else if has_tokens(&serde_json::to_string(spec)?) {
-                (1, true)
-            } else {
-                (spawn_concurrency, false)
-            }
-        } else {
-            // not set
-            if has_tokens(&serde_json::to_string(spec)?) {
-                (1, true)
-            } else {
-                // use 100 as max concurrency, we can set a max by provider later
-                (100, false)
-            }
-        };
-
-    Ok((spawn_concurrency, limited_by_tokens))
+    let concurrency = configured_concurrency(spec);
+    if concurrency > 1 && chains_have_tokens(spec)? {
+        Ok((1, true))
+    } else {
+        Ok((concurrency, false))
+    }
 }
 
 /// Build deterministic dependency **levels** among the given nodes.
@@ -1665,6 +1791,7 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1680,6 +1807,7 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1695,6 +1823,7 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1710,11 +1839,109 @@ mod tests {
             has_resources: false,
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
+            has_secrets: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
         println!("{valid:?}");
         assert!(valid.is_ok())
+    }
+
+    /// A provider that needs images and has no Secrets, as docker does.
+    fn image_caps() -> ProviderCapabilities {
+        ProviderCapabilities {
+            requires_image: true,
+            has_resources: false,
+            prefix_with_full_path: false,
+            use_default_ports_in_cmd: true,
+            has_secrets: false,
+        }
+    }
+
+    /// A spec with one custom process `api` injecting `local` at `remote`.
+    async fn spec_with_file(local: &str, remote: &str) -> NetworkSpec {
+        let network_config = generate(true, None).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_injected_file(configuration::TransferedFile::new(local, remote))
+                .build()
+                .unwrap(),
+        );
+        spec
+    }
+
+    const AN_EXISTING_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+
+    #[tokio::test]
+    async fn secret_env_needs_a_provider_with_secrets() {
+        let network_config = generate(true, None).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_env(vec![configuration::ProcessEnvVar::from_secret(
+                    "TURN_SECRET",
+                    "turn",
+                    "secret",
+                )])
+                .build()
+                .unwrap(),
+        );
+
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("custom_processes['api'].env: 'TURN_SECRET' is read from a Secret"),
+            "{err}"
+        );
+        let with = ProviderCapabilities {
+            has_secrets: true,
+            ..image_caps()
+        };
+        validate_spec_with_provider_capabilities(&spec, &with).unwrap();
+    }
+
+    #[tokio::test]
+    async fn injected_files_must_exist_before_anything_spawns() {
+        let spec = spec_with_file("./nowhere/init.sql", "/init.sql").await;
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "custom_processes['api'].injected_files: no file at './nowhere/init.sql' (relative to"
+            ),
+            "{err}"
+        );
+
+        let spec = spec_with_file(AN_EXISTING_FILE, "/init.sql").await;
+        validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn injected_files_may_not_replace_a_mounted_directory() {
+        let spec = spec_with_file(AN_EXISTING_FILE, "/data").await;
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
+        assert!(
+            err.to_string().ends_with(
+                "custom_processes['api'].injected_files: '/data' is a directory zombienet mounts"
+            ),
+            "{err}"
+        );
+
+        let spec = spec_with_file(AN_EXISTING_FILE, "/data/init.sql").await;
+        validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap();
+
+        let spec = spec_with_file(AN_EXISTING_FILE, "/scripts/run.sh").await;
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
+        assert!(
+            err.to_string().ends_with(
+                "custom_processes['api'].injected_files: '/scripts/run.sh' is inside /scripts, which the containers of a network share"
+            ),
+            "{err}"
+        );
     }
 
     #[tokio::test]
@@ -1724,7 +1951,7 @@ mod tests {
         let network_config = generate(false, Some("cargo")).unwrap();
         let spec = NetworkSpec::from_config(&network_config).await.unwrap();
         let (concurrency, _) = calculate_concurrency(&spec).unwrap();
-        assert_eq!(concurrency, 100);
+        assert_eq!(concurrency, 20);
     }
 
     #[tokio::test]
@@ -1766,6 +1993,33 @@ mod tests {
         let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
         assert_eq!(concurrency, 1);
         assert!(limited);
+    }
+
+    #[tokio::test]
+    async fn custom_process_placeholders_do_not_limit_spawn_concurrency() {
+        let _g = ENV_MUTEX.lock().await;
+        set_env(None);
+
+        let network_config = generate(false, Some("cargo")).unwrap();
+        let mut spec = NetworkSpec::from_config(&network_config).await.unwrap();
+
+        let global_settings = GlobalSettingsBuilder::new()
+            .with_spawn_concurrency(4)
+            .build()
+            .unwrap();
+
+        spec.set_global_settings(global_settings);
+        spec.custom_processes.push(
+            configuration::CustomProcessBuilder::new()
+                .with_name("api")
+                .with_command("api")
+                .with_args(vec!["{{ZOMBIE:alice:ws_uri}}".into()])
+                .build()
+                .unwrap(),
+        );
+        let (concurrency, limited) = calculate_concurrency(&spec).unwrap();
+        assert_eq!(concurrency, 4);
+        assert!(!limited);
     }
 
     #[tokio::test]

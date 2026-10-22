@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use support::constants::{DEFAULT_TYPESTATE, THIS_IS_A_BUG};
 
 use crate::{
+    jam_genesis::{JamGenesisConfig, JamGenesisConfigBuilder},
     shared::{
         errors::{ConfigError, FieldError},
         helpers::{merge_errors, merge_errors_vecs},
@@ -38,14 +39,20 @@ pub struct JamchainConfig {
     default_args: Vec<Arg>,
     /// chain-spec to use (location can be url or file path).
     chain_spec_path: Option<AssetLocation>,
+    /// Generate the spec with an external `<cmd> gen-spec` instead of the built-in builder.
     chain_spec_command: Option<Command>,
     /// Command to spawn corevm monitor (if present)
     corevm_monitor_command: Option<Command>,
     /// Command to spawn corevm builder (if present)
     corevm_builder_command: Option<Command>,
     /// Genesis state beyond the validator set, merged into the config `gen-spec` reads.
+    /// Only used by an external generator (polkajam's own `gen-spec` ignores it); setting it
+    /// opts into generating the spec with `gen-spec`.
     #[serde(skip_serializing_if = "Option::is_none")]
     genesis_overrides: Option<serde_json::Value>,
+    /// Customizations of the genesis built in process (the default way to build the spec).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    genesis: Option<JamGenesisConfig>,
     /// A list of nodes to run in this chain.
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     nodes: Vec<JamNodeConfig>,
@@ -87,7 +94,7 @@ impl JamchainConfig {
         self.chain_spec_path.as_ref()
     }
 
-    /// The location of an pre-existing chain specification for the relay chain.
+    /// The command generating the spec with `gen-spec`, instead of the built-in builder.
     pub fn chain_spec_command(&self) -> Option<&Command> {
         self.chain_spec_command.as_ref()
     }
@@ -107,9 +114,55 @@ impl JamchainConfig {
         self.genesis_overrides.as_ref()
     }
 
+    /// The customizations of the genesis built in process (if set).
+    pub fn genesis(&self) -> Option<&JamGenesisConfig> {
+        self.genesis.as_ref()
+    }
+
     /// The nodes of the relay chain.
     pub fn nodes(&self) -> Vec<&JamNodeConfig> {
         self.nodes.iter().collect::<Vec<&JamNodeConfig>>()
+    }
+
+    /// Check that the fields choosing how the spec is produced don't conflict: a pre-existing
+    /// spec (`chain_spec_path`), an external generator (`chain_spec_command` /
+    /// `genesis_overrides`) or the built-in builder (the default, customized by `genesis`).
+    pub(crate) fn spec_source_errors(&self) -> Vec<anyhow::Error> {
+        let mut errors = vec![];
+        let generator_field = if self.chain_spec_command.is_some() {
+            Some("chain_spec_command")
+        } else if self.genesis_overrides.is_some() {
+            Some("genesis_overrides")
+        } else {
+            None
+        };
+
+        if self.genesis.is_some() {
+            if self.chain_spec_path.is_some() {
+                errors.push(anyhow::anyhow!(
+                    "genesis: can't be used with `chain_spec_path`, the spec is used as given"
+                ));
+            }
+            if let Some(field) = generator_field {
+                errors.push(anyhow::anyhow!(
+                    "genesis: can't be used with `{field}`, which generates the spec with \
+                     `gen-spec` instead of the built-in builder"
+                ));
+            }
+        } else if let (Some(_), Some(field)) = (&self.chain_spec_path, generator_field) {
+            errors.push(anyhow::anyhow!(
+                "chain_spec_path: can't be used with `{field}`, the spec is used as given"
+            ));
+        }
+
+        errors
+    }
+
+    /// Resolve the relative paths of the genesis against the network definition's directory.
+    pub(crate) fn resolve_relative_paths(&mut self, base_dir: &std::path::Path) {
+        if let Some(genesis) = self.genesis.as_mut() {
+            genesis.resolve_relative_paths(base_dir);
+        }
     }
 }
 
@@ -148,6 +201,7 @@ impl Default for JamchainConfigBuilder<Initial> {
                 corevm_monitor_command: None,
                 corevm_builder_command: None,
                 genesis_overrides: None,
+                genesis: None,
                 nodes: vec![],
             },
             validation_context: Default::default(),
@@ -189,6 +243,48 @@ impl<A> JamchainConfigBuilder<A> {
             self.default_chain_context(),
             self.validation_context.clone(),
         ))
+    }
+
+    /// Customize the genesis built in process, using a nested [`JamGenesisConfigBuilder`].
+    ///
+    /// Building the spec in process is the default, this is only needed to change what goes
+    /// into genesis (services, auth queues, privileges, the bootstrap service...).
+    pub fn with_genesis(
+        self,
+        f: impl FnOnce(JamGenesisConfigBuilder) -> JamGenesisConfigBuilder,
+    ) -> Self {
+        let builder = match self.config.genesis.clone() {
+            Some(genesis) => JamGenesisConfigBuilder::from_config(genesis),
+            None => JamGenesisConfigBuilder::new(),
+        };
+        match f(builder).build() {
+            Ok(genesis) => Self::transition(
+                JamchainConfig {
+                    genesis: Some(genesis),
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| anyhow::anyhow!("genesis.{error}"))
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Use this bootstrap service code (a path or a url) instead of the one embedded in
+    /// zombienet. Shorthand for `with_genesis(|g| g.with_bootstrap_service(location))`.
+    pub fn with_bootstrap_service(self, location: impl Into<AssetLocation>) -> Self {
+        let location = location.into();
+        self.with_genesis(|genesis| genesis.with_bootstrap_service(location))
     }
 }
 
@@ -322,7 +418,8 @@ impl JamchainConfigBuilder<WithId> {
         )
     }
 
-    /// Set the command that generates the chain spec, when it is not the node binary itself.
+    /// Generate the chain spec with this command's `gen-spec`, instead of building it in
+    /// process (the default).
     ///
     /// Only the command is used: the orchestrator appends `gen-spec <config> <spec>` itself.
     pub fn with_chain_spec_command<T>(self, command: T) -> Self
@@ -349,6 +446,9 @@ impl JamchainConfigBuilder<WithId> {
 
     /// Set the genesis overrides: a JSON object merged into the config `gen-spec` reads, on top
     /// of the generated `id` and `genesis_validators`. Its keys are `gen-spec`'s business.
+    ///
+    /// Opts into generating the spec with `gen-spec`; to customize the genesis built in process
+    /// use [`Self::with_genesis`].
     pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
         Self::transition(
             JamchainConfig {
@@ -528,6 +628,9 @@ impl JamchainConfigBuilder<WithId> {
 impl JamchainConfigBuilder<WithAtLeastOneNode> {
     /// Set the genesis overrides: a JSON object merged into the config `gen-spec` reads, on top
     /// of the generated `id` and `genesis_validators`. Its keys are `gen-spec`'s business.
+    ///
+    /// Opts into generating the spec with `gen-spec`; to customize the genesis built in process
+    /// use [`Self::with_genesis`].
     pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
         Self::transition(
             JamchainConfig {
@@ -638,9 +741,9 @@ impl JamchainConfigBuilder<WithAtLeastOneNode> {
 
     /// Seals the builder and returns a [`JamchainConfig`] if there are no validation errors, else returns errors.
     pub fn build(self) -> Result<JamchainConfig, Vec<anyhow::Error>> {
-        if !self.errors.is_empty() {
-            return Err(self
-                .errors
+        let errors = merge_errors_vecs(self.errors, self.config.spec_source_errors());
+        if !errors.is_empty() {
+            return Err(errors
                 .into_iter()
                 .map(|error| ConfigError::Jamchain(error).into())
                 .collect::<Vec<_>>());
@@ -688,6 +791,98 @@ mod tests {
             .expect("the chain config builds");
 
         assert_eq!(config.genesis_overrides(), Some(&overrides()));
+    }
+
+    fn chain() -> JamchainConfigBuilder<WithId> {
+        JamchainConfigBuilder::new(Default::default()).with_id("dev")
+    }
+
+    #[test]
+    fn the_genesis_is_absent_by_default() {
+        let config = chain()
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .expect("the chain config builds");
+
+        assert_eq!(config.genesis(), None);
+    }
+
+    /// Every call adds to the same genesis, so it can be split across the builder chain.
+    #[test]
+    fn the_genesis_is_built_up_across_calls() {
+        let config = chain()
+            .with_bootstrap_service("/blobs/bootstrap.jam")
+            .with_genesis(|g| g.with_service(5, |s| s.with_code("/blobs/svc.jam")))
+            .with_validator(|node| node.with_name("jam0"))
+            .with_genesis(|g| g.with_assigner([0], 5))
+            .build()
+            .expect("the chain config builds");
+
+        let genesis = config.genesis().expect("the genesis is set");
+        assert_eq!(
+            genesis.bootstrap_service(),
+            Some(&AssetLocation::from("/blobs/bootstrap.jam"))
+        );
+        assert!(genesis.services().contains_key(&5));
+        assert_eq!(genesis.privileges().assign()[&0], 5);
+    }
+
+    #[test]
+    fn genesis_errors_are_reported() {
+        let errors = chain()
+            .with_genesis(|g| g.with_service(5, |s| s.with_min_item_gas(1)))
+            .with_validator(|node| node.with_name("jam0"))
+            .build()
+            .unwrap_err();
+
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].to_string(),
+            "jamchain.genesis.services[5].code: a service needs its code"
+        );
+    }
+
+    /// `genesis` customizes the built-in builder, so it can't be combined with the fields that
+    /// pick another way to produce the spec.
+    #[test]
+    fn conflicting_spec_sources_are_refused() {
+        let cases: Vec<(JamchainConfigBuilder<WithId>, &str)> = vec![
+            (
+                chain()
+                    .with_genesis(|g| g)
+                    .with_chain_spec_path("/spec.json"),
+                "genesis: can't be used with `chain_spec_path`",
+            ),
+            (
+                chain()
+                    .with_genesis(|g| g)
+                    .with_chain_spec_command("polkajam"),
+                "genesis: can't be used with `chain_spec_command`",
+            ),
+            (
+                chain()
+                    .with_chain_spec_path("/spec.json")
+                    .with_chain_spec_command("polkajam"),
+                "chain_spec_path: can't be used with `chain_spec_command`",
+            ),
+        ];
+        for (builder, expected) in cases {
+            let errors = builder
+                .with_validator(|node| node.with_name("jam0"))
+                .build()
+                .unwrap_err();
+            assert!(errors[0].to_string().contains(expected), "{}", errors[0]);
+        }
+
+        let errors = chain()
+            .with_genesis(|g| g)
+            .with_validator(|node| node.with_name("jam0"))
+            .with_genesis_overrides(overrides())
+            .build()
+            .unwrap_err();
+        assert!(errors[0]
+            .to_string()
+            .contains("genesis: can't be used with `genesis_overrides`"));
     }
 
     #[test]

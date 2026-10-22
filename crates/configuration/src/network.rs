@@ -189,6 +189,13 @@ impl NetworkConfig {
             Err(anyhow!("Relay chain or Jam definition does not exist."))?
         }
 
+        if let Some(jamchain) = network_config.jamchain.as_mut() {
+            if let Some(error) = jamchain.spec_source_errors().into_iter().next() {
+                return Err(ConfigError::Jamchain(error).into());
+            }
+            jamchain.resolve_relative_paths(base_dir);
+        }
+
         // Keep track of node names to ensure uniqueness, shared between the nodes of the
         // root chain and the collators.
         let mut names = HashSet::new();
@@ -2394,6 +2401,99 @@ mode = "validator"
         let reloaded =
             NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
         assert_eq!(reloaded.jamchain(), Some(jamchain));
+    }
+
+    #[test]
+    fn jamchain_genesis_is_loaded_from_toml_with_paths_resolved() {
+        let toml = r#"
+[jamchain]
+id = "dev"
+
+[jamchain.genesis]
+bootstrap_service = "./blobs/bootstrap.jam"
+
+[jamchain.genesis.services.5]
+code = "blobs/svc.jam"
+balance = 1000
+preimages = ["https://example.com/auth.jam"]
+
+[jamchain.genesis.auth_queues]
+0 = [{ code = "/abs/auth.jam" }]
+1 = ["null"]
+
+[jamchain.genesis.privileges]
+assign = { 0 = 5 }
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+"#;
+        let loaded =
+            NetworkConfig::load_from_toml_string_with_base_dir(toml, Path::new("/net")).unwrap();
+        let genesis = loaded.jamchain().unwrap().genesis().expect("a genesis");
+
+        assert_eq!(
+            genesis.bootstrap_service(),
+            Some(&AssetLocation::from("/net/./blobs/bootstrap.jam"))
+        );
+        let service = &genesis.services()[&5];
+        assert_eq!(service.code(), &AssetLocation::from("/net/blobs/svc.jam"));
+        assert_eq!(service.balance(), crate::JamBalance::Exact(1000));
+        assert_eq!(
+            service.preimages(),
+            &[AssetLocation::from("https://example.com/auth.jam")]
+        );
+        assert_eq!(
+            genesis.auth_queues()[&0],
+            vec![crate::JamAuthorizer::code("/abs/auth.jam")]
+        );
+        assert_eq!(genesis.privileges().assign()[&0], 5);
+
+        let reloaded =
+            NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
+        assert_eq!(reloaded.jamchain(), loaded.jamchain());
+    }
+
+    #[test]
+    fn the_jam_genesis_example_loads() {
+        let config =
+            NetworkConfig::load_from_toml("../examples/examples/configs/jam-genesis.toml").unwrap();
+
+        let jamchain = config.jamchain().unwrap();
+        let genesis = jamchain.genesis().expect("the example has a genesis");
+        let service = &genesis.services()[&5];
+        assert!(service
+            .code()
+            .to_string()
+            .ends_with("/configs/./blobs/my-service.jam"));
+        assert_eq!(service.balance(), crate::JamBalance::MinimumPlus(1_000_000));
+        assert_eq!(genesis.privileges().assign()[&0], 5);
+        assert_eq!(jamchain.nodes().len(), 7);
+    }
+
+    #[test]
+    fn jamchain_toml_with_conflicting_spec_sources_is_refused() {
+        let error = NetworkConfig::load_from_toml_string(
+            r#"
+[jamchain]
+id = "dev"
+chain_spec_command = "polkajam"
+
+[jamchain.genesis]
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("genesis: can't be used with `chain_spec_command`"),
+            "{error}"
+        );
     }
 
     #[test]

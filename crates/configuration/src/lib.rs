@@ -78,6 +78,7 @@
 mod custom_process;
 mod global_settings;
 mod hrmp_channel;
+mod jam_genesis;
 mod jamchain;
 mod network;
 mod observability;
@@ -92,6 +93,11 @@ pub use custom_process::{
 };
 pub use global_settings::{GlobalSettings, GlobalSettingsBuilder};
 pub use hrmp_channel::{HrmpChannelConfig, HrmpChannelConfigBuilder};
+pub use jam_genesis::{
+    JamAmount, JamAuthorizer, JamBalance, JamBytes, JamCoreIndex, JamGenesisConfig,
+    JamGenesisConfigBuilder, JamGenesisPrivileges, JamGenesisService, JamGenesisServiceBuilder,
+    JamServiceId, JAM_BOOTSTRAP_SERVICE_ID,
+};
 pub use jamchain::{JamchainConfig, JamchainConfigBuilder};
 /// RFC 6902 patches, the type behind `genesis_patch`.
 pub use json_patch;

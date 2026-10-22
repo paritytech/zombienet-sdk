@@ -142,7 +142,10 @@ mod tests {
             default_image: None,
             default_resources: None,
             default_args: vec![],
-            chain_spec_command: String::new(),
+            protocol_params_type: configuration::types::JamProtocolParameterType::Tiny,
+            chain_spec_source: crate::network_spec::jamchain::JamChainSpecSource::Generator {
+                command: String::new(),
+            },
             nodes,
             genesis_overrides: None,
         }

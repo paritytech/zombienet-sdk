@@ -30,6 +30,24 @@ pub mod generators {
     };
 }
 
+/// JAM: the genesis model of a spec built in process, and the blobs zombienet embeds.
+pub mod jam {
+    pub use configuration::{
+        JamAmount, JamAuthorizer, JamBalance, JamBytes, JamCoreIndex, JamGenesisConfig,
+        JamGenesisConfigBuilder, JamGenesisPrivileges, JamGenesisService, JamGenesisServiceBuilder,
+        JamServiceId, JAM_BOOTSTRAP_SERVICE_ID,
+    };
+    pub use orchestrator::generators::jam_blobs::{
+        authorizer_hash, embedded_bootstrap_service, null_authorizer_hash, NULL_AUTHORIZER_BLOB,
+        NULL_AUTHORIZER_HASH,
+    };
+    /// The embedded bootstrap service (with the `jam` feature).
+    #[cfg(feature = "jam")]
+    pub use orchestrator::generators::jam_blobs::{
+        BOOTSTRAP_SERVICE_BLOB, BOOTSTRAP_SERVICE_HASH, BOOTSTRAP_SERVICE_SOURCE,
+    };
+}
+
 /// Helpers used for interact with the network
 pub mod tx_helper {
     pub use orchestrator::{

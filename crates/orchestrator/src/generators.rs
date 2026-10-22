@@ -1,6 +1,8 @@
 pub mod chain_spec;
 pub mod db_snapshot;
 pub mod errors;
+pub mod jam_blobs;
+pub mod jam_chain_spec;
 pub mod jam_config;
 pub mod jam_key;
 pub mod key;

@@ -24,6 +24,7 @@ json-patch = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
 tracing = { workspace = true }
+hex = { workspace = true }
 
 # zombienet deps
 support = { workspace = true }

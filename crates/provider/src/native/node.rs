@@ -41,8 +41,8 @@ use crate::{
     constants::{NODE_CONFIG_DIR, NODE_DATA_DIR, NODE_RELAY_DATA_DIR, NODE_SCRIPTS_DIR},
     native,
     types::{
-        ExecutionResult, InnerSnapshotDb, ProcessStatus, RunCommandOptions, RunScriptOptions,
-        TransferedFile,
+        DbSnapshot, ExecutionResult, InnerSnapshotDb, ProcessStatus, RunCommandOptions,
+        RunScriptOptions, TransferedFile,
     },
     ProviderError, ProviderNode,
 };
@@ -59,7 +59,7 @@ where
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) created_paths: &'a [PathBuf],
-    pub(super) db_snapshot: Option<&'a Path>,
+    pub(super) db_snapshot: Option<&'a DbSnapshot>,
     pub(super) filesystem: &'a FS,
     pub(super) node_log_path: Option<&'a PathBuf>,
     /// Through zombienet's wrapper, as a node, or `program` directly.
@@ -215,7 +215,8 @@ where
         node.initialize_startup_paths(options.created_paths).await?;
 
         if let Some(db_snap) = options.db_snapshot {
-            node.initialize_db_snapshot(db_snap).await?;
+            node.initialize_db_snapshot(db_snap.local_path(&node.name)?)
+                .await?;
         }
 
         node.initialize_startup_files(options.startup_files, options.wrapper)

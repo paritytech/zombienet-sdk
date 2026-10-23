@@ -12127,6 +12127,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "url",
  "uuid",
  "zombienet-configuration",
  "zombienet-prom-metrics-parser",

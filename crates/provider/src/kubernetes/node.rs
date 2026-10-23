@@ -31,8 +31,8 @@ use crate::{
     kubernetes,
     shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
-        RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
+        DbSnapshot, ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus,
+        ReadinessProbe, RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -52,7 +52,7 @@ where
     pub(super) secret_env: &'a [SecretEnvVar],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
-    pub(super) db_snapshot: Option<&'a Path>,
+    pub(super) db_snapshot: Option<&'a DbSnapshot>,
     pub(super) role: Option<NodeRole>,
     /// Named ports exposed on the pod's `Service`, headless when none.
     pub(super) ports: &'a [(String, Port)],
@@ -400,38 +400,24 @@ where
         .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))
     }
 
-    async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
-        trace!("snap: {}", db_snapshot.display());
-        // The orchestrator already downloaded/copied the snapshot into
-        // the namespace cache; we still need the pod to fetch it over
-        // HTTP, so upload to the fileserver and curl from inside.
-        let (url_of_snap, _) = self.upload_to_fileserver(db_snapshot).await?;
-        let url_of_snap = make_url_internal(&url_of_snap);
-
-        // we need to get the snapshot from a public access
-        // and extract to /data
-        let opts = RunCommandOptions::new("mkdir").args([
-            "-p",
-            "/data/",
-            "&&",
-            "mkdir",
-            "-p",
-            "/relay-data/",
-            "&&",
-            // Use our version of curl
-            "/cfg/curl",
-            url_of_snap.as_ref(),
-            "--output",
-            "/data/db.tgz",
-            "&&",
-            "cd",
-            "/",
-            "&&",
-            "tar",
-            "--skip-old-files",
-            "-xzvf",
-            "/data/db.tgz",
-        ]);
+    async fn initialize_db_snapshot(&self, db_snapshot: &DbSnapshot) -> Result<(), ProviderError> {
+        trace!("snap: {db_snapshot:?}");
+        let opts = match db_snapshot {
+            // The orchestrator already downloaded/copied the snapshot into
+            // the namespace cache; we still need the pod to fetch it over
+            // HTTP, so upload to the fileserver and curl from inside.
+            DbSnapshot::Local(path) => {
+                let (url_of_snap, _) = self.upload_to_fileserver(path).await?;
+                db_snapshot_command(&make_url_internal(&url_of_snap), &[])
+            },
+            // Fetched straight from where it is published: the snapshot never
+            // passes through this host, its memory, or the fileserver. A
+            // remote URL fails loudly, follows redirects and rides out blips;
+            // the fileserver's never needed to.
+            DbSnapshot::Url(url) => {
+                db_snapshot_command(url, &["--fail", "--location", "--retry", "3"])
+            },
+        };
 
         trace!("cmd opts: {:#?}", opts);
         let _ = self.run_command(opts).await?;
@@ -1098,6 +1084,44 @@ fn failed_init_container(status: &PodStatus) -> Option<&ContainerStatus> {
         .find(|c| exit_code(c).is_some_and(|code| code != 0))
 }
 
+/// Download the snapshot at `url` inside the pod and extract it at `/`, where
+/// its `data/` (and `relay-data/`) land as the node's.
+///
+/// [`KubernetesNode::run_command`] joins its arguments for `sh -c`, so the URL
+/// is single-quoted: a signed URL's query is full of `&`, which the shell would
+/// otherwise take as "run in the background".
+fn db_snapshot_command(url: &Url, curl_flags: &[&str]) -> RunCommandOptions {
+    let mut args = vec!["-p", "/data/", "&&", "mkdir", "-p", "/relay-data/", "&&"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    // Use our version of curl
+    args.push("/cfg/curl".to_owned());
+    args.extend(curl_flags.iter().map(|flag| (*flag).to_owned()));
+    args.push(shell_quote(url.as_str()));
+    args.extend(
+        [
+            "--output",
+            "/data/db.tgz",
+            "&&",
+            "cd",
+            "/",
+            "&&",
+            "tar",
+            "--skip-old-files",
+            "-xzvf",
+            "/data/db.tgz",
+        ]
+        .map(str::to_owned),
+    );
+    RunCommandOptions::new("mkdir").args(args)
+}
+
+/// `value` as one single-quoted `sh` word.
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
 // Helper fn to make a fileserver usable from inside of pods
 fn make_url_internal(url: &Url) -> Url {
     let mut url = url.clone();
@@ -1250,5 +1274,46 @@ mod tests {
         check_secrets(&client(&server), "ns", &turn_secret())
             .await
             .unwrap();
+    }
+
+    /// What `run_command` hands to `sh -c`.
+    fn shell_line(opts: &RunCommandOptions) -> String {
+        std::iter::once(opts.program.as_str())
+            .chain(opts.args.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn a_db_snapshot_url_is_fetched_in_the_pod_as_one_quoted_word() {
+        let url = Url::parse(
+            "https://storage.googleapis.com/b/forks/westend-27000000/bite/rc.tgz\
+             ?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Signature=abc",
+        )
+        .unwrap();
+        let line = shell_line(&db_snapshot_command(&url, &["--fail", "--location"]));
+
+        assert_eq!(
+            line,
+            "mkdir -p /data/ && mkdir -p /relay-data/ && /cfg/curl --fail --location \
+             'https://storage.googleapis.com/b/forks/westend-27000000/bite/rc.tgz\
+             ?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Signature=abc' \
+             --output /data/db.tgz && cd / && tar --skip-old-files -xzvf /data/db.tgz"
+        );
+    }
+
+    #[test]
+    fn a_fileserver_snapshot_keeps_its_command() {
+        let url = Url::parse("http://fileserver/abc123").unwrap();
+        assert_eq!(
+            shell_line(&db_snapshot_command(&url, &[])),
+            "mkdir -p /data/ && mkdir -p /relay-data/ && /cfg/curl 'http://fileserver/abc123' \
+             --output /data/db.tgz && cd / && tar --skip-old-files -xzvf /data/db.tgz"
+        );
+    }
+
+    #[test]
+    fn a_quote_inside_a_shell_word_is_escaped() {
+        assert_eq!(shell_quote("a'b&c"), r"'a'\''b&c'");
     }
 }

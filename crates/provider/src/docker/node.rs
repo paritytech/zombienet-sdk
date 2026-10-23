@@ -26,8 +26,8 @@ use crate::{
     docker,
     shared::helpers::{default_true, ensure_wrapper, injected_file_name},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, RunCommandOptions,
-        RunScriptOptions, TransferedFile,
+        DbSnapshot, ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus,
+        RunCommandOptions, RunScriptOptions, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -44,7 +44,7 @@ where
     pub(super) args: &'a [String],
     pub(super) env: &'a [(String, String)],
     pub(super) startup_files: &'a [TransferedFile],
-    pub(super) db_snapshot: Option<&'a Path>,
+    pub(super) db_snapshot: Option<&'a DbSnapshot>,
     pub(super) docker_client: &'a DockerClient,
     pub(super) container_name: String,
     pub(super) filesystem: &'a FS,
@@ -186,7 +186,8 @@ where
             .await?;
 
         if let Some(db_snap) = options.db_snapshot {
-            node.initialize_db_snapshot(db_snap).await?;
+            node.initialize_db_snapshot(db_snap.local_path(&node.name)?)
+                .await?;
         }
 
         if node.wrapper {

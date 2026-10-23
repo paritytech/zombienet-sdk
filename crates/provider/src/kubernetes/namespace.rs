@@ -596,7 +596,7 @@ where
             secret_env: &options.secret_env,
             startup_files: &options.injected_files,
             resources: options.resources.as_ref(),
-            db_snapshot: options.db_snapshot.as_deref(),
+            db_snapshot: options.db_snapshot.as_ref(),
             role: options.role,
             ports: &options.ports,
             readiness: options.readiness.as_ref(),

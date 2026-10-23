@@ -6,6 +6,8 @@ use std::{
 
 use configuration::shared::resources::Resources;
 
+use crate::ProviderError;
+
 pub type Port = u16;
 
 pub type ExecutionResult = Result<String, (ExitStatus, String)>;
@@ -24,6 +26,37 @@ pub struct ProviderCapabilities {
     pub use_default_ports_in_cmd: bool,
     /// An env value may be read from a `Secret` in the namespace (k8s).
     pub has_secrets: bool,
+    /// A `db_snapshot` given as a URL is fetched by the node itself, from
+    /// where it runs, rather than downloaded on this host first (k8s). See
+    /// [`DbSnapshot::Url`].
+    pub fetches_db_snapshot_url: bool,
+}
+
+/// A database snapshot a node starts from, as the orchestrator hands it to
+/// the provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DbSnapshot {
+    /// A local `.tgz` the orchestrator has already downloaded or copied.
+    Local(PathBuf),
+    /// A URL the node fetches itself. Only handed to a provider whose
+    /// capabilities set [`ProviderCapabilities::fetches_db_snapshot_url`], so
+    /// a large snapshot never passes through the host running zombienet.
+    Url(url::Url),
+}
+
+impl DbSnapshot {
+    /// The local file, for a provider that only extracts local snapshots.
+    /// A URL here means the orchestrator skipped resolving it, which is a bug.
+    pub fn local_path(&self, node: &str) -> Result<&Path, ProviderError> {
+        match self {
+            DbSnapshot::Local(path) => Ok(path),
+            DbSnapshot::Url(url) => Err(ProviderError::InvalidConfig(format!(
+                "{}: node {node} was handed db_snapshot {url} to fetch itself, \
+                 which this provider does not do",
+                support::constants::THIS_IS_A_BUG
+            ))),
+        }
+    }
 }
 
 /// An environment variable read from the `key` of the `Secret` named
@@ -118,10 +151,10 @@ pub struct SpawnNodeOptions {
     /// should be created with `create_dir_all` in order
     /// to create the full path even when we have missing parts
     pub created_paths: Vec<PathBuf>,
-    /// Database snapshot to be injected (a local `.tgz` resolved by the
-    /// orchestrator before spawn — providers extract it directly, no
-    /// download). See `orchestrator::generators::resolve_db_snapshots`.
-    pub db_snapshot: Option<PathBuf>,
+    /// Database snapshot to be injected: a local `.tgz` resolved by the
+    /// orchestrator before spawn, or (only for a provider that fetches them
+    /// in the node) a URL. See `orchestrator::generators::resolve_db_snapshots`.
+    pub db_snapshot: Option<DbSnapshot>,
     pub port_mapping: Option<HashMap<Port, Port>>,
     /// Named ports the process listens on. On k8s they are the pod's container
     /// ports and its `Service` ports (none gives a headless Service); the other
@@ -178,7 +211,7 @@ impl SpawnNodeOptions {
         self
     }
 
-    pub fn db_snapshot(mut self, db_snap: Option<PathBuf>) -> Self {
+    pub fn db_snapshot(mut self, db_snap: Option<DbSnapshot>) -> Self {
         self.db_snapshot = db_snap;
         self
     }

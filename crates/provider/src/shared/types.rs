@@ -6,6 +6,8 @@ use std::{
 
 use configuration::shared::resources::Resources;
 
+use crate::ProviderError;
+
 pub type Port = u16;
 
 pub type ExecutionResult = Result<String, (ExitStatus, String)>;
@@ -24,6 +26,49 @@ pub struct ProviderCapabilities {
     pub use_default_ports_in_cmd: bool,
     /// An env value may be read from a `Secret` in the namespace (k8s).
     pub has_secrets: bool,
+    /// A `db_snapshot` given as a URL is fetched by the namespace's
+    /// fileserver, inside the cluster, rather than downloaded on this host
+    /// and uploaded to it (k8s). See
+    /// [`ProviderNamespace::fetch_into_fileserver`](crate::ProviderNamespace::fetch_into_fileserver).
+    pub fileserver_fetches_db_snapshot_url: bool,
+}
+
+/// A database snapshot a node starts from, as the orchestrator hands it to
+/// the provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DbSnapshot {
+    /// A local `.tgz` the orchestrator has already downloaded or copied.
+    Local(PathBuf),
+    /// A `.tgz` already in the namespace's fileserver, at this URL, which
+    /// the fileserver fetched itself. Only handed to a provider whose
+    /// capabilities set
+    /// [`ProviderCapabilities::fileserver_fetches_db_snapshot_url`], so a
+    /// large snapshot never passes through the host running zombienet.
+    InFileserver(url::Url),
+}
+
+impl std::fmt::Display for DbSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbSnapshot::Local(path) => write!(f, "{}", path.display()),
+            DbSnapshot::InFileserver(url) => write!(f, "{url}"),
+        }
+    }
+}
+
+impl DbSnapshot {
+    /// The local file, for a provider without a fileserver. Anything else
+    /// means the orchestrator skipped resolving it, which is a bug.
+    pub fn local_path(&self, node: &str) -> Result<&Path, ProviderError> {
+        match self {
+            DbSnapshot::Local(path) => Ok(path),
+            DbSnapshot::InFileserver(url) => Err(ProviderError::InvalidConfig(format!(
+                "{}: node {node} was handed db_snapshot {url} in a fileserver, \
+                 which this provider does not have",
+                support::constants::THIS_IS_A_BUG
+            ))),
+        }
+    }
 }
 
 /// An environment variable read from the `key` of the `Secret` named
@@ -118,10 +163,11 @@ pub struct SpawnNodeOptions {
     /// should be created with `create_dir_all` in order
     /// to create the full path even when we have missing parts
     pub created_paths: Vec<PathBuf>,
-    /// Database snapshot to be injected (a local `.tgz` resolved by the
-    /// orchestrator before spawn — providers extract it directly, no
-    /// download). See `orchestrator::generators::resolve_db_snapshots`.
-    pub db_snapshot: Option<PathBuf>,
+    /// Database snapshot to be injected: a local `.tgz` resolved by the
+    /// orchestrator before spawn, or (only for a provider whose fileserver
+    /// fetches them) one already in the namespace's fileserver. See
+    /// `orchestrator::generators::resolve_db_snapshots`.
+    pub db_snapshot: Option<DbSnapshot>,
     pub port_mapping: Option<HashMap<Port, Port>>,
     /// Named ports the process listens on. On k8s they are the pod's container
     /// ports and its `Service` ports (none gives a headless Service); the other
@@ -178,7 +224,7 @@ impl SpawnNodeOptions {
         self
     }
 
-    pub fn db_snapshot(mut self, db_snap: Option<PathBuf>) -> Self {
+    pub fn db_snapshot(mut self, db_snap: Option<DbSnapshot>) -> Self {
         self.db_snapshot = db_snap;
         self
     }

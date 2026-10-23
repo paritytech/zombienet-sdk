@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Weak},
     thread,
+    time::Duration,
 };
 
 use anyhow::anyhow;
@@ -434,6 +435,78 @@ where
     }
 }
 
+/// How often to ask the fileserver how a fetch is going.
+const FETCH_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// How often to log a fetch's progress.
+const FETCH_LOG_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Have the fileserver at `target` fetch `url` itself, and wait until it has.
+///
+/// The fileserver's `PUT` is idempotent: the first starts the download, and
+/// each one after answers how it's going — `202` with the bytes so far while
+/// it runs, `200` once the file is there to serve (also straight away when it
+/// already was), or an error. So polling is just sending it again.
+///
+/// A fileserver image that predates this answers `405`. That's `None`, with
+/// a warning, so the orchestrator falls back to fetching the file itself and
+/// uploading it, as it always has.
+///
+/// `url` may be a signed URL, which is a credential: it only goes into the
+/// request body, and errors and logs show it without its query.
+async fn fetch_via_fileserver(
+    client: &reqwest::Client,
+    target: &Url,
+    url: &Url,
+    poll_interval: Duration,
+) -> Result<Option<Url>, ProviderError> {
+    let shown = redacted(url);
+    let fail = |err: anyhow::Error| ProviderError::DownloadFile(shown.clone(), err);
+    let mut last_log = std::time::Instant::now();
+
+    loop {
+        let res = client
+            .put(target.clone())
+            .body(url.to_string())
+            .send()
+            .await
+            .map_err(|err| fail(err.without_url().into()))?;
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+
+        match status {
+            reqwest::StatusCode::OK => {
+                debug!("fileserver has {shown} as {target}");
+                return Ok(Some(target.clone()));
+            },
+            reqwest::StatusCode::ACCEPTED => {
+                if last_log.elapsed() >= FETCH_LOG_INTERVAL {
+                    debug!("fileserver fetching {shown}: {body}");
+                    last_log = std::time::Instant::now();
+                }
+                tokio::time::sleep(poll_interval).await;
+            },
+            reqwest::StatusCode::METHOD_NOT_ALLOWED => {
+                warn!(
+                    "the fileserver image ({FILE_SERVER_IMAGE}) cannot fetch URLs; fetching \
+                     {shown} here and uploading it instead"
+                );
+                return Ok(None);
+            },
+            _ => return Err(fail(anyhow!("fileserver answered {status}: {body}"))),
+        }
+    }
+}
+
+/// `url` without its query or fragment, for messages: a signed URL's
+/// signature is in its query.
+fn redacted(url: &Url) -> String {
+    let mut shown = url.clone();
+    shown.set_query(None);
+    shown.set_fragment(None);
+    shown.to_string()
+}
+
 /// How much of a file each write to the fileserver connection carries.
 const UPLOAD_CHUNK_SIZE: usize = 1024 * 1024;
 
@@ -541,6 +614,19 @@ where
         self.upload_file(location).await.map(Some)
     }
 
+    async fn fetch_into_fileserver(
+        &self,
+        url: &Url,
+        file_name: &str,
+    ) -> Result<Option<Url>, ProviderError> {
+        let target = Url::parse(&format!(
+            "http://{}/{file_name}",
+            self.file_server_local_host().await?
+        ))
+        .map_err(|err| ProviderError::DownloadFile(redacted(url), err.into()))?;
+        fetch_via_fileserver(&reqwest::Client::new(), &target, url, FETCH_POLL_INTERVAL).await
+    }
+
     async fn is_detached(&self) -> bool {
         self.delete_on_drop().await
     }
@@ -596,7 +682,7 @@ where
             secret_env: &options.secret_env,
             startup_files: &options.injected_files,
             resources: options.resources.as_ref(),
-            db_snapshot: options.db_snapshot.as_deref(),
+            db_snapshot: options.db_snapshot.as_ref(),
             role: options.role,
             ports: &options.ports,
             readiness: options.readiness.as_ref(),
@@ -741,5 +827,81 @@ mod tests {
     #[tokio::test]
     async fn an_empty_file_is_sent_as_no_chunks() {
         assert!(chunks_of(Vec::new()).await.is_empty());
+    }
+
+    const SIGNED: &str = "https://storage.example.com/b/rc.tgz?X-Goog-Signature=secret&x=1";
+
+    async fn fetch(server: &mockito::ServerGuard) -> Result<Option<Url>, ProviderError> {
+        let target = Url::parse(&format!("{}/abc.tgz", server.url())).unwrap();
+        fetch_via_fileserver(
+            &reqwest::Client::new(),
+            &target,
+            &Url::parse(SIGNED).unwrap(),
+            Duration::from_millis(1),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_fetch_is_polled_until_the_fileserver_has_the_file() {
+        let mut server = mockito::Server::new_async().await;
+        // Answered first while it is short of its hits, then the next one.
+        let running = server
+            .mock("PUT", "/abc.tgz")
+            .match_body(SIGNED)
+            .with_status(202)
+            .with_body("1048576 bytes")
+            .expect(2)
+            .create_async()
+            .await;
+        let done = server
+            .mock("PUT", "/abc.tgz")
+            .match_body(SIGNED)
+            .with_status(200)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let url = fetch(&server)
+            .await
+            .unwrap()
+            .expect("the fileserver has it");
+
+        assert_eq!(url.path(), "/abc.tgz");
+        running.assert_async().await;
+        done.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn a_fileserver_that_cannot_fetch_leaves_it_to_the_orchestrator() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("PUT", "/abc.tgz")
+            .with_status(405)
+            .create_async()
+            .await;
+
+        // `None`: the orchestrator then fetches it and uploads it, as before.
+        assert_eq!(fetch(&server).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn a_failed_fetch_is_reported_without_the_signature() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("PUT", "/abc.tgz")
+            .with_status(502)
+            .with_body("source answered 403 Forbidden")
+            .create_async()
+            .await;
+
+        let err = fetch(&server).await.unwrap_err();
+        let shown = format!("{err} {err:?}");
+        assert!(shown.contains("403 Forbidden"), "{shown}");
+        assert!(
+            shown.contains("https://storage.example.com/b/rc.tgz"),
+            "{shown}"
+        );
+        assert!(!shown.contains("secret"), "{shown}");
     }
 }

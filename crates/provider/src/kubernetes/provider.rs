@@ -62,6 +62,7 @@ where
                 prefix_with_full_path: false,
                 use_default_ports_in_cmd: true,
                 has_secrets: true,
+                fileserver_fetches_db_snapshot_url: true,
             },
             tmp_dir: std::env::temp_dir(),
             k8s_client,

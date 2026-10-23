@@ -31,8 +31,8 @@ use crate::{
     kubernetes,
     shared::helpers::{default_true, ensure_wrapper},
     types::{
-        ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus, ReadinessProbe,
-        RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
+        DbSnapshot, ExecutionResult, InnerSnapshotDb, NodeRole, Port, ProcessStatus,
+        ReadinessProbe, RunCommandOptions, RunScriptOptions, SecretEnvVar, TransferedFile,
     },
     ProviderError, ProviderNamespace, ProviderNode,
 };
@@ -52,7 +52,7 @@ where
     pub(super) secret_env: &'a [SecretEnvVar],
     pub(super) startup_files: &'a [TransferedFile],
     pub(super) resources: Option<&'a Resources>,
-    pub(super) db_snapshot: Option<&'a Path>,
+    pub(super) db_snapshot: Option<&'a DbSnapshot>,
     pub(super) role: Option<NodeRole>,
     /// Named ports exposed on the pod's `Service`, headless when none.
     pub(super) ports: &'a [(String, Port)],
@@ -400,12 +400,17 @@ where
         .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err.into()))
     }
 
-    async fn initialize_db_snapshot(&self, db_snapshot: &Path) -> Result<(), ProviderError> {
-        trace!("snap: {}", db_snapshot.display());
-        // The orchestrator already downloaded/copied the snapshot into
-        // the namespace cache; we still need the pod to fetch it over
-        // HTTP, so upload to the fileserver and curl from inside.
-        let (url_of_snap, _) = self.upload_to_fileserver(db_snapshot).await?;
+    async fn initialize_db_snapshot(&self, db_snapshot: &DbSnapshot) -> Result<(), ProviderError> {
+        trace!("snap: {db_snapshot}");
+        let url_of_snap = match db_snapshot {
+            // The orchestrator already downloaded/copied the snapshot into
+            // the namespace cache; we still need the pod to fetch it over
+            // HTTP, so upload to the fileserver and curl from inside.
+            DbSnapshot::Local(path) => self.upload_to_fileserver(path).await?.0,
+            // The fileserver fetched it itself (see
+            // `ProviderNamespace::fetch_into_fileserver`): just curl it.
+            DbSnapshot::InFileserver(url) => url.clone(),
+        };
         let url_of_snap = make_url_internal(&url_of_snap);
 
         // we need to get the snapshot from a public access

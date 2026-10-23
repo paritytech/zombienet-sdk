@@ -19,3 +19,9 @@ tower-http = { workspace = true, features = ["fs", "trace"] }
 futures = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+# Fetches a URL into the server (`PUT`). Not the workspace's: this binary is
+# built on musl (see the Dockerfile), so rustls rather than native TLS.
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "stream"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

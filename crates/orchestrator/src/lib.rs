@@ -1792,6 +1792,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            fileserver_fetches_db_snapshot_url: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1808,6 +1809,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            fileserver_fetches_db_snapshot_url: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1824,6 +1826,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            fileserver_fetches_db_snapshot_url: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1840,6 +1843,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: false,
             has_secrets: false,
+            fileserver_fetches_db_snapshot_url: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1855,6 +1859,7 @@ mod tests {
             prefix_with_full_path: false,
             use_default_ports_in_cmd: true,
             has_secrets: false,
+            fileserver_fetches_db_snapshot_url: false,
         }
     }
 

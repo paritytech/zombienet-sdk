@@ -199,6 +199,19 @@ pub trait ProviderNamespace {
     ) -> Result<Option<(Url, String)>, ProviderError> {
         Ok(None)
     }
+
+    /// Have the namespace's file server fetch `url` itself and keep it as
+    /// `file_name`, unless it already has it, so the bytes never pass through
+    /// this host. Returns the file's url, or `None` for providers without a
+    /// file server that does this (see
+    /// [`ProviderCapabilities::fileserver_fetches_db_snapshot_url`](types::ProviderCapabilities)).
+    async fn fetch_into_fileserver(
+        &self,
+        _url: &Url,
+        _file_name: &str,
+    ) -> Result<Option<Url>, ProviderError> {
+        Ok(None)
+    }
 }
 
 pub type DynNamespace = Arc<dyn ProviderNamespace + Send + Sync>;

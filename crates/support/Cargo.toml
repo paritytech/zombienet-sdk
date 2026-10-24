@@ -19,6 +19,8 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+uuid = { workspace = true, features = ["v4"] }
+nix = { workspace = true, features = ["signal"] }
 rand = { workspace = true }
 regex = { workspace = true }
 tracing = { workspace = true }

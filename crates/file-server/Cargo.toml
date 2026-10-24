@@ -11,8 +11,10 @@ repository.workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["multipart"] }
+axum-extra = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true, features = ["io"] }
+tower = { workspace = true, features = ["util"] }
 tower-http = { workspace = true, features = ["fs", "trace"] }
 futures = { workspace = true }
 tracing = { workspace = true }

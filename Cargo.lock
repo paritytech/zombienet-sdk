@@ -12029,7 +12029,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zombie-cli"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -12041,7 +12041,7 @@ dependencies = [
 
 [[package]]
 name = "zombie-tui"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -12065,7 +12065,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-configuration"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "hex",
@@ -12087,7 +12087,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-file-server"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "axum",
  "axum-extra",
@@ -12104,7 +12104,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-orchestrator"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "array-bytes",
@@ -12153,7 +12153,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-prom-metrics-parser"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "pest",
  "pest_derive",
@@ -12162,7 +12162,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-provider"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12193,7 +12193,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-sdk"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12223,7 +12223,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-support"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -993,29 +993,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "axum-extra"
-version = "0.9.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c794b30c904f0a1c2fb7740f7df7f7972dfaa14ef6f57cb6178dc63e5dca2f04"
-dependencies = [
- "axum",
- "axum-core",
- "bytes",
- "fastrand",
- "futures-util",
- "http 1.5.0",
- "http-body 1.1.0",
- "http-body-util",
- "mime",
- "multer",
- "pin-project-lite",
- "serde",
- "tower 0.5.3",
- "tower-layer",
- "tower-service",
-]
-
-[[package]]
 name = "backoff"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12029,7 +12006,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zombie-cli"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -12041,7 +12018,7 @@ dependencies = [
 
 [[package]]
 name = "zombie-tui"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -12065,7 +12042,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-configuration"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "hex",
@@ -12087,16 +12064,14 @@ dependencies = [
 
 [[package]]
 name = "zombienet-file-server"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "axum",
- "axum-extra",
  "futures",
  "reqwest",
  "tempfile",
  "tokio",
  "tokio-util",
- "tower 0.4.13",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
@@ -12104,7 +12079,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-orchestrator"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "array-bytes",
@@ -12153,7 +12128,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-prom-metrics-parser"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "pest",
  "pest_derive",
@@ -12162,7 +12137,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-provider"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12193,7 +12168,7 @@ dependencies = [
 
 [[package]]
 name = "zombienet-sdk"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12223,13 +12198,12 @@ dependencies = [
 
 [[package]]
 name = "zombienet-support"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-trait",
  "futures",
  "lazy_static",
- "nix 0.29.0",
  "rand 0.8.8",
  "regex",
  "reqwest",
@@ -12238,7 +12212,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "uuid",
 ]
 
 [[package]]

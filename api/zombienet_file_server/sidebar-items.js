@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Fetch"],"fn":["app","download","fetch","fetch_in_background","main","path_is_valid","shown","upload"],"struct":["AppState"]};

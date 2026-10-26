@@ -37,20 +37,21 @@ pub struct JamchainConfig {
     /// Default arguments to pass to process (nodes).
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
-    /// chain-spec to use (location can be url or file path).
+    /// A pre-built JIP-4 chain spec, used as given (location can be url or file path).
+    /// Without it the spec is built in process, customized by `genesis`.
     chain_spec_path: Option<AssetLocation>,
-    /// Generate the spec with an external `<cmd> gen-spec` instead of the built-in builder.
-    chain_spec_command: Option<Command>,
+    /// Removed: the spec is built in process or given with `chain_spec_path`. Only read, to
+    /// refuse configs that still set it.
+    #[serde(default, skip_serializing)]
+    chain_spec_command: Option<serde_json::Value>,
     /// Command to spawn corevm monitor (if present)
     corevm_monitor_command: Option<Command>,
     /// Command to spawn corevm builder (if present)
     corevm_builder_command: Option<Command>,
-    /// Genesis state beyond the validator set, merged into the config `gen-spec` reads.
-    /// Only used by an external generator (polkajam's own `gen-spec` ignores it); setting it
-    /// opts into generating the spec with `gen-spec`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Removed: use `genesis`. Only read, to refuse configs that still set it.
+    #[serde(default, skip_serializing)]
     genesis_overrides: Option<serde_json::Value>,
-    /// Customizations of the genesis built in process (the default way to build the spec).
+    /// Customizations of the genesis built in process (unless `chain_spec_path` is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     genesis: Option<JamGenesisConfig>,
     /// A list of nodes to run in this chain.
@@ -89,14 +90,9 @@ impl JamchainConfig {
         self.default_args.iter().collect::<Vec<&Arg>>()
     }
 
-    /// The location of an pre-existing chain specification for the relay chain.
+    /// The location of a pre-built chain spec, used instead of building one in process.
     pub fn chain_spec_path(&self) -> Option<&AssetLocation> {
         self.chain_spec_path.as_ref()
-    }
-
-    /// The command generating the spec with `gen-spec`, instead of the built-in builder.
-    pub fn chain_spec_command(&self) -> Option<&Command> {
-        self.chain_spec_command.as_ref()
     }
 
     /// The corevm monitor command used (if set).
@@ -109,11 +105,6 @@ impl JamchainConfig {
         self.corevm_builder_command.as_ref()
     }
 
-    /// The genesis overrides merged into the config `gen-spec` reads (if set).
-    pub fn genesis_overrides(&self) -> Option<&serde_json::Value> {
-        self.genesis_overrides.as_ref()
-    }
-
     /// The customizations of the genesis built in process (if set).
     pub fn genesis(&self) -> Option<&JamGenesisConfig> {
         self.genesis.as_ref()
@@ -124,34 +115,26 @@ impl JamchainConfig {
         self.nodes.iter().collect::<Vec<&JamNodeConfig>>()
     }
 
-    /// Check that the fields choosing how the spec is produced don't conflict: a pre-existing
-    /// spec (`chain_spec_path`), an external generator (`chain_spec_command` /
-    /// `genesis_overrides`) or the built-in builder (the default, customized by `genesis`).
+    /// Check how the spec is produced: a pre-built spec (`chain_spec_path`) or the built-in
+    /// builder (the default, customized by `genesis`), and refuse the fields that used to pick
+    /// the node's `gen-spec`.
     pub(crate) fn spec_source_errors(&self) -> Vec<anyhow::Error> {
         let mut errors = vec![];
-        let generator_field = if self.chain_spec_command.is_some() {
-            Some("chain_spec_command")
-        } else if self.genesis_overrides.is_some() {
-            Some("genesis_overrides")
-        } else {
-            None
-        };
-
-        if self.genesis.is_some() {
-            if self.chain_spec_path.is_some() {
-                errors.push(anyhow::anyhow!(
-                    "genesis: can't be used with `chain_spec_path`, the spec is used as given"
-                ));
-            }
-            if let Some(field) = generator_field {
-                errors.push(anyhow::anyhow!(
-                    "genesis: can't be used with `{field}`, which generates the spec with \
-                     `gen-spec` instead of the built-in builder"
-                ));
-            }
-        } else if let (Some(_), Some(field)) = (&self.chain_spec_path, generator_field) {
+        if self.chain_spec_command.is_some() {
             errors.push(anyhow::anyhow!(
-                "chain_spec_path: can't be used with `{field}`, the spec is used as given"
+                "chain_spec_command: removed, the JAM spec is built in process (customize it \
+                 with `[jamchain.genesis]`) or given with `chain_spec_path`"
+            ));
+        }
+        if self.genesis_overrides.is_some() {
+            errors.push(anyhow::anyhow!(
+                "genesis_overrides: removed, use `[jamchain.genesis]` (services, auth_queues, \
+                 privileges, config_file)"
+            ));
+        }
+        if self.genesis.is_some() && self.chain_spec_path.is_some() {
+            errors.push(anyhow::anyhow!(
+                "genesis: can't be used with `chain_spec_path`, the spec is used as given"
             ));
         }
 
@@ -406,53 +389,11 @@ impl JamchainConfigBuilder<WithId> {
         )
     }
 
-    /// Set the location of a pre-existing chain specification for the chain.
+    /// Use a pre-built JIP-4 chain spec, instead of building it in process (the default).
     pub fn with_chain_spec_path(self, location: impl Into<AssetLocation>) -> Self {
         Self::transition(
             JamchainConfig {
                 chain_spec_path: Some(location.into()),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
-    }
-
-    /// Generate the chain spec with this command's `gen-spec`, instead of building it in
-    /// process (the default).
-    ///
-    /// Only the command is used: the orchestrator appends `gen-spec <config> <spec>` itself.
-    pub fn with_chain_spec_command<T>(self, command: T) -> Self
-    where
-        T: TryInto<Command>,
-        T::Error: Error + Send + Sync + 'static,
-    {
-        match command.try_into() {
-            Ok(command) => Self::transition(
-                JamchainConfig {
-                    chain_spec_command: Some(command),
-                    ..self.config
-                },
-                self.validation_context,
-                self.errors,
-            ),
-            Err(error) => Self::transition(
-                self.config,
-                self.validation_context,
-                merge_errors(self.errors, FieldError::Command(error.into()).into()),
-            ),
-        }
-    }
-
-    /// Set the genesis overrides: a JSON object merged into the config `gen-spec` reads, on top
-    /// of the generated `id` and `genesis_validators`. Its keys are `gen-spec`'s business.
-    ///
-    /// Opts into generating the spec with `gen-spec`; to customize the genesis built in process
-    /// use [`Self::with_genesis`].
-    pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
-        Self::transition(
-            JamchainConfig {
-                genesis_overrides: Some(genesis_overrides.into()),
                 ..self.config
             },
             self.validation_context,
@@ -626,22 +567,6 @@ impl JamchainConfigBuilder<WithId> {
 }
 
 impl JamchainConfigBuilder<WithAtLeastOneNode> {
-    /// Set the genesis overrides: a JSON object merged into the config `gen-spec` reads, on top
-    /// of the generated `id` and `genesis_validators`. Its keys are `gen-spec`'s business.
-    ///
-    /// Opts into generating the spec with `gen-spec`; to customize the genesis built in process
-    /// use [`Self::with_genesis`].
-    pub fn with_genesis_overrides(self, genesis_overrides: impl Into<serde_json::Value>) -> Self {
-        Self::transition(
-            JamchainConfig {
-                genesis_overrides: Some(genesis_overrides.into()),
-                ..self.config
-            },
-            self.validation_context,
-            self.errors,
-        )
-    }
-
     /// Add a new validator node using a nested [`JamNodeConfigBuilder`].
     /// The node will be configured as a validator (authority).
     pub fn with_validator(
@@ -755,43 +680,7 @@ impl JamchainConfigBuilder<WithAtLeastOneNode> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
-
-    fn overrides() -> serde_json::Value {
-        json!({
-            "services": [{ "id": 5, "code": "/blobs/parasim-service.jam" }],
-            "assigners": { "0": 5 },
-        })
-    }
-
-    /// The override is the caller's business: it reaches `gen-spec` untouched, so nothing here
-    /// knows or checks what its keys mean.
-    #[test]
-    fn genesis_overrides_are_kept_as_given() {
-        let config = JamchainConfigBuilder::new(Default::default())
-            .with_id("dev")
-            .with_genesis_overrides(overrides())
-            .with_validator(|node| node.with_name("jam0"))
-            .build()
-            .expect("the chain config builds");
-
-        assert_eq!(config.genesis_overrides(), Some(&overrides()));
-    }
-
-    /// Callers set the override after the nodes as naturally as before them.
-    #[test]
-    fn genesis_overrides_can_follow_the_nodes() {
-        let config = JamchainConfigBuilder::new(Default::default())
-            .with_id("dev")
-            .with_validator(|node| node.with_name("jam0"))
-            .with_genesis_overrides(overrides())
-            .build()
-            .expect("the chain config builds");
-
-        assert_eq!(config.genesis_overrides(), Some(&overrides()));
-    }
 
     fn chain() -> JamchainConfigBuilder<WithId> {
         JamchainConfigBuilder::new(Default::default()).with_id("dev")
@@ -842,57 +731,38 @@ mod tests {
         );
     }
 
-    /// `genesis` customizes the built-in builder, so it can't be combined with the fields that
-    /// pick another way to produce the spec.
+    /// `genesis` customizes the built-in builder, so it can't be combined with a spec that is
+    /// used as given.
     #[test]
-    fn conflicting_spec_sources_are_refused() {
-        let cases: Vec<(JamchainConfigBuilder<WithId>, &str)> = vec![
-            (
-                chain()
-                    .with_genesis(|g| g)
-                    .with_chain_spec_path("/spec.json"),
-                "genesis: can't be used with `chain_spec_path`",
-            ),
-            (
-                chain()
-                    .with_genesis(|g| g)
-                    .with_chain_spec_command("polkajam"),
-                "genesis: can't be used with `chain_spec_command`",
-            ),
-            (
-                chain()
-                    .with_chain_spec_path("/spec.json")
-                    .with_chain_spec_command("polkajam"),
-                "chain_spec_path: can't be used with `chain_spec_command`",
-            ),
-        ];
-        for (builder, expected) in cases {
-            let errors = builder
-                .with_validator(|node| node.with_name("jam0"))
-                .build()
-                .unwrap_err();
-            assert!(errors[0].to_string().contains(expected), "{}", errors[0]);
-        }
-
+    fn a_genesis_with_a_chain_spec_path_is_refused() {
         let errors = chain()
             .with_genesis(|g| g)
+            .with_chain_spec_path("/spec.json")
             .with_validator(|node| node.with_name("jam0"))
-            .with_genesis_overrides(overrides())
             .build()
             .unwrap_err();
-        assert!(errors[0]
-            .to_string()
-            .contains("genesis: can't be used with `genesis_overrides`"));
+
+        assert!(
+            errors[0]
+                .to_string()
+                .contains("genesis: can't be used with `chain_spec_path`"),
+            "{}",
+            errors[0]
+        );
     }
 
     #[test]
-    fn genesis_overrides_are_absent_by_default() {
-        let config = JamchainConfigBuilder::new(Default::default())
-            .with_id("dev")
+    fn a_chain_spec_path_is_kept_as_given() {
+        let config = chain()
+            .with_chain_spec_path("/spec.json")
             .with_validator(|node| node.with_name("jam0"))
             .build()
             .expect("the chain config builds");
 
-        assert_eq!(config.genesis_overrides(), None);
+        assert_eq!(
+            config.chain_spec_path(),
+            Some(&AssetLocation::from("/spec.json"))
+        );
+        assert_eq!(config.genesis(), None);
     }
 }

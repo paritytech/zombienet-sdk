@@ -2355,52 +2355,30 @@ command = "polkadot"
         println!("{}", toml_string);
     }
 
-    /// A network file is the other way to describe a jamchain, and the override is plain data,
-    /// so a `[jamchain.genesis_overrides]` table has to come back as the same JSON the builder
-    /// would have been given — and survive being dumped and loaded again.
+    /// v0.7.0 files could pick the node's `gen-spec` with these keys. They are gone, and
+    /// silently dropping them would spawn a different genesis than asked for, so they are
+    /// refused with a pointer to what replaces them.
     #[test]
-    fn jamchain_genesis_overrides_round_trip_through_toml() {
-        let toml = r#"
-[relaychain]
-chain = "rococo-local"
-default_command = "polkadot"
+    fn jamchain_removed_spec_fields_are_refused() {
+        let cases = [
+            (
+                "chain_spec_command = \"polkajam\"\n",
+                "chain_spec_command: removed",
+            ),
+            (
+                "[jamchain.genesis_overrides]\nassigners = { \"0\" = 5 }\n",
+                "genesis_overrides: removed, use `[jamchain.genesis]`",
+            ),
+        ];
+        for (field, expected) in cases {
+            let toml = format!(
+                "[jamchain]\nid = \"dev\"\n{field}\n[[jamchain.nodes]]\nname = \"jam0\"\nmode = \"validator\"\n"
+            );
 
-[[relaychain.nodes]]
-name = "alice"
+            let error = NetworkConfig::load_from_toml_string(&toml).unwrap_err();
 
-[jamchain]
-id = "dev"
-
-[jamchain.genesis_overrides]
-auth_queues = { "0" = "2bbda8cb" }
-assigners = { "0" = 5 }
-
-[[jamchain.genesis_overrides.services]]
-id = 5
-code = "/blobs/parasim-service.jam"
-preimages = ["/blobs/parachain-authorizer-sr25519.jam"]
-
-[[jamchain.nodes]]
-name = "jam0"
-mode = "validator"
-"#;
-        let expected = serde_json::json!({
-            "auth_queues": { "0": "2bbda8cb" },
-            "assigners": { "0": 5 },
-            "services": [{
-                "id": 5,
-                "code": "/blobs/parasim-service.jam",
-                "preimages": ["/blobs/parachain-authorizer-sr25519.jam"],
-            }],
-        });
-
-        let loaded = NetworkConfig::load_from_toml_string(toml).unwrap();
-        let jamchain = loaded.jamchain().expect("the file has a jamchain");
-        assert_eq!(jamchain.genesis_overrides(), Some(&expected));
-
-        let reloaded =
-            NetworkConfig::load_from_toml_string(&loaded.dump_to_toml().unwrap()).unwrap();
-        assert_eq!(reloaded.jamchain(), Some(jamchain));
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]
@@ -2477,7 +2455,7 @@ mode = "validator"
             r#"
 [jamchain]
 id = "dev"
-chain_spec_command = "polkajam"
+chain_spec_path = "/specs/jam.json"
 
 [jamchain.genesis]
 
@@ -2491,7 +2469,7 @@ mode = "validator"
         assert!(
             error
                 .to_string()
-                .contains("genesis: can't be used with `chain_spec_command`"),
+                .contains("genesis: can't be used with `chain_spec_path`"),
             "{error}"
         );
     }

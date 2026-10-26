@@ -3,8 +3,8 @@ pub mod db_snapshot;
 pub mod errors;
 pub mod jam_blobs;
 pub mod jam_chain_spec;
-pub mod jam_config;
 pub mod jam_key;
+pub mod jam_validators;
 pub mod key;
 pub mod para_artifact;
 
@@ -27,7 +27,6 @@ pub use command::{
 };
 pub use db_snapshot::{cleanup_db_snapshot_cache, resolve_db_snapshots, ResolvedDbSnapshots};
 pub use identity::generate as generate_node_identity;
-pub use jam_config::generate as generate_jam_comfig;
 pub use jam_key::generate as generate_jam_node_keys;
 pub use key::generate as generate_node_keys;
 pub use keystore::generate as generate_node_keystore;

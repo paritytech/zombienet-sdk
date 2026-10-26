@@ -3,9 +3,9 @@
 //! The chain id, the genesis validators (the network's validator nodes) and the protocol
 //! parameters always come from zombienet; services, auth queues and privileges from the
 //! network's [`JamGenesisConfig`], layered over its optional native `config_file`. With the
-//! defaults on, the genesis matches what the node's `gen-spec` writes: the bootstrap service
-//! under id 0, hosting the null authorizer, and every core's auth queue filled with the null
-//! authorizer.
+//! defaults on, the genesis has the bootstrap service under id 0, hosting the null authorizer,
+//! and every core's auth queue filled with the null authorizer (the same genesis polkajam's own
+//! `gen-spec` writes).
 
 use std::{
     collections::HashMap,
@@ -27,7 +27,7 @@ use crate::{
     generators::{
         errors::GeneratorError,
         jam_blobs::{self, NULL_AUTHORIZER_BLOB},
-        jam_config,
+        jam_validators::{self, GenesisValidator},
     },
     network_spec::jamchain::JamchainSpec,
 };
@@ -55,7 +55,7 @@ pub async fn build(
 ) -> Result<BuiltSpec, GeneratorError> {
     let assets = fetch_assets(genesis).await?;
     let parameters = protocol_parameters(&jam_spec.protocol_params_type, genesis)?;
-    let validators = jam_config::generate(jam_spec)?;
+    let validators = jam_validators::genesis_validators(jam_spec);
     check_validator_count(
         &jam_spec.protocol_params_type,
         genesis,
@@ -75,7 +75,7 @@ pub async fn build(
         None
     };
 
-    let config = base_config(genesis, &validators, &assets)?;
+    let config = base_config(jam_spec.id.as_str(), genesis, &validators, &assets)?;
     let mut config = apply_genesis(config, genesis, &assets);
     config.protocol_parameters = Some(parameters);
     if let Some(bootstrap) = &bootstrap {
@@ -125,16 +125,15 @@ fn protocol_parameters(
     })
 }
 
-/// `jam-chainspec` needs exactly as many validators as the parameters call for, where the
-/// node's `gen-spec` takes fewer; say how to get the old behaviour back.
+/// `jam-chainspec` needs exactly as many validators as the parameters call for.
 fn check_validator_count(
     preset: &JamProtocolParameterType,
     genesis: &JamGenesisConfig,
     parameters: &ProtocolParameters,
-    validators: &jam_config::GenesisConfig,
+    validators: &[GenesisValidator],
 ) -> Result<(), GeneratorError> {
     let expected = parameters.core_count as usize * VALS_PER_CORE;
-    let got = validators.genesis_validators.len();
+    let got = validators.len();
     if got == expected {
         return Ok(());
     }
@@ -145,15 +144,16 @@ fn check_validator_count(
     };
     Err(GeneratorError::ChainSpecGeneration(format!(
         "the built-in JAM spec builder needs exactly {expected} validators for \
-         {parameters_name}, got {got}. Add validators, or set `chain_spec_command` to generate \
-         the spec with the node's `gen-spec`."
+         {parameters_name}, got {got}. Add validators, set `genesis.protocol_parameters`, or \
+         give a pre-built spec with `chain_spec_path`."
     )))
 }
 
 /// The config file's chain (if any), with zombienet's id and validators.
 fn base_config(
+    id: &str,
     genesis: &JamGenesisConfig,
-    validators: &jam_config::GenesisConfig,
+    validators: &[GenesisValidator],
     assets: &HashMap<AssetLocation, Vec<u8>>,
 ) -> Result<ChainSpecConfig, GeneratorError> {
     let (mut base, base_dir) = match genesis.config_file() {
@@ -179,8 +179,8 @@ fn base_config(
         None => (json!({}), None),
     };
 
-    base["id"] = json!(validators.id);
-    base["genesis_validators"] = serde_json::to_value(&validators.genesis_validators)
+    base["id"] = json!(id);
+    base["genesis_validators"] = serde_json::to_value(validators)
         .map_err(|e| GeneratorError::EncodeDecodeError(e.to_string()))?;
     // Set as a value afterwards, not as JSON.
     if let Some(object) = base.as_object_mut() {
@@ -293,7 +293,7 @@ fn build_spec(config: ChainSpecConfig) -> Result<String, GeneratorError> {
         return Err(GeneratorError::ChainSpecGeneration(
             "the built-in JAM spec builder supports a single set of protocol parameters per \
              process, and another set was already used. Spawn the networks from separate \
-             processes, or set `chain_spec_command` to generate the spec with `gen-spec`."
+             processes, or give a pre-built spec with `chain_spec_path`."
                 .to_string(),
         ));
     }
@@ -328,8 +328,7 @@ fn bootstrap_service(
         None => Err(GeneratorError::ChainSpecGeneration(
             "no JAM bootstrap service: zombienet was built without the `jam` feature, which \
              embeds one. Set `genesis.bootstrap_service` to a blob (a path or a url), enable the \
-             `jam` feature, or set `chain_spec_command` to generate the spec with the node's \
-             `gen-spec`."
+             `jam` feature, or give a pre-built spec with `chain_spec_path`."
                 .to_string(),
         )),
     }
@@ -552,7 +551,11 @@ mod tests {
         let spec_path = dir.path().join("jam_spec.json");
         std::fs::write(
             &config_path,
-            serde_json::to_string(&jam_config::generate(&spec).unwrap()).unwrap(),
+            json!({
+                "id": spec.id.as_str(),
+                "genesis_validators": jam_validators::genesis_validators(&spec),
+            })
+            .to_string(),
         )
         .unwrap();
         let status = std::process::Command::new(polkajam)
@@ -618,7 +621,7 @@ mod tests {
                 .contains("needs exactly 6 validators for `tiny`, got 4"),
             "{error}"
         );
-        assert!(error.to_string().contains("chain_spec_command"), "{error}");
+        assert!(error.to_string().contains("chain_spec_path"), "{error}");
     }
 
     #[tokio::test]

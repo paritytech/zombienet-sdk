@@ -37,9 +37,9 @@ let config = NetworkConfigBuilder::new()
 ## Chain spec
 
 By default zombienet builds the JIP-4 chain spec itself, with
-[`jam-chainspec`](https://crates.io/crates/jam-chainspec). The genesis is the same one the node's
-`gen-spec` writes: the network's validators, the **bootstrap service** as service `0` (hosting
-the null authorizer) and the null authorizer on every core.
+[`jam-chainspec`](https://crates.io/crates/jam-chainspec). The default genesis has the network's
+validators, the **bootstrap service** as service `0` (hosting the null authorizer) and the null
+authorizer on every core.
 
 The bootstrap service comes from `[jamchain.genesis] bootstrap_service` (a path or a url), or is
 embedded in zombienet with the **`jam` feature** (of `zombienet-sdk`, `zombienet-orchestrator` or
@@ -66,11 +66,21 @@ How the spec is produced:
 | Set | Spec |
 |---|---|
 | `chain_spec_path` | Used as given (a path or a url). |
-| `chain_spec_command` or `genesis_overrides` | Generated with `<command> gen-spec <config> <spec>`, from the `jam_config.json` zombienet writes. |
 | nothing (default) | Built in process, customized by `[jamchain.genesis]`. |
 
-`genesis` can't be combined with the other three, nor `chain_spec_path` with the generator
-fields.
+`genesis` can't be combined with `chain_spec_path`.
+
+### Migrating from 0.7
+
+`chain_spec_command` and `genesis_overrides` were removed from `[jamchain]`, and a network file
+that still sets them is refused. The node's `gen-spec` is no longer run.
+
+| Used `chain_spec_command` / `genesis_overrides` for | Now |
+|---|---|
+| Services, auth queues, privileges | `[jamchain.genesis]` (or its native `config_file`). |
+| Fewer validators than the preset needs | Add validators, set `genesis.protocol_parameters` with a matching `core_count`, or use `chain_spec_path`. |
+| A node on another `jam-*` version | `genesis.bootstrap_service` pointing at that node's blob, or `chain_spec_path`. |
+| JAM networks with different protocol parameters in one process | Separate processes, or `chain_spec_path`. |
 
 ### Customizing the genesis
 
@@ -141,10 +151,10 @@ the bootstrap service came from.
 
 The bootstrap service must suit the node: the embedded one is built from the
 `jam-bootstrap-service` version matching the `jam-*` crates zombienet uses. For a node on another version, point
-`bootstrap_service` at its blob, or generate the spec with `chain_spec_command = "polkajam"`.
+`bootstrap_service` at its blob, or give a pre-built spec with `chain_spec_path`.
 
 The protocol parameters are process-wide, so all the JAM networks a process builds in process
-must use the same set.
+must use the same set (a network given a `chain_spec_path` is not affected).
 
 The SDK also exports the embedded blobs for tests: `zombienet_sdk::jam::NULL_AUTHORIZER_BLOB`,
 `null_authorizer_hash()`, `embedded_bootstrap_service()` and, with the `jam` feature,

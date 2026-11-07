@@ -423,8 +423,11 @@ where
             "-p",
             "/relay-data/",
             "&&",
-            // Use our version of curl
+            // Use our version of curl, without progress meter (but still
+            // reporting errors) and failing on HTTP errors.
             "/cfg/curl",
+            "-sS",
+            "--fail",
             url_of_snap.as_ref(),
             "--output",
             "/data/db.tgz",
@@ -434,12 +437,21 @@ where
             "&&",
             "tar",
             "--skip-old-files",
-            "-xzvf",
+            "-xzf",
+            "/data/db.tgz",
+            "&&",
+            "rm",
+            "-f",
             "/data/db.tgz",
         ]);
 
         trace!("cmd opts: {:#?}", opts);
-        let _ = self.run_command(opts).await?;
+        self.run_command(opts).await?.map_err(|(status, stderr)| {
+            ProviderError::NodeSpawningFailed(
+                format!("failed to initialize db snapshot for {}", self.name),
+                anyhow!("command failed in container: status {status}: {stderr}"),
+            )
+        })?;
 
         Ok(())
     }

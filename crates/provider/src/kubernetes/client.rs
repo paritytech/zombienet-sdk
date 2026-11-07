@@ -317,26 +317,22 @@ impl KubernetesClient {
         let stdout_stream = process.stdout().expect(&format!(
             "stdout shouldn't be None when true passed to exec {THIS_IS_A_BUG}"
         ));
-        let stdout = tokio_util::io::ReaderStream::new(stdout_stream)
-            .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
-            .collect::<Vec<_>>()
-            .await
-            .join("");
         let stderr_stream = process.stderr().expect(&format!(
             "stderr shouldn't be None when true passed to exec {THIS_IS_A_BUG}"
         ));
-        let stderr = tokio_util::io::ReaderStream::new(stderr_stream)
-            .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
-            .collect::<Vec<_>>()
-            .await
-            .join("");
+        let status_fut = process.take_status().expect(&format!(
+            "first call to status shouldn't fail {THIS_IS_A_BUG}"
+        ));
 
-        let status = process
-            .take_status()
-            .expect(&format!(
-                "first call to status shouldn't fail {THIS_IS_A_BUG}"
-            ))
-            .await;
+        // Drain stdout, stderr and the status channel concurrently. kube-rs feeds
+        // each stream through a small bounded pipe from a single message loop, so
+        // reading them sequentially deadlocks once the unread stream fills up
+        // (e.g. curl's progress meter on stderr while we wait for stdout EOF).
+        let (stdout, stderr, status) = tokio::join!(
+            collect_stream(stdout_stream),
+            collect_stream(stderr_stream),
+            status_fut
+        );
 
         // await process to finish
         process.join().await.map_err(|err| {
@@ -498,12 +494,12 @@ impl KubernetesClient {
                             Err(e) => {
                                 consecutive_failures += 1;
                                 if consecutive_failures < MAX_FAILURES {
-                                    trace!("portforward failed to establish ({}/{}): {e:?}, retrying in 1s", 
+                                    trace!("portforward failed to establish ({}/{}): {e:?}, retrying in 1s",
                                        consecutive_failures, MAX_FAILURES);
                                     tokio::time::sleep(Duration::from_secs(1)).await;
                                     continue;
                                 } else {
-                                    trace!("portforward failed to establish after {} attempts: {e:?}, closing connection", 
+                                    trace!("portforward failed to establish after {} attempts: {e:?}, closing connection",
                                        consecutive_failures);
                                     break;
                                 }
@@ -544,7 +540,7 @@ impl KubernetesClient {
                                             tokio::time::sleep(Duration::from_secs(1)).await;
                                             continue;
                                         } else {
-                                            trace!("portforward failed to establish after {} attempts: {e:?}, closing connection", 
+                                            trace!("portforward failed to establish after {} attempts: {e:?}, closing connection",
                                        consecutive_failures);
                                             break;
                                         }
@@ -674,4 +670,13 @@ pub(super) mod helpers {
                 .is_some_and(status_is_ready)
         }
     }
+}
+
+/// Collect an exec output stream into a `String`, skipping invalid UTF-8 chunks.
+async fn collect_stream(stream: impl tokio::io::AsyncRead + Unpin) -> String {
+    tokio_util::io::ReaderStream::new(stream)
+        .filter_map(|r| async { r.ok().and_then(|v| String::from_utf8(v.to_vec()).ok()) })
+        .collect::<Vec<_>>()
+        .await
+        .join("")
 }

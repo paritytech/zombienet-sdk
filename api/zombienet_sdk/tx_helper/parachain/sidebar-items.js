@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_deregister_validator_call","create_register_para_call","create_register_validator_call","fetch_genesis_header","fetch_validation_code"]};

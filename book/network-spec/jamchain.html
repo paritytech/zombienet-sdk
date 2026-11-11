@@ -1,0 +1,363 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>JAM chain - Zombienet SDK</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../intro.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../getting-started/index.html"><strong aria-hidden="true">2.</strong> Getting Started</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../getting-started/setup.html"><strong aria-hidden="true">2.1.</strong> Setup</a></li><li class="chapter-item expanded "><a href="../getting-started/your-first-network.html"><strong aria-hidden="true">2.2.</strong> Your First Network</a></li></ol></li><li class="chapter-item expanded "><a href="../how-it-works.html"><strong aria-hidden="true">3.</strong> How It Works</a></li><li class="chapter-item expanded "><a href="../network-spec/index.html"><strong aria-hidden="true">4.</strong> Network Definition Spec</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../network-spec/global-settings.html"><strong aria-hidden="true">4.1.</strong> Global Settings</a></li><li class="chapter-item expanded "><a href="../network-spec/relaychain.html"><strong aria-hidden="true">4.2.</strong> Relaychain</a></li><li class="chapter-item expanded "><a href="../network-spec/parachain.html"><strong aria-hidden="true">4.3.</strong> Parachain</a></li><li class="chapter-item expanded "><a href="../network-spec/jamchain.html" class="active"><strong aria-hidden="true">4.4.</strong> JAM chain</a></li><li class="chapter-item expanded "><a href="../network-spec/node.html"><strong aria-hidden="true">4.5.</strong> Node</a></li><li class="chapter-item expanded "><a href="../network-spec/hrmp-channels.html"><strong aria-hidden="true">4.6.</strong> HRMP Channels</a></li><li class="chapter-item expanded "><a href="../network-spec/custom-process.html"><strong aria-hidden="true">4.7.</strong> Custom Processes</a></li><li class="chapter-item expanded "><a href="../network-spec/chain-spec.html"><strong aria-hidden="true">4.8.</strong> Chain Spec</a></li><li class="chapter-item expanded "><a href="../network-spec/examples.html"><strong aria-hidden="true">4.9.</strong> Examples</a></li></ol></li><li class="chapter-item expanded "><a href="../providers.html"><strong aria-hidden="true">5.</strong> Providers</a></li><li class="chapter-item expanded "><a href="../cli.html"><strong aria-hidden="true">6.</strong> CLI Usage</a></li><li class="chapter-item expanded "><a href="../examples.html"><strong aria-hidden="true">7.</strong> Examples</a></li><li class="chapter-item expanded "><a href="../environment.html"><strong aria-hidden="true">8.</strong> Environment Variables</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Zombienet SDK</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="jam-chain"><a class="header" href="#jam-chain">JAM chain</a></h1>
+<p>A <code>[jamchain]</code> takes the place of the relaychain: a JAM network is rooted in its JAM nodes, and
+parachains can be anchored to it.</p>
+<h3 id="toml"><a class="header" href="#toml">TOML</a></h3>
+<pre><code class="language-toml">[jamchain]
+id = "dev"
+default_command = "polkajam"
+protocol_params_type = "tiny"   # tiny (6 validators) | mini (78) | full (1023)
+
+[[jamchain.nodes]]
+name = "jam0"
+mode = "validator"
+# ... one entry per validator, plus any `ordinary` / `proxy` nodes
+</code></pre>
+<h3 id="builder"><a class="header" href="#builder">Builder</a></h3>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use zombienet_sdk::NetworkConfigBuilder;
+
+let config = NetworkConfigBuilder::new()
+    .with_jamchain(|j| {
+        let mut j = j.with_id("dev").with_validator(|n| n.with_name("jam0"));
+        for i in 1..6 {
+            j = j.with_validator(|n| n.with_name(&amp;format!("jam{i}")));
+        }
+        j.with_ordinary(|n| n.with_name("jam-or"))
+    })
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<h2 id="chain-spec"><a class="header" href="#chain-spec">Chain spec</a></h2>
+<p>By default zombienet builds the JIP-4 chain spec itself, with
+<a href="https://crates.io/crates/jam-chainspec"><code>jam-chainspec</code></a>. The default genesis has the network's
+validators, the <strong>bootstrap service</strong> as service <code>0</code> (hosting the null authorizer) and the null
+authorizer on every core.</p>
+<p>The bootstrap service comes from <code>[jamchain.genesis] bootstrap_service</code> (a path or a url), or is
+embedded in zombienet with the <strong><code>jam</code> feature</strong> (of <code>zombienet-sdk</code>, <code>zombienet-orchestrator</code> or
+the CLI), so no extra file is needed:</p>
+<pre><code class="language-toml">zombienet-sdk = { version = "...", features = ["jam"] }
+</code></pre>
+<p>The feature builds it from the
+<a href="https://crates.io/crates/jam-bootstrap-service"><code>jam-bootstrap-service</code></a> crate when zombienet is
+compiled, which needs the <code>rust-src</code> component (<code>rustup component add rust-src</code>); it is off by
+default so other users don't need it. To embed a prebuilt blob instead, set
+<code>ZOMBIE_JAM_BOOTSTRAP_SERVICE_BLOB</code> to its path when building with the feature.</p>
+<p>Without the feature and without <code>bootstrap_service</code>, building the spec fails and says so (unless
+<code>with_defaults = false</code>).</p>
+<p>The built-in builder needs exactly as many validator nodes as the protocol parameters call for
+(6 for <code>tiny</code>, 78 for <code>mini</code>, 1023 for <code>full</code>).</p>
+<p>How the spec is produced:</p>
+<div class="table-wrapper"><table><thead><tr><th>Set</th><th>Spec</th></tr></thead><tbody>
+<tr><td><code>chain_spec_path</code></td><td>Used as given (a path or a url).</td></tr>
+<tr><td>nothing (default)</td><td>Built in process, customized by <code>[jamchain.genesis]</code>.</td></tr>
+</tbody></table>
+</div>
+<p><code>genesis</code> can't be combined with <code>chain_spec_path</code>.</p>
+<h3 id="migrating-from-07"><a class="header" href="#migrating-from-07">Migrating from 0.7</a></h3>
+<p><code>chain_spec_command</code> and <code>genesis_overrides</code> were removed from <code>[jamchain]</code>, and a network file
+that still sets them is refused. The node's <code>gen-spec</code> is no longer run.</p>
+<div class="table-wrapper"><table><thead><tr><th>Used <code>chain_spec_command</code> / <code>genesis_overrides</code> for</th><th>Now</th></tr></thead><tbody>
+<tr><td>Services, auth queues, privileges</td><td><code>[jamchain.genesis]</code> (or its native <code>config_file</code>).</td></tr>
+<tr><td>Fewer validators than the preset needs</td><td>Add validators, set <code>genesis.protocol_parameters</code> with a matching <code>core_count</code>, or use <code>chain_spec_path</code>.</td></tr>
+<tr><td>A node on another <code>jam-*</code> version</td><td><code>genesis.bootstrap_service</code> pointing at that node's blob, or <code>chain_spec_path</code>.</td></tr>
+<tr><td>JAM networks with different protocol parameters in one process</td><td>Separate processes, or <code>chain_spec_path</code>.</td></tr>
+</tbody></table>
+</div>
+<h3 id="customizing-the-genesis"><a class="header" href="#customizing-the-genesis">Customizing the genesis</a></h3>
+<pre><code class="language-toml">[jamchain.genesis]
+# Replace the embedded bootstrap service with another blob (a path or a url).
+# bootstrap_service = "./blobs/jam-bootstrap-service.jam"
+# Don't add the bootstrap service nor the null authorizer queues.
+# with_defaults = false
+# A native jam-chainspec JSON config, layered under the fields below. Its `id`,
+# `genesis_validators` and `protocol_parameters` are replaced by zombienet's.
+# config_file = "./my-chainspec-config.json"
+# A full protocol parameters object, instead of the `protocol_params_type` preset.
+# protocol_parameters = { ... }
+
+[jamchain.genesis.services.5]
+code = "./blobs/my-service.jam"          # a path or a url
+balance = "min+1000000"                  # 1000 | "max" | "min" | "min+&lt;amount&gt;"
+min_item_gas = 10
+min_memo_gas = 10
+deposit_offset = 0                       # an amount, or "max"
+preimages = ["./blobs/my-authorizer.jam"]
+storage = { "0x6772656574696e67" = "0x68656c6c6f" }
+
+[jamchain.genesis.auth_queues]
+0 = [{ code = "./blobs/my-authorizer.jam", config = "0x" }]   # hashed by zombienet
+1 = ["null"]                                                   # or a 0x-prefixed hash
+
+[jamchain.genesis.privileges]
+manager = 0        # alias: bless
+delegator = 0      # alias: designate
+registrar = 0      # alias: register
+assign = { 0 = 5 }
+always_acc = { 5 = 1000000 }
+</code></pre>
+<p>Relative paths are resolved against the network definition's directory. Balances that don't fit
+a TOML integer (like <code>u64::MAX</code>) are written as strings, or as <code>"max"</code>.</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use zombienet_sdk::{jam::JamAuthorizer, NetworkConfigBuilder};
+
+let config = NetworkConfigBuilder::new()
+    .with_jamchain(|j| {
+        j.with_id("dev")
+            .with_genesis(|g| {
+                g.with_service(5, |s| {
+                    s.with_code("./blobs/my-service.jam")
+                        .with_balance(zombienet_sdk::jam::JamBalance::MinimumPlus(1_000_000))
+                        .with_preimage("./blobs/my-authorizer.jam")
+                        .with_storage(b"greeting".to_vec(), b"hello".to_vec())
+                })
+                .with_auth_queue(0, [JamAuthorizer::code("./blobs/my-authorizer.jam")])
+                .with_auth_queue(1, [JamAuthorizer::Null])
+                .with_assigner([0], 5)
+                // .with_bootstrap_service("https://example.com/jam-bootstrap-service.jam")
+            })
+            .with_validator(|n| n.with_name("jam0"))
+            // ... 6 validators for tiny
+    })
+    .build()
+    .unwrap();
+<span class="boring">}</span></code></pre></pre>
+<p>The network's base directory gets <code>jam_spec.json</code> and, for a spec built in process,
+<code>jam_genesis.json</code>: the genesis that went into it, with the code hash of every service and where
+the bootstrap service came from.</p>
+<p>The bootstrap service must suit the node: the embedded one is built from the
+<code>jam-bootstrap-service</code> version matching the <code>jam-*</code> crates zombienet uses. For a node on another version, point
+<code>bootstrap_service</code> at its blob, or give a pre-built spec with <code>chain_spec_path</code>.</p>
+<p>The protocol parameters are process-wide, so all the JAM networks a process builds in process
+must use the same set (a network given a <code>chain_spec_path</code> is not affected).</p>
+<p>The SDK also exports the embedded blobs for tests: <code>zombienet_sdk::jam::NULL_AUTHORIZER_BLOB</code>,
+<code>null_authorizer_hash()</code>, <code>embedded_bootstrap_service()</code> and, with the <code>jam</code> feature,
+<code>BOOTSTRAP_SERVICE_BLOB</code>, <code>BOOTSTRAP_SERVICE_HASH</code> and <code>BOOTSTRAP_SERVICE_SOURCE</code>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../network-spec/parachain.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../network-spec/node.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../network-spec/parachain.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../network-spec/node.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js"></script>
+        <script src="../mark.min.js"></script>
+        <script src="../searcher.js"></script>
+
+        <script src="../clipboard.min.js"></script>
+        <script src="../highlight.js"></script>
+        <script src="../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

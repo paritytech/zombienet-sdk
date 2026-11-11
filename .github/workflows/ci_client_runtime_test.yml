@@ -1,0 +1,119 @@
+name: Zombienet Client-Runtime Compatibility Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_tags:
+        description: 'Comma-separated list of 3 runtime version tags (e.g., v2.0.4,v2.0.3,v2.0.2). Leave empty for auto-discovery of 3 latest.'
+        required: false
+        type: string
+      binary_tag:
+        description: 'Client binary tag (e.g., polkadot-stable2503). Leave empty for auto-discovery of latest.'
+        required: false
+        type: string
+
+env:
+  RUST_LOG: "zombienet_orchestrator=debug,zombienet_provider=debug"
+
+jobs:
+  prepare-matrix:
+    runs-on: parity-default
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    outputs:
+      runtime_matrix: ${{ steps.set-matrix.outputs.runtime_matrix }}
+      binary_tag: ${{ steps.set-matrix.outputs.binary_tag }}
+    steps:
+      - name: Fetch Versions
+        id: set-matrix
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RUNTIME_TAGS: ${{ inputs.runtime_tags }}
+          INPUT_BINARY_TAG: ${{ inputs.binary_tag }}
+        run: |
+          # Use provided runtime tags or fetch 3 latest from fellows/runtimes (v2.0.4, v2.0.3, etc)
+          if [[ -n "$INPUT_RUNTIME_TAGS" ]]; then
+            # Convert comma-separated input to JSON array
+            RUNTIMES=$(echo "$INPUT_RUNTIME_TAGS" | tr ',' '\n' | jq -R . | jq -s -c .)
+            echo "Using provided runtime tags: $RUNTIMES"
+          else
+            RUNTIMES=$(gh api graphql -f query='
+              query {
+                repository(owner: "polkadot-fellows", name: "runtimes") {
+                  releases(first: 3, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
+                }
+              }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^v[0-9]+" | head -n 3 | jq -R . | jq -s -c .)
+            echo "Auto-discovered runtime tags: $RUNTIMES"
+          fi
+
+          # Use provided binary tag or fetch latest stable from paritytech/polkadot-sdk
+          if [[ -n "$INPUT_BINARY_TAG" ]]; then
+            BINARY_TAG="$INPUT_BINARY_TAG"
+            echo "Using provided binary tag: $BINARY_TAG"
+          else
+            BINARY_TAG=$(gh api graphql -f query='
+              query {
+                repository(owner: "paritytech", name: "polkadot-sdk") {
+                  releases(first: 20, orderBy: {field: CREATED_AT, direction: DESC}) {
+                    nodes { tagName }
+                  }
+                }
+              }' --jq '.data.repository.releases.nodes[].tagName' | grep -E "^polkadot-stable[0-9]+" | grep -v "\-rc" | sort -Vr | head -n 1)
+            echo "Auto-discovered binary tag: $BINARY_TAG"
+          fi
+
+          echo "runtime_matrix=$RUNTIMES" >> $GITHUB_OUTPUT
+          echo "binary_tag=$BINARY_TAG" >> $GITHUB_OUTPUT
+
+  test-runtime:
+    needs: prepare-matrix
+    runs-on: parity-default
+    name: "Test Runtime: ${{ matrix.runtime_tag }} with binary: ${{ needs.prepare-matrix.outputs.binary_tag }}"
+    container:
+      image: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202506301118
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime_tag: ${{ fromJson(needs.prepare-matrix.outputs.runtime_matrix) }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Latest Binaries
+        shell: bash
+        run: |
+          BIN_TAG="${{ needs.prepare-matrix.outputs.binary_tag }}"
+          mkdir -p ./bin
+          NODE_BINS=("polkadot" "polkadot-execute-worker" "polkadot-prepare-worker")
+          for bin in "${NODE_BINS[@]}"; do
+            echo "Downloading $bin @ $BIN_TAG"
+            curl -fL "https://github.com/paritytech/polkadot-sdk/releases/download/$BIN_TAG/$bin" -o "./bin/$bin"
+            chmod +x "./bin/$bin"
+          done
+          echo "$PWD/bin" >> $GITHUB_PATH
+
+      - name: Download Specific Runtime
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          TAG="${{ matrix.runtime_tag }}"
+          
+          echo "Downloading Runtimes for $TAG..."
+          
+          gh release download "$TAG" -R polkadot-fellows/runtimes \
+            -p "polkadot_runtime-*.compact.compressed.wasm" \
+            --output artifacts/relay_runtime.wasm
+
+      - name: Run Compatibility Test
+        env:
+          RELAY_RUNTIME_PATH: ${{ github.workspace }}/artifacts/relay_runtime.wasm
+          ZOMBIE_PROVIDER: native
+          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
+        run: |
+          echo "Testing Binary ${{ needs.prepare-matrix.outputs.binary_tag }} against Runtime ${{ matrix.runtime_tag }}"
+          cargo test --test client-runtime -- --nocapture

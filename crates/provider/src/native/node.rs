@@ -472,6 +472,12 @@ where
                 .ok_or_else(|| anyhow!("no process was attached for the node"))?
         };
 
+        // collected first: once the parent dies its children are reparented
+        let pid = match &process_handle {
+            ProcessHandle::Spawned(_, pid) | ProcessHandle::Attached(pid) => *pid,
+        };
+        let descendants = descendants(pid);
+
         match process_handle {
             ProcessHandle::Spawned(mut child, _pid) => {
                 child.kill().await?;
@@ -482,8 +488,69 @@ where
                 Err(err) => return Err(anyhow!("Failed to kill attached process {pid}: {err}")),
             },
         }
+        for child in descendants {
+            let _ = kill(child, Signal::SIGKILL);
+        }
 
         Ok(())
+    }
+}
+
+/// All descendants of `root`, parents before children. Reads `/proc`, so it
+/// is empty on other platforms (macOS: only the process itself is signaled).
+fn descendants(root: Pid) -> Vec<Pid> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return vec![];
+    };
+    let ppids: Vec<(i32, i32)> = dir
+        .flatten()
+        .filter_map(|e| {
+            let pid = e.file_name().to_str()?.parse().ok()?;
+            let stat = std::fs::read_to_string(e.path().join("stat")).ok()?;
+            // `pid (comm) state ppid ...`, comm may hold spaces and parens
+            let ppid = stat
+                .rsplit_once(')')?
+                .1
+                .split_whitespace()
+                .nth(1)?
+                .parse()
+                .ok()?;
+            Some((pid, ppid))
+        })
+        .collect();
+    let mut found = vec![root.as_raw()];
+    let mut i = 0;
+    while i < found.len() {
+        let parent = found[i];
+        found.extend(
+            ppids
+                .iter()
+                .filter(|(_, pp)| *pp == parent)
+                .map(|(p, _)| *p),
+        );
+        i += 1;
+    }
+    found.into_iter().skip(1).map(Pid::from_raw).collect()
+}
+
+impl<FS> Drop for NativeNode<FS>
+where
+    FS: FileSystem + Send + Sync + Clone,
+{
+    // kill_on_drop only kills the process itself, so its children are killed here
+    fn drop(&mut self) {
+        let Ok(Some(ProcessHandle::Spawned(child, pid))) = self.process_handle.get_mut() else {
+            return;
+        };
+        // once reaped, the pid may belong to another process
+        if !matches!(child.try_wait(), Ok(None)) {
+            return;
+        }
+        let descendants = descendants(*pid);
+        let _ = child.start_kill();
+        for descendant in descendants {
+            let _ = kill(descendant, Signal::SIGKILL);
+        }
     }
 }
 
@@ -704,8 +771,12 @@ where
     async fn pause(&self) -> Result<(), ProviderError> {
         let process_id = self.process_id()?;
 
+        let descendants = descendants(process_id);
         kill(process_id, Signal::SIGSTOP)
             .map_err(|err| ProviderError::PauseNodeFailed(self.name.clone(), err.into()))?;
+        for child in descendants {
+            let _ = kill(child, Signal::SIGSTOP);
+        }
 
         Ok(())
     }
@@ -713,7 +784,10 @@ where
     async fn resume(&self) -> Result<(), ProviderError> {
         let process_id = self.process_id()?;
 
-        nix::sys::signal::kill(process_id, Signal::SIGCONT)
+        for child in descendants(process_id).into_iter().rev() {
+            let _ = kill(child, Signal::SIGCONT);
+        }
+        kill(process_id, Signal::SIGCONT)
             .map_err(|err| ProviderError::ResumeNodeFailed(self.name.clone(), err.into()))?;
 
         Ok(())

@@ -279,8 +279,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        types::{GenerateFileCommand, GenerateFilesOptions},
-        NativeProvider, Provider,
+        types::{GenerateFileCommand, GenerateFilesOptions, SpawnNodeOptions},
+        DynNamespace, NativeProvider, Provider,
     };
 
     fn unique_temp_dir() -> PathBuf {
@@ -371,5 +371,82 @@ mod tests {
             .await
             .expect("should read produced file");
         assert_eq!(produced, "42");
+    }
+
+    #[cfg(target_os = "linux")]
+    fn proc_state(pid: &str) -> Option<char> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        stat.rsplit_once(')')?.1.trim().chars().next()
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn wait_for_state(pid: &str, want: &[Option<char>]) {
+        for _ in 0..50 {
+            if want.contains(&proc_state(pid)) {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        panic!(
+            "process {pid} is {:?}, wanted one of {want:?}",
+            proc_state(pid)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn spawn_shell_with_child(ns: &DynNamespace, base_dir: &Path) -> (DynNode, String) {
+        let pid_file = base_dir.join("child.pid");
+        let script = format!("sleep 600 & echo $! > {}; wait", pid_file.display());
+        let opts = SpawnNodeOptions::new("shell", "sh").args(vec!["-c", script.as_str()]);
+        let node = ns.spawn_node(&opts).await.expect("node should spawn");
+
+        let mut child = String::new();
+        for _ in 0..50 {
+            child = std::fs::read_to_string(&pid_file).unwrap_or_default();
+            if child.ends_with('\n') {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let child = child.trim().to_string();
+        wait_for_state(&child, &[Some('S')]).await;
+        (node, child)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn children_of_a_shell_follow_pause_resume_and_destroy() {
+        let base_dir = unique_temp_dir();
+        let provider = NativeProvider::new(LocalFileSystem);
+        let ns = provider
+            .create_namespace_with_base_dir(&base_dir)
+            .await
+            .expect("namespace should be created");
+        let (node, child) = spawn_shell_with_child(&ns, &base_dir).await;
+
+        node.pause().await.unwrap();
+        wait_for_state(&child, &[Some('T')]).await;
+
+        node.resume().await.unwrap();
+        wait_for_state(&child, &[Some('S')]).await;
+
+        ns.destroy().await.unwrap();
+        // a zombie is a dead process nobody has reaped (no init in the container)
+        wait_for_state(&child, &[None, Some('Z')]).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn children_of_a_shell_are_killed_on_drop() {
+        let base_dir = unique_temp_dir();
+        let provider = NativeProvider::new(LocalFileSystem);
+        let ns = provider
+            .create_namespace_with_base_dir(&base_dir)
+            .await
+            .expect("namespace should be created");
+        let (node, child) = spawn_shell_with_child(&ns, &base_dir).await;
+
+        drop((provider, ns, node));
+        wait_for_state(&child, &[None, Some('Z')]).await;
     }
 }

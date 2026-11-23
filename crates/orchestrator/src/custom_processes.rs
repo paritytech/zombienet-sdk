@@ -19,13 +19,13 @@ use crate::{
 };
 
 /// Whether a process may start, given what its dependencies reached.
-enum Startable {
+pub(crate) enum Startable {
     Now,
     Later,
     Never(String),
 }
 
-fn startable(
+pub(crate) fn startable(
     process: &CustomProcess,
     by_name: &HashMap<&str, &CustomProcess>,
     states: &HashMap<String, CustomProcessState>,
@@ -61,7 +61,7 @@ fn startable(
     Startable::Now
 }
 
-fn failed(process: &CustomProcess, reason: String) -> OrchestratorError {
+pub(crate) fn failed(process: &CustomProcess, reason: String) -> OrchestratorError {
     OrchestratorError::CustomProcessFailed {
         name: process.name().to_string(),
         reason,

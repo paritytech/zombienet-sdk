@@ -1128,13 +1128,14 @@ impl GroupNodeConfigBuilder<Initial> {
         chain_context: ChainDefaultContext,
         validation_context: Rc<RefCell<ValidationContext>>,
     ) -> Self {
-        let (errors, base_config) = match NodeConfigBuilder::new(chain_context.clone(), validation_context.clone())
+        let (errors, base_config) =
+            match NodeConfigBuilder::new(chain_context.clone(), validation_context.clone())
                 .with_name(" ") // placeholder
                 .build()
-        {
-            Ok(base_config) => (vec![], base_config),
-            Err((_name, errors)) => (errors, NodeConfig::default()),
-        };
+            {
+                Ok(base_config) => (vec![], base_config),
+                Err((_name, errors)) => (errors, NodeConfig::default()),
+            };
 
         Self {
             base_config,

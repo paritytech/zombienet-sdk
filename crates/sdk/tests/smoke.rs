@@ -7,7 +7,7 @@ use kube::api::{Api, PostParams};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
 use zombienet_sdk::{
     environment::{get_attach_fn, get_provider_from_env, get_spawn_fn, Provider},
-    CustomProcessState,
+    CustomProcessBuilder, CustomProcessState,
 };
 
 /// What the `secret-reader` process must find in `TURN_SECRET`, put in the
@@ -214,7 +214,31 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .await
         .unwrap();
 
-    // ensure zombie.json is updated with "new1" and "new-col-1"
+    // add a custom process to the running network: a one-shot `cat` of an
+    // injected file
+    let cat_file = PathBuf::from("/tmp/zombie-1-cat.txt");
+    std::fs::write(&cat_file, "meow from an added process\n").unwrap();
+    let cat = CustomProcessBuilder::new()
+        .with_name("cat")
+        .with_command("cat")
+        .with_image("docker.io/library/alpine:3.20")
+        .with_args(vec!["/opt/cat.txt".into()])
+        .with_injected_file(TransferedFile::new(cat_file, "/opt/cat.txt"))
+        .with_one_shot()
+        .build()
+        .unwrap();
+
+    network.add_custom_process(cat).await.unwrap();
+
+    let cat = network.get_custom_process("cat").unwrap();
+    assert_eq!(cat.state(), &CustomProcessState::Completed);
+    let logs = cat.core().logs().await.unwrap();
+    assert!(
+        logs.contains("meow from an added process"),
+        "cat logs: {logs}"
+    );
+
+    // ensure zombie.json is updated with "new1", "new-col-1" and "cat"
     let raw = tokio::fs::read_to_string("/tmp/zombie-1/zombie.json")
         .await
         .unwrap();
@@ -237,6 +261,12 @@ async fn ci_k8s_basic_functionalities_should_works() {
         .unwrap()
         .iter()
         .any(|c| c["name"] == "new1"));
+
+    assert!(zombie_json["custom_processes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["name"] == "cat"));
 
     // pause / resume
     let alice = network.get_node("alice").unwrap();

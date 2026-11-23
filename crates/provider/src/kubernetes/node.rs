@@ -1232,7 +1232,7 @@ async fn check_claims(
     let lookups = try_join_all(
         wanted
             .iter()
-            .map(|(name, _, _)| client.get_pvc(namespace, name)),
+            .map(|(name, ..)| client.get_pvc(namespace, name)),
     )
     .await?;
     for ((_, read_write, what), lookup) in wanted.iter().zip(lookups) {

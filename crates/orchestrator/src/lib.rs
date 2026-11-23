@@ -1224,6 +1224,63 @@ async fn upload_raw_spec(
     Ok(())
 }
 
+/// What `capabilities` cannot run of `process`: a secret env without
+/// secrets, an injected file over a directory zombienet owns, or one missing.
+/// Also run on a process added to a running network.
+pub(crate) fn validate_custom_process_with_capabilities(
+    process: &configuration::CustomProcess,
+    capabilities: &ProviderCapabilities,
+) -> Vec<String> {
+    let mut errs: Vec<String> = vec![];
+    for var in process.env() {
+        if !capabilities.has_secrets && matches!(var.value, configuration::EnvValue::Secret { .. })
+        {
+            errs.push(format!(
+                "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
+                process.name(),
+                var.name
+            ));
+        }
+    }
+    for file in process.injected_files() {
+        if NODE_MOUNTED_DIRS
+            .iter()
+            .any(|dir| Path::new(dir) == file.remote_path)
+        {
+            errs.push(format!(
+                "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
+                process.name(),
+                file.remote_path.display()
+            ));
+        } else if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
+            .iter()
+            .find(|dir| file.remote_path.starts_with(dir))
+        {
+            // on docker these two are volumes every container of the network shares
+            errs.push(format!(
+                "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
+                process.name(),
+                file.remote_path.display()
+            ));
+        }
+        if !file.local_path.is_file() {
+            let from = if file.local_path.is_relative() {
+                std::env::current_dir()
+                    .map(|cwd| format!(" (relative to {})", cwd.display()))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            errs.push(format!(
+                "custom_processes['{}'].injected_files: no file at '{}'{from}",
+                process.name(),
+                file.local_path.display()
+            ));
+        }
+    }
+    errs
+}
+
 /// The volumes of the whole network: only a provider with claims mounts
 /// them, a claim is shared only read-only, and a `db_snapshot` is extracted
 /// onto a fresh volume, never over an existing claim (`tar --skip-old-files`
@@ -1312,60 +1369,17 @@ fn validate_spec_with_provider_capabilities(
     capabilities: &ProviderCapabilities,
 ) -> Result<(), anyhow::Error> {
     let mut errs: Vec<String> = vec![];
+
+    for process in &network_spec.custom_processes {
+        errs.extend(validate_custom_process_with_capabilities(
+            process,
+            capabilities,
+        ));
+    }
     errs.extend(validate_volumes_with_capabilities(
         network_spec,
         capabilities,
     ));
-
-    for process in &network_spec.custom_processes {
-        for var in process.env() {
-            if !capabilities.has_secrets
-                && matches!(var.value, configuration::EnvValue::Secret { .. })
-            {
-                errs.push(format!(
-                    "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
-                    process.name(),
-                    var.name
-                ));
-            }
-        }
-        for file in process.injected_files() {
-            if NODE_MOUNTED_DIRS
-                .iter()
-                .any(|dir| Path::new(dir) == file.remote_path)
-            {
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
-                    process.name(),
-                    file.remote_path.display()
-                ));
-            } else if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
-                .iter()
-                .find(|dir| file.remote_path.starts_with(dir))
-            {
-                // on docker these two are volumes every container of the network shares
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
-                    process.name(),
-                    file.remote_path.display()
-                ));
-            }
-            if !file.local_path.is_file() {
-                let from = if file.local_path.is_relative() {
-                    std::env::current_dir()
-                        .map(|cwd| format!(" (relative to {})", cwd.display()))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: no file at '{}'{from}",
-                    process.name(),
-                    file.local_path.display()
-                ));
-            }
-        }
-    }
 
     if capabilities.requires_image {
         // Relaychain

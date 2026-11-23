@@ -63,6 +63,7 @@ where
                 use_default_ports_in_cmd: true,
                 has_secrets: true,
                 fileserver_fetches_db_snapshot_url: true,
+                has_volumes: true,
             },
             tmp_dir: std::env::temp_dir(),
             k8s_client,

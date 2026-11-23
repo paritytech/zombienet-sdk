@@ -129,6 +129,7 @@ impl RelaychainSpec {
             default_resources: config.default_resources(),
             default_db_snapshot: config.default_db_snapshot(),
             default_args: config.default_args(),
+            default_volumes: config.default_volumes(),
         };
 
         let mut nodes: Vec<NodeConfig> = config.nodes().into_iter().cloned().collect();

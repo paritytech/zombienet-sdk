@@ -12,6 +12,7 @@ use super::{
     macros::states,
     resources::ResourcesBuilder,
     types::{AssetLocation, ChainDefaultContext, Command, Image, ValidationContext, U128},
+    volume::{validate_volumes, NodeVolume, NodeVolumeBuilder},
 };
 use crate::{
     shared::{
@@ -229,6 +230,10 @@ pub struct NodeConfig {
     p2p_port: Option<Port>,
     p2p_cert_hash: Option<String>,
     pub(crate) db_snapshot: Option<AssetLocation>,
+    /// Volumes backed by a `PersistentVolumeClaim` (only k8s), over the
+    /// chain's `default_volumes` by `mount_path`.
+    #[serde(default)]
+    pub(crate) volumes: Vec<NodeVolume>,
     /// Optional override for the automatically generated EVM (eth) session key.
     /// When set, override the auto-generated key so the seed will not be part of the resulting zombie.json
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -318,6 +323,12 @@ impl Serialize for NodeConfig {
             state.skip_field("db_snapshot")?;
         } else {
             state.serialize_field("db_snapshot", &self.db_snapshot)?;
+        }
+
+        if self.volumes.is_empty() {
+            state.skip_field("volumes")?;
+        } else {
+            state.serialize_field("volumes", &self.volumes)?;
         }
 
         if self.node_log_path.is_none() {
@@ -496,6 +507,12 @@ impl NodeConfig {
         self.db_snapshot.as_ref()
     }
 
+    /// The node's own volumes (only k8s); the chain's `default_volumes` apply
+    /// on the paths it does not mount.
+    pub fn volumes(&self) -> &[NodeVolume] {
+        &self.volumes
+    }
+
     /// Node log path
     pub fn node_log_path(&self) -> Option<&PathBuf> {
         self.node_log_path.as_ref()
@@ -557,6 +574,7 @@ impl Default for NodeConfigBuilder<Initial> {
                 p2p_port: None,
                 p2p_cert_hash: None,
                 db_snapshot: None,
+                volumes: vec![],
                 override_eth_key: None,
                 chain_context: Default::default(),
                 node_log_path: None,
@@ -841,6 +859,50 @@ impl NodeConfigBuilder<Buildable> {
         }
     }
 
+    /// Mount a volume backed by a `PersistentVolumeClaim` (only k8s); on a
+    /// path of the chain's `default_volumes` it takes the default's place.
+    pub fn with_volume(self, f: impl FnOnce(NodeVolumeBuilder) -> NodeVolumeBuilder) -> Self {
+        match f(NodeVolumeBuilder::new()).build() {
+            Ok(volume) => {
+                let mut volumes = self.config.volumes;
+                volumes.push(volume);
+                let errors = match validate_volumes(&volumes) {
+                    Ok(()) => self.errors,
+                    Err(errors) => {
+                        // the error is reported, the clashing volume dropped
+                        volumes.pop();
+                        merge_errors_vecs(
+                            self.errors,
+                            errors
+                                .into_iter()
+                                .map(|error| FieldError::Volumes(error).into())
+                                .collect(),
+                        )
+                    },
+                };
+                Self::transition(
+                    NodeConfig {
+                        volumes,
+                        ..self.config
+                    },
+                    self.validation_context,
+                    errors,
+                )
+            },
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| FieldError::Volumes(error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
     /// Set the websocket port that will be exposed. Uniqueness across config will be checked.
     pub fn with_ws_port(self, ws_port: Port) -> Self {
         match ensure_port_unique(ws_port, self.validation_context.clone()) {
@@ -1066,14 +1128,13 @@ impl GroupNodeConfigBuilder<Initial> {
         chain_context: ChainDefaultContext,
         validation_context: Rc<RefCell<ValidationContext>>,
     ) -> Self {
-        let (errors, base_config) =
-            match NodeConfigBuilder::new(chain_context.clone(), validation_context.clone())
+        let (errors, base_config) = match NodeConfigBuilder::new(chain_context.clone(), validation_context.clone())
                 .with_name(" ") // placeholder
                 .build()
-            {
-                Ok(base_config) => (vec![], base_config),
-                Err((_name, errors)) => (errors, NodeConfig::default()),
-            };
+        {
+            Ok(base_config) => (vec![], base_config),
+            Err((_name, errors)) => (errors, NodeConfig::default()),
+        };
 
         Self {
             base_config,

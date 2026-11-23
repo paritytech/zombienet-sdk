@@ -8,6 +8,7 @@ use std::{
 use configuration::shared::{
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image, Port},
+    volume::NodeVolume,
 };
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +61,8 @@ pub struct ChainDefaultContext<'a> {
     pub default_resources: Option<&'a Resources>,
     pub default_db_snapshot: Option<&'a AssetLocation>,
     pub default_args: Vec<&'a Arg>,
+    /// Volumes every node gets, unless it mounts the same path itself.
+    pub default_volumes: &'a [NodeVolume],
 }
 
 #[derive(Debug, Clone)]

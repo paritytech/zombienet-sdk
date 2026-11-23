@@ -243,6 +243,7 @@ where
         .injected_files(files_to_inject)
         .created_paths(created_paths)
         .db_snapshot(resolved_db_snapshot)
+        .volumes(node.volumes.clone())
         .port_mapping(HashMap::from(ports))
         .ports(NODE_SERVICE_PORTS)
         .node_log_path(node.node_log_path.clone())
@@ -598,6 +599,7 @@ pub(crate) async fn spawn_process(
         .port_mapping(host_ports.clone())
         .role(NodeRole::CustomProcess)
         .readiness(readiness)
+        .volumes(custom_process.volumes().to_vec())
         .without_wrapper();
 
     let spawn_ops = if let Some(image) = custom_process.image() {

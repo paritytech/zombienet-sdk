@@ -246,6 +246,8 @@ impl<T: FileSystem> Network<T> {
             default_resources: self.initial_spec.relaychain().default_resources.as_ref(),
             default_db_snapshot: self.initial_spec.relaychain().default_db_snapshot.as_ref(),
             default_args: self.initial_spec.relaychain().default_args.iter().collect(),
+            // an added node takes no volume, as it takes no default resources
+            default_volumes: &[],
         };
 
         let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
@@ -372,6 +374,8 @@ impl<T: FileSystem> Network<T> {
             default_resources: spec.default_resources.as_ref(),
             default_db_snapshot: spec.default_db_snapshot.as_ref(),
             default_args: spec.default_args.iter().collect(),
+            // an added collator takes no volume, as it takes no default resources
+            default_volumes: &[],
         };
 
         let relay_chain = self.relaychain().chain.clone();

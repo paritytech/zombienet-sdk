@@ -4,6 +4,7 @@ use configuration::shared::{
     node::{EnvVar, NodeConfig},
     resources::Resources,
     types::{Arg, AssetLocation, Command, Image},
+    volume::{merge_volumes, NodeVolume},
 };
 use multiaddr::Multiaddr;
 use provider::types::Port;
@@ -118,6 +119,11 @@ pub struct NodeSpec {
     /// Database snapshot. Override the default.
     pub(crate) db_snapshot: Option<AssetLocation>,
 
+    /// Volumes backed by a `PersistentVolumeClaim`: the node's own over the
+    /// chain's defaults, by mount path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) volumes: Vec<NodeVolume>,
+
     /// P2P port to use by full node if this is the case
     pub(crate) full_node_p2p_port: Option<ParkedPort>,
     /// Prometheus port to use by full node if this is the case
@@ -229,6 +235,7 @@ impl NodeSpec {
             resources: node_config.resources().cloned(),
             p2p_cert_hash: node_config.p2p_cert_hash().map(str::to_string),
             db_snapshot: db_snapshot.cloned(),
+            volumes: merge_volumes(chain_context.default_volumes, node_config.volumes()),
             accounts,
             ws_port: generators::generate_node_port(node_config.ws_port())?,
             rpc_port: generators::generate_node_port(node_config.rpc_port())?,
@@ -338,6 +345,7 @@ impl NodeSpec {
             resources: None,
             p2p_cert_hash: None,
             db_snapshot: None,
+            volumes: vec![],
             accounts,
             // should be deprecated now!
             ws_port: generators::generate_node_port(None)?,

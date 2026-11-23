@@ -6,7 +6,8 @@ use std::{
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::api::core::v1::{
-    ConfigMap, Namespace, Pod, PodSpec, PodStatus, Secret, Service, ServiceSpec,
+    ConfigMap, Namespace, PersistentVolumeClaim, Pod, PodSpec, PodStatus, Secret, Service,
+    ServiceSpec,
 };
 use kube::{
     api::{AttachParams, DeleteParams, ListParams, LogParams, PostParams, WatchParams},
@@ -36,11 +37,15 @@ pub struct Error(#[from] anyhow::Error);
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-pub(super) enum SecretLookup {
-    Found(Box<Secret>),
+/// An object looked up before it is relied on: `Forbidden` when this
+/// identity may not read it, which the pod using it does not need.
+pub(super) enum Lookup<T> {
+    Found(Box<T>),
     NotFound,
     Forbidden,
 }
+
+pub(super) type SecretLookup = Lookup<Secret>;
 
 #[derive(Clone)]
 pub struct KubernetesClient {
@@ -130,6 +135,26 @@ impl KubernetesClient {
             Err(kube::Error::Api(err)) if err.code == 403 => Ok(SecretLookup::Forbidden),
             Err(err) => Err(Error::from(anyhow!(
                 "error while getting secret {name}: {err}"
+            ))),
+        }
+    }
+
+    /// A `PersistentVolumeClaim`, `Forbidden` when this identity may not
+    /// read claims.
+    pub(super) async fn get_pvc(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Lookup<PersistentVolumeClaim>> {
+        match Api::<PersistentVolumeClaim>::namespaced(self.inner.clone(), namespace)
+            .get_opt(name)
+            .await
+        {
+            Ok(Some(pvc)) => Ok(Lookup::Found(Box::new(pvc))),
+            Ok(None) => Ok(Lookup::NotFound),
+            Err(kube::Error::Api(err)) if err.code == 403 => Ok(Lookup::Forbidden),
+            Err(err) => Err(Error::from(anyhow!(
+                "error while getting persistent volume claim {name}: {err}"
             ))),
         }
     }

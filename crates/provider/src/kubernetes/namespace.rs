@@ -686,6 +686,7 @@ where
             role: options.role,
             ports: &options.ports,
             readiness: options.readiness.as_ref(),
+            volumes: &options.volumes,
             wrapper: options.wrapper,
             k8s_client: &self.k8s_client,
             filesystem: &self.filesystem,

@@ -1,11 +1,16 @@
 use std::{collections::BTreeMap, env};
 
-use configuration::shared::resources::{ResourceQuantity, Resources};
+use configuration::shared::{
+    resources::{ResourceQuantity, Resources},
+    volume::{NodeVolume, VolumeDataSource, VolumeSource},
+};
 use k8s_openapi::{
     api::core::v1::{
         ConfigMapVolumeSource, Container, ContainerPort, EmptyDirVolumeSource, EnvVar,
-        EnvVarSource, HTTPGetAction, PodSpec, Probe, ResourceRequirements, SecretKeySelector,
-        TCPSocketAction, Toleration, Volume, VolumeMount,
+        EnvVarSource, EphemeralVolumeSource, HTTPGetAction, PersistentVolumeClaimSpec,
+        PersistentVolumeClaimTemplate, PersistentVolumeClaimVolumeSource, PodSecurityContext,
+        PodSpec, Probe, ResourceRequirements, SecretKeySelector, TCPSocketAction, Toleration,
+        TypedLocalObjectReference, Volume, VolumeMount,
     },
     apimachinery::pkg::{api::resource::Quantity, util::intstr::IntOrString},
 };
@@ -19,6 +24,31 @@ use crate::{
 /// The volume a direct process's injected files are mounted from, one by one,
 /// filled by an init container.
 const FILES_VOLUME: &str = "files";
+
+/// The volumes zombienet mounts in every pod, by name and path. A user volume
+/// on one of the first three takes its place (see [`volume_name`]).
+const BUILTIN_VOLUMES: [(&str, &str); 4] = [
+    ("cfg", "/cfg"),
+    ("data", "/data"),
+    ("relay-data", "/relay-data"),
+    ("scripts", NODE_SCRIPTS_DIR),
+];
+
+/// The group the volumes of a pod with a claim belong to: the `polkadot` user
+/// of parity's images (uid/gid 1000), so a non-root node can write to a
+/// freshly provisioned volume, which is `root:root` otherwise.
+const VOLUMES_FS_GROUP: i64 = 1000;
+
+/// The name of the pod volume for the user volume at `index`: the built-in
+/// one's on `/cfg`, `/data` or `/relay-data`, which it replaces, `vol-<index>`
+/// elsewhere. A provisioned claim is named `<pod>-<volume name>`.
+pub(super) fn volume_name(index: usize, volume: &NodeVolume) -> String {
+    BUILTIN_VOLUMES
+        .iter()
+        .find(|(_, path)| volume.mount_path().as_os_str() == *path)
+        .map(|(name, _)| name.to_string())
+        .unwrap_or_else(|| format!("vol-{index}"))
+}
 
 /// The image of the init containers: `wget`, `sha256sum` and `chmod` in it.
 const SETUP_IMAGE: &str =
@@ -47,6 +77,7 @@ impl PodSpecBuilder {
         files: &[FileToFetch],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
+        volumes: &[NodeVolume],
         wrapper: bool,
     ) -> PodSpec {
         let tolerations = if let Ok(node_type) = env::var("X_INFRA_NODETYPE") {
@@ -62,7 +93,7 @@ impl PodSpecBuilder {
             None
         };
 
-        let mut init_containers = vec![Self::build_helper_binaries_setup_container()];
+        let mut init_containers = vec![Self::build_helper_binaries_setup_container(volumes)];
         if !files.is_empty() {
             init_containers.push(Self::build_files_setup_container(files));
         }
@@ -72,9 +103,17 @@ impl PodSpecBuilder {
             init_containers: Some(init_containers),
             containers: vec![Self::build_main_container(
                 name, image, resources, program, args, env, secret_env, files, ports, readiness,
-                wrapper,
+                volumes, wrapper,
             )],
-            volumes: Some(Self::build_volumes(!files.is_empty())),
+            volumes: Some(Self::build_volumes(!files.is_empty(), volumes)),
+            // Only with a claim, so a pod without one is what it always was.
+            // `OnRootMismatch` spares a recursive chown of a large database on
+            // every mount.
+            security_context: (!volumes.is_empty()).then(|| PodSecurityContext {
+                fs_group: Some(VOLUMES_FS_GROUP),
+                fs_group_change_policy: Some("OnRootMismatch".to_string()),
+                ..Default::default()
+            }),
             tolerations,
             // A direct process that exits is done, by success or by failure: the
             // pod ends with it, and so says what happened, instead of the
@@ -97,6 +136,7 @@ impl PodSpecBuilder {
         files: &[FileToFetch],
         ports: &[(String, Port)],
         readiness: Option<&ReadinessProbe>,
+        volumes: &[NodeVolume],
         wrapper: bool,
     ) -> Container {
         // With the wrapper, `program` is started on demand through the pipe the
@@ -213,7 +253,7 @@ impl PodSpecBuilder {
                     }))
                     .collect(),
             ),
-            volume_mounts: Some(Self::build_volume_mounts(extra_mounts)),
+            volume_mounts: Some(Self::build_volume_mounts(volumes, extra_mounts)),
             resources: Self::build_resources_requirements(resources),
             ..Default::default()
         }
@@ -260,17 +300,25 @@ impl PodSpecBuilder {
         }
     }
 
-    fn build_helper_binaries_setup_container() -> Container {
+    /// Drops `curl` and `coreutils` into `/cfg`, the only volume it mounts.
+    fn build_helper_binaries_setup_container(volumes: &[NodeVolume]) -> Container {
+        let cfg = Self::build_volume_mounts(volumes, vec![])
+            .into_iter()
+            .find(|mount| mount.name == "cfg")
+            .expect("cfg is a built-in volume");
         Container {
             name: "helper-binaries-setup".to_string(),
             image: Some(SETUP_IMAGE.to_string()),
             image_pull_policy: Some("IfNotPresent".to_string()),
-            volume_mounts: Some(Self::build_volume_mounts(vec![VolumeMount {
-                name: "helper-binaries-downloader-volume".to_string(),
-                mount_path: "/helper-binaries-downloader.sh".to_string(),
-                sub_path: Some("helper-binaries-downloader.sh".to_string()),
-                ..Default::default()
-            }])),
+            volume_mounts: Some(vec![
+                cfg,
+                VolumeMount {
+                    name: "helper-binaries-downloader-volume".to_string(),
+                    mount_path: "/helper-binaries-downloader.sh".to_string(),
+                    sub_path: Some("helper-binaries-downloader.sh".to_string()),
+                    ..Default::default()
+                },
+            ]),
             command: Some(vec![
                 "ash".to_string(),
                 "/helper-binaries-downloader.sh".to_string(),
@@ -279,24 +327,29 @@ impl PodSpecBuilder {
         }
     }
 
-    fn build_volumes(with_files: bool) -> Vec<Volume> {
-        let mut volumes = vec![
-            Volume {
-                name: "cfg".to_string(),
-                ..Default::default()
-            },
-            Volume {
-                name: "data".to_string(),
-                ..Default::default()
-            },
-            Volume {
-                name: "relay-data".to_string(),
-                ..Default::default()
-            },
-            Volume {
-                name: "scripts".to_string(),
-                ..Default::default()
-            },
+    fn build_volumes(with_files: bool, user_volumes: &[NodeVolume]) -> Vec<Volume> {
+        let named: Vec<(String, &NodeVolume)> = user_volumes
+            .iter()
+            .enumerate()
+            .map(|(index, volume)| (volume_name(index, volume), volume))
+            .collect();
+
+        // The built-in ones, each a scratch `emptyDir` unless a user volume
+        // takes its place.
+        let mut volumes: Vec<Volume> = BUILTIN_VOLUMES
+            .iter()
+            .map(
+                |(name, _)| match named.iter().find(|(user, _)| user == name) {
+                    Some((_, volume)) => Self::build_user_volume(name, volume),
+                    None => Volume {
+                        name: name.to_string(),
+                        empty_dir: Some(EmptyDirVolumeSource::default()),
+                        ..Default::default()
+                    },
+                },
+            )
+            .collect();
+        volumes.extend([
             Volume {
                 name: "zombie-wrapper-volume".to_string(),
                 config_map: Some(ConfigMapVolumeSource {
@@ -315,7 +368,13 @@ impl PodSpecBuilder {
                 }),
                 ..Default::default()
             },
-        ];
+        ]);
+        volumes.extend(
+            named
+                .iter()
+                .filter(|(name, _)| !BUILTIN_VOLUMES.iter().any(|(b, _)| b == name))
+                .map(|(name, volume)| Self::build_user_volume(name, volume)),
+        );
         if with_files {
             volumes.push(Volume {
                 name: FILES_VOLUME.to_string(),
@@ -326,37 +385,98 @@ impl PodSpecBuilder {
         volumes
     }
 
-    fn build_volume_mounts(non_default_mounts: Vec<VolumeMount>) -> Vec<VolumeMount> {
-        [
-            vec![
-                VolumeMount {
-                    name: "cfg".to_string(),
-                    mount_path: "/cfg".to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-                VolumeMount {
-                    name: "data".to_string(),
-                    mount_path: "/data".to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-                VolumeMount {
-                    name: "relay-data".to_string(),
-                    mount_path: "/relay-data".to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-                VolumeMount {
-                    name: "scripts".to_string(),
-                    mount_path: NODE_SCRIPTS_DIR.to_string(),
-                    read_only: Some(false),
-                    ..Default::default()
-                },
-            ],
-            non_default_mounts,
-        ]
-        .concat()
+    /// A user volume: an existing claim, or one provisioned for the pod (a
+    /// generic ephemeral volume, deleted with the pod).
+    fn build_user_volume(name: &str, volume: &NodeVolume) -> Volume {
+        match volume.source() {
+            VolumeSource::Claim { name: claim } => Volume {
+                name: name.to_string(),
+                persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+                    claim_name: claim.clone(),
+                    read_only: Some(volume.read_only()),
+                }),
+                ..Default::default()
+            },
+            VolumeSource::Template {
+                size,
+                storage_class,
+                access_mode,
+                from,
+            } => Volume {
+                name: name.to_string(),
+                ephemeral: Some(EphemeralVolumeSource {
+                    volume_claim_template: Some(PersistentVolumeClaimTemplate {
+                        metadata: None,
+                        spec: PersistentVolumeClaimSpec {
+                            access_modes: Some(vec![access_mode.as_str().to_string()]),
+                            storage_class_name: storage_class.clone(),
+                            resources: Some(ResourceRequirements {
+                                requests: Some(BTreeMap::from([(
+                                    "storage".to_string(),
+                                    Quantity(size.as_str().to_string()),
+                                )])),
+                                ..Default::default()
+                            }),
+                            data_source: from.as_ref().map(|from| match from {
+                                VolumeDataSource::Snapshot(snapshot) => TypedLocalObjectReference {
+                                    api_group: Some("snapshot.storage.k8s.io".to_string()),
+                                    kind: "VolumeSnapshot".to_string(),
+                                    name: snapshot.clone(),
+                                },
+                                VolumeDataSource::Claim(claim) => TypedLocalObjectReference {
+                                    api_group: None,
+                                    kind: "PersistentVolumeClaim".to_string(),
+                                    name: claim.clone(),
+                                },
+                            }),
+                            ..Default::default()
+                        },
+                    }),
+                }),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// The built-in mounts (as the user volume replacing one says: read-only,
+    /// a sub path), then the user volumes elsewhere, then `non_default_mounts`.
+    fn build_volume_mounts(
+        user_volumes: &[NodeVolume],
+        non_default_mounts: Vec<VolumeMount>,
+    ) -> Vec<VolumeMount> {
+        let mount = |name: String, path: &str, volume: Option<&NodeVolume>| VolumeMount {
+            name,
+            mount_path: path.to_string(),
+            read_only: Some(volume.is_some_and(|v| v.read_only())),
+            sub_path: volume.and_then(|v| v.sub_path().map(str::to_string)),
+            ..Default::default()
+        };
+        let named: Vec<(String, &NodeVolume)> = user_volumes
+            .iter()
+            .enumerate()
+            .map(|(index, volume)| (volume_name(index, volume), volume))
+            .collect();
+
+        BUILTIN_VOLUMES
+            .iter()
+            .map(|(name, path)| {
+                let user = named.iter().find(|(user, _)| user == name).map(|(_, v)| *v);
+                mount(name.to_string(), path, user)
+            })
+            .chain(
+                named
+                    .iter()
+                    .filter(|(name, _)| !BUILTIN_VOLUMES.iter().any(|(b, _)| b == name))
+                    .map(|(name, volume)| {
+                        mount(
+                            name.clone(),
+                            &volume.mount_path().to_string_lossy(),
+                            Some(volume),
+                        )
+                    }),
+            )
+            .chain(non_default_mounts)
+            .collect()
     }
 
     fn build_resources_requirements(resources: Option<&Resources>) -> Option<ResourceRequirements> {
@@ -406,6 +526,195 @@ mod tests {
             .expect("main container is named after the pod")
     }
 
+    use configuration::shared::volume::NodeVolumeBuilder;
+
+    fn wrapped_with(volumes: &[NodeVolume]) -> PodSpec {
+        PodSpecBuilder::build(
+            "proc",
+            "img",
+            None,
+            "polkadot",
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            None,
+            volumes,
+            true,
+        )
+    }
+
+    fn volume<'a>(spec: &'a PodSpec, name: &str) -> &'a Volume {
+        spec.volumes
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|v| v.name == name)
+            .unwrap_or_else(|| panic!("volume {name}"))
+    }
+
+    fn mount<'a>(container: &'a Container, name: &str) -> &'a VolumeMount {
+        container
+            .volume_mounts
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|m| m.name == name)
+            .unwrap_or_else(|| panic!("mount {name}"))
+    }
+
+    #[test]
+    fn without_volumes_the_built_ins_are_scratch_and_there_is_no_security_context() {
+        let spec = wrapped_with(&[]);
+        assert!(spec.security_context.is_none());
+        for name in ["cfg", "data", "relay-data", "scripts"] {
+            let v = volume(&spec, name);
+            assert!(v.empty_dir.is_some(), "{name}");
+            assert!(v.ephemeral.is_none() && v.persistent_volume_claim.is_none());
+        }
+        let init = &spec.init_containers.as_ref().unwrap()[0];
+        let names: Vec<_> = init
+            .volume_mounts
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
+        assert_eq!(names, ["cfg", "helper-binaries-downloader-volume"]);
+    }
+
+    #[test]
+    fn a_template_on_data_replaces_the_scratch_volume() {
+        let data = NodeVolumeBuilder::new()
+            .with_mount_path("/data")
+            .with_size("100Gi")
+            .with_storage_class("premium-rwo")
+            .with_from_snapshot("snap")
+            .build()
+            .unwrap();
+        let spec = wrapped_with(&[data]);
+
+        let data = volume(&spec, "data");
+        assert!(data.empty_dir.is_none());
+        let claim = data
+            .ephemeral
+            .as_ref()
+            .unwrap()
+            .volume_claim_template
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            claim.spec.access_modes.as_deref(),
+            Some(&["ReadWriteOncePod".to_string()][..])
+        );
+        assert_eq!(
+            claim.spec.storage_class_name.as_deref(),
+            Some("premium-rwo")
+        );
+        assert_eq!(
+            claim
+                .spec
+                .resources
+                .as_ref()
+                .unwrap()
+                .requests
+                .as_ref()
+                .unwrap()["storage"],
+            Quantity("100Gi".into())
+        );
+        let source = claim.spec.data_source.as_ref().unwrap();
+        assert_eq!(source.kind, "VolumeSnapshot");
+        assert_eq!(source.name, "snap");
+        assert_eq!(source.api_group.as_deref(), Some("snapshot.storage.k8s.io"));
+
+        // the mount is still the built-in one, the others still scratch
+        let m = mount(main_container(&spec), "data");
+        assert_eq!(m.mount_path, "/data");
+        assert_eq!(m.read_only, Some(false));
+        assert!(volume(&spec, "relay-data").empty_dir.is_some());
+
+        let security = spec.security_context.as_ref().unwrap();
+        assert_eq!(security.fs_group, Some(1000));
+        assert_eq!(
+            security.fs_group_change_policy.as_deref(),
+            Some("OnRootMismatch")
+        );
+    }
+
+    #[test]
+    fn a_template_without_size_requests_20gi() {
+        let spec = wrapped_with(&[NodeVolumeBuilder::new()
+            .with_mount_path("/relay-data")
+            .build()
+            .unwrap()]);
+        let claim = volume(&spec, "relay-data")
+            .ephemeral
+            .as_ref()
+            .unwrap()
+            .volume_claim_template
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            claim
+                .spec
+                .resources
+                .as_ref()
+                .unwrap()
+                .requests
+                .as_ref()
+                .unwrap()["storage"],
+            Quantity("20Gi".into())
+        );
+        assert!(claim.spec.storage_class_name.is_none());
+        assert!(claim.spec.data_source.is_none());
+    }
+
+    #[test]
+    fn a_claim_elsewhere_is_mounted_as_well() {
+        let fixtures = NodeVolumeBuilder::new()
+            .with_mount_path("/opt/fixtures")
+            .with_claim("fixtures")
+            .with_read_only()
+            .with_sub_path("alice")
+            .build()
+            .unwrap();
+        let spec = wrapped_with(&[fixtures]);
+
+        let v = volume(&spec, "vol-0");
+        let pvc = v.persistent_volume_claim.as_ref().unwrap();
+        assert_eq!(pvc.claim_name, "fixtures");
+        assert_eq!(pvc.read_only, Some(true));
+        let m = mount(main_container(&spec), "vol-0");
+        assert_eq!(m.mount_path, "/opt/fixtures");
+        assert_eq!(m.read_only, Some(true));
+        assert_eq!(m.sub_path.as_deref(), Some("alice"));
+        // the built-ins are untouched, the init container doesn't mount it
+        assert!(volume(&spec, "data").empty_dir.is_some());
+        let init = &spec.init_containers.as_ref().unwrap()[0];
+        assert!(!init
+            .volume_mounts
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|m| m.name == "vol-0"));
+    }
+
+    #[test]
+    fn the_init_container_mounts_cfg_as_the_user_volume_says() {
+        let cfg = NodeVolumeBuilder::new()
+            .with_mount_path("/cfg")
+            .with_claim("cfg")
+            .with_sub_path("alice")
+            .build()
+            .unwrap();
+        let spec = wrapped_with(&[cfg]);
+        let init = &spec.init_containers.as_ref().unwrap()[0];
+        let m = mount(init, "cfg");
+        assert_eq!(m.mount_path, "/cfg");
+        assert_eq!(m.sub_path.as_deref(), Some("alice"));
+    }
+
     #[test]
     fn a_wrapped_node_runs_through_the_wrapper_and_has_no_probe() {
         let spec = PodSpecBuilder::build(
@@ -419,6 +728,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
             true,
         );
         assert!(spec.restart_policy.is_none());
@@ -457,6 +767,7 @@ mod tests {
                 },
                 period_secs: 3,
             }),
+            &[],
             false,
         );
         assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
@@ -499,6 +810,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
             false,
         );
         assert_eq!(spec.restart_policy.as_deref(), Some("Never"));
@@ -524,6 +836,7 @@ mod tests {
                 target: ReadinessTarget::Tcp(5001),
                 period_secs: 1,
             }),
+            &[],
             false,
         );
         let probe = main_container(&spec).readiness_probe.as_ref().unwrap();
@@ -563,6 +876,7 @@ mod tests {
             &files,
             &[],
             None,
+            &[],
             false,
         );
 

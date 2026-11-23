@@ -9,7 +9,13 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use configuration::{shared::resources::Resources, types::AssetLocation};
+use configuration::{
+    shared::{
+        resources::Resources,
+        volume::{NodeVolume, VolumeDataSource, VolumeSource},
+    },
+    types::AssetLocation,
+};
 use futures::future::try_join_all;
 use k8s_openapi::api::core::v1::{ContainerStatus, PodStatus, ServicePort, ServiceSpec};
 use serde::{Deserialize, Serialize};
@@ -21,7 +27,7 @@ use url::Url;
 use super::{
     client::{
         helpers::{status_is_done, status_is_ready},
-        KubernetesClient, SecretLookup,
+        KubernetesClient, Lookup, SecretLookup,
     },
     namespace::KubernetesNamespace,
     pod_spec_builder::{FileToFetch, PodSpecBuilder},
@@ -61,6 +67,8 @@ where
     pub(super) wrapper: bool,
     /// The pod's readiness probe, for a process without the wrapper.
     pub(super) readiness: Option<&'a ReadinessProbe>,
+    /// Volumes backed by a `PersistentVolumeClaim`.
+    pub(super) volumes: &'a [NodeVolume],
     pub(super) k8s_client: &'a KubernetesClient,
     pub(super) filesystem: &'a FS,
 }
@@ -92,6 +100,7 @@ where
             ports: &deserializable.ports,
             wrapper: deserializable.wrapper,
             readiness: None,
+            volumes: &deserializable.volumes,
             k8s_client,
             filesystem,
         }
@@ -110,6 +119,8 @@ pub(super) struct DeserializableKubernetesNodeOptions {
     pub(super) ports: Vec<(String, Port)>,
     #[serde(default = "default_true")]
     pub(super) wrapper: bool,
+    #[serde(default)]
+    pub(super) volumes: Vec<NodeVolume>,
 }
 
 type FwdInfo = (u16, JoinHandle<()>);
@@ -131,6 +142,9 @@ where
     ports: Vec<(String, Port)>,
     /// Whether `program` runs through the zombie wrapper.
     wrapper: bool,
+    /// Volumes backed by a `PersistentVolumeClaim`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    volumes: Vec<NodeVolume>,
     base_dir: PathBuf,
     config_dir: PathBuf,
     data_dir: PathBuf,
@@ -187,6 +201,7 @@ where
             resources: options.resources.cloned(),
             ports: options.ports.to_vec(),
             wrapper: options.wrapper,
+            volumes: options.volumes.to_vec(),
             base_dir,
             config_dir,
             data_dir,
@@ -257,6 +272,7 @@ where
             resources: options.resources.cloned(),
             ports: options.ports.to_vec(),
             wrapper: options.wrapper,
+            volumes: options.volumes.to_vec(),
             base_dir,
             config_dir,
             data_dir,
@@ -300,7 +316,12 @@ where
                 .await
                 .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))
         };
-        let ((), files) = try_join!(secrets, self.upload_injected_files(files))?;
+        let claims = async {
+            check_claims(&self.k8s_client, &self.namespace_name(), &self.volumes)
+                .await
+                .map_err(|err| ProviderError::NodeSpawningFailed(self.name.clone(), err))
+        };
+        let ((), (), files) = try_join!(secrets, claims, self.upload_injected_files(files))?;
 
         // Create pod
         let pod_spec = PodSpecBuilder::build(
@@ -314,6 +335,7 @@ where
             &files,
             &self.ports,
             readiness,
+            &self.volumes,
             self.wrapper,
         );
 
@@ -1175,6 +1197,79 @@ async fn check_secrets(
     Ok(())
 }
 
+/// An existing claim that is not there, or lost, would hold the pod in
+/// `Pending` until the spawn times out, so the claims a node mounts (or a
+/// provisioned one is cloned from) are looked up first. A claim this identity
+/// may not read is left to the pod.
+async fn check_claims(
+    client: &KubernetesClient,
+    namespace: &str,
+    volumes: &[NodeVolume],
+) -> Result<(), anyhow::Error> {
+    // (claim, mounted read-write, what it is for)
+    let wanted: Vec<(&str, bool, String)> = volumes
+        .iter()
+        .filter_map(|volume| {
+            let path = volume.mount_path().display();
+            match volume.source() {
+                VolumeSource::Claim { name } => Some((
+                    name.as_str(),
+                    !volume.read_only(),
+                    format!("volume '{path}': claim '{name}'"),
+                )),
+                VolumeSource::Template {
+                    from: Some(VolumeDataSource::Claim(name)),
+                    ..
+                } => Some((
+                    name.as_str(),
+                    false,
+                    format!("volume '{path}': from_claim '{name}'"),
+                )),
+                VolumeSource::Template { .. } => None,
+            }
+        })
+        .collect();
+    let lookups = try_join_all(
+        wanted
+            .iter()
+            .map(|(name, _, _)| client.get_pvc(namespace, name)),
+    )
+    .await?;
+    for ((_, read_write, what), lookup) in wanted.iter().zip(lookups) {
+        let pvc = match lookup {
+            Lookup::Found(pvc) => pvc,
+            Lookup::NotFound => {
+                return Err(anyhow!(
+                    "{what} not found in namespace {namespace}; a claim has to exist before \
+                     the network spawns, in the namespace it spawns in (an existing one)"
+                ))
+            },
+            Lookup::Forbidden => {
+                warn!("{what} in namespace {namespace} may not be read, it is left to the pod");
+                continue;
+            },
+        };
+        if pvc.status.as_ref().and_then(|s| s.phase.as_deref()) == Some("Lost") {
+            return Err(anyhow!("{what} has lost its volume"));
+        }
+        let modes: Vec<&str> = pvc
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.access_modes.as_ref())
+            .map(|modes| modes.iter().map(String::as_str).collect())
+            .unwrap_or_default();
+        if *read_write && modes.contains(&"ReadWriteMany") {
+            return Err(anyhow!(
+                "{what} is ReadWriteMany; mount it read_only, a volume has a single writer"
+            ));
+        }
+        if *read_write && !modes.is_empty() && modes.iter().all(|m| *m == "ReadOnlyMany") {
+            return Err(anyhow!("{what} is ReadOnlyMany; mount it read_only"));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use mockito::{Matcher, Server, ServerGuard};
@@ -1203,6 +1298,137 @@ mod tests {
             .with_body(body)
             .create_async()
             .await;
+    }
+
+    fn claim_volume(path: &str, claim: &str, read_only: bool) -> NodeVolume {
+        let builder = configuration::shared::volume::NodeVolumeBuilder::new()
+            .with_mount_path(path)
+            .with_claim(claim);
+        let builder = if read_only {
+            builder.with_read_only()
+        } else {
+            builder
+        };
+        builder.build().unwrap()
+    }
+
+    async fn mock_pvc(server: &mut ServerGuard, status: usize, body: &str) {
+        server
+            .mock("GET", "/api/v1/namespaces/ns/persistentvolumeclaims/db")
+            .match_query(Matcher::Any)
+            .with_status(status)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+    }
+
+    fn pvc_body(modes: &str, phase: &str) -> String {
+        format!(
+            r#"{{"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{{"name":"db"}},"spec":{{"accessModes":[{modes}]}},"status":{{"phase":"{phase}"}}}}"#
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_bound_claim_passes() {
+        let mut server = Server::new_async().await;
+        mock_pvc(
+            &mut server,
+            200,
+            &pvc_body(r#""ReadWriteOncePod""#, "Bound"),
+        )
+        .await;
+        check_claims(
+            &client(&server),
+            "ns",
+            &[claim_volume("/data", "db", false)],
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_missing_claim_fails_naming_it() {
+        let mut server = Server::new_async().await;
+        mock_pvc(
+            &mut server,
+            404,
+            r#"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"not found","reason":"NotFound","code":404}"#,
+        )
+        .await;
+        let err = check_claims(
+            &client(&server),
+            "ns",
+            &[claim_volume("/data", "db", false)],
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.starts_with("volume '/data': claim 'db' not found in namespace ns"),
+            "{err}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_lost_claim_fails() {
+        let mut server = Server::new_async().await;
+        mock_pvc(&mut server, 200, &pvc_body(r#""ReadWriteOnce""#, "Lost")).await;
+        let err = check_claims(
+            &client(&server),
+            "ns",
+            &[claim_volume("/data", "db", false)],
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "volume '/data': claim 'db' has lost its volume"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_read_write_many_claim_is_only_mounted_read_only() {
+        let mut server = Server::new_async().await;
+        mock_pvc(&mut server, 200, &pvc_body(r#""ReadWriteMany""#, "Bound")).await;
+        let err = check_claims(
+            &client(&server),
+            "ns",
+            &[claim_volume("/data", "db", false)],
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("is ReadWriteMany"), "{err}");
+        check_claims(&client(&server), "ns", &[claim_volume("/data", "db", true)])
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_read_only_many_claim_is_not_mounted_read_write() {
+        let mut server = Server::new_async().await;
+        mock_pvc(&mut server, 200, &pvc_body(r#""ReadOnlyMany""#, "Bound")).await;
+        let err = check_claims(
+            &client(&server),
+            "ns",
+            &[claim_volume("/data", "db", false)],
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("is ReadOnlyMany"), "{err}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn provisioned_volumes_need_no_lookup() {
+        // no mock: any request would fail
+        let server = Server::new_async().await;
+        let template = configuration::shared::volume::NodeVolumeBuilder::new()
+            .with_mount_path("/data")
+            .build()
+            .unwrap();
+        check_claims(&client(&server), "ns", &[template])
+            .await
+            .unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

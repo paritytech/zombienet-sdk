@@ -207,6 +207,7 @@ impl ParachainSpec {
             default_resources: config.default_resources(),
             default_db_snapshot: config.default_db_snapshot(),
             default_args: config.default_args(),
+            default_volumes: config.default_volumes(),
         };
 
         // We want to track the errors for all the nodes and report them ones

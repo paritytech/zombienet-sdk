@@ -4,7 +4,7 @@ use std::{
     process::ExitStatus,
 };
 
-use configuration::shared::resources::Resources;
+use configuration::shared::{resources::Resources, volume::NodeVolume};
 
 use crate::ProviderError;
 
@@ -31,6 +31,8 @@ pub struct ProviderCapabilities {
     /// and uploaded to it (k8s). See
     /// [`ProviderNamespace::fetch_into_fileserver`](crate::ProviderNamespace::fetch_into_fileserver).
     pub fileserver_fetches_db_snapshot_url: bool,
+    /// A node may mount volumes backed by a `PersistentVolumeClaim` (k8s).
+    pub has_volumes: bool,
 }
 
 /// A database snapshot a node starts from, as the orchestrator hands it to
@@ -175,6 +177,9 @@ pub struct SpawnNodeOptions {
     pub ports: Vec<(String, Port)>,
     /// How the provider may check readiness itself; on k8s the pod's probe.
     pub readiness: Option<ReadinessProbe>,
+    /// Volumes backed by a `PersistentVolumeClaim`, only for a provider
+    /// whose capabilities set [`ProviderCapabilities::has_volumes`].
+    pub volumes: Vec<NodeVolume>,
     /// Optionally specify a log path for the node
     pub node_log_path: Option<PathBuf>,
     /// Role of the node in the network
@@ -205,6 +210,7 @@ impl SpawnNodeOptions {
             port_mapping: None,
             ports: vec![],
             readiness: None,
+            volumes: vec![],
             node_log_path: None,
             role: None,
             wrapper: true,
@@ -299,6 +305,14 @@ impl SpawnNodeOptions {
 
     pub fn readiness(mut self, probe: Option<ReadinessProbe>) -> Self {
         self.readiness = probe;
+        self
+    }
+
+    pub fn volumes<I>(mut self, volumes: I) -> Self
+    where
+        I: IntoIterator<Item = NodeVolume>,
+    {
+        self.volumes = volumes.into_iter().collect();
         self
     }
 

@@ -14,6 +14,7 @@ use crate::{
         macros::states,
         node::EnvVar,
         resources::{Resources, ResourcesBuilder},
+        volume::{validate_volumes, NodeVolume, NodeVolumeBuilder},
     },
     types::{Arg, Command, Image, Port, TransferedFile},
     utils::is_false,
@@ -360,6 +361,9 @@ pub struct CustomProcess {
     // Resources to apply (only k8s)
     #[serde(skip_serializing_if = "Option::is_none")]
     resources: Option<Resources>,
+    // Volumes backed by a `PersistentVolumeClaim` (only k8s)
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    volumes: Vec<NodeVolume>,
     // How the process is known to be ready
     #[serde(skip_serializing_if = "Option::is_none")]
     ready_check: Option<ReadyCheck>,
@@ -385,6 +389,7 @@ impl Default for CustomProcess {
             injected_files: vec![],
             ports: vec![],
             resources: None,
+            volumes: vec![],
             ready_check: None,
             depends_on: vec![],
             one_shot: false,
@@ -432,6 +437,11 @@ impl CustomProcess {
     /// Resources to apply to the process (only k8s).
     pub fn resources(&self) -> Option<&Resources> {
         self.resources.as_ref()
+    }
+
+    /// Volumes backed by a `PersistentVolumeClaim` (only k8s).
+    pub fn volumes(&self) -> &[NodeVolume] {
+        &self.volumes
     }
 
     /// How the process is known to be ready, if declared. Without one, a
@@ -645,6 +655,31 @@ impl CustomProcess {
         }
         self.validate_env(&mut errors);
         self.validate_injected_files(&mut errors);
+        if let Err(volume_errors) = validate_volumes(&self.volumes) {
+            errors.extend(
+                volume_errors
+                    .into_iter()
+                    .map(|e| FieldError::Volumes(e).into()),
+            );
+        }
+        // A file is mounted (or copied) into the volume it is under, which a
+        // read-only one refuses.
+        for volume in self.volumes.iter().filter(|v| v.read_only()) {
+            if let Some(file) = self
+                .injected_files
+                .iter()
+                .find(|f| f.remote_path.starts_with(volume.mount_path()))
+            {
+                errors.push(
+                    FieldError::Volumes(anyhow::anyhow!(
+                        "mount_path '{}' is read_only, it can't take the injected file '{}'",
+                        volume.mount_path().display(),
+                        file.remote_path.display()
+                    ))
+                    .into(),
+                );
+            }
+        }
         if self.ready_check.as_ref().is_some_and(|c| c.interval == 0) {
             errors.push(
                 FieldError::ReadyCheck(anyhow::anyhow!("interval must be at least 1 second"))
@@ -982,6 +1017,30 @@ impl CustomProcessBuilder<WithName, WithCmd> {
             },
             self.errors,
         )
+    }
+
+    /// Mount a volume backed by a `PersistentVolumeClaim` (only k8s). The
+    /// volumes are checked together in [`Self::build`].
+    pub fn with_volume(self, f: impl FnOnce(NodeVolumeBuilder) -> NodeVolumeBuilder) -> Self {
+        match f(NodeVolumeBuilder::new()).build() {
+            Ok(volume) => {
+                let mut volumes = self.config.volumes;
+                volumes.push(volume);
+                Self::transition(
+                    CustomProcess {
+                        volumes,
+                        ..self.config
+                    },
+                    self.errors,
+                )
+            },
+            Err(errors) => Self::transition(
+                self.config,
+                errors.into_iter().fold(self.errors, |acc, e| {
+                    merge_errors(acc, FieldError::Volumes(e).into())
+                }),
+            ),
+        }
     }
 
     /// Set the resources to apply to the process (only k8s).

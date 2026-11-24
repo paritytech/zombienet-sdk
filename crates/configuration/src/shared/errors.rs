@@ -114,6 +114,12 @@ pub enum FieldError {
 
     #[error("injected_files: {0}")]
     InjectedFiles(anyhow::Error),
+
+    #[error("volumes: {0}")]
+    Volumes(anyhow::Error),
+
+    #[error("default_volumes: {0}")]
+    DefaultVolumes(anyhow::Error),
 }
 
 /// A conversion error for shared types across fields.

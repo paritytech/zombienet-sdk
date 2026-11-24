@@ -41,6 +41,7 @@ where
                 use_default_ports_in_cmd: false,
                 has_secrets: false,
                 fileserver_fetches_db_snapshot_url: false,
+                has_volumes: false,
             },
             // NOTE: temp_dir in linux return `/tmp` but on mac something like
             //  `/var/folders/rz/1cyx7hfj31qgb98d8_cg7jwh0000gn/T/`, having

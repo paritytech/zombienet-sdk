@@ -29,6 +29,7 @@ use crate::{
         macros::states,
         node::{GroupNodeConfig, NodeConfig},
         types::{Arg, AssetLocation, Chain, Command, Image, ValidationContext},
+        volume::{validate_default_volumes, validate_volumes, NodeVolume},
     },
     types::ParaId,
     CustomProcess, CustomProcessBuilder, RegistrationStrategy,
@@ -240,6 +241,13 @@ impl NetworkConfig {
                 TryInto::<Command>::try_into(default_command.clone())?;
             }
 
+            check_volumes(
+                relaychain.default_volumes(),
+                &nodes,
+                &group_nodes,
+                "relaychain.",
+            )?;
+
             for node in nodes.iter_mut() {
                 if relaychain_default_command.is_some() {
                     // we modify only nodes which don't already have a command
@@ -295,6 +303,13 @@ impl NetworkConfig {
             }
 
             let mut collators: Vec<NodeConfig> = para.collators.clone();
+
+            check_volumes(
+                para.default_volumes(),
+                collators.iter().chain(para.collator.iter()),
+                &group_collators,
+                &format!("parachain[{}].", para.id()),
+            )?;
 
             for collator in collators.iter_mut() {
                 populate_collator_with_defaults(
@@ -383,6 +398,45 @@ fn maybe_absolute(cmd: &str, base_dir: &Path) -> String {
             .to_string()
     } else {
         cmd.to_string()
+    }
+}
+
+/// The volume rules a TOML bypasses the builders of: a chain's defaults are
+/// provisioned, a node mounts a path and a claim once. Each volume on its own
+/// is checked when it is deserialized.
+fn check_volumes<'a>(
+    default_volumes: &[NodeVolume],
+    nodes: impl IntoIterator<Item = &'a NodeConfig>,
+    groups: &'a [GroupNodeConfig],
+    prefix: &str,
+) -> Result<(), anyhow::Error> {
+    let join = |errors: Vec<anyhow::Error>| {
+        errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut errors = vec![];
+    if let Err(e) = validate_default_volumes(default_volumes) {
+        errors.push(format!("{prefix}default_volumes: {}", join(e)));
+    }
+    for node in nodes
+        .into_iter()
+        .chain(groups.iter().map(|g| &g.base_config))
+    {
+        if let Err(e) = validate_volumes(node.volumes()) {
+            errors.push(format!(
+                "{prefix}nodes['{}'].volumes: {}",
+                node.name(),
+                join(e)
+            ));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!(errors.join("\n")))
     }
 }
 
@@ -2781,6 +2835,114 @@ id = 1000
         );
         assert!(err.contains("'cache' cannot be service_healthy"), "{err}");
         assert!(err.contains("cycle among api, cache"), "{err}");
+    }
+
+    const VOLUMES_TOML: &str = r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.default_volumes]]
+mount_path = "/relay-data"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[relaychain.nodes.volumes]]
+mount_path = "/data"
+size = "100Gi"
+storage_class = "premium-rwo"
+
+[[relaychain.nodes.volumes]]
+mount_path = "/opt/fixtures"
+claim = "fixtures"
+read_only = true
+
+[[relaychain.nodes]]
+name = "bob"
+
+[[parachains]]
+id = 2000
+default_command = "polkadot-parachain"
+
+[[parachains.default_volumes]]
+mount_path = "/data"
+size = "30Gi"
+
+[[parachains.collators]]
+name = "collator"
+
+[[custom_processes]]
+name = "ipfs"
+command = "ipfs"
+
+[[custom_processes.volumes]]
+mount_path = "/ipfs"
+"#;
+
+    #[test]
+    fn volumes_load_from_toml_and_dump_back() {
+        let config = NetworkConfig::load_from_toml_string(VOLUMES_TOML).unwrap();
+        let relay = config.relaychain();
+        assert_eq!(relay.default_volumes().len(), 1);
+        let alice = relay.nodes()[0];
+        assert_eq!(alice.volumes().len(), 2);
+        assert_eq!(alice.volumes()[1].claim(), Some("fixtures"));
+        assert!(relay.nodes()[1].volumes().is_empty());
+        assert_eq!(config.parachains()[0].default_volumes().len(), 1);
+        assert_eq!(config.custom_processes()[0].volumes().len(), 1);
+
+        let dumped = config.dump_to_toml().unwrap();
+        // the 20Gi default size is left out
+        assert!(!dumped.contains("20Gi"), "{dumped}");
+        let reloaded = NetworkConfig::load_from_toml_string(&dumped).unwrap();
+        assert_eq!(reloaded.relaychain().nodes(), relay.nodes());
+        assert_eq!(
+            reloaded.relaychain().default_volumes(),
+            relay.default_volumes()
+        );
+        assert_eq!(
+            reloaded.parachains()[0].default_volumes(),
+            config.parachains()[0].default_volumes()
+        );
+        assert_eq!(reloaded.custom_processes(), config.custom_processes());
+    }
+
+    #[test]
+    fn volume_rules_apply_to_a_toml() {
+        let with = |from: &str, to: &str| {
+            let toml = VOLUMES_TOML.replacen(from, to, 1);
+            NetworkConfig::load_from_toml_string(&toml)
+                .unwrap_err()
+                .to_string()
+        };
+
+        let err = with(
+            "[[relaychain.default_volumes]]\nmount_path = \"/relay-data\"",
+            "[[relaychain.default_volumes]]\nmount_path = \"/relay-data\"\nclaim = \"db\"",
+        );
+        assert!(
+            err.contains("relaychain.default_volumes: '/relay-data': claim 'db' would be mounted by every node"),
+            "{err}"
+        );
+
+        let err = with("mount_path = \"/opt/fixtures\"", "mount_path = \"/data\"");
+        assert!(
+            err.contains("relaychain.nodes['alice'].volumes: mount_path '/data' is given twice"),
+            "{err}"
+        );
+
+        let err = with("size = \"30Gi\"", "access_mode = \"ReadWriteMany\"");
+        assert!(err.contains("'ReadWriteMany' is not supported"), "{err}");
+
+        let err = with(
+            "[[custom_processes.volumes]]\nmount_path = \"/ipfs\"",
+            "[[custom_processes.volumes]]\nmount_path = \"/ipfs\"\n[[custom_processes.volumes]]\nmount_path = \"/ipfs\"",
+        );
+        assert!(
+            err.contains("custom_processes['ipfs'].volumes: mount_path '/ipfs' is given twice"),
+            "{err}"
+        );
     }
 
     #[test]

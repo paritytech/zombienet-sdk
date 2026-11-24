@@ -13,6 +13,7 @@ use crate::{
         types::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext,
         },
+        volume::{validate_default_volumes, NodeVolume, NodeVolumeBuilder},
     },
     types::{ChainSpecRuntime, JsonOverrides},
     utils::{default_command_polkadot, default_relaychain_chain, is_false},
@@ -28,6 +29,9 @@ pub struct RelaychainConfig {
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
+    /// Volumes every node gets, unless it mounts the same path itself (only k8s).
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    default_volumes: Vec<NodeVolume>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     /// chain-spec to use (location can be url or file path)
@@ -89,6 +93,12 @@ impl RelaychainConfig {
     /// The default database snapshot location that will be used for state.
     pub fn default_db_snapshot(&self) -> Option<&AssetLocation> {
         self.default_db_snapshot.as_ref()
+    }
+
+    /// The volumes every node gets, unless it mounts the same path itself
+    /// (only k8s).
+    pub fn default_volumes(&self) -> &[NodeVolume] {
+        &self.default_volumes
     }
 
     /// The default arguments that will be used to launch the node command.
@@ -207,6 +217,7 @@ impl Default for RelaychainConfigBuilder<Initial> {
                 default_image: None,
                 default_resources: None,
                 default_db_snapshot: None,
+                default_volumes: vec![],
                 default_args: vec![],
                 chain_spec_path: None,
                 chain_spec_command: None,
@@ -376,6 +387,41 @@ impl RelaychainConfigBuilder<WithChain> {
                     errors
                         .into_iter()
                         .map(|error| FieldError::DefaultResources(error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a volume every node gets, unless it mounts the same path itself
+    /// (only k8s). A default is always provisioned: an existing claim would be
+    /// mounted by every node.
+    pub fn with_default_volume(
+        self,
+        f: impl FnOnce(NodeVolumeBuilder) -> NodeVolumeBuilder,
+    ) -> Self {
+        let built = f(NodeVolumeBuilder::new()).build().and_then(|volume| {
+            let mut volumes = self.config.default_volumes.clone();
+            volumes.push(volume);
+            validate_default_volumes(&volumes).map(|()| volumes)
+        });
+        match built {
+            Ok(default_volumes) => Self::transition(
+                RelaychainConfig {
+                    default_volumes,
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| FieldError::DefaultVolumes(error).into())
                         .collect::<Vec<_>>(),
                 ),
             ),

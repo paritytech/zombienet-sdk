@@ -15,7 +15,7 @@ mod spawner;
 mod utils;
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     env,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -24,7 +24,9 @@ use std::{
 };
 
 use anyhow::anyhow;
-use configuration::{types::JsonOverrides, NetworkConfig, RegistrationStrategy};
+use configuration::{
+    shared::volume::NodeVolume, types::JsonOverrides, NetworkConfig, RegistrationStrategy,
+};
 use errors::OrchestratorError;
 use generators::{core_assignment, errors::GeneratorError, jam_chain_spec};
 use network::{
@@ -1222,6 +1224,145 @@ async fn upload_raw_spec(
     Ok(())
 }
 
+/// What `capabilities` cannot run of `process`: a secret env without
+/// secrets, an injected file over a directory zombienet owns, or one missing.
+/// Also run on a process added to a running network.
+pub(crate) fn validate_custom_process_with_capabilities(
+    process: &configuration::CustomProcess,
+    capabilities: &ProviderCapabilities,
+) -> Vec<String> {
+    let mut errs: Vec<String> = vec![];
+    for var in process.env() {
+        if !capabilities.has_secrets && matches!(var.value, configuration::EnvValue::Secret { .. })
+        {
+            errs.push(format!(
+                "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
+                process.name(),
+                var.name
+            ));
+        }
+    }
+    for file in process.injected_files() {
+        if NODE_MOUNTED_DIRS
+            .iter()
+            .any(|dir| Path::new(dir) == file.remote_path)
+        {
+            errs.push(format!(
+                "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
+                process.name(),
+                file.remote_path.display()
+            ));
+        } else if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
+            .iter()
+            .find(|dir| file.remote_path.starts_with(dir))
+        {
+            // on docker these two are volumes every container of the network shares
+            errs.push(format!(
+                "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
+                process.name(),
+                file.remote_path.display()
+            ));
+        }
+        if !file.local_path.is_file() {
+            let from = if file.local_path.is_relative() {
+                std::env::current_dir()
+                    .map(|cwd| format!(" (relative to {})", cwd.display()))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            errs.push(format!(
+                "custom_processes['{}'].injected_files: no file at '{}'{from}",
+                process.name(),
+                file.local_path.display()
+            ));
+        }
+    }
+    errs
+}
+
+/// The volumes of the whole network: only a provider with claims mounts
+/// them, a claim is shared only read-only, and a `db_snapshot` is extracted
+/// onto a fresh volume, never over an existing claim (`tar --skip-old-files`
+/// would merge it into the database there) nor a read-only one.
+fn validate_volumes_with_capabilities(
+    network_spec: &NetworkSpec,
+    capabilities: &ProviderCapabilities,
+) -> Vec<String> {
+    let mut owners: Vec<(String, &[NodeVolume], bool)> = vec![];
+    if let Some(relaychain) = network_spec.try_relaychain() {
+        owners.extend(relaychain.nodes.iter().map(|node| {
+            (
+                format!("nodes['{}']", node.name),
+                node.volumes.as_slice(),
+                node.db_snapshot.is_some(),
+            )
+        }));
+    }
+    for para in &network_spec.parachains {
+        owners.extend(para.collators.iter().map(|node| {
+            (
+                format!("parachain[{}].collators['{}']", para.id, node.name),
+                node.volumes.as_slice(),
+                node.db_snapshot.is_some(),
+            )
+        }));
+    }
+    owners.extend(network_spec.custom_processes.iter().map(|process| {
+        (
+            format!("custom_processes['{}']", process.name()),
+            process.volumes(),
+            false,
+        )
+    }));
+
+    let mut errs = vec![];
+    let mut claims: BTreeMap<&str, Vec<(&str, bool)>> = BTreeMap::new();
+    for (owner, volumes, has_snapshot) in &owners {
+        if volumes.is_empty() {
+            continue;
+        }
+        if !capabilities.has_volumes {
+            errs.push(format!(
+                "{owner}.volumes: volumes are backed by a PersistentVolumeClaim, only the kubernetes provider has them"
+            ));
+            continue;
+        }
+        for volume in volumes.iter() {
+            let path = volume.mount_path();
+            if *has_snapshot
+                && (path == Path::new("/data") || path == Path::new("/relay-data"))
+                && (volume.claim().is_some() || volume.read_only())
+            {
+                errs.push(format!(
+                    "{owner}.volumes: '{}' is {}, the db_snapshot can't be extracted onto it",
+                    path.display(),
+                    match volume.claim() {
+                        Some(claim) => format!("the existing claim '{claim}'"),
+                        None => "read_only".to_string(),
+                    }
+                ));
+            }
+            if let Some(claim) = volume.claim() {
+                claims
+                    .entry(claim)
+                    .or_default()
+                    .push((owner.as_str(), volume.read_only()));
+            }
+        }
+    }
+    for (claim, mounts) in claims {
+        if mounts.len() > 1 && mounts.iter().any(|(_, read_only)| !read_only) {
+            let who: Vec<&str> = mounts.iter().map(|(owner, _)| *owner).collect();
+            errs.push(format!(
+                "claim '{claim}' is mounted by {}; a claim is shared only when every mount is read_only",
+                who.join(", ")
+            ));
+        }
+    }
+    errs
+}
+
 // Validate that the config fulfill all the requirements of the provider
 fn validate_spec_with_provider_capabilities(
     network_spec: &NetworkSpec,
@@ -1230,54 +1371,15 @@ fn validate_spec_with_provider_capabilities(
     let mut errs: Vec<String> = vec![];
 
     for process in &network_spec.custom_processes {
-        for var in process.env() {
-            if !capabilities.has_secrets
-                && matches!(var.value, configuration::EnvValue::Secret { .. })
-            {
-                errs.push(format!(
-                    "custom_processes['{}'].env: '{}' is read from a Secret, which only kubernetes has",
-                    process.name(),
-                    var.name
-                ));
-            }
-        }
-        for file in process.injected_files() {
-            if NODE_MOUNTED_DIRS
-                .iter()
-                .any(|dir| Path::new(dir) == file.remote_path)
-            {
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: '{}' is a directory zombienet mounts",
-                    process.name(),
-                    file.remote_path.display()
-                ));
-            } else if let Some(shared) = [NODE_SCRIPTS_DIR, HELPERS_DIR]
-                .iter()
-                .find(|dir| file.remote_path.starts_with(dir))
-            {
-                // on docker these two are volumes every container of the network shares
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: '{}' is inside {shared}, which the containers of a network share",
-                    process.name(),
-                    file.remote_path.display()
-                ));
-            }
-            if !file.local_path.is_file() {
-                let from = if file.local_path.is_relative() {
-                    std::env::current_dir()
-                        .map(|cwd| format!(" (relative to {})", cwd.display()))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                errs.push(format!(
-                    "custom_processes['{}'].injected_files: no file at '{}'{from}",
-                    process.name(),
-                    file.local_path.display()
-                ));
-            }
-        }
+        errs.extend(validate_custom_process_with_capabilities(
+            process,
+            capabilities,
+        ));
     }
+    errs.extend(validate_volumes_with_capabilities(
+        network_spec,
+        capabilities,
+    ));
 
     if capabilities.requires_image {
         // Relaychain
@@ -1763,6 +1865,7 @@ mod tests {
             use_default_ports_in_cmd: false,
             has_secrets: false,
             fileserver_fetches_db_snapshot_url: false,
+            has_volumes: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1780,6 +1883,7 @@ mod tests {
             use_default_ports_in_cmd: false,
             has_secrets: false,
             fileserver_fetches_db_snapshot_url: false,
+            has_volumes: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1797,6 +1901,7 @@ mod tests {
             use_default_ports_in_cmd: false,
             has_secrets: false,
             fileserver_fetches_db_snapshot_url: false,
+            has_volumes: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1814,6 +1919,7 @@ mod tests {
             use_default_ports_in_cmd: false,
             has_secrets: false,
             fileserver_fetches_db_snapshot_url: false,
+            has_volumes: false,
         };
 
         let valid = validate_spec_with_provider_capabilities(&spec, &caps);
@@ -1830,6 +1936,7 @@ mod tests {
             use_default_ports_in_cmd: true,
             has_secrets: false,
             fileserver_fetches_db_snapshot_url: false,
+            has_volumes: false,
         }
     }
 
@@ -1849,6 +1956,115 @@ mod tests {
     }
 
     const AN_EXISTING_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+
+    /// A relaychain of alice and bob, each shaped by `node`, and a 20Gi
+    /// `/relay-data` default.
+    async fn spec_with_volumes(
+        node: impl Fn(
+            configuration::shared::node::NodeConfigBuilder<configuration::shared::node::Buildable>,
+        ) -> configuration::shared::node::NodeConfigBuilder<
+            configuration::shared::node::Buildable,
+        >,
+    ) -> NetworkSpec {
+        let config = NetworkConfigBuilder::new()
+            .with_relaychain(|r| {
+                r.with_chain("rococo-local")
+                    .with_default_command("polkadot")
+                    .with_default_image("docker.io/parity/polkadot")
+                    .with_default_volume(|v| v.with_mount_path("/relay-data"))
+                    .with_validator(|n| node(n.with_name("alice")))
+                    .with_validator(|n| node(n.with_name("bob")))
+            })
+            .build()
+            .unwrap();
+        NetworkSpec::from_config(&config).await.unwrap()
+    }
+
+    fn volume_caps() -> ProviderCapabilities {
+        ProviderCapabilities {
+            has_volumes: true,
+            ..image_caps()
+        }
+    }
+
+    #[tokio::test]
+    async fn volumes_need_a_provider_with_volumes() {
+        let spec = spec_with_volumes(|n| n.with_volume(|v| v.with_mount_path("/data"))).await;
+        let alice = &spec.relaychain().nodes[0];
+        let paths: Vec<_> = alice.volumes.iter().map(|v| v.mount_path()).collect();
+        assert_eq!(paths, [Path::new("/relay-data"), Path::new("/data")]);
+
+        let err = validate_spec_with_provider_capabilities(&spec, &image_caps()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("nodes['alice'].volumes: volumes are backed by a PersistentVolumeClaim"),
+            "{err}"
+        );
+        validate_spec_with_provider_capabilities(&spec, &volume_caps()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_node_volume_replaces_the_default_on_its_path() {
+        let spec = spec_with_volumes(|n| {
+            n.with_volume(|v| v.with_mount_path("/relay-data").with_size("50Gi"))
+        })
+        .await;
+        let volumes = &spec.relaychain().nodes[0].volumes;
+        assert_eq!(volumes.len(), 1);
+        assert!(matches!(
+            volumes[0].source(),
+            configuration::shared::volume::VolumeSource::Template { size, .. } if size.as_str() == "50Gi"
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_claim_is_shared_only_read_only() {
+        let spec = spec_with_volumes(|n| {
+            n.with_volume(|v| v.with_mount_path("/opt/fixtures").with_claim("fixtures"))
+        })
+        .await;
+        let err = validate_spec_with_provider_capabilities(&spec, &volume_caps()).unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "claim 'fixtures' is mounted by nodes['alice'], nodes['bob']; a claim is shared only when every mount is read_only"
+            ),
+            "{err}"
+        );
+
+        let spec = spec_with_volumes(|n| {
+            n.with_volume(|v| {
+                v.with_mount_path("/opt/fixtures")
+                    .with_claim("fixtures")
+                    .with_read_only()
+            })
+        })
+        .await;
+        validate_spec_with_provider_capabilities(&spec, &volume_caps()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_db_snapshot_is_not_extracted_over_an_existing_claim() {
+        let spec = spec_with_volumes(|n| {
+            n.with_db_snapshot("https://example.com/snap.tgz")
+                .with_volume(|v| v.with_mount_path("/data").with_claim("db"))
+        })
+        .await;
+        let err = validate_spec_with_provider_capabilities(&spec, &volume_caps()).unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "nodes['alice'].volumes: '/data' is the existing claim 'db', the db_snapshot can't be extracted onto it"
+            ),
+            "{err}"
+        );
+
+        // onto a provisioned volume it is what the volume is for
+        let spec = spec_with_volumes(|n| {
+            n.with_db_snapshot("https://example.com/snap.tgz")
+                .with_volume(|v| v.with_mount_path("/data").with_size("100Gi"))
+        })
+        .await;
+        validate_spec_with_provider_capabilities(&spec, &volume_caps()).unwrap();
+    }
 
     #[tokio::test]
     async fn secret_env_needs_a_provider_with_secrets() {

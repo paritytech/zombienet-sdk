@@ -44,6 +44,7 @@ where
                 use_default_ports_in_cmd: true,
                 has_secrets: false,
                 fileserver_fetches_db_snapshot_url: false,
+                has_volumes: false,
             },
             tmp_dir: std::env::temp_dir(),
             docker_client,

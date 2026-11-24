@@ -20,16 +20,16 @@ use configuration::{
         node::EnvVar,
     },
     types::{Arg, Command, Image, ParaId, Port, ValidationContext},
-    ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
+    CustomProcess, ParachainConfig, ParachainConfigBuilder, RegistrationStrategy,
 };
-use provider::{types::TransferedFile, DynNamespace, ProviderError};
+use provider::{constants::LOCALHOST, types::TransferedFile, DynNamespace, ProviderError};
 use serde::{Deserialize, Serialize};
 use support::{
     constants::{RELAY_NOT_NONE, THIS_IS_A_BUG},
     fs::FileSystem,
 };
 use tokio::sync::RwLock;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use self::{
     jamchain::Jamchain,
@@ -38,6 +38,7 @@ use self::{
     relaychain::Relaychain,
 };
 use crate::{
+    custom_processes,
     generators::{self, chain_spec::ChainSpec},
     network_spec::{self, NetworkSpec},
     observability::{self, ObservabilityInfo, ObservabilityState},
@@ -246,6 +247,8 @@ impl<T: FileSystem> Network<T> {
             default_resources: self.initial_spec.relaychain().default_resources.as_ref(),
             default_db_snapshot: self.initial_spec.relaychain().default_db_snapshot.as_ref(),
             default_args: self.initial_spec.relaychain().default_args.iter().collect(),
+            // an added node takes no volume, as it takes no default resources
+            default_volumes: &[],
         };
 
         let mut node_spec = network_spec::node::NodeSpec::from_ad_hoc(
@@ -372,6 +375,8 @@ impl<T: FileSystem> Network<T> {
             default_resources: spec.default_resources.as_ref(),
             default_db_snapshot: spec.default_db_snapshot.as_ref(),
             default_args: spec.default_args.iter().collect(),
+            // an added collator takes no volume, as it takes no default resources
+            default_volumes: &[],
         };
 
         let relay_chain = self.relaychain().chain.clone();
@@ -470,6 +475,131 @@ impl<T: FileSystem> Network<T> {
         self.write_zombie_json().await?;
 
         generators::cleanup_db_snapshot_cache(&resolved_db_snapshots).await;
+
+        Ok(())
+    }
+
+    /// Add a custom process to the running network.
+    ///
+    /// The process is checked the way the network's own are at spawn: its
+    /// fields, what the provider can run, a name no member has, and that
+    /// every `depends_on` names a custom process already on the network which
+    /// met the condition (they are all settled by now, so nothing is waited
+    /// on). Then its ports are parked, it is spawned, with the running members
+    /// and its own ports as placeholder context, and waited on until it meets
+    /// its condition. It is only registered, and `zombie.json` rewritten, once
+    /// it has; one that never does is destroyed.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use provider::NativeProvider;
+    /// # use support::{fs::local::LocalFileSystem};
+    /// # use zombienet_orchestrator::Orchestrator;
+    /// # use configuration::{CustomProcessBuilder, NetworkConfig};
+    /// # async fn example() -> Result<(), anyhow::Error> {
+    /// #   let provider = NativeProvider::new(LocalFileSystem {});
+    /// #   let orchestrator = Orchestrator::new(LocalFileSystem {}, provider);
+    /// #   let config = NetworkConfig::load_from_toml("config.toml")?;
+    /// let mut network = orchestrator.spawn(config).await?;
+    ///
+    /// let process = CustomProcessBuilder::new()
+    ///     .with_name("eth-rpc")
+    ///     .with_command("eth-rpc")
+    ///     .with_args(vec![("--node-rpc-url", "{{ZOMBIE:alice:ws_uri}}").into()])
+    ///     .build()
+    ///     .map_err(|(name, errs)| anyhow::anyhow!("{name}: {errs:?}"))?;
+    ///
+    /// network.add_custom_process(process).await?;
+    /// let eth_rpc = network.get_custom_process("eth-rpc")?;
+    /// #   Ok(())
+    /// # }
+    /// ```
+    pub async fn add_custom_process(
+        &mut self,
+        process: CustomProcess,
+    ) -> Result<(), anyhow::Error> {
+        let name = process.name().to_string();
+        let mut errors: Vec<String> = vec![];
+
+        if self.has_member(&name) {
+            errors.push(format!(
+                "custom_processes['{name}'].name: already used by a node or custom process"
+            ));
+        }
+        if let Err(field_errors) = process.validate() {
+            errors.extend(
+                field_errors
+                    .into_iter()
+                    .map(|e| format!("custom_processes['{name}'].{e}")),
+            );
+        }
+        errors.extend(crate::validate_custom_process_with_capabilities(
+            &process,
+            self.ns.capabilities(),
+        ));
+
+        // The dependencies are processes already on the network, each in the
+        // state it settled in (only a registered process counts, so none is
+        // still starting).
+        let by_name: HashMap<&str, &CustomProcess> = self
+            .custom_processes
+            .iter()
+            .map(|p| (p.name(), p.spec()))
+            .collect();
+        let states: HashMap<String, node::CustomProcessState> = self
+            .custom_processes
+            .iter()
+            .map(|p| (p.name().to_string(), p.state().clone()))
+            .collect();
+        match custom_processes::startable(&process, &by_name, &states) {
+            custom_processes::Startable::Now => {},
+            custom_processes::Startable::Later => errors.push(format!(
+                "custom_processes['{name}'].depends_on: a dependency has not settled yet"
+            )),
+            custom_processes::Startable::Never(reason) => {
+                errors.push(format!("custom_processes['{name}'].depends_on: {reason}"))
+            },
+        }
+
+        if !errors.is_empty() {
+            return Err(anyhow::anyhow!(
+                "can't add custom process '{name}':\n  {}",
+                errors.join("\n  ")
+            ));
+        }
+
+        let global_settings = &self.initial_spec.global_settings;
+        let host_ip = global_settings.local_ip().copied().unwrap_or(LOCALHOST);
+        let default_timeout = Duration::from_secs(u64::from(global_settings.node_spawn_timeout()));
+
+        let failed = |reason: String| custom_processes::failed(&process, reason);
+        let prepared = spawner::prepare_process(&process, self.ns.as_ref())
+            .map_err(|e| failed(format!("could not reserve its ports: {e}")))?;
+        let mut nodes_by_name = self.nodes_json()?;
+        nodes_by_name[name.as_str()] = spawner::ports_json(&prepared.ports);
+
+        let mut node = spawner::spawn_process(prepared, self.ns.clone(), host_ip, &nodes_by_name)
+            .await
+            .map_err(|e| failed(format!("{e:#}")))?;
+
+        // Only registered once it met its condition; one that never does is
+        // destroyed, as nothing would tear it down otherwise.
+        let timeout = process
+            .timeout()
+            .map(|secs| Duration::from_secs(u64::from(secs)))
+            .unwrap_or(default_timeout);
+        let state = node.wait_ready(timeout).await;
+        if let node::CustomProcessState::Failed { reason } = state {
+            if let Err(e) = node.core().inner().destroy().await {
+                warn!("⚠️  {name}: could not destroy it after it failed: {e}");
+            }
+            return Err(failed(reason).into());
+        }
+        info!("✅ {name}: {state}");
+        node.state = state;
+
+        self.add_running_custom_process(node);
+        self.write_zombie_json().await?;
 
         Ok(())
     }

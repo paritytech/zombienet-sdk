@@ -17,6 +17,7 @@ use crate::{
         types::{
             Arg, AssetLocation, Chain, ChainDefaultContext, Command, Image, ValidationContext, U128,
         },
+        volume::{validate_default_volumes, NodeVolume, NodeVolumeBuilder},
     },
     types::{ChainSpecRuntime, CommandWithCustomArgs, JsonOverrides},
     utils::{default_as_false, default_as_true, default_initial_balance, is_false},
@@ -128,6 +129,9 @@ pub struct ParachainConfig {
     default_image: Option<Image>,
     default_resources: Option<Resources>,
     default_db_snapshot: Option<AssetLocation>,
+    /// Volumes every node gets, unless it mounts the same path itself (only k8s).
+    #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
+    default_volumes: Vec<NodeVolume>,
     #[serde(skip_serializing_if = "std::vec::Vec::is_empty", default)]
     default_args: Vec<Arg>,
     genesis_wasm_path: Option<AssetLocation>,
@@ -236,6 +240,12 @@ impl ParachainConfig {
     /// The default database snapshot location that will be used for state.
     pub fn default_db_snapshot(&self) -> Option<&AssetLocation> {
         self.default_db_snapshot.as_ref()
+    }
+
+    /// The volumes every collator gets, unless it mounts the same path itself
+    /// (only k8s).
+    pub fn default_volumes(&self) -> &[NodeVolume] {
+        &self.default_volumes
     }
 
     /// The default arguments that will be used to execute the collator command.
@@ -394,6 +404,7 @@ impl<C: Context> Default for ParachainConfigBuilder<Initial, C> {
                 default_image: None,
                 default_resources: None,
                 default_db_snapshot: None,
+                default_volumes: vec![],
                 default_args: vec![],
                 genesis_wasm_path: None,
                 genesis_wasm_generator: None,
@@ -686,6 +697,41 @@ impl<C: Context> ParachainConfigBuilder<WithId, C> {
                     errors
                         .into_iter()
                         .map(|error| FieldError::DefaultResources(error).into())
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+
+    /// Add a volume every node gets, unless it mounts the same path itself
+    /// (only k8s). A default is always provisioned: an existing claim would be
+    /// mounted by every node.
+    pub fn with_default_volume(
+        self,
+        f: impl FnOnce(NodeVolumeBuilder) -> NodeVolumeBuilder,
+    ) -> Self {
+        let built = f(NodeVolumeBuilder::new()).build().and_then(|volume| {
+            let mut volumes = self.config.default_volumes.clone();
+            volumes.push(volume);
+            validate_default_volumes(&volumes).map(|()| volumes)
+        });
+        match built {
+            Ok(default_volumes) => Self::transition(
+                ParachainConfig {
+                    default_volumes,
+                    ..self.config
+                },
+                self.validation_context,
+                self.errors,
+            ),
+            Err(errors) => Self::transition(
+                self.config,
+                self.validation_context,
+                merge_errors_vecs(
+                    self.errors,
+                    errors
+                        .into_iter()
+                        .map(|error| FieldError::DefaultVolumes(error).into())
                         .collect::<Vec<_>>(),
                 ),
             ),

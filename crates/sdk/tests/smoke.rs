@@ -76,9 +76,9 @@ fn small_network() -> NetworkConfig {
                 .with_validator(|node| {
                     let bob = node.with_name("bob");
                     match get_provider_from_env() {
-                        Provider::K8s => bob.with_volume(|v| {
-                            v.with_mount_path("/data").with_size(BOB_DATA_SIZE)
-                        }),
+                        Provider::K8s => {
+                            bob.with_volume(|v| v.with_mount_path("/data").with_size(BOB_DATA_SIZE))
+                        },
                         _ => bob,
                     }
                 })

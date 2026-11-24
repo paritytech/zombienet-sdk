@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Instant};
 
 use configuration::{NetworkConfig, NetworkConfigBuilder, ProcessEnvVar, TransferedFile};
 use futures::{stream::StreamExt, try_join};
-use k8s_openapi::api::core::v1::Secret;
+use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Secret};
 use kube::api::{Api, PostParams};
 use orchestrator::{AddCollatorOptions, AddNodeOptions};
 use zombienet_sdk::{
@@ -40,6 +40,32 @@ async fn create_secret(namespace: &str) {
     }
 }
 
+/// The size of the claim bob's `/data` is provisioned with on kubernetes.
+const BOB_DATA_SIZE: &str = "2Gi";
+
+/// On kubernetes bob's database goes on a claim provisioned for its pod, named
+/// `<pod>-<volume>`; docker has no claims, so there bob keeps the scratch one.
+async fn assert_bob_data_is_a_claim(namespace: &str) {
+    let client = kube::Client::try_default().await.unwrap();
+    let pvc = Api::<PersistentVolumeClaim>::namespaced(client, namespace)
+        .get("bob-data")
+        .await
+        .unwrap_or_else(|err| panic!("the claim of bob's /data in {namespace}: {err}"));
+    assert_eq!(
+        pvc.status.as_ref().and_then(|s| s.phase.as_deref()),
+        Some("Bound"),
+        "bob-data: {pvc:?}"
+    );
+    let requested = pvc
+        .spec
+        .as_ref()
+        .and_then(|spec| spec.resources.as_ref())
+        .and_then(|r| r.requests.as_ref())
+        .and_then(|r| r.get("storage"))
+        .map(|q| q.0.as_str());
+    assert_eq!(requested, Some(BOB_DATA_SIZE), "bob-data: {pvc:?}");
+}
+
 fn small_network() -> NetworkConfig {
     NetworkConfigBuilder::new()
         .with_relaychain(|r| {
@@ -47,7 +73,15 @@ fn small_network() -> NetworkConfig {
                 .with_default_command("polkadot")
                 .with_default_image("docker.io/parity/polkadot:v1.20.2")
                 .with_validator(|node| node.with_name("alice"))
-                .with_validator(|node| node.with_name("bob"))
+                .with_validator(|node| {
+                    let bob = node.with_name("bob");
+                    match get_provider_from_env() {
+                        Provider::K8s => bob.with_volume(|v| {
+                            v.with_mount_path("/data").with_size(BOB_DATA_SIZE)
+                        }),
+                        _ => bob,
+                    }
+                })
                 .with_validator(|node| node.with_name("charlie"))
                 .with_validator(|node| node.with_name("dave"))
         })
@@ -117,6 +151,17 @@ async fn ci_k8s_basic_functionalities_should_works() {
         logs.contains("hello from an injected file"),
         "secret-reader logs: {logs}"
     );
+
+    // bob writes its database to the claim (as the non-root polkadot user)
+    if matches!(get_provider_from_env(), Provider::K8s) {
+        assert_bob_data_is_a_claim(&std::env::var("ZOMBIE_K8S_CI_NAMESPACE").unwrap()).await;
+        network
+            .get_node("bob")
+            .unwrap()
+            .wait_metric_with_timeout(BEST_BLOCK_METRIC, |x| x > 2_f64, 120_u32)
+            .await
+            .unwrap();
+    }
 
     // detach and attach to running
     network.detach().await;

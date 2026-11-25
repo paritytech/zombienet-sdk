@@ -64,7 +64,7 @@ limit_cpu = "1000m"
 | `command` | String | Inherited | Binary command to execute |
 | `subcommand` | String | — | Optional subcommand (e.g., for nested CLI) |
 | `image` | String | Inherited | Container image |
-| `args` | Array | — | CLI arguments |
+| `args` | Array | — | CLI arguments. For collators, args after `"--"` go to the embedded relay chain node |
 | `env` | Array | — | Environment variables as `{name, value}` pairs |
 | `validator` | Boolean | `true` | Whether node is a validator/authority |
 | `invulnerable` | Boolean | `true` | Add to invulnerables set in genesis |

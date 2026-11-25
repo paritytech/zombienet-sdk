@@ -531,6 +531,10 @@ impl de::Visitor<'_> for ArgVisitor {
         if v.starts_with("-:") {
             return Ok(Arg::Flag(v.to_string()));
         }
+        // Separates collator args from embedded relay chain args
+        if v == "--" {
+            return Ok(Arg::Flag(v.to_string()));
+        }
 
         let re = Regex::new("^(?<name_prefix>(?<prefix>-{1,2})?(?<name>[a-zA-Z]+(-[a-zA-Z]+)*))((?<separator>=| )(?<value>\\[[^\\]]*\\]|[^ ]+))?$").unwrap();
 
@@ -914,6 +918,16 @@ mod tests {
         let valid = "\"42\"";
         let result: Result<Arg, _> = serde_json::from_str(valid);
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_arg_double_dash_is_a_flag() {
+        let result: Arg = serde_json::from_str("\"--\"").unwrap();
+        assert_eq!(result, Arg::from("--"));
+
+        // only the exact separator, a single dash stays positional
+        let result: Arg = serde_json::from_str("\"-\"").unwrap();
+        assert_eq!(result, Arg::Positional("-".to_string()));
     }
 
     #[test]

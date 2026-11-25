@@ -2290,6 +2290,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn toml_collator_args_should_parse_double_dash_as_a_flag() {
+        let config = NetworkConfig::load_from_toml_string(
+            r#"
+[relaychain]
+chain = "rococo-local"
+default_command = "polkadot"
+
+[[relaychain.nodes]]
+name = "alice"
+
+[[parachains]]
+id = 1000
+
+[[parachains.collators]]
+name = "collator"
+command = "polkadot-parachain"
+args = ["--foo", "--", "--listen-addr=/ip4/127.0.0.1/tcp/10003/ws", "-:--port"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.parachains()[0].collators()[0].args(),
+            vec![
+                &Arg::from("--foo"),
+                &Arg::from("--"),
+                &Arg::from(("--listen-addr", "/ip4/127.0.0.1/tcp/10003/ws")),
+                &Arg::from("-:--port"),
+            ]
+        );
+    }
+
     const TOML_WITH_RELATIVE_PATHS: &str = r#"
 [relaychain]
 chain = "rococo-local"

@@ -603,6 +603,40 @@ mod tests {
     }
 
     #[test]
+    fn generate_for_cumulus_node_passes_args_after_double_dash_to_relay_chain() {
+        let mut node = get_node_spec(true);
+        // parsed the same way as `args` in a TOML config
+        node.args = serde_json::from_str(
+            r#"["--foo", "--", "--listen-addr=/ip4/127.0.0.1/tcp/10003/ws", "-:--port"]"#,
+        )
+        .unwrap();
+        let opts = GenCmdOptions {
+            use_wrapper: false,
+            is_native: true,
+            ..GenCmdOptions::default()
+        };
+
+        let (_, args) = generate_for_cumulus_node(&node, opts, 1000);
+
+        let dividers: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter_map(|(i, arg)| (arg == "--").then_some(i))
+            .collect();
+        assert_eq!(dividers.len(), 1, "{args:?}");
+        let (collator_args, relay_args) = args.split_at(dividers[0]);
+
+        assert!(collator_args.iter().any(|arg| arg == "--foo"));
+        let i = relay_args
+            .iter()
+            .position(|arg| arg == "--listen-addr")
+            .unwrap();
+        assert_eq!(relay_args[i + 1], "/ip4/127.0.0.1/tcp/10003/ws");
+        // removed by `-:--port`
+        assert!(!relay_args.iter().any(|arg| arg == "--port"));
+    }
+
+    #[test]
     fn generate_for_non_native_cumulus_node_works() {
         let node = get_node_spec(true);
         let opts = GenCmdOptions {

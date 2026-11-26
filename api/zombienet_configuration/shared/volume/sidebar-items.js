@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_VOLUME_SIZE","NODE_VOLUME_PATHS"],"enum":["AccessMode","VolumeDataSource","VolumeSource"],"fn":["merge_volumes","validate_default_volumes","validate_volumes"],"struct":["NodeVolume","NodeVolumeBuilder"]};

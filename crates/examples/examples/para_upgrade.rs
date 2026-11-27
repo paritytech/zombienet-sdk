@@ -82,7 +82,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .wait_metric(BEST_BLOCK_METRIC, |x| x > best_block + 50_f64)
         .await?;
 
-    println!("Perfoming upgrade from path {wasm}");
+    println!("Performing upgrade from path {wasm}");
 
     network
         .parachain(100)
